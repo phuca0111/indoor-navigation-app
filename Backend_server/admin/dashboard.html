@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Quản Lý Tòa Nhà</title>
+    <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+    <!-- ==========================================
+         TRANG DASHBOARD (BẢNG ĐIỀU KHIỂN)
+         Admin thấy trang này sau khi đăng nhập thành công
+    ========================================== -->
+
+    <!-- Thanh trên cùng (Navbar) -->
+    <nav class="navbar">
+        <h2>🗺️ Bảng Điều Khiển Quản Trị</h2>
+        <div class="nav-right">
+            <span id="userEmail">admin@example.com</span>
+            <button id="btnLogout" class="btn-logout">Đăng Xuất</button>
+        </div>
+    </nav>
+
+    <!-- Nội dung chính -->
+    <div class="dashboard-content">
+
+        <!-- Phần 1: Thông tin chào mừng -->
+        <div class="welcome-box">
+            <h3>Xin chào, <span id="userName">Admin</span>!</h3>
+            <p>Vai trò: <span id="userRole" class="badge">BUILDING_ADMIN</span></p>
+        </div>
+
+        <!-- Phần 2: Khu vực chỉ Super Admin thấy (Quản lý tài khoản) -->
+        <div id="superAdminSection" class="admin-section" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3>👑 Quản Lý Tài Khoản (Super Admin)</h3>
+            </div>
+            
+            <div class="create-account-form" style="margin-bottom: 25px;">
+                <input type="email" id="newEmail" placeholder="Email tài khoản mới...">
+                <input type="password" id="newPassword" placeholder="Mật khẩu tạm thời...">
+                <button id="btnCreateAccount" class="btn-create">+ Tạo Tài Khoản</button>
+            </div>
+
+            <h4 style="margin-bottom: 10px; color: #2c3e50;">📋 Danh Sách Quản Trị Viên</h4>
+            <table class="buildings-table" style="background: white; border-radius: 8px; overflow: hidden; margin-bottom: 10px;">
+                <thead>
+                    <tr>
+                        <th>Email</th>
+                        <th>Vai Trò</th>
+                        <th>Trạng Thái</th>
+                        <th>Tòa Nhà Quản Lý</th>
+                        <th>Thao Tác</th>
+                    </tr>
+                </thead>
+                <tbody id="usersList">
+                    <tr>
+                        <td colspan="5" style="text-align: center; color: #888;">Đang tải danh sách tài khoản...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Phần 3: Danh sách Tòa nhà -->
+        <div class="buildings-section">
+        <div class="section-header">
+            <h3>🏢 Danh Sách Tòa Nhà</h3>
+            <button class="btn-add" onclick="openAddBuildingModal()">+ Thêm Tòa Nhà Mới</button>
+        </div>
+
+            <!-- Bảng hiển thị danh sách -->
+            <table class="buildings-table">
+                <thead>
+                    <tr>
+                        <th>Tên Tòa Nhà</th>
+                        <th>Địa Chỉ</th>
+                        <th>Trạng Thái</th>
+                        <th>Cập Nhật</th>
+                        <th>Thao Tác</th>
+                    </tr>
+                </thead>
+                <tbody id="buildingsList">
+                    <!-- Dữ liệu sẽ do JS đổ vào đây tự động -->
+                    <tr>
+                        <td colspan="5" style="text-align: center; color: #888;">
+                            Đang tải danh sách tòa nhà...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+
+    <!-- ==========================================
+         MODAL: CHỈNH SỬA TÀI KHOẢN (BẢNG HIỆN LÊN)
+    ========================================== -->
+    <div id="editUserModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>🖊️ Chỉnh Sửa Quản Trị Viên</h3>
+            <input type="hidden" id="editUserId">
+            
+            <label>Email:</label>
+            <input type="email" id="editEmail">
+            
+            <label>Mật khẩu mới (Để trống nếu không đổi):</label>
+            <input type="password" id="editPassword" placeholder="Nhập mật khẩu mới...">
+            
+            <label>Vai trò:</label>
+            <select id="editRole">
+                <option value="BUILDING_ADMIN">Building Admin (Quản lý tòa nhà)</option>
+                <option value="SUPER_ADMIN">Super Admin (Quản trị hệ thống)</option>
+            </select>
+
+            <label>Tòa nhà quản lý:</label>
+            <div id="editUserBuildingsList" style="max-height: 150px; overflow-y: auto; background: #f9f9f9; padding: 10px; border-radius: 6px; border: 1px solid #ddd; margin-top: 5px;">
+                <!-- Danh sách checkbox tòa nhà sẽ nạp vào đây -->
+                <p style="font-size: 13px; color: #888;">Đang tải danh sách tòa nhà...</p>
+            </div>
+
+            <div class="modal-actions">
+                <button onclick="closeEditModal()" class="btn-logout" style="background: #95a5a6;">Hủy Bỏ</button>
+                <button onclick="saveEditAdmin()" class="btn-create">Lưu Thay Đổi</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         MODAL: THÊM TÒA NHÀ MỚI 
+    ========================================== -->
+    <div id="addBuildingModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>🏢 Thêm Tòa Nhà Mới</h3>
+            
+            <label>Tên Tòa Nhà:</label>
+            <input type="text" id="addBuildingName" placeholder="Ví dụ: Tòa nhà A, Trung tâm ABC...">
+            
+            <label>Địa Chỉ:</label>
+            <input type="text" id="addBuildingAddress" placeholder="Địa chỉ tòa nhà...">
+            
+            <div style="display: flex; gap: 10px;">
+                <div style="flex: 1;">
+                    <label>Vĩ độ (Lat):</label>
+                    <input type="number" id="addBuildingLat" step="any" value="10.7">
+                </div>
+                <div style="flex: 1;">
+                    <label>Kinh độ (Lng):</label>
+                    <input type="number" id="addBuildingLng" step="any" value="106.6">
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button onclick="closeAddBuildingModal()" class="btn-logout" style="background: #95a5a6;">Hủy Bỏ</button>
+                <button id="btnSaveNewBuilding" class="btn-create">Lưu Tòa Nhà</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lôi file JS xử lý logic Dashboard -->
+    <script src="../js/dashboard.js"></script>
+</body>
+</html>

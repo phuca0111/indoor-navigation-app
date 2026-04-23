@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng Nhập - Hệ Thống Bản Đồ Trong Nhà</title>
+    <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+    <!-- ==========================================
+         TRANG ĐĂNG NHẬP (LOGIN PAGE)
+         Đây là trang đầu tiên Admin nhìn thấy
+    ========================================== -->
+
+    <div class="login-container">
+        <!-- Tiêu đề -->
+        <div class="login-header">
+            <h1>🗺️ Hệ Thống Bản Đồ Trong Nhà</h1>
+            <p>Đăng nhập để quản lý bản đồ tòa nhà</p>
+        </div>
+
+        <!-- Form đăng nhập -->
+        <form id="loginForm">
+            <!-- Ô nhập Email -->
+            <div class="form-group">
+                <label for="email">📧 Email</label>
+                <input type="email" id="email" placeholder="Nhập email đăng nhập..." required>
+            </div>
+
+            <!-- Ô nhập Mật khẩu -->
+            <div class="form-group">
+                <label for="password">🔒 Mật khẩu</label>
+                <input type="password" id="password" placeholder="Nhập mật khẩu..." required>
+            </div>
+
+            <!-- Nút Đăng nhập -->
+            <button type="submit" class="btn-login">Đăng Nhập</button>
+
+            <!-- Dòng hiển thị lỗi (ẩn mặc định, chỉ hiện khi sai mật khẩu) -->
+            <p id="errorMessage" class="error-msg" style="display: none;"></p>
+        </form>
+    </div>
+
+    <!-- Lôi file JS xử lý logic đăng nhập -->
+    <script src="../js/login.js"></script>
+</body>
+</html>

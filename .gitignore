@@ -1,0 +1,32 @@
+.gradle/
+build/
+**/build/
+local.properties
+.idea/
+.vscode/
+*.iml
+*.log
+.DS_Store
+Thumbs.db
+
+Docs/
+lichsu/
+Test_pdr/
+
+ANDROID_INTEGRATION.md
+bang_chuc_nang_va_kich_ban.md
+Bang_Theo_Doi_Tien_Do.csv
+cachdung.md
+create_csv.py
+HUONG_DAN_SU_DUNG.md
+ke_hoach_cong_viec.md
+ke_hoach_thuc_nghiem.md
+kien_truc_database_api_thumuc.md
+kien_truc_he_thong.md
+NHAT_KY_TRIEN_KHAI.md
+note.md
+Phạm vi và yêu cầu người dùng.md
+task_chi_tiet.md
+test-thuc_nghiem.md
+Tracking Thesis Progress.md
+update_weeks.py

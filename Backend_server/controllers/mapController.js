@@ -1,0 +1,190 @@
+// ============================================
+// FILE: mapController.js
+// MỤC ĐÍCH: NÃO BỘ xử lý logic Lưu / Tải / Publish Bản Đồ JSON
+// ĐÂY LÀ FILE CỐT LÕI: Nối Web Map Editor với Database
+// ============================================
+
+const MapData    = require('../models/MapData');     // giữ lại cho tương thích ngược
+const Floor      = require('../models/Floor');
+const Building   = require('../models/Building');
+const MapVersion = require('../models/MapVersion');
+const QrCode     = require('../models/QrCode');
+const ActivityLog = require('../models/ActivityLog');
+
+function logActivity(data) {
+    ActivityLog.create(data).catch(() => {});
+}
+
+// Sync qr_anchors từ floor document sang collection QrCode riêng (fire-and-forget)
+async function syncQrCodes(floorDoc) {
+    const anchors = floorDoc.map_data?.qr_anchors || [];
+    for (const anchor of anchors) {
+        if (!anchor.qr_code) continue;
+        await QrCode.updateOne(
+            { qr_code: anchor.qr_code },
+            {
+                $set: {
+                    building_id:  floorDoc.building_id,
+                    floor_number: floorDoc.floor_number,
+                    x:            anchor.x,
+                    y:            anchor.y,
+                    node_id:      anchor.node_id || '',
+                    label:        anchor.label   || ''
+                }
+            },
+            { upsert: true }
+        );
+    }
+}
+
+// ==========================================
+// HÀM 1: LƯU BẢN ĐỒ (Web Editor bấm Publish)
+// ==========================================
+// Web Map Editor gom cục JSON (rooms, nodes, edges...) bắn lên đây
+const saveMap = async (req, res) => {
+    try {
+        const { buildingId, floor } = req.params;   // Lấy ID tòa nhà và tầng từ URL
+        const { map_data } = req.body;              // Lấy cục JSON bản đồ từ body
+
+        // Tìm xem bản đồ tầng này đã tồn tại chưa
+        let existingMap = await MapData.findOne({
+            building_id: buildingId,
+            floor_number: floor
+        });
+
+        const userId = req.user ? req.user.userId : null;
+
+        if (existingMap) {
+            existingMap.map_data         = map_data;
+            existingMap.version          = existingMap.version + 1;
+            existingMap.published_at     = new Date();
+            existingMap.last_modified_by = userId;
+            await existingMap.save();
+
+            // Lưu snapshot version (không lưu ảnh nền để tiết kiệm dung lượng)
+            MapVersion.create({
+                building_id:    buildingId,
+                floor_number:   floor,
+                version:        existingMap.version,
+                rooms_count:    map_data.rooms?.length  || 0,
+                nodes_count:    map_data.nodes?.length  || 0,
+                edges_count:    map_data.edges?.length  || 0,
+                graph_snapshot: { nodes: map_data.nodes, edges: map_data.edges },
+                published_by:   userId,
+                published_at:   new Date()
+            }).catch(() => {});
+
+            // Sync QR codes sang collection riêng
+            syncQrCodes(existingMap).catch(() => {});
+
+            logActivity({
+                user_id:     userId,
+                action:      'PUBLISH_MAP',
+                target_type: 'floor',
+                target_id:   String(existingMap._id),
+                target:      `Building ${buildingId} - Tầng ${floor}`,
+                details:     `Version ${existingMap.version}`,
+                ip_address:  req.ip || ''
+            });
+
+            res.status(200).json({
+                message: 'Cập nhật bản đồ Tầng ' + floor + ' thành công! (Version ' + existingMap.version + ')',
+                map: existingMap
+            });
+        } else {
+            const newMap = await Floor.create({
+                building_id:      buildingId,
+                floor_number:     floor,
+                floor_name:       'Tầng ' + floor,
+                version:          1,
+                map_data:         map_data,
+                published_at:     new Date(),
+                last_modified_by: userId
+            });
+
+            await Building.findByIdAndUpdate(buildingId, { status: 'PUBLISHED' });
+
+            MapVersion.create({
+                building_id:    buildingId,
+                floor_number:   floor,
+                version:        1,
+                rooms_count:    map_data.rooms?.length  || 0,
+                nodes_count:    map_data.nodes?.length  || 0,
+                edges_count:    map_data.edges?.length  || 0,
+                graph_snapshot: { nodes: map_data.nodes, edges: map_data.edges },
+                published_by:   userId,
+                published_at:   new Date()
+            }).catch(() => {});
+
+            syncQrCodes(newMap).catch(() => {});
+
+            logActivity({
+                user_id:     userId,
+                action:      'PUBLISH_MAP',
+                target_type: 'floor',
+                target_id:   String(newMap._id),
+                target:      `Building ${buildingId} - Tầng ${floor}`,
+                details:     'Version 1 (tạo mới)',
+                ip_address:  req.ip || ''
+            });
+
+            res.status(201).json({
+                message: 'Tạo bản đồ Tầng ' + floor + ' thành công!',
+                map: newMap
+            });
+        }
+    } catch (error) {
+        res.status(500).json({ message: 'Lỗi lưu bản đồ: ' + error.message });
+    }
+};
+
+// ==========================================
+// HÀM 2: TẢI BẢN ĐỒ VỀ (Web Editor mở lên sửa tiếp)
+// ==========================================
+const loadMap = async (req, res) => {
+    try {
+        const { buildingId, floor } = req.params;
+
+        const map = await MapData.findOne({
+            building_id: buildingId,
+            floor_number: floor
+        });
+
+        if (!map) {
+            console.log(`⚠️ LOAD: Không tìm thấy bản đồ [Tòa nhà: ${buildingId}, Tầng: ${floor}]`);
+            return res.status(404).json({ message: 'Chưa có bản đồ cho tầng này!' });
+        }
+
+        console.log(`📥 LOAD: Tải bản đồ thành công [Tòa nhà: ${buildingId}, Tầng: ${floor}] - Phòng: ${map.map_data?.rooms?.length || 0}`);
+        res.status(200).json(map);
+    } catch (error) {
+        res.status(500).json({ message: 'Lỗi tải bản đồ: ' + error.message });
+    }
+};
+
+// ==========================================
+// HÀM 3: APP ANDROID TẢI BẢN ĐỒ OFFLINE
+// ==========================================
+// App gọi hàm này để kéo toàn bộ bản đồ mọi tầng của 1 tòa nhà về cache
+const downloadMap = async (req, res) => {
+    try {
+        const { buildingId } = req.params;
+
+        // Lấy tất cả tầng của tòa nhà này
+        const maps = await MapData.find({ building_id: buildingId });
+
+        if (!maps.length) {
+            return res.status(404).json({ message: 'Tòa nhà này chưa có bản đồ!' });
+        }
+
+        res.status(200).json({
+            building_id: buildingId,
+            total_floors: maps.length,
+            floors: maps
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Lỗi tải bản đồ: ' + error.message });
+    }
+};
+
+module.exports = { saveMap, loadMap, downloadMap };

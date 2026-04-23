@@ -1,0 +1,293 @@
+// ============================================================
+// IO.JS - Export/Import JSON & Snapshots
+// ============================================================
+
+// === LẤY DỮ LIỆU HIỆN TẠI (SNAPSHOT) ===
+function getMapSnapshot() {
+    var mapName = document.getElementById('mapName').value || 'Bản đồ mới';
+    return {
+        mapName: mapName,
+        metersPerGrid: metersPerGrid,
+        rooms: rooms.map(function (r) {
+            var item = {
+                id: r.id, name: r.name, shape: r.shape || 'rect',
+                type: r.type || 'Văn phòng', color: r.color,
+                x: Math.round(r.x), y: Math.round(r.y),
+                width: Math.round(r.width), height: Math.round(r.height),
+                widthMeters: parseFloat(pixelsToMeters(r.width).toFixed(1)),
+                heightMeters: parseFloat(pixelsToMeters(r.height).toFixed(1))
+            };
+            if (r.shape === 'polygon' && r.points) item.points = r.points.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }));
+            else if (r.shape === 'circle') { item.cx = Math.round(r.cx); item.cy = Math.round(r.cy); item.radius = Math.round(r.radius); }
+            return item;
+        }),
+        doors: doors.map(d => ({ id: d.id, name: d.name, x: Math.round(d.x), y: Math.round(d.y), width: d.width, type: d.type, rotation: d.rotation })),
+        pois: pois.map(p => ({ id: p.id, name: p.name, x: Math.round(p.x), y: Math.round(p.y), type: p.type, typeIndex: p.typeIndex })),
+        pathNodes: pathNodes.map(n => ({ id: n.id, nodeType: n.nodeType || 'normal', x: Math.round(n.x), y: Math.round(n.y), neighbors: n.neighbors })),
+        pathEdges: pathEdges,
+        walls: walls.map(w => ({
+            id: w.id,
+            type: w.type || 'segment',
+            thickness: w.thickness || 4,
+            is_outer: !!w.is_outer,
+            points: Array.isArray(w.points) ? w.points.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })) : []
+        })),
+        qrs: qrs.map(q => ({ id: q.id, name: q.name, serial: q.serial, x: Math.round(q.x), y: Math.round(q.y) }))
+    };
+}
+
+// === ĐỔ DỮ LIỆU VÀO EDITOR ===
+function applyMapSnapshot(data) {
+    if (!data) return;
+    if (data.mapName) document.getElementById('mapName').value = data.mapName;
+    if (data.metersPerGrid) {
+        metersPerGrid = data.metersPerGrid;
+        document.getElementById('scaleInput').value = metersPerGrid;
+    }
+
+    rooms = data.rooms || [];
+    nextRoomId = 1; rooms.forEach(r => { if (r.id >= nextRoomId) nextRoomId = r.id + 1; });
+
+    doors = data.doors || [];
+    nextDoorId = 1; doors.forEach(d => { if (d.id >= nextDoorId) nextDoorId = d.id + 1; });
+
+    pois = data.pois || [];
+    nextPoiId = 1; pois.forEach(p => { if (p.id >= nextPoiId) nextPoiId = p.id + 1; });
+
+    pathNodes = data.pathNodes || [];
+    pathEdges = data.pathEdges || [];
+    nextNodeId = 1; pathNodes.forEach(n => { if (n.id >= nextNodeId) nextNodeId = n.id + 1; });
+
+    walls = data.walls || [];
+    nextWallId = 1; walls.forEach(w => { if (w.id && w.id >= nextWallId) nextWallId = w.id + 1; });
+
+    qrs = data.qrs || [];
+    nextQrId = 1; qrs.forEach(q => { if (q.id >= nextQrId) nextQrId = q.id + 1; });
+
+    roomCountSpan.textContent = 'Phòng: ' + rooms.length;
+    updatePropertiesPanel();
+    updateObjectList();
+    draw();
+}
+
+// === EXPORT JSON ===
+function exportJSON() {
+    console.log("💾 [V3] Đang thực hiện Export bản đồ với hỗ trợ Đa giác & Hình tròn...");
+    var mapName = document.getElementById('mapName').value || 'Bản đồ mới';
+
+    var data = {
+        mapName: mapName,
+        metersPerGrid: metersPerGrid,
+        rooms: rooms.map(function (r) {
+            var exportItem = {
+                id: r.id,
+                name: r.name,
+                shape: r.shape || 'rect', // Lưu loại hình dạng
+                x: Math.round(r.x),
+                y: Math.round(r.y),
+                width: Math.round(r.width),
+                height: Math.round(r.height),
+                type: r.type || 'Văn phòng', // Thêm loại phòng
+                color: r.color,
+                // Tính toán mét để hiển thị (không bắt buộc nhưng nên có)
+                widthMeters: parseFloat(pixelsToMeters(r.width).toFixed(1)),
+                heightMeters: parseFloat(pixelsToMeters(r.height).toFixed(1))
+            };
+
+            // Nếu là Đa giác -> Lưu danh sách các điểm chóp
+            if (r.shape === 'polygon' && r.points) {
+                exportItem.points = r.points.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }));
+            }
+            // Nếu là Hình tròn -> Lưu tâm và bán kính
+            else if (r.shape === 'circle') {
+                exportItem.cx = Math.round(r.cx);
+                exportItem.cy = Math.round(r.cy);
+                exportItem.radius = Math.round(r.radius);
+            }
+
+            return exportItem;
+        }),
+        doors: doors.map(function (d) {
+            return {
+                id: d.id,
+                name: d.name,
+                x: Math.round(d.x),
+                y: Math.round(d.y),
+                width: d.width,
+                type: d.type,
+                rotation: d.rotation
+            };
+        }),
+        pois: pois.map(function (p) {
+            return {
+                id: p.id,
+                name: p.name,
+                x: Math.round(p.x),
+                y: Math.round(p.y),
+                type: p.type,
+                typeIndex: p.typeIndex
+            };
+        }),
+        pathNodes: pathNodes.map(function (n) {
+            return {
+                id: n.id,
+                nodeType: n.nodeType || 'normal', // Lưu loại node
+                x: Math.round(n.x),
+                y: Math.round(n.y),
+                neighbors: n.neighbors
+            };
+        }),
+        pathEdges: pathEdges,
+        walls: walls.map(function (w) {
+            return {
+                id: w.id,
+                type: w.type || 'segment',
+                thickness: w.thickness || 4,
+                is_outer: !!w.is_outer,
+                points: (w.points || []).map(function (p) { return { x: Math.round(p.x), y: Math.round(p.y) }; })
+            };
+        }),
+        qrs: qrs.map(function (q) {
+            return {
+                id: q.id,
+                name: q.name,
+                serial: q.serial,
+                x: Math.round(q.x),
+                y: Math.round(q.y)
+            };
+        })
+    };
+
+    // Download file
+    var json = JSON.stringify(data, null, 2);
+    var blob = new Blob([json], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = mapName.replace(/\s+/g, '_') + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    console.log('💾 Đã export: ' + a.download);
+}
+
+// === IMPORT JSON ===
+function importJSON(file) {
+    var reader = new FileReader();
+    reader.onload = function (e) {
+        try {
+            var data = JSON.parse(e.target.result);
+
+            // Load map name
+            if (data.mapName) {
+                document.getElementById('mapName').value = data.mapName;
+            }
+            if (data.metersPerGrid) {
+                metersPerGrid = data.metersPerGrid;
+                document.getElementById('scaleInput').value = metersPerGrid;
+            }
+
+            // Load rooms
+            rooms = data.rooms || [];
+            nextRoomId = 1;
+            rooms.forEach(function (r) {
+                if (r.id >= nextRoomId) nextRoomId = r.id + 1;
+            });
+
+            // Load doors
+            doors = data.doors || [];
+            nextDoorId = 1;
+            doors.forEach(function (d) {
+                if (d.id >= nextDoorId) nextDoorId = d.id + 1;
+            });
+
+            // Load POIs
+            pois = data.pois || [];
+            nextPoiId = 1;
+            pois.forEach(function (p) {
+                if (p.id >= nextPoiId) nextPoiId = p.id + 1;
+            });
+
+            // Load path
+            pathNodes = data.pathNodes || [];
+            pathEdges = data.pathEdges || [];
+            nextNodeId = 1;
+            pathNodes.forEach(function (n) {
+                if (!n.nodeType) n.nodeType = 'normal'; // Fix dữ liệu cũ
+                if (n.id >= nextNodeId) nextNodeId = n.id + 1;
+            });
+
+            // Load walls
+            walls = data.walls || [];
+            nextWallId = 1;
+            walls.forEach(function (w, index) {
+                if (!w.id || isNaN(w.id)) w.id = index + 1;
+                if (w.id >= nextWallId) nextWallId = w.id + 1;
+            });
+            
+            // Load QR Codes
+            qrs = data.qrs || [];
+            nextQrId = 1;
+            qrs.forEach(function (q) {
+                if (q.id >= nextQrId) nextQrId = q.id + 1;
+            });
+
+            // Reset selection
+            selectedRoom = null;
+            selectedObject = null;
+
+            // Redraw
+            roomCountSpan.textContent = 'Phòng: ' + rooms.length;
+            updatePropertiesPanel();
+            updateObjectList();
+            draw();
+
+            // Reset history
+            undoStack = [];
+            redoStack = [];
+
+            console.log('📂 Đã import: ' + (data.mapName || 'file'));
+        } catch (err) {
+            alert('Lỗi đọc file JSON: ' + err.message);
+        }
+    };
+    reader.readAsText(file);
+}
+
+// === EXPORT IMAGE (PNG) KHÔNG NỀN ===
+function exportImage() {
+    var mapName = document.getElementById('mapName').value || 'Mat_bang';
+
+    // Lưu các trạng thái hiển thị hiện tại
+    var oldBg = bgImage;
+    var oldGrid = document.getElementById('gridCheck').checked;
+    var oldSelection = selectedRoom;
+    var oldObjSelection = selectedObject;
+
+    // Tạm thời tắt ảnh nền, lưới, và bỏ chọn đối tượng để xuất ảnh sạch
+    bgImage = null;
+    document.getElementById('gridCheck').checked = false;
+    selectedRoom = null;
+    selectedObject = null;
+
+    // Vẽ lại canvas sạch (chỉ có phòng, cửa, POI, đường đi)
+    draw();
+
+    // Lấy data URL của canvas
+    var dataURL = canvas.toDataURL('image/png');
+
+    // Khôi phục lại trạng thái
+    bgImage = oldBg;
+    document.getElementById('gridCheck').checked = oldGrid;
+    selectedRoom = oldSelection;
+    selectedObject = oldObjSelection;
+    draw();
+
+    // Tạo link tải
+    var a = document.createElement('a');
+    a.href = dataURL;
+    a.download = mapName.replace(/\s+/g, '_') + '.png';
+    a.click();
+
+    console.log('🖼️ Đã xuất ảnh: ' + a.download);
+}
