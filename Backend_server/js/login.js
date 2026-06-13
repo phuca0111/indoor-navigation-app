@@ -4,8 +4,8 @@
 // LUỒNG: Gom Email + Pass → Bắn API → Nhận JWT → Cất vào localStorage → Nhảy sang Dashboard
 // ============================================
 
-// Địa chỉ máy chủ Backend (cùng máy tính, cổng 5000)
-const API_URL = 'http://localhost:5000/api';
+// Dùng relative URL để chạy được cả local và Render cùng domain.
+const API_URL = '/api';
 
 // Bắt sự kiện khi Admin bấm nút "Đăng Nhập"
 document.getElementById('loginForm').addEventListener('submit', async function(e) {

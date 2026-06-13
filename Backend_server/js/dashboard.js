@@ -1,4 +1,5 @@
-const API_URL = 'http://localhost:5000/api';
+// Dùng relative URL để dashboard gọi đúng backend trên cùng domain.
+const API_URL = '/api';
 
 // WHY: phải là `let` để có thể cập nhật access token sau khi refresh (15 phút hết hạn).
 let token       = localStorage.getItem('token');
