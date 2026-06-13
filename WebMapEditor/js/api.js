@@ -2,7 +2,8 @@
 // API.JS - Kết nối Web Map Editor với Backend Server
 // ============================================================
 
-const BASE_API_URL = 'http://localhost:5000/api';
+// Dùng relative URL để editor chạy được cả local và Render cùng domain.
+const BASE_API_URL = '/api';
 
 // 1. Lấy thông tin từ URL và LocalStorage
 const urlParams = new URLSearchParams(window.location.search);
