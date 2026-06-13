@@ -121,4 +121,66 @@ function haversine(lat1, lon1, lat2, lon2) {
     return R * c;  // Trả về khoảng cách tính bằng mét
 }
 
-module.exports = { getBuildings, createBuilding, checkLocation };
+// ==========================================
+// HÀM 4: CẬP NHẬT THÔNG TIN TÒA NHÀ
+// ==========================================
+const updateBuilding = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, address, lat, lng, activation_radius, description, total_floors, status } = req.body;
+
+        const updateData = {};
+        if (name !== undefined)              updateData.name = name;
+        if (address !== undefined)           updateData.address = address;
+        if (description !== undefined)       updateData.description = description;
+        if (total_floors !== undefined)      updateData.total_floors = total_floors;
+        if (activation_radius !== undefined) updateData.activation_radius = activation_radius;
+        if (status !== undefined)            updateData.status = status;
+        if (lat !== undefined || lng !== undefined) {
+            updateData['gps_location.lat'] = lat;
+            updateData['gps_location.lng'] = lng;
+        }
+
+        const building = await Building.findByIdAndUpdate(id, updateData, { new: true });
+        if (!building) return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
+
+        logActivity({
+            user_id:     req.user ? req.user.userId : null,
+            action:      'UPDATE_BUILDING',
+            target_type: 'building',
+            target_id:   String(building._id),
+            target:      building.name,
+            ip_address:  req.ip || ''
+        });
+
+        res.status(200).json({ message: 'Cập nhật tòa nhà thành công!', building });
+    } catch (error) {
+        res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+    }
+};
+
+// ==========================================
+// HÀM 5: XÓA TÒA NHÀ
+// ==========================================
+const deleteBuilding = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const building = await Building.findByIdAndDelete(id);
+        if (!building) return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
+
+        logActivity({
+            user_id:     req.user ? req.user.userId : null,
+            action:      'DELETE_BUILDING',
+            target_type: 'building',
+            target_id:   String(id),
+            target:      building.name,
+            ip_address:  req.ip || ''
+        });
+
+        res.status(200).json({ message: 'Đã xóa tòa nhà thành công!' });
+    } catch (error) {
+        res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+    }
+};
+
+module.exports = { getBuildings, createBuilding, updateBuilding, deleteBuilding, checkLocation };

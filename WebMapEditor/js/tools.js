@@ -14,6 +14,7 @@ function updateCursor() {
 
 // Chọn tool
 function selectTool(tool) {
+    if ((typeof isEditorLocked === 'function') && isEditorLocked()) return;
     // Kết thúc polygon đang vẽ dở nếu chuyển tool
     if (isDrawingPolygon && tool !== 'polygon') {
         if (polygonPoints.length >= 3) {
@@ -50,8 +51,10 @@ function selectTool(tool) {
         currentToolStatus.textContent = toolNames[tool] || tool;
     }
     updateCursor();
+    if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
     draw();
 }
+window.selectTool = selectTool;
 
 // Click nút tool
 document.querySelectorAll('.tool-btn[data-tool]').forEach(function (btn) {
@@ -61,8 +64,15 @@ document.querySelectorAll('.tool-btn[data-tool]').forEach(function (btn) {
 });
 
 // Phím tắt
+// WHY: Phải loại TEXTAREA và contenteditable khỏi bộ lọc — nếu không, các
+// phím như Backspace/Delete/V/R/C/D/W/P/Q/N/S/G/Escape/Ctrl+Z sẽ kích hoạt
+// shortcut canvas (ví dụ xóa đối tượng) ngay khi người dùng đang gõ tên phòng
+// trong <textarea> ở panel thuộc tính.
 document.addEventListener('keydown', function (e) {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    if ((typeof isEditorLocked === 'function') && isEditorLocked()) return;
+    var t  = e.target;
+    var tn = t && t.tagName ? t.tagName.toUpperCase() : '';
+    if (tn === 'INPUT' || tn === 'SELECT' || tn === 'TEXTAREA' || (t && t.isContentEditable)) return;
 
     // Undo (Ctrl + Z)
     if (e.ctrlKey && e.key.toLowerCase() === 'z' && !e.shiftKey) {

@@ -317,3 +317,38 @@ body {
     color: #27ae60;
     font-weight: 600;
 }
+
+/* ==========================================
+   TAB NAVIGATION (Dashboard Super Admin)
+   ========================================== */
+
+.tab-nav {
+    display: flex;
+    gap: 6px;
+    background: #fff;
+    border-radius: 10px;
+    padding: 8px 12px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+    flex-wrap: wrap;
+}
+
+.tab-btn {
+    padding: 9px 22px;
+    background: #ecf0f1;
+    color: #555;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: background 0.2s, color 0.2s;
+}
+
+.tab-btn:hover {
+    background: #d5dbdb;
+}
+
+.tab-btn.active {
+    background: #2c3e50;
+    color: #fff;
+}

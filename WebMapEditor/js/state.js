@@ -51,12 +51,16 @@ let isDrawingPolygon = false;
 
 // Dragging state (kéo phòng)
 let isDragging = false;
+window.isDraggingBg = false;
 let dragOffsetX, dragOffsetY;
 
 // Resizing state
 let isResizing = false;
 let resizeHandle = null;
 let resizeStartRoom = null;
+let isResizingDoor = false;
+let resizeDoorSide = null; // 'left' hoặc 'right'
+let isRotatingDoor = false;
 
 // Polygon vertex dragging
 let isDraggingVertex = false;
@@ -87,9 +91,16 @@ let isDrawingRuler = false;
 let rulerLine = null; // {x1, y1, x2, y2}
 
 // Background image (ảnh nền)
-let bgImage = null;       // Image object
-let bgOpacity = 0.5;      // Độ trong suốt
-let bgImageBase64 = '';   // Dữ liệu ảnh dạng chuỗi (Base64) để lưu Server
+window.bgImage = null;       // Image object
+window.bgOpacity = 0.5;      // Độ trong suốt
+window.bgX = 0;              // Vị trí X của ảnh
+window.bgY = 0;              // Vị trí Y của ảnh
+window.bgScale = 1.0;        // Tỉ lệ phóng to/thu nhỏ
+window.bgRotation = 0;       // Góc xoay của ảnh (độ)
+window.bgImageBase64 = '';   // Dữ liệu ảnh dạng chuỗi (Base64) để lưu Server
+window.isBgAdjustMode = false; // Chế độ điều chỉnh ảnh nền
+window.bgLastX = 0;          // Vị trí chuột X cuối cùng khi kéo nền
+window.bgLastY = 0;          // Vị trí chuột Y cuối cùng khi kéo nền
 
 // Selected object (đối tượng đang chọn - dùng chung)
 let selectedObject = null;  // {type: 'room'/'door'/'poi'/'node', data: ...}

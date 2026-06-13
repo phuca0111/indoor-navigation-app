@@ -7,17 +7,17 @@ function resizeCanvas() {
     var wrapper = document.querySelector('.canvas-wrapper');
     var canvas = document.getElementById('mapCanvas');
     if (!wrapper || !canvas) return;
-    
+
     canvas.width = wrapper.offsetWidth;
     canvas.height = wrapper.offsetHeight;
-    
+
     if (canvas.width === 0 || canvas.height === 0) {
         // Nếu flexbox chưa kịp tính, thử lấy từ bounding rect
         var rect = wrapper.getBoundingClientRect();
         canvas.width = rect.width;
         canvas.height = rect.height;
     }
-    
+
     draw();
 }
 
@@ -31,10 +31,10 @@ function draw() {
         if (Array.isArray(window.qrs)) window.qrs = window.qrs.filter(i => i && typeof i === 'object');
         if (Array.isArray(window.doors)) window.doors = window.doors.filter(i => i && typeof i === 'object');
         if (Array.isArray(window.walls)) window.walls = window.walls.filter(i => i && typeof i === 'object');
-    } catch(e) { console.error("Cleanup error:", e); }
+    } catch (e) { console.error("Cleanup error:", e); }
 
     if (!ctx) return;
-    
+
     try {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -47,10 +47,27 @@ function draw() {
         ctx.scale(zoom, zoom);
 
         // 1. Ảnh nền (nếu có)
-        if (bgImage) {
-            ctx.globalAlpha = bgOpacity;
-            ctx.drawImage(bgImage, 0, 0);
-            ctx.globalAlpha = 1;
+        if (window.bgImage) {
+            ctx.save();
+            ctx.globalAlpha = window.bgOpacity;
+            var bw = window.bgImage.width * window.bgScale;
+            var bh = window.bgImage.height * window.bgScale;
+            
+            // Di chuyển đến tâm ảnh, xoay, rồi vẽ ngược lại từ tâm
+            ctx.translate(window.bgX + bw / 2, window.bgY + bh / 2);
+            ctx.rotate((window.bgRotation || 0) * Math.PI / 180);
+            ctx.drawImage(window.bgImage, -bw / 2, -bh / 2, bw, bh);
+            
+            // Nếu đang trong chế độ chỉnh ảnh nền -> Vẽ khung bao để dễ nhận biết
+            if (currentTool === 'bg-adjust') {
+                ctx.setLineDash([5, 5]);
+                ctx.strokeStyle = '#3498db';
+                ctx.lineWidth = 2 / zoom;
+                ctx.strokeRect(-bw / 2, -bh / 2, bw, bh);
+                ctx.setLineDash([]);
+            }
+            ctx.restore();
+            ctx.globalAlpha = 1.0;
         }
 
         // 2. Lưới
@@ -157,6 +174,7 @@ function drawGrid() {
 
 // === VẼ PHÒNG (hỗ trợ rect, circle, polygon) ===
 function drawRoom(room, isSelected) {
+    applyDefaultRoomLabelStyle(room);
     if (room.shape === 'circle') {
         drawCircleRoom(room, isSelected);
     } else if (room.shape === 'polygon') {
@@ -164,6 +182,117 @@ function drawRoom(room, isSelected) {
     } else {
         drawRectRoom(room, isSelected);
     }
+}
+
+function splitLabelLines(text) {
+    return String(text || '').replace(/\r\n/g, '\n').split('\n');
+}
+
+function wrapSingleLine(line, maxWidth) {
+    if (!line) return [''];
+    var words = line.trim().split(/\s+/);
+    if (!words.length) return [''];
+
+    var wrapped = [];
+    var current = '';
+    for (var i = 0; i < words.length; i++) {
+        var test = current ? (current + ' ' + words[i]) : words[i];
+        if (ctx.measureText(test).width <= maxWidth) {
+            current = test;
+            continue;
+        }
+
+        if (current) {
+            wrapped.push(current);
+            current = '';
+        }
+
+        if (ctx.measureText(words[i]).width <= maxWidth) {
+            current = words[i];
+            continue;
+        }
+
+        // Cắt từ quá dài theo từng ký tự để không tràn phòng
+        var chunk = '';
+        for (var c = 0; c < words[i].length; c++) {
+            var charTest = chunk + words[i][c];
+            if (ctx.measureText(charTest).width <= maxWidth) {
+                chunk = charTest;
+            } else {
+                if (chunk) wrapped.push(chunk);
+                chunk = words[i][c];
+            }
+        }
+        current = chunk;
+    }
+
+    if (current) wrapped.push(current);
+    return wrapped.length ? wrapped : [''];
+}
+
+function wrapRoomLabelText(text, maxWidth) {
+    var explicitLines = splitLabelLines(text);
+    var finalLines = [];
+    explicitLines.forEach(function (line) {
+        var wrapped = wrapSingleLine(line, maxWidth);
+        wrapped.forEach(function (w) { finalLines.push(w); });
+    });
+    return finalLines.length ? finalLines : [''];
+}
+
+function calcLabelAutoScale(lines, fontSize, lineHeight, maxWidth, maxHeight) {
+    var widest = 0;
+    lines.forEach(function (line) {
+        widest = Math.max(widest, ctx.measureText(line).width);
+    });
+    var totalHeight = lines.length * fontSize * lineHeight;
+    var widthScale = widest > 0 ? (maxWidth / widest) : 1;
+    var heightScale = totalHeight > 0 ? (maxHeight / totalHeight) : 1;
+    return Math.max(0.35, Math.min(3, Math.min(widthScale, heightScale)));
+}
+
+function drawRoomLabel(room, centerX, centerY, maxWidth, maxHeight) {
+    var text = String(room.name || '');
+    if (!text.trim()) return;
+
+    var padding = 12 / zoom;
+    var safeWidth = Math.max(20 / zoom, maxWidth - padding * 2);
+    var safeHeight = Math.max(20 / zoom, maxHeight - padding * 2);
+
+    var baseFont = Math.max(8 / zoom, (room.labelFontSize || 14) / zoom);
+    var lineHeight = Math.max(1, room.labelLineHeight || 1.2);
+
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.rotate((room.labelRotation || 0) * Math.PI / 180);
+    ctx.fillStyle = '#333';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    var fontSize = baseFont;
+    ctx.font = fontSize + 'px Segoe UI';
+    var lines = wrapRoomLabelText(text, safeWidth);
+
+    if (room.labelAutoScale) {
+        var autoScale = calcLabelAutoScale(lines, fontSize, lineHeight, safeWidth, safeHeight);
+        fontSize = fontSize * autoScale;
+        ctx.font = fontSize + 'px Segoe UI';
+        lines = wrapRoomLabelText(text, safeWidth);
+        var secondPass = calcLabelAutoScale(lines, fontSize, lineHeight, safeWidth, safeHeight);
+        if (secondPass < 1) {
+            fontSize = fontSize * secondPass;
+            ctx.font = fontSize + 'px Segoe UI';
+            lines = wrapRoomLabelText(text, safeWidth);
+        }
+    }
+
+    var totalHeight = lines.length * fontSize * lineHeight;
+    for (var i = 0; i < lines.length; i++) {
+        var y = -totalHeight / 2 + (i + 0.5) * fontSize * lineHeight;
+        ctx.fillText(lines[i], 0, y);
+    }
+
+    ctx.restore();
 }
 
 // --- Vẽ tường ---
@@ -221,13 +350,7 @@ function drawRectRoom(room, isSelected) {
     ctx.lineWidth = isSelected ? 2.5 / zoom : 1.5 / zoom;
     ctx.strokeRect(room.x, room.y, room.width, room.height);
 
-    // Tên
-    var fontSize = Math.max(10, 14 / zoom);
-    ctx.fillStyle = '#333';
-    ctx.font = fontSize + 'px Segoe UI';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    if (room.name) ctx.fillText(room.name, room.x + room.width / 2, room.y + room.height / 2);
+    drawRoomLabel(room, room.x + room.width / 2, room.y + room.height / 2, room.width, room.height);
 
     var dc = document.getElementById('dimCheck');
     if (dc && dc.checked) drawDimensions(room);
@@ -246,13 +369,8 @@ function drawCircleRoom(room, isSelected) {
     ctx.lineWidth = isSelected ? 2.5 / zoom : 1.5 / zoom;
     ctx.stroke();
 
-    // Tên
-    var fontSize = Math.max(10, 14 / zoom);
-    ctx.fillStyle = '#333';
-    ctx.font = fontSize + 'px Segoe UI';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    if (room.name) ctx.fillText(room.name, room.cx, room.cy);
+    var diameterInSquare = room.radius * Math.sqrt(2);
+    drawRoomLabel(room, room.cx, room.cy, diameterInSquare, diameterInSquare);
 
     // Kích thước (bán kính)
     var dc = document.getElementById('dimCheck');
@@ -290,12 +408,7 @@ function drawPolygonRoom(room, isSelected) {
     // Tên (ở tâm bounding box)
     var cx = room.x + room.width / 2;
     var cy = room.y + room.height / 2;
-    var fontSize = Math.max(10, 14 / zoom);
-    ctx.fillStyle = '#333';
-    ctx.font = fontSize + 'px Segoe UI';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(room.name, cx, cy);
+    drawRoomLabel(room, cx, cy, room.width, room.height);
 
     // Vẽ các đỉnh nếu đang chọn
     if (isSelected) {
@@ -433,7 +546,7 @@ function drawRulerPreview() {
     var dx = rulerEnd.x - rulerStart.x;
     var dy = rulerEnd.y - rulerStart.y;
     var distPx = Math.sqrt(dx * dx + dy * dy);
-    
+
     var fontSize = Math.max(12, 16 / zoom);
     ctx.font = 'bold ' + fontSize + 'px Arial';
     ctx.fillStyle = '#d35400';

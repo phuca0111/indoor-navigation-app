@@ -46,16 +46,20 @@ if (bInp) {
 
         var reader = new FileReader();
         reader.onload = function (event) {
-            bgImageBase64 = event.target.result;
+            window.bgImageBase64 = event.target.result;
             var img = new Image();
             img.onload = function () {
-                bgImage = img;
+                window.bgImage = img;
                 var scaleX = canvas.width / img.width;
                 var scaleY = canvas.height / img.height;
                 zoom = Math.min(scaleX, scaleY) * 0.9;
                 panX = (canvas.width - img.width * zoom) / 2;
                 panY = (canvas.height - img.height * zoom) / 2;
-                bgOpacity = 0.5;
+                window.bgX = 0; // Reset vị trí nền khi load ảnh mới
+                window.bgY = 0;
+                window.bgScale = 1.0;
+                window.bgRotation = 0;
+                window.bgOpacity = 0.5;
                 
                 var bSli = document.getElementById('bgOpacitySlider');
                 if (bSli) bSli.value = 50;
@@ -77,8 +81,8 @@ var bRem = document.getElementById('btnRemoveBg');
 if (bRem) {
     bRem.addEventListener('click', function () {
         saveState();
-        bgImage = null;
-        bgImageBase64 = '';
+        window.bgImage = null;
+        window.bgImageBase64 = '';
         draw();
     });
 }
@@ -87,7 +91,7 @@ if (bRem) {
 var bSli = document.getElementById('bgOpacitySlider');
 if (bSli) {
     bSli.addEventListener('input', function (e) {
-        bgOpacity = parseInt(e.target.value) / 100;
+        window.bgOpacity = parseInt(e.target.value) / 100;
         var bVal = document.getElementById('bgOpacityVal');
         if (bVal) bVal.textContent = e.target.value + '%';
         draw();

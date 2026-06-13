@@ -52,17 +52,71 @@ function drawDoor(door, isSelected) {
     ctx.lineWidth = 1.5 / zoom;
     ctx.strokeRect(-halfW, -thickness / 2, door.width, thickness);
 
+    // Vẽ Handles khi được chọn
+    if (isSelected) {
+        var handleSize = (typeof HANDLE_SIZE !== 'undefined' ? HANDLE_SIZE : 8) / zoom;
+        ctx.fillStyle = 'white';
+        ctx.strokeStyle = '#3498db';
+        ctx.lineWidth = 1 / zoom;
+
+        // Điểm nắm trái
+        ctx.fillRect(-halfW - handleSize/2, -handleSize/2, handleSize, handleSize);
+        ctx.strokeRect(-halfW - handleSize/2, -handleSize/2, handleSize, handleSize);
+
+        // Điểm nắm phải
+        ctx.fillRect(halfW - handleSize/2, -handleSize/2, handleSize, handleSize);
+        ctx.strokeRect(halfW - handleSize/2, -handleSize/2, handleSize, handleSize);
+
+        // Điểm xoay (Rotation Handle)
+        var rotDist = 25 / zoom;
+        ctx.beginPath();
+        ctx.moveTo(0, -thickness/2);
+        ctx.lineTo(0, -rotDist);
+        ctx.strokeStyle = '#3498db';
+        ctx.stroke();
+
+        ctx.fillStyle = '#3498db';
+        ctx.beginPath();
+        ctx.arc(0, -rotDist, handleSize / 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+    }
+
     ctx.restore();
 
     // Tên cửa
     if (isSelected) {
         var fontSize = Math.max(8, 10 / zoom);
         ctx.fillStyle = '#e74c3c';
-        ctx.font = fontSize + 'px Arial';
+        ctx.font = 'bold ' + fontSize + 'px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(door.name, door.x, door.y - 10 / zoom);
+        ctx.fillText(door.name, door.x, door.y - 35 / zoom);
     }
+}
+
+// Lấy tọa độ các điểm nắm của cửa (để xử lý click)
+function getDoorHandles(door) {
+    var halfW = door.width / 2;
+    var rad = (door.rotation || 0) * Math.PI / 180;
+    var cos = Math.cos(rad);
+    var sin = Math.sin(rad);
+    var rotDist = 25; // Khoảng cách điểm xoay từ tâm
+
+    return {
+        'left': {
+            x: door.x + (-halfW) * cos,
+            y: door.y + (-halfW) * sin
+        },
+        'right': {
+            x: door.x + (halfW) * cos,
+            y: door.y + (halfW) * sin
+        },
+        'rotate': {
+            x: door.x + (rotDist) * sin, // sin vì nó nằm trên trục Y cục bộ
+            y: door.y - (rotDist) * cos  // cos vì nó nằm trên trục Y cục bộ
+        }
+    };
 }
 
 // Xóa cửa

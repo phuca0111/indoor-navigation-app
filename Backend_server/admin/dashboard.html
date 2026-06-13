@@ -7,12 +7,6 @@
     <link rel="stylesheet" href="css/admin.css">
 </head>
 <body>
-    <!-- ==========================================
-         TRANG DASHBOARD (BẢNG ĐIỀU KHIỂN)
-         Admin thấy trang này sau khi đăng nhập thành công
-    ========================================== -->
-
-    <!-- Thanh trên cùng (Navbar) -->
     <nav class="navbar">
         <h2>🗺️ Bảng Điều Khiển Quản Trị</h2>
         <div class="nav-right">
@@ -21,142 +15,232 @@
         </div>
     </nav>
 
-    <!-- Nội dung chính -->
     <div class="dashboard-content">
 
-        <!-- Phần 1: Thông tin chào mừng -->
+        <!-- Thông tin chào mừng -->
         <div class="welcome-box">
             <h3>Xin chào, <span id="userName">Admin</span>!</h3>
             <p>Vai trò: <span id="userRole" class="badge">BUILDING_ADMIN</span></p>
         </div>
 
-        <!-- Phần 2: Khu vực chỉ Super Admin thấy (Quản lý tài khoản) -->
-        <div id="superAdminSection" class="admin-section" style="display: none;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h3>👑 Quản Lý Tài Khoản (Super Admin)</h3>
-            </div>
-            
-            <div class="create-account-form" style="margin-bottom: 25px;">
-                <input type="email" id="newEmail" placeholder="Email tài khoản mới...">
-                <input type="password" id="newPassword" placeholder="Mật khẩu tạm thời...">
-                <button id="btnCreateAccount" class="btn-create">+ Tạo Tài Khoản</button>
-            </div>
-
-            <h4 style="margin-bottom: 10px; color: #2c3e50;">📋 Danh Sách Quản Trị Viên</h4>
-            <table class="buildings-table" style="background: white; border-radius: 8px; overflow: hidden; margin-bottom: 10px;">
-                <thead>
-                    <tr>
-                        <th>Email</th>
-                        <th>Vai Trò</th>
-                        <th>Trạng Thái</th>
-                        <th>Tòa Nhà Quản Lý</th>
-                        <th>Thao Tác</th>
-                    </tr>
-                </thead>
-                <tbody id="usersList">
-                    <tr>
-                        <td colspan="5" style="text-align: center; color: #888;">Đang tải danh sách tài khoản...</td>
-                    </tr>
-                </tbody>
-            </table>
+        <!-- Tab navigation (chỉ Super Admin thấy đầy đủ) -->
+        <div id="tabNav" class="tab-nav" style="display:none; margin-bottom: 20px;">
+            <button class="tab-btn active" onclick="switchTab('buildings')">🏢 Tòa Nhà</button>
+            <button class="tab-btn" onclick="switchTab('users')">👑 Tài Khoản</button>
+            <button class="tab-btn" onclick="switchTab('logs')">📋 Lịch Sử Thao Tác</button>
         </div>
 
-        <!-- Phần 3: Danh sách Tòa nhà -->
-        <div class="buildings-section">
-        <div class="section-header">
-            <h3>🏢 Danh Sách Tòa Nhà</h3>
-            <button class="btn-add" onclick="openAddBuildingModal()">+ Thêm Tòa Nhà Mới</button>
-        </div>
-
-            <!-- Bảng hiển thị danh sách -->
-            <table class="buildings-table">
-                <thead>
-                    <tr>
-                        <th>Tên Tòa Nhà</th>
-                        <th>Địa Chỉ</th>
-                        <th>Trạng Thái</th>
-                        <th>Cập Nhật</th>
-                        <th>Thao Tác</th>
-                    </tr>
-                </thead>
-                <tbody id="buildingsList">
-                    <!-- Dữ liệu sẽ do JS đổ vào đây tự động -->
-                    <tr>
-                        <td colspan="5" style="text-align: center; color: #888;">
-                            Đang tải danh sách tòa nhà...
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-    </div>
-
-    <!-- ==========================================
-         MODAL: CHỈNH SỬA TÀI KHOẢN (BẢNG HIỆN LÊN)
-    ========================================== -->
-    <div id="editUserModal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <h3>🖊️ Chỉnh Sửa Quản Trị Viên</h3>
-            <input type="hidden" id="editUserId">
-            
-            <label>Email:</label>
-            <input type="email" id="editEmail">
-            
-            <label>Mật khẩu mới (Để trống nếu không đổi):</label>
-            <input type="password" id="editPassword" placeholder="Nhập mật khẩu mới...">
-            
-            <label>Vai trò:</label>
-            <select id="editRole">
-                <option value="BUILDING_ADMIN">Building Admin (Quản lý tòa nhà)</option>
-                <option value="SUPER_ADMIN">Super Admin (Quản trị hệ thống)</option>
-            </select>
-
-            <label>Tòa nhà quản lý:</label>
-            <div id="editUserBuildingsList" style="max-height: 150px; overflow-y: auto; background: #f9f9f9; padding: 10px; border-radius: 6px; border: 1px solid #ddd; margin-top: 5px;">
-                <!-- Danh sách checkbox tòa nhà sẽ nạp vào đây -->
-                <p style="font-size: 13px; color: #888;">Đang tải danh sách tòa nhà...</p>
-            </div>
-
-            <div class="modal-actions">
-                <button onclick="closeEditModal()" class="btn-logout" style="background: #95a5a6;">Hủy Bỏ</button>
-                <button onclick="saveEditAdmin()" class="btn-create">Lưu Thay Đổi</button>
+        <!-- ===== TAB: BUILDINGS ===== -->
+        <div id="tab-buildings" class="tab-content">
+            <div class="buildings-section">
+                <div class="section-header">
+                    <h3>🏢 Danh Sách Tòa Nhà</h3>
+                    <button class="btn-add" onclick="openAddBuildingModal()">+ Thêm Tòa Nhà Mới</button>
+                </div>
+                <table class="buildings-table">
+                    <thead>
+                        <tr>
+                            <th>Tên Tòa Nhà</th>
+                            <th>Địa Chỉ</th>
+                            <th>Số Tầng</th>
+                            <th>Trạng Thái</th>
+                            <th>Cập Nhật</th>
+                            <th>Thao Tác</th>
+                        </tr>
+                    </thead>
+                    <tbody id="buildingsList">
+                        <tr><td colspan="6" style="text-align:center;color:#888;">Đang tải...</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
-    </div>
 
-    <!-- ==========================================
-         MODAL: THÊM TÒA NHÀ MỚI 
-    ========================================== -->
-    <div id="addBuildingModal" class="modal" style="display: none;">
+        <!-- ===== TAB: USERS (chỉ Super Admin) ===== -->
+        <div id="tab-users" class="tab-content" style="display:none;">
+            <div class="admin-section">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                    <h3>👑 Quản Lý Tài Khoản</h3>
+                </div>
+                <div class="create-account-form" style="margin-bottom:25px;">
+                    <input type="email"    id="newEmail"    placeholder="Email tài khoản mới...">
+                    <input type="password" id="newPassword" placeholder="Mật khẩu tạm thời...">
+                    <button id="btnCreateAccount" class="btn-create">+ Tạo Tài Khoản</button>
+                </div>
+                <h4 style="margin-bottom:10px; color:#2c3e50;">📋 Danh Sách Quản Trị Viên</h4>
+                <table class="buildings-table" style="background:white; border-radius:8px; overflow:hidden; margin-bottom:10px;">
+                    <thead>
+                        <tr>
+                            <th>Email</th>
+                            <th>Vai Trò</th>
+                            <th>Trạng Thái</th>
+                            <th>Tòa Nhà Quản Lý</th>
+                            <th>Thao Tác</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersList">
+                        <tr><td colspan="5" style="text-align:center;color:#888;">Đang tải...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ===== TAB: LOGS (chỉ Super Admin) ===== -->
+        <div id="tab-logs" class="tab-content" style="display:none;">
+            <div class="admin-section">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                    <h3>📋 Lịch Sử Thao Tác Hệ Thống</h3>
+                    <button class="btn-add" onclick="loadLogs()">🔄 Làm mới</button>
+                </div>
+                <div style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;">
+                    <select id="filterAction" onchange="loadLogs()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
+                        <option value="">Tất cả hành động</option>
+                        <option value="LOGIN">LOGIN</option>
+                        <option value="LOGOUT">LOGOUT</option>
+                        <option value="CREATE_BUILDING">CREATE_BUILDING</option>
+                        <option value="UPDATE_BUILDING">UPDATE_BUILDING</option>
+                        <option value="DELETE_BUILDING">DELETE_BUILDING</option>
+                        <option value="PUBLISH_MAP">PUBLISH_MAP</option>
+                        <option value="CREATE_USER">CREATE_USER</option>
+                        <option value="UPDATE_USER">UPDATE_USER</option>
+                        <option value="DELETE_USER">DELETE_USER</option>
+                        <option value="ASSIGN_BUILDING">ASSIGN_BUILDING</option>
+                    </select>
+                </div>
+                <table class="buildings-table">
+                    <thead>
+                        <tr>
+                            <th>Thời gian</th>
+                            <th>Người dùng</th>
+                            <th>Hành động</th>
+                            <th>Đối tượng</th>
+                            <th>IP</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logsList">
+                        <tr><td colspan="5" style="text-align:center;color:#888;">Nhấn "Làm mới" để tải logs.</td></tr>
+                    </tbody>
+                </table>
+                <div id="logsTotal" style="margin-top:10px; color:#666; font-size:13px;"></div>
+            </div>
+        </div>
+
+    </div><!-- end dashboard-content -->
+
+    <!-- ===== MODAL: THÊM TÒA NHÀ ===== -->
+    <div id="addBuildingModal" class="modal" style="display:none;">
         <div class="modal-content">
             <h3>🏢 Thêm Tòa Nhà Mới</h3>
-            
             <label>Tên Tòa Nhà:</label>
-            <input type="text" id="addBuildingName" placeholder="Ví dụ: Tòa nhà A, Trung tâm ABC...">
-            
+            <input type="text" id="addBuildingName" placeholder="Ví dụ: Tòa nhà A...">
             <label>Địa Chỉ:</label>
             <input type="text" id="addBuildingAddress" placeholder="Địa chỉ tòa nhà...">
-            
-            <div style="display: flex; gap: 10px;">
-                <div style="flex: 1;">
+            <label>Mô tả:</label>
+            <input type="text" id="addBuildingDesc" placeholder="Mô tả ngắn...">
+            <label>Số tầng:</label>
+            <input type="number" id="addBuildingFloors" min="1" value="1">
+            <div style="display:flex; gap:10px;">
+                <div style="flex:1;">
                     <label>Vĩ độ (Lat):</label>
                     <input type="number" id="addBuildingLat" step="any" value="10.7">
                 </div>
-                <div style="flex: 1;">
+                <div style="flex:1;">
                     <label>Kinh độ (Lng):</label>
                     <input type="number" id="addBuildingLng" step="any" value="106.6">
                 </div>
             </div>
-
             <div class="modal-actions">
-                <button onclick="closeAddBuildingModal()" class="btn-logout" style="background: #95a5a6;">Hủy Bỏ</button>
+                <button onclick="closeAddBuildingModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
                 <button id="btnSaveNewBuilding" class="btn-create">Lưu Tòa Nhà</button>
             </div>
         </div>
     </div>
 
-    <!-- Lôi file JS xử lý logic Dashboard -->
+    <!-- ===== MODAL: SỬA TÒA NHÀ ===== -->
+    <div id="editBuildingModal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <h3>✏️ Sửa Thông Tin Tòa Nhà</h3>
+            <input type="hidden" id="editBuildingId">
+            <label>Tên Tòa Nhà:</label>
+            <input type="text" id="editBuildingName">
+            <label>Địa Chỉ:</label>
+            <input type="text" id="editBuildingAddress">
+            <label>Mô tả:</label>
+            <input type="text" id="editBuildingDesc">
+            <label>Số tầng:</label>
+            <input type="number" id="editBuildingFloors" min="1">
+            <div style="display:flex; gap:10px;">
+                <div style="flex:1;">
+                    <label>Vĩ độ (Lat):</label>
+                    <input type="number" id="editBuildingLat" step="any">
+                </div>
+                <div style="flex:1;">
+                    <label>Kinh độ (Lng):</label>
+                    <input type="number" id="editBuildingLng" step="any">
+                </div>
+            </div>
+            <label>Trạng thái:</label>
+            <select id="editBuildingStatus">
+                <option value="DRAFT">DRAFT</option>
+                <option value="PUBLISHED">PUBLISHED</option>
+            </select>
+            <div class="modal-actions">
+                <button onclick="closeEditBuildingModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
+                <button onclick="saveEditBuilding()" class="btn-create">Lưu Thay Đổi</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== MODAL: CHỈNH SỬA TÀI KHOẢN ===== -->
+    <div id="editUserModal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <h3>🖊️ Chỉnh Sửa Quản Trị Viên</h3>
+            <input type="hidden" id="editUserId">
+            <label>Email:</label>
+            <input type="email" id="editEmail">
+            <label>Mật khẩu mới (để trống nếu không đổi):</label>
+            <input type="password" id="editPassword" placeholder="Nhập mật khẩu mới...">
+            <label>Vai trò:</label>
+            <select id="editRole">
+                <option value="BUILDING_ADMIN">Building Admin</option>
+                <option value="SUPER_ADMIN">Super Admin</option>
+            </select>
+            <label>Tòa nhà quản lý:</label>
+            <div id="editUserBuildingsList" style="max-height:150px; overflow-y:auto; background:#f9f9f9; padding:10px; border-radius:6px; border:1px solid #ddd; margin-top:5px;">
+                <p style="font-size:13px; color:#888;">Đang tải...</p>
+            </div>
+            <div class="modal-actions">
+                <button onclick="closeEditModal()" class="btn-logout" style="background:#95a5a6;">Hủy Bỏ</button>
+                <button onclick="saveEditAdmin()" class="btn-create">Lưu Thay Đổi</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== MODAL: LỊCH SỬ PHIÊN BẢN BẢN ĐỒ ===== -->
+    <div id="mapVersionModal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:600px;">
+            <h3>📜 Lịch Sử Phiên Bản Bản Đồ</h3>
+            <p id="mapVersionTitle" style="color:#666; margin-bottom:12px;"></p>
+            <table class="buildings-table">
+                <thead>
+                    <tr>
+                        <th>Phiên bản</th>
+                        <th>Phòng</th>
+                        <th>Node</th>
+                        <th>Edge</th>
+                        <th>Người publish</th>
+                        <th>Thời gian</th>
+                    </tr>
+                </thead>
+                <tbody id="mapVersionsList">
+                    <tr><td colspan="6" style="text-align:center;color:#888;">Đang tải...</td></tr>
+                </tbody>
+            </table>
+            <div class="modal-actions" style="margin-top:15px;">
+                <button onclick="closeMapVersionModal()" class="btn-logout" style="background:#95a5a6;">Đóng</button>
+            </div>
+        </div>
+    </div>
+
     <script src="../js/dashboard.js"></script>
 </body>
 </html>

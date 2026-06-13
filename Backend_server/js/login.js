@@ -36,6 +36,9 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
             // THÀNH CÔNG! Server trả về Thẻ JWT
             // Cất Thẻ JWT vào tủ đồ của trình duyệt (localStorage)
             localStorage.setItem('token', data.token);
+            if (data.refreshToken) {
+                localStorage.setItem('refreshToken', data.refreshToken);
+            }
             localStorage.setItem('userEmail', data.user.email);
             localStorage.setItem('userRole', data.user.role);
             localStorage.setItem('userId', data.user.id);

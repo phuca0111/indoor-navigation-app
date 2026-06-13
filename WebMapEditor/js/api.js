@@ -7,12 +7,60 @@ const BASE_API_URL = 'http://localhost:5000/api';
 // 1. Lấy thông tin từ URL và LocalStorage
 const urlParams = new URLSearchParams(window.location.search);
 const buildingId = urlParams.get('buildingId') || urlParams.get('building'); // Chấp nhận cả 2 cách gọi cho chắc chắn
-const token = localStorage.getItem('token');   // Lấy thẻ JWT đã lưu khi đăng nhập
+let token = localStorage.getItem('token');   // WHY: dùng let để có thể cập nhật khi refresh
 window.buildingId = buildingId;
 
 // 2. Kiểm tra quyền truy cập
 if (!token && buildingId) {
     // alert('Vui lòng đăng nhập để sử dụng tính năng lưu trữ đám mây!');
+}
+
+// ============================================================
+// HELPER: Tự động gia hạn thẻ (Refresh Token)
+// ------------------------------------------------------------
+// WHY: Access token hết hạn sau 15p. Nếu đang vẽ dở mà không tự refresh
+// sẽ khiến user bị văng ra ngoài, mất công sức.
+// ============================================================
+async function tryRefreshToken() {
+    const rt = localStorage.getItem('refreshToken');
+    if (!rt) return false;
+    try {
+        const r = await fetch(BASE_API_URL + '/auth/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: rt })
+        });
+        if (!r.ok) return false;
+        const j = await r.json();
+        if (!j.token) return false;
+
+        token = j.token; // Cập nhật biến local
+        localStorage.setItem('token', j.token);
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+async function apiFetch(url, options = {}) {
+    const opts = {
+        ...options,
+        headers: {
+            ...(options.headers || {}),
+            'Authorization': 'Bearer ' + token
+        }
+    };
+    let res = await fetch(url, opts);
+
+    if (res.status === 401) {
+        console.warn('🔑 Access Token hết hạn, đang thử refresh...');
+        const ok = await tryRefreshToken();
+        if (ok) {
+            opts.headers['Authorization'] = 'Bearer ' + token;
+            res = await fetch(url, opts); // Thử lại lần 2 với token mới
+        }
+    }
+    return res;
 }
 
 // ==========================================
@@ -89,6 +137,10 @@ async function saveMapToServer() {
             name: r.name || 'Phòng mới',
             shape: r.shape || 'rect',
             color: r.color || '#ccc',
+            labelRotation: Number.isFinite(r.labelRotation) ? r.labelRotation : 0,
+            labelFontSize: Number.isFinite(r.labelFontSize) ? r.labelFontSize : 14,
+            labelAutoScale: typeof r.labelAutoScale === 'boolean' ? r.labelAutoScale : true,
+            labelLineHeight: Number.isFinite(r.labelLineHeight) ? r.labelLineHeight : 1.2,
             x: Math.round(r.x || 0),
             y: Math.round(r.y || 0),
             width: Math.round(r.width || 0),
@@ -165,23 +217,26 @@ async function saveMapToServer() {
     showLoading('Đang lưu bản đồ lên Server...');
 
     try {
-        const response = await fetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/publish`, {
+        const response = await apiFetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/publish`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({ map_data: mapData })
         });
 
-        const result = await response.json();
+        const result = await response.json().catch(() => ({}));
         hideLoading();
 
         if (response.ok) {
             showToast('Đã lưu bản đồ tầng ' + floor + ' thành công!');
             if (typeof clearAutoSave === 'function') clearAutoSave();
+        } else if (response.status === 401) {
+            // WHY: save bắt buộc đăng nhập (Publish là hành động ghi). Nếu token
+            // hết hạn/missing, báo rõ cho admin biết phải làm gì thay vì nuốt lỗi.
+            showToast('Phiên đăng nhập hết hạn! Vui lòng đăng nhập lại để lưu.', 'error');
         } else {
-            showToast(result.message || 'Lỗi lưu trữ', 'error');
+            showToast(result.message || ('Lỗi lưu trữ (HTTP ' + response.status + ')'), 'error');
         }
     } catch (error) {
         hideLoading();
@@ -235,32 +290,59 @@ async function loadMapFromServer() {
     const floor = document.getElementById('floorSelect').value;
     showLoading('Đang tải dữ liệu tầng ' + floor + '...');
 
+    // WHY: Tách thành 1 helper để thử 2 endpoint (private có auth → public)
+    // mà không phải duplicate logic parse response.
+    async function tryFetch(url, useAuth) {
+        const headers = {};
+        // WHY: useAuth check nếu cần dùng token (private endpoint)
+        const resp = useAuth
+            ? await apiFetch(url)
+            : await fetch(url);
+
+        if (resp.status === 404) return { notFound: true, resp };
+        if (resp.status === 401) return { unauthorized: true, resp };
+        const data = await resp.json().catch(() => null);
+        return { ok: resp.ok, data, resp };
+    }
+
     try {
-        const response = await fetch(`${BASE_API_URL}/maps/${buildingId}/${floor}`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
+        const privateUrl = `${BASE_API_URL}/maps/${buildingId}/${floor}`;
+        const publicUrl = `${BASE_API_URL}/maps/${buildingId}/${floor}/public`;
+
+        // Ưu tiên endpoint private (có auth) khi còn token; nếu 401/thiếu token
+        // → rơi xuống endpoint public để admin vẫn xem + sửa được map (save
+        // vẫn yêu cầu đăng nhập, xử lý riêng trong saveMapToServer).
+        let result = token
+            ? await tryFetch(privateUrl, true)
+            : { unauthorized: true };
+
+        if (result.unauthorized) {
+            console.warn('🔒 Token không có hoặc đã hết hạn — fallback endpoint /public');
+            showToast('Phiên đăng nhập hết hạn, tải ở chế độ xem. Đăng nhập lại để lưu.', 'error');
+            result = await tryFetch(publicUrl, false);
+        }
 
         hideLoading();
 
-        if (response.status === 404) {
+        if (result.notFound) {
             console.warn('Tầng này chưa có bản đồ trên Server.');
             return { loaded: false, notFound: true };
         }
 
-        const data = await response.json();
-
-        if (response.ok && data.map_data) {
-            console.log('📥 Đã tải bản đồ từ Server:', data);
-
-            // Đổ dữ liệu vào Editor (tận dụng logic của importJSON nhưng không dùng file)
-            applyMapData(data.map_data);
+        if (result.ok && result.data && result.data.map_data) {
+            console.log('📥 Đã tải bản đồ từ Server:', result.data);
+            applyMapData(result.data.map_data);
             return { loaded: true };
         }
+
+        // Không khớp điều kiện nào ở trên → lỗi server / format lạ
+        const msg = (result.data && result.data.message) || 'Không tải được bản đồ (HTTP ' + (result.resp && result.resp.status) + ')';
+        showToast(msg, 'error');
         return { loaded: false };
     } catch (error) {
+        hideLoading();
         console.error('Load Error:', error);
+        showToast('Lỗi kết nối Server: ' + error.message, 'error');
         return { loaded: false, error: true };
     }
 }
@@ -299,6 +381,7 @@ function applyMapData(data) {
     // Tự sửa lỗi ID cho các bản đồ cũ
     let maxId = 0;
     rooms.forEach(function (r, index) {
+        applyDefaultRoomLabelStyle(r);
         if (!r.id || isNaN(r.id)) r.id = index + 1;
         if (r.id > maxId) maxId = r.id;
     });
@@ -322,10 +405,10 @@ function applyMapData(data) {
 
     // 3. Khôi phục Nodes (nodes -> pathNodes)
     pathNodes = (data.nodes || data.pathNodes || []).map(n => ({
-        id: n.id,
+        id: parseInt(n.id),
         x: n.x,
         y: n.y,
-        neighbors: n.neighbors || [],
+        neighbors: (n.neighbors || []).map(nid => parseInt(nid)),
         nodeType: n.is_elevator ? 'elevator' : (n.is_stairs ? 'stairs' : 'normal')
     }));
     let maxNodeId = 0;
@@ -347,7 +430,8 @@ function applyMapData(data) {
         name: q.room_name || q.name,
         serial: q.qr_id || q.serial,
         x: q.x,
-        y: q.y
+        y: q.y,
+        node_id: q.node_id ? parseInt(q.node_id) : null
     }));
     let maxQrId = 0;
     qrs.forEach(function (q) {

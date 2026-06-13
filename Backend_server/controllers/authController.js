@@ -6,8 +6,14 @@
 
 const User = require('../models/User');
 const ActivityLog = require('../models/ActivityLog');
+const RefreshToken = require('../models/RefreshToken');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+
+// WHY: Tránh bị buộc đăng nhập lại sau mỗi 15 phút.
+// Có thể override bằng ENV JWT_ACCESS_EXPIRES_IN (ví dụ: 12h, 7d).
+const ACCESS_TOKEN_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || '7d';
 
 function logActivity(data) {
     ActivityLog.create(data).catch(() => {});  // fire-and-forget
@@ -103,14 +109,23 @@ const login = async (req, res) => {
             return res.status(400).json({ message: 'Mật khẩu không đúng!' });
         }
 
-        // Bước 5: Mật khẩu đúng! -> Bật máy in JWT đúc ra 1 tấm Thẻ Từ
-        // Thẻ này chứa: ID người dùng + Vai trò (Admin hay Super Admin)
-        // Thẻ có hạn sử dụng 24 giờ, sau 24h phải đăng nhập lại
-        const token = jwt.sign(
-            { userId: user._id, role: user.role },   // Thông tin nhét vào trong thẻ
-            process.env.JWT_SECRET,                    // Con dấu bí mật lấy từ két .env
-            { expiresIn: '24h' }                       // Hạn sử dụng: 24 giờ
+        // Bước 5: Tạo access token (mặc định 7 ngày) + refresh token (7 ngày)
+        const accessToken = jwt.sign(
+            { userId: user._id, role: user.role },
+            process.env.JWT_SECRET,
+            { expiresIn: ACCESS_TOKEN_EXPIRES_IN }
         );
+
+        const rawRefresh  = crypto.randomBytes(40).toString('hex');
+        const tokenHash   = crypto.createHash('sha256').update(rawRefresh).digest('hex');
+        const expiresAt   = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 ngày
+
+        await RefreshToken.create({
+            user_id:    user._id,
+            token_hash: tokenHash,
+            expires_at: expiresAt,
+            ip_address: req.ip || ''
+        });
 
         // Bước 6: Cập nhật thời gian đăng nhập gần nhất
         user.last_login = new Date();
@@ -126,14 +141,15 @@ const login = async (req, res) => {
             ip_address:  req.ip || ''
         });
 
-        // Bước 7: Trả Thẻ Từ JWT về cho trình duyệt Web
+        // Bước 7: Trả token về (access + refresh)
         res.status(200).json({
-            message: 'Đăng nhập thành công!',
-            token: token,
+            message:      'Đăng nhập thành công!',
+            token:        accessToken,
+            refreshToken: rawRefresh,
             user: {
-                id: user._id,
+                id:    user._id,
                 email: user.email,
-                role: user.role
+                role:  user.role
             }
         });
 
@@ -142,5 +158,109 @@ const login = async (req, res) => {
     }
 };
 
-// Đóng gói 2 hàm này lại, xuất ra ngoài cho file khác gọi dùng
-module.exports = { register, login };
+// ==========================================
+// HÀM 3: REFRESH TOKEN — Gia hạn access token
+// ==========================================
+const refresh = async (req, res) => {
+    try {
+        const { refreshToken } = req.body;
+        if (!refreshToken) return res.status(400).json({ message: 'Thiếu refresh token!' });
+
+        const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+        const record = await RefreshToken.findOne({ token_hash: tokenHash, is_revoked: false });
+
+        if (!record || record.expires_at < new Date()) {
+            return res.status(401).json({ message: 'Refresh token không hợp lệ hoặc đã hết hạn!' });
+        }
+
+        const user = await User.findById(record.user_id);
+        if (!user || !user.is_active) {
+            return res.status(401).json({ message: 'Tài khoản không tồn tại hoặc đã bị khóa!' });
+        }
+
+        const newAccessToken = jwt.sign(
+            { userId: user._id, role: user.role },
+            process.env.JWT_SECRET,
+            { expiresIn: ACCESS_TOKEN_EXPIRES_IN }
+        );
+
+        res.status(200).json({ token: newAccessToken });
+    } catch (error) {
+        res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+    }
+};
+
+// ==========================================
+// HÀM 4: LOGOUT — Thu hồi refresh token
+// ==========================================
+const logout = async (req, res) => {
+    try {
+        const { refreshToken } = req.body;
+        if (refreshToken) {
+            const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+            await RefreshToken.updateOne({ token_hash: tokenHash }, { is_revoked: true });
+        }
+        logActivity({
+            user_id:     req.user ? req.user.userId : null,
+            action:      'LOGOUT',
+            target_type: 'user',
+            target_id:   req.user ? String(req.user.userId) : '',
+            ip_address:  req.ip || ''
+        });
+        res.status(200).json({ message: 'Đăng xuất thành công!' });
+    } catch (error) {
+        res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+    }
+};
+
+// ==========================================
+// HÀM 5: UNLOCK SESSION — Mở khóa editor bằng mật khẩu
+// ==========================================
+const unlockSession = async (req, res) => {
+    try {
+        const { password } = req.body || {};
+        if (!password) {
+            return res.status(400).json({ success: false, message: 'Thiếu mật khẩu.' });
+        }
+
+        const userId = req.user && req.user.userId;
+        if (!userId) {
+            return res.status(401).json({ success: false, message: 'Phiên đăng nhập không hợp lệ.' });
+        }
+
+        const user = await User.findById(userId);
+        if (!user || !user.is_active) {
+            return res.status(401).json({ success: false, message: 'Tài khoản không tồn tại hoặc đã bị khóa.' });
+        }
+
+        // Hỗ trợ tương thích account dev cũ lưu plain-text.
+        const passwordOk = await bcrypt.compare(password, user.password).catch(() => false) || (user.password === password);
+        if (!passwordOk) {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid password',
+                // WHY: Cho frontend biết chính xác đang verify mật khẩu cho account nào,
+                // giúp debug trường hợp user nghĩ mình đăng nhập account A nhưng token lại là account B.
+                unlockUser: { id: String(user._id), email: user.email }
+            });
+        }
+
+        logActivity({
+            user_id: user._id,
+            action: 'UNLOCK_SESSION',
+            target_type: 'user',
+            target_id: String(user._id),
+            target: user.email,
+            ip_address: req.ip || ''
+        });
+
+        return res.status(200).json({
+            success: true,
+            unlockUser: { id: String(user._id), email: user.email }
+        });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Lỗi máy chủ: ' + error.message });
+    }
+};
+
+module.exports = { register, login, refresh, logout, unlockSession };
