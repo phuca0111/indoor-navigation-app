@@ -2,6 +2,15 @@
 // ROOMS.JS - Logic phòng: Rect, Circle, Polygon
 // ============================================================
 
+function applyDefaultRoomLabelStyle(room) {
+    if (!room || typeof room !== 'object') return room;
+    if (!Number.isFinite(room.labelRotation)) room.labelRotation = 0;
+    if (!Number.isFinite(room.labelFontSize) || room.labelFontSize <= 0) room.labelFontSize = 14;
+    if (typeof room.labelAutoScale !== 'boolean') room.labelAutoScale = true;
+    if (!Number.isFinite(room.labelLineHeight) || room.labelLineHeight <= 0) room.labelLineHeight = 1.2;
+    return room;
+}
+
 // --- HIT TEST: Tìm phòng tại vị trí click ---
 function findRoomAt(wx, wy) {
     for (var i = rooms.length - 1; i >= 0; i--) {
@@ -52,7 +61,11 @@ function createRoom(startX, startY, endX, endY) {
         name: 'Phòng ' + (rooms.length + 1),
         type: 'Văn phòng', // Default type
         x: x, y: y, width: w, height: h,
-        color: colors[rooms.length % colors.length]
+        color: colors[rooms.length % colors.length],
+        labelRotation: 0,
+        labelFontSize: 14,
+        labelAutoScale: true,
+        labelLineHeight: 1.2
     };
 }
 
@@ -69,7 +82,11 @@ function createCircleRoom(cx, cy, radius) {
         // Bounding box (để tương thích)
         x: cx - radius, y: cy - radius,
         width: radius * 2, height: radius * 2,
-        color: colors[rooms.length % colors.length]
+        color: colors[rooms.length % colors.length],
+        labelRotation: 0,
+        labelFontSize: 14,
+        labelAutoScale: true,
+        labelLineHeight: 1.2
     };
 }
 
@@ -97,7 +114,11 @@ function createPolygonRoom(points) {
         // Bounding box
         x: minX, y: minY,
         width: maxX - minX, height: maxY - minY,
-        color: colors[rooms.length % colors.length]
+        color: colors[rooms.length % colors.length],
+        labelRotation: 0,
+        labelFontSize: 14,
+        labelAutoScale: true,
+        labelLineHeight: 1.2
     };
 }
 

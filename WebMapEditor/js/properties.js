@@ -4,13 +4,83 @@
 
 const roomTypes = ['Văn phòng', 'Nhà vệ sinh', 'Thang máy', 'Cầu thang', 'Sảnh chờ', 'Phòng kỹ thuật', 'Phòng chức năng', 'Khác'];
 
+function escapeHtmlValue(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // === CẬP NHẬT PANEL THUỘC TÍNH ===
 function updatePropertiesPanel() {
     if (!propertiesDiv) return;
 
-    // Không có gì được chọn
+    // Không có gì được chọn -> Hiện hướng dẫn công cụ
     if (!selectedObject && !selectedRoom) {
-        propertiesDiv.innerHTML = '<p class="hint-text">Chọn một đối tượng để xem thuộc tính</p>';
+        if (currentTool === 'path') {
+            propertiesDiv.innerHTML = `
+                <div class="tool-guide">
+                    <p>💡 <b>Vẽ Đường đi (Path):</b></p>
+                    <p>- Click vào Node để bắt đầu nối.</p>
+                    <p>- Click tiếp vào Node khác để tạo đường.</p>
+                    <p>- Click <b>Chuột phải</b> để ngắt chuỗi.</p>
+                </div>`;
+        } else if (currentTool === 'wall') {
+            propertiesDiv.innerHTML = `
+                <div class="tool-guide">
+                    <p>💡 <b>Vẽ Tường (Wall):</b></p>
+                    <p>- Click điểm đầu để bắt đầu.</p>
+                    <p>- Click tiếp để tạo các đoạn nối tiếp.</p>
+                    <p>- Nhấn phím <b>ESC</b> để ngắt chuỗi.</p>
+                </div>`;
+        } else {
+            var bgHtml = '';
+            if (window.bgImage) {
+                bgHtml = `
+                <div class="prop-group">
+                    <div class="prop-group-title">🖼️ Cài đặt Ảnh nền</div>
+                    <div class="prop-row">
+                        <label>Hiệu chỉnh:</label>
+                        <button class="btn btn-sm ${currentTool === 'bg-adjust' ? 'btn-primary' : 'btn-outline'}" 
+                                onclick="selectTool(currentTool === 'bg-adjust' ? 'select' : 'bg-adjust')">
+                            ${currentTool === 'bg-adjust' ? '📍 Đang chỉnh' : '🖱️ Bật kéo thả'}
+                        </button>
+                    </div>
+                    <div class="prop-row">
+                        <label>Vị trí X:</label>
+                        <input type="number" value="${Math.round(window.bgX)}" oninput="updateBgProp('bgX', Number(this.value))">
+                    </div>
+                    <div class="prop-row">
+                        <label>Vị trí Y:</label>
+                        <input type="number" value="${Math.round(window.bgY)}" oninput="updateBgProp('bgY', Number(this.value))">
+                    </div>
+                    <div class="prop-row">
+                        <label>Tỉ lệ:</label>
+                        <input type="number" step="0.01" value="${window.bgScale.toFixed(2)}" oninput="updateBgProp('bgScale', Number(this.value))">
+                    </div>
+                    <div class="prop-row">
+                        <label>Xoay:</label>
+                        <div style="flex:1; display:flex; align-items:center; gap:8px;">
+                            <input type="range" min="0" max="360" value="${window.bgRotation || 0}" 
+                                   oninput="this.nextElementSibling.value = this.value; updateBgProp('bgRotation', Number(this.value))" 
+                                   style="flex:1;">
+                            <input type="number" value="${window.bgRotation || 0}" 
+                                   oninput="this.previousElementSibling.value = this.value; updateBgProp('bgRotation', Number(this.value))" 
+                                   style="width:50px;">
+                            <span class="unit">°</span>
+                        </div>
+                    </div>
+                    <div class="prop-row">
+                        <label>Độ mờ:</label>
+                        <input type="range" min="0" max="1" step="0.1" value="${window.bgOpacity}" oninput="updateBgProp('bgOpacity', Number(this.value))">
+                    </div>
+                    <p class="hint-text">💡 Bật "Kéo thả" để di chuyển ảnh trực tiếp trên Canvas.</p>
+                </div>`;
+            }
+            propertiesDiv.innerHTML = bgHtml + '<p class="hint-text">Chọn một đối tượng để xem thuộc tính hoặc chọn công cụ để bắt đầu vẽ</p>';
+        }
         return;
     }
 
@@ -42,7 +112,98 @@ function showWallProps(w) {
         '</select></div>' +
         '<div class="prop-row"><label>Số điểm:</label><div class="prop-val">' + ((w.points || []).length) + '</div></div>' +
         '</div>' +
+        '<div class="prop-group">' +
+        '<div class="prop-group-title">Kích thước</div>' +
+        '<div class="prop-row"><label>Chiều dài:</label>' +
+        '<input type="number" step="0.01" value="' + calcWallLength(w) + '" onchange="updateWallLength(Number(this.value))"><span class="unit">m</span></div>' +
+        '</div>' +
+        '<div class="prop-group">' +
+        '<div class="prop-group-title">🔗 Nối tiếp tới Tường khác</div>' +
+        '<div class="prop-row">' +
+        '<label>Tới ID:</label>' +
+        '<div style="display:flex;gap:4px;flex:1;">' +
+        '<input type="number" id="manualWallTarget" placeholder="ID..." style="width:50px;flex:1;">' +
+        '<button class="btn btn-sm btn-primary" onclick="addManualWallEdge(' + w.id + ')">+ Nối</button>' +
+        '</div>' +
+        '</div>' +
+        '</div>' +
         '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
+}
+
+// Hàm nối tường thủ công qua ID
+function addManualWallEdge(fromId) {
+    var targetInput = document.getElementById('manualWallTarget');
+    var targetId = parseInt(targetInput.value);
+
+    if (isNaN(targetId)) {
+        if (typeof showToast === 'function') showToast('Vui lòng nhập ID tường hợp lệ', 'error');
+        return;
+    }
+
+    if (fromId === targetId) {
+        if (typeof showToast === 'function') showToast('Không thể nối tới chính nó', 'error');
+        return;
+    }
+
+    // Tìm 2 đối tượng tường
+    var wallA = walls.find(function (w) { return w.id === fromId; });
+    var wallB = walls.find(function (w) { return w.id === targetId; });
+
+    if (wallA && wallB) {
+        saveState();
+        // Lấy điểm cuối của tường A và điểm đầu của tường B
+        var pointA = wallA.points[wallA.points.length - 1];
+        var pointB = wallB.points[0];
+
+        // Tạo đoạn tường mới nối 2 điểm này
+        createWallSegment(pointA, pointB, { thickness: wallA.thickness, is_outer: wallA.is_outer });
+
+        updatePropertiesPanel();
+        updateObjectList();
+        draw();
+        if (typeof showToast === 'function') showToast('Đã nối Tường #' + fromId + ' ➜ #' + targetId, 'success');
+    } else {
+        if (typeof showToast === 'function') showToast('Không tìm thấy Tường #' + targetId, 'error');
+    }
+}
+
+// Tính chiều dài tường (mét)
+function calcWallLength(w) {
+    if (!w || !w.points || w.points.length < 2) return 0;
+    var p1 = w.points[0];
+    var p2 = w.points[w.points.length - 1];
+    var dx = p2.x - p1.x;
+    var dy = p2.y - p1.y;
+    var distPx = Math.sqrt(dx * dx + dy * dy);
+    return pixelsToMeters(distPx).toFixed(2);
+}
+
+// Cập nhật chiều dài tường
+function updateWallLength(newLenMeters) {
+    if (!selectedObject || selectedObject.type !== 'wall') return;
+    var w = selectedObject.data;
+    if (!w.points || w.points.length < 2) return;
+
+    var newLenPx = metersToPixels(newLenMeters);
+    if (newLenPx < 1) return;
+
+    saveState();
+    var p1 = w.points[0];
+    var p2 = w.points[w.points.length - 1];
+
+    var dx = p2.x - p1.x;
+    var dy = p2.y - p1.y;
+    var currentLenPx = Math.sqrt(dx * dx + dy * dy);
+
+    if (currentLenPx === 0) {
+        w.points[w.points.length - 1].x = p1.x + newLenPx;
+    } else {
+        var ratio = newLenPx / currentLenPx;
+        w.points[w.points.length - 1].x = p1.x + dx * ratio;
+        w.points[w.points.length - 1].y = p1.y + dy * ratio;
+    }
+
+    draw();
 }
 
 function updateWallProp(prop, value) {
@@ -54,9 +215,11 @@ function updateWallProp(prop, value) {
 
 // --- PHÒNG ---
 function showRoomProps(r) {
+    applyDefaultRoomLabelStyle(r);
     var wm = pixelsToMeters(r.width).toFixed(1);
     var hm = pixelsToMeters(r.height).toFixed(1);
     var area = (pixelsToMeters(r.width) * pixelsToMeters(r.height)).toFixed(1);
+    var safeName = escapeHtmlValue(r.name);
 
     var typeOptions = '';
     roomTypes.forEach(function (t) {
@@ -68,7 +231,9 @@ function showRoomProps(r) {
         '<div class="prop-group">' +
         '<div class="prop-group-title">Phòng #' + r.id + '</div>' +
         '<div class="prop-row"><label>Tên:</label>' +
-        '<input type="text" value="' + r.name + '" onchange="updateRoomProp(\'name\', this.value)"></div>' +
+        '<div style="flex:1;display:flex;flex-direction:column;gap:4px;">' +
+        '<textarea id="roomNameInput" rows="3" style="resize:vertical;min-height:56px;width:100%;" oninput="updateRoomProp(\'name\', this.value)">' + safeName + '</textarea>' +
+        '<button class="btn btn-sm btn-primary" style="align-self:flex-end;padding:2px 10px;" onclick="updatePropertiesPanel()">Lưu tên</button></div></div>' +
         '<div class="prop-row"><label>Loại:</label>' +
         '<select onchange="updateRoomProp(\'type\', this.value)">' + typeOptions + '</select></div>' +
         '<div class="prop-row"><label>Màu:</label>' +
@@ -86,6 +251,18 @@ function showRoomProps(r) {
         '<input type="number" value="' + hm + '" step="0.1" onchange="updateRoomProp(\'height\', metersToPixels(Number(this.value)))"><span class="unit">m</span></div>' +
         '<div class="prop-row"><label>S:</label><input type="text" value="' + area + '" disabled style="background:#f0f0e0"><span class="unit">m²</span></div>' +
         '</div>' +
+        '<div class="prop-group">' +
+        '<div class="prop-group-title">Hiển thị chữ</div>' +
+        '<div class="prop-row"><label>Xoay chữ:</label>' +
+        '<input type="number" min="-180" max="180" step="1" value="' + Math.round(r.labelRotation) + '" onchange="updateRoomProp(\'labelRotation\', Number(this.value))"><span class="unit">°</span></div>' +
+        '<div class="prop-row"><label>Cỡ chữ:</label>' +
+        '<input type="number" min="8" max="96" step="1" value="' + Math.round(r.labelFontSize) + '" onchange="updateRoomProp(\'labelFontSize\', Number(this.value))"><span class="unit">px</span></div>' +
+        '<div class="prop-row"><label>Giãn dòng:</label>' +
+        '<input type="number" min="1" max="2.5" step="0.1" value="' + Number(r.labelLineHeight).toFixed(1) + '" onchange="updateRoomProp(\'labelLineHeight\', Number(this.value))"><span class="unit">x</span></div>' +
+        '<div class="prop-row"><label>Tự co giãn:</label>' +
+        '<input type="checkbox" ' + (r.labelAutoScale ? 'checked' : '') + ' onchange="updateRoomProp(\'labelAutoScale\', this.checked)"></div>' +
+        '<p class="hint-text">Mẹo: nhập nhiều dòng bằng Enter trong ô Tên.</p>' +
+        '</div>' +
         '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
 }
 
@@ -101,16 +278,15 @@ function showDoorProps(d) {
         '<div class="prop-group">' +
         '<div class="prop-group-title">🚪 Cửa #' + d.id + '</div>' +
         '<div class="prop-row"><label>Tên:</label>' +
-        '<input type="text" value="' + d.name + '" onchange="updateObjProp(\'name\', this.value)"></div>' +
+        '<div style="flex:1;display:flex;flex-direction:column;gap:4px;">' +
+        '<input type="text" value="' + d.name + '" oninput="updateObjProp(\'name\', this.value)" style="width:100%;">' +
+        '<button class="btn btn-sm btn-primary" style="align-self:flex-end;padding:2px 10px;" onclick="updatePropertiesPanel()">Lưu tên</button></div></div>' +
         '<div class="prop-row"><label>Loại:</label>' +
         '<select onchange="updateObjProp(\'type\', this.value)">' + typeOptions + '</select></div>' +
         '<div class="prop-row"><label>Ngang:</label>' +
         '<input type="number" value="' + d.width + '" onchange="updateObjProp(\'width\', Number(this.value))"><span class="unit">px</span></div>' +
         '<div class="prop-row"><label>Xoay:</label>' +
-        '<select onchange="updateObjProp(\'rotation\', Number(this.value))">' +
-        '<option value="0"' + (d.rotation === 0 ? ' selected' : '') + '>Ngang (0°)</option>' +
-        '<option value="90"' + (d.rotation === 90 ? ' selected' : '') + '>Dọc (90°)</option>' +
-        '</select></div>' +
+        '<input type="number" min="0" max="360" step="1" value="' + (d.rotation || 0) + '" onchange="updateObjProp(\'rotation\', Number(this.value))"><span class="unit">°</span></div>' +
         '</div>' +
         '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
 }
@@ -127,7 +303,9 @@ function showPoiProps(p) {
         '<div class="prop-group">' +
         '<div class="prop-group-title">📍 POI #' + p.id + '</div>' +
         '<div class="prop-row"><label>Tên:</label>' +
-        '<input type="text" value="' + p.name + '" onchange="updateObjProp(\'name\', this.value)"></div>' +
+        '<div style="flex:1;display:flex;flex-direction:column;gap:4px;">' +
+        '<input type="text" value="' + p.name + '" oninput="updateObjProp(\'name\', this.value)" style="width:100%;">' +
+        '<button class="btn btn-sm btn-primary" style="align-self:flex-end;padding:2px 10px;" onclick="updatePropertiesPanel()">Lưu tên</button></div></div>' +
         '<div class="prop-row"><label>Loại:</label>' +
         '<select onchange="changePoiType(Number(this.value))">' + typeOptions + '</select></div>' +
         '<div class="prop-row"><label>Tọa độ X:</label>' +
@@ -144,11 +322,11 @@ function showNodeProps(n) {
     for (var i = 0; i < n.neighbors.length; i++) {
         var neighborId = n.neighbors[i];
         neighborsList += '<span style="display:inline-block;background:rgba(255,255,255,0.1);padding:2px 8px;margin:2px;border-radius:6px;font-size:0.8rem;white-space:nowrap;">' +
-                         '#' + neighborId + ' <b onclick="removeEdge(' + n.id + ',' + neighborId + ')" style="color:#ef4444;cursor:pointer;margin-left:4px;" title="Xóa kết nối">×</b></span>';
+            '#' + neighborId + ' <b onclick="removeEdge(' + n.id + ',' + neighborId + ')" style="color:#ef4444;cursor:pointer;margin-left:4px;" title="Xóa kết nối">×</b></span>';
     }
     if (neighborsList === '') neighborsList = '<span style="color:var(--text-dim)">Chưa nối</span>';
 
-    var typeOptions = 
+    var typeOptions =
         '<option value="normal"' + (n.nodeType === 'normal' ? ' selected' : '') + '>🔵 Thường</option>' +
         '<option value="elevator"' + (n.nodeType === 'elevator' ? ' selected' : '') + '>🟢 Thang máy</option>' +
         '<option value="stairs"' + (n.nodeType === 'stairs' ? ' selected' : '') + '>🟣 Cầu thang</option>';
@@ -182,12 +360,12 @@ function updateNodeProp(prop, value) {
 function addManualEdge(fromId) {
     var targetInput = document.getElementById('manualEdgeTarget');
     var targetId = parseInt(targetInput.value);
-    
+
     if (isNaN(targetId)) {
         if (typeof showToast === 'function') showToast('Vui lòng nhập ID hợp lệ', 'error');
         return;
     }
-    
+
     if (fromId === targetId) {
         if (typeof showToast === 'function') showToast('Không thể nối tới chính nó', 'error');
         return;
@@ -195,7 +373,7 @@ function addManualEdge(fromId) {
 
     var nodeA = findNodeById(fromId);
     var nodeB = findNodeById(targetId);
-    
+
     if (nodeA && nodeB) {
         saveState();
         connectNodes(nodeA, nodeB);
@@ -211,11 +389,11 @@ function addManualEdge(fromId) {
 function showQrProps(qr) {
     // Tạo danh sách dropdown từ tất cả pathNodes hiện có
     var nodeOptions = '<option value="">-- Không gán Node --</option>' +
-        (window.pathNodes || []).map(function(n) {
+        (window.pathNodes || []).map(function (n) {
             var selected = (qr.node_id === n.nodeId) ? ' selected' : '';
             return '<option value="' + n.nodeId + '"' + selected + '>' +
-                   n.nodeId + ' (' + Math.round(n.x) + ',' + Math.round(n.y) + ')' +
-                   '</option>';
+                n.nodeId + ' (' + Math.round(n.x) + ',' + Math.round(n.y) + ')' +
+                '</option>';
         }).join('');
 
     propertiesDiv.innerHTML =
@@ -277,6 +455,16 @@ function updateQrProp(key, val) {
 // === CẬP NHẬT THUỘC TÍNH ===
 function updateRoomProp(prop, value) {
     if (!selectedRoom) return;
+    applyDefaultRoomLabelStyle(selectedRoom);
+    if (prop === 'labelRotation') {
+        value = Number.isFinite(value) ? Math.max(-180, Math.min(180, value)) : 0;
+    } else if (prop === 'labelFontSize') {
+        value = Number.isFinite(value) ? Math.max(8, Math.min(96, value)) : 14;
+    } else if (prop === 'labelLineHeight') {
+        value = Number.isFinite(value) ? Math.max(1, Math.min(2.5, value)) : 1.2;
+    } else if (prop === 'labelAutoScale') {
+        value = !!value;
+    }
     saveState();
     selectedRoom[prop] = value;
     if (prop === 'name') updateObjectList();
@@ -389,7 +577,8 @@ function updateObjectList() {
     });
 
     pois.forEach(function (poi) {
-        var typeInfo = poiTypes[poi.typeIndex];
+        // Dữ liệu POI cũ có thể thiếu/sai typeIndex, nên fallback để không crash UI.
+        var typeInfo = poiTypes[poi.typeIndex] || poiTypes[0];
         var isActive = (selectedObject && selectedObject.type === 'poi' && selectedObject.data === poi);
         addListItem(typeInfo.icon, poi.name, typeInfo.name, typeInfo.color, isActive, function () {
             selectedRoom = null;
@@ -435,4 +624,22 @@ function addListItem(icon, name, detail, color, isActive, onClick) {
         '<span style="margin-left:auto;color:#999;font-size:0.7rem">' + detail + '</span>';
     div.addEventListener('click', onClick);
     objectListDiv.appendChild(div);
+}
+
+// Cập nhật thuộc tính ảnh nền
+window.updateBgProp = function(prop, value) {
+    if (prop === 'bgX') window.bgX = value;
+    else if (prop === 'bgY') window.bgY = value;
+    else if (prop === 'bgScale') {
+        if (value > 0) window.bgScale = value;
+    }
+    else if (prop === 'bgRotation') {
+        window.bgRotation = value;
+    }
+    else if (prop === 'bgOpacity') {
+        // Nếu giá trị > 1 (từ thanh trượt 0-100), chia cho 100
+        window.bgOpacity = value > 1 ? value / 100 : value;
+    }
+    
+    draw(); // Vẽ lại canvas để cập nhật thay đổi
 }

@@ -3,7 +3,15 @@
 // ============================================================
 
 // === ZOOM ===
+function editorLocked() {
+    return (typeof isEditorLocked === 'function') && isEditorLocked();
+}
+
 canvas.addEventListener('wheel', function (e) {
+    if (editorLocked()) {
+        e.preventDefault();
+        return;
+    }
     e.preventDefault();
     var rect = canvas.getBoundingClientRect();
     var mouseX = e.clientX - rect.left;
@@ -21,6 +29,10 @@ canvas.addEventListener('wheel', function (e) {
 
 // === MOUSE DOWN ===
 canvas.addEventListener('mousedown', function (e) {
+    if (editorLocked()) {
+        e.preventDefault();
+        return;
+    }
     if (e.button === 1 || e.button === 2) {
         e.preventDefault();
         isPanning = true;
@@ -34,6 +46,9 @@ canvas.addEventListener('mousedown', function (e) {
 
 // === MOUSE MOVE ===
 canvas.addEventListener('mousemove', function (e) {
+    if (editorLocked()) {
+        return;
+    }
     var rect = canvas.getBoundingClientRect();
     var mouseX = e.clientX - rect.left;
     var mouseY = e.clientY - rect.top;
@@ -52,12 +67,14 @@ canvas.addEventListener('mousemove', function (e) {
 
 // === MOUSE UP ===
 canvas.addEventListener('mouseup', function (e) {
+    if (editorLocked()) return;
     if (isPanning) { isPanning = false; updateCursor(); return; }
     handleLeftMouseUp(e);
 });
 
 // === DOUBLE CLICK (kết thúc polygon) ===
 canvas.addEventListener('dblclick', function (e) {
+    if (editorLocked()) return;
     if (currentTool === 'polygon' && isDrawingPolygon && polygonPoints.length >= 3) {
         saveState(); // LƯU TRẠNG THÁI HIỆN TẠI
         var newRoom = createPolygonRoom(polygonPoints);
@@ -76,16 +93,15 @@ canvas.addEventListener('dblclick', function (e) {
 });
 
 canvas.addEventListener('contextmenu', function (e) {
+    if (editorLocked()) {
+        e.preventDefault();
+        return;
+    }
     e.preventDefault();
     if (currentTool === 'path') {
         firstNodeForEdge = null;
         selectedObject = null;
         if (typeof showToast === 'function') showToast('Đã ngắt chuỗi đường đi', 'success');
-        draw();
-    } else if (currentTool === 'wall') {
-        wallStartPoint = null;
-        wallPreviewEnd = null;
-        if (typeof showToast === 'function') showToast('Đã ngắt vẽ tường', 'success');
         draw();
     }
 });
@@ -94,6 +110,7 @@ canvas.addEventListener('contextmenu', function (e) {
 // XỬ LÝ LEFT CLICK
 // ============================================================
 function handleLeftMouseDown(e) {
+    if (editorLocked()) return;
     var rect = canvas.getBoundingClientRect();
     var mouseX = e.clientX - rect.left;
     var mouseY = e.clientY - rect.top;
@@ -217,6 +234,13 @@ function handleLeftMouseDown(e) {
         draw();
     }
 
+    // --- TOOL: CHỈNH ẢNH NỀN ---
+    else if (currentTool === 'bg-adjust') {
+        window.isDraggingBg = true;
+        window.bgLastX = world.x;
+        window.bgLastY = world.y;
+    }
+
     // --- TOOL: CHỌN ---
     else if (currentTool === 'select') {
         // Kiểm tra kéo đỉnh polygon
@@ -264,8 +288,32 @@ function handleLeftMouseDown(e) {
                 } else {
                     var clickedDoor = findDoorAt(world.x, world.y);
                     if (clickedDoor) {
+                        // Kiểm tra nhấp vào Handle của cửa
+                        if (typeof getDoorHandles === 'function') {
+                            var handles = getDoorHandles(clickedDoor);
+                            var threshold = 10 / zoom;
+                            for (var side in handles) {
+                                if (Math.abs(world.x - handles[side].x) < threshold &&
+                                    Math.abs(world.y - handles[side].y) < threshold) {
+                                    saveState();
+                                    if (side === 'rotate') {
+                                        isRotatingDoor = true;
+                                    } else {
+                                        isResizingDoor = true;
+                                        resizeDoorSide = side;
+                                    }
+                                    selectedObject = { type: 'door', data: clickedDoor };
+                                    return;
+                                }
+                            }
+                        }
+
+                        saveState();
                         selectedObject = { type: 'door', data: clickedDoor };
                         selectedRoom = null;
+                        isDragging = true;
+                        dragOffsetX = world.x - clickedDoor.x;
+                        dragOffsetY = world.y - clickedDoor.y;
                     } else {
                         var clickedWall = findWallAt(world.x, world.y);
                         if (clickedWall) {
@@ -300,8 +348,23 @@ function handleLeftMouseDown(e) {
 // MOUSE MOVE
 // ============================================================
 function handleMouseMove(e, world) {
+    if (editorLocked()) return;
     var snappedX = snapToGrid(world.x);
     var snappedY = snapToGrid(world.y);
+
+    // Kéo ảnh nền
+    if (window.isDraggingBg && currentTool === 'bg-adjust') {
+        var dx = world.x - window.bgLastX;
+        var dy = world.y - window.bgLastY;
+        window.bgX += dx;
+        window.bgY += dy;
+        window.bgLastX = world.x;
+        window.bgLastY = world.y;
+        
+        updatePropertiesPanel();
+        draw();
+        return;
+    }
 
     // Đang vẽ rect hoặc circle
     if (isDrawing && (currentTool === 'room' || currentTool === 'circle')) {
@@ -330,30 +393,70 @@ function handleMouseMove(e, world) {
         return;
     }
 
-    // Kéo phòng
-    if (isDragging && selectedRoom) {
-        var newX = snapToGrid(world.x - dragOffsetX);
-        var newY = snapToGrid(world.y - dragOffsetY);
-        var dx = newX - selectedRoom.x;
-        var dy = newY - selectedRoom.y;
-        selectedRoom.x = newX;
-        selectedRoom.y = newY;
-        if (selectedRoom.shape === 'circle') {
-            selectedRoom.cx += dx;
-            selectedRoom.cy += dy;
-        } else if (selectedRoom.shape === 'polygon' && selectedRoom.points) {
-            for (var i = 0; i < selectedRoom.points.length; i++) {
-                selectedRoom.points[i].x += dx;
-                selectedRoom.points[i].y += dy;
+    // Kéo đối tượng (Phòng hoặc Cửa)
+    if (isDragging) {
+        if (selectedRoom) {
+            var newX = snapToGrid(world.x - dragOffsetX);
+            var newY = snapToGrid(world.y - dragOffsetY);
+            var dx = newX - selectedRoom.x;
+            var dy = newY - selectedRoom.y;
+            selectedRoom.x = newX;
+            selectedRoom.y = newY;
+            if (selectedRoom.shape === 'circle') {
+                selectedRoom.cx += dx;
+                selectedRoom.cy += dy;
+            } else if (selectedRoom.shape === 'polygon' && selectedRoom.points) {
+                for (var i = 0; i < selectedRoom.points.length; i++) {
+                    selectedRoom.points[i].x += dx;
+                    selectedRoom.points[i].y += dy;
+                }
             }
+        } else if (selectedObject && selectedObject.type === 'door') {
+            var door = selectedObject.data;
+            door.x = snapToGrid(world.x - dragOffsetX);
+            door.y = snapToGrid(world.y - dragOffsetY);
         }
         updatePropertiesPanel();
         draw();
     }
 
-    // Resize
+    // Resize Phòng
     if (isResizing && selectedRoom && resizeStartRoom) {
         resizeRoom(snappedX, snappedY);
+        updatePropertiesPanel();
+        draw();
+    }
+
+    // Resize Cửa
+    if (isResizingDoor && selectedObject && selectedObject.type === 'door') {
+        var door = selectedObject.data;
+        var dx = world.x - door.x;
+        var dy = world.y - door.y;
+
+        // Tính toán chiều rộng dựa trên khoảng cách từ tâm đến chuột (nhân 2)
+        var newWidth;
+        if (door.rotation === 0 || door.rotation === 180) {
+            newWidth = Math.abs(dx) * 2;
+        } else {
+            newWidth = Math.abs(dy) * 2;
+        }
+
+        door.width = Math.max(10, Math.round(newWidth));
+        updatePropertiesPanel();
+        draw();
+    }
+
+    // Xoay Cửa
+    if (isRotatingDoor && selectedObject && selectedObject.type === 'door') {
+        var door = selectedObject.data;
+        // Tính góc từ tâm cửa đến chuột
+        var dx = world.x - door.x;
+        var dy = world.y - door.y;
+        var angle = Math.atan2(dy, dx) * 180 / Math.PI;
+
+        // Điều chỉnh góc (vì mặc định atan2 0 độ là hướng Đông, còn Handle của ta hướng Bắc)
+        door.rotation = (Math.round(angle) + 90 + 360) % 360;
+
         updatePropertiesPanel();
         draw();
     }
@@ -373,17 +476,44 @@ function handleMouseMove(e, world) {
     }
 
     // Cursor hover
-    if (currentTool === 'select' && selectedRoom && !isDragging && !isResizing) {
-        var handle = getResizeHandle(world.x, world.y, selectedRoom);
-        if (handle) {
-            var cursors = {
-                'nw': 'nw-resize', 'n': 'n-resize', 'ne': 'ne-resize',
-                'e': 'e-resize', 'se': 'se-resize', 's': 's-resize',
-                'sw': 'sw-resize', 'w': 'w-resize'
-            };
-            wrapper.style.cursor = cursors[handle] || 'default';
+    if (currentTool === 'select' && !isDragging && !isResizing && !isResizingDoor) {
+        // Ưu tiên Room Handles
+        if (selectedRoom) {
+            var handle = getResizeHandle(world.x, world.y, selectedRoom);
+            if (handle) {
+                var cursors = {
+                    'nw': 'nw-resize', 'n': 'n-resize', 'ne': 'ne-resize',
+                    'e': 'e-resize', 'se': 'se-resize', 's': 's-resize',
+                    'sw': 'sw-resize', 'w': 'w-resize'
+                };
+                wrapper.style.cursor = cursors[handle] || 'default';
+                return;
+            }
+        }
+
+        // Kiểm tra Door Handles
+        if (selectedObject && selectedObject.type === 'door') {
+            var handles = getDoorHandles(selectedObject.data);
+            var threshold = 10 / zoom;
+            for (var side in handles) {
+                if (Math.abs(world.x - handles[side].x) < threshold &&
+                    Math.abs(world.y - handles[side].y) < threshold) {
+                    if (side === 'rotate') {
+                        wrapper.style.cursor = 'crosshair'; // Icon xoay
+                    } else {
+                        var isVert = selectedObject.data.rotation === 90 || selectedObject.data.rotation === 270;
+                        wrapper.style.cursor = isVert ? 'n-resize' : 'e-resize';
+                    }
+                    return;
+                }
+            }
+        }
+
+        // Kiểm tra Move cursor
+        if (findRoomAt(world.x, world.y) || findDoorAt(world.x, world.y)) {
+            wrapper.style.cursor = 'move';
         } else {
-            wrapper.style.cursor = findRoomAt(world.x, world.y) ? 'move' : 'default';
+            wrapper.style.cursor = 'default';
         }
     }
 }
@@ -392,6 +522,7 @@ function handleMouseMove(e, world) {
 // MOUSE UP
 // ============================================================
 function handleLeftMouseUp(e) {
+    if (editorLocked()) return;
     // Kết thúc vẽ rect
     if (isDrawing && currentTool === 'room') {
         saveState();
@@ -431,12 +562,12 @@ function handleLeftMouseUp(e) {
         isDraggingVertex = false;
         draggingVertexIndex = -1;
     }
-    if (isDragging) isDragging = false;
-    if (isResizing) {
-        isResizing = false;
-        resizeHandle = null;
-        resizeStartRoom = null;
-    }
+
+    isDragging = false;
+    window.isDraggingBg = false;
+    isResizing = false;
+    isResizingDoor = false;
+    isRotatingDoor = false;
 
     // Kết thúc Thước đo
     if (isDrawingRuler) {
@@ -449,29 +580,20 @@ function handleLeftMouseUp(e) {
             var m = prompt("Đoạn thẳng này dài bao nhiêu mét thực tế?", "10");
             if (m !== null && !isNaN(parseFloat(m))) {
                 var realMeters = parseFloat(m);
-                if (!Number.isFinite(realMeters) || realMeters <= 0) {
-                    alert("Giá trị mét không hợp lệ. Vui lòng nhập số lớn hơn 0.");
-                    rulerStart = null;
-                    rulerEnd = null;
-                    draw();
-                    return;
+                if (Number.isFinite(realMeters) && realMeters > 0) {
+                    var nextScale = (realMeters / distPx) * GRID_SIZE;
+                    if (Number.isFinite(nextScale) && nextScale > 0) {
+                        metersPerGrid = nextScale;
+                        if (getEl('scaleInput')) getEl('scaleInput').value = metersPerGrid.toFixed(2);
+                        alert("Đã cập nhật tỷ lệ: 1 ô lưới = " + metersPerGrid.toFixed(2) + " mét.");
+                    }
                 }
-                // Cập nhật tỷ lệ: metersPerGrid = (realMeters / distPx) * GRID_SIZE
-                var nextScale = (realMeters / distPx) * GRID_SIZE;
-                if (!Number.isFinite(nextScale) || nextScale <= 0) {
-                    alert("Không thể cập nhật tỷ lệ từ dữ liệu hiện tại. Vui lòng đo lại.");
-                    rulerStart = null;
-                    rulerEnd = null;
-                    draw();
-                    return;
-                }
-                metersPerGrid = nextScale;
-                document.getElementById('scaleInput').value = metersPerGrid.toFixed(2);
-                alert("Đã cập nhật tỷ lệ: 1 ô lưới = " + metersPerGrid.toFixed(2) + " mét.\nĐộ phân giải: " + (distPx / realMeters).toFixed(1) + " pixel/mét.");
             }
         }
         rulerStart = null;
         rulerEnd = null;
-        draw();
     }
+
+    updateCursor();
+    draw();
 }

@@ -12,6 +12,10 @@ function getMapSnapshot() {
             var item = {
                 id: r.id, name: r.name, shape: r.shape || 'rect',
                 type: r.type || 'Văn phòng', color: r.color,
+                labelRotation: Number.isFinite(r.labelRotation) ? r.labelRotation : 0,
+                labelFontSize: Number.isFinite(r.labelFontSize) ? r.labelFontSize : 14,
+                labelAutoScale: typeof r.labelAutoScale === 'boolean' ? r.labelAutoScale : true,
+                labelLineHeight: Number.isFinite(r.labelLineHeight) ? r.labelLineHeight : 1.2,
                 x: Math.round(r.x), y: Math.round(r.y),
                 width: Math.round(r.width), height: Math.round(r.height),
                 widthMeters: parseFloat(pixelsToMeters(r.width).toFixed(1)),
@@ -32,7 +36,14 @@ function getMapSnapshot() {
             is_outer: !!w.is_outer,
             points: Array.isArray(w.points) ? w.points.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })) : []
         })),
-        qrs: qrs.map(q => ({ id: q.id, name: q.name, serial: q.serial, x: Math.round(q.x), y: Math.round(q.y) }))
+        qrs: qrs.map(q => ({ id: q.id, name: q.name, serial: q.serial, x: Math.round(q.x), y: Math.round(q.y) })),
+        // Ảnh nền
+        bgX: window.bgX || 0,
+        bgY: window.bgY || 0,
+        bgScale: window.bgScale || 1.0,
+        bgRotation: window.bgRotation || 0,
+        bgOpacity: window.bgOpacity || 0.5,
+        bgImageBase64: window.bgImageBase64 || ''
     };
 }
 
@@ -46,6 +57,7 @@ function applyMapSnapshot(data) {
     }
 
     rooms = data.rooms || [];
+    rooms.forEach(function (r) { applyDefaultRoomLabelStyle(r); });
     nextRoomId = 1; rooms.forEach(r => { if (r.id >= nextRoomId) nextRoomId = r.id + 1; });
 
     doors = data.doors || [];
@@ -63,6 +75,25 @@ function applyMapSnapshot(data) {
 
     qrs = data.qrs || [];
     nextQrId = 1; qrs.forEach(q => { if (q.id >= nextQrId) nextQrId = q.id + 1; });
+
+    // Load ảnh nền
+    window.bgX = data.bgX || 0;
+    window.bgY = data.bgY || 0;
+    window.bgScale = data.bgScale || 1.0;
+    window.bgRotation = data.bgRotation || 0;
+    window.bgOpacity = data.bgOpacity || 0.5;
+    window.bgImageBase64 = data.bgImageBase64 || '';
+    
+    if (window.bgImageBase64) {
+        var img = new Image();
+        img.onload = function() {
+            window.bgImage = img;
+            draw();
+        };
+        img.src = window.bgImageBase64;
+    } else {
+        window.bgImage = null;
+    }
 
     roomCountSpan.textContent = 'Phòng: ' + rooms.length;
     updatePropertiesPanel();
@@ -83,6 +114,10 @@ function exportJSON() {
                 id: r.id,
                 name: r.name,
                 shape: r.shape || 'rect', // Lưu loại hình dạng
+                labelRotation: Number.isFinite(r.labelRotation) ? r.labelRotation : 0,
+                labelFontSize: Number.isFinite(r.labelFontSize) ? r.labelFontSize : 14,
+                labelAutoScale: typeof r.labelAutoScale === 'boolean' ? r.labelAutoScale : true,
+                labelLineHeight: Number.isFinite(r.labelLineHeight) ? r.labelLineHeight : 1.2,
                 x: Math.round(r.x),
                 y: Math.round(r.y),
                 width: Math.round(r.width),
@@ -155,7 +190,13 @@ function exportJSON() {
                 x: Math.round(q.x),
                 y: Math.round(q.y)
             };
-        })
+        }),
+        bgX: window.bgX,
+        bgY: window.bgY,
+        bgScale: window.bgScale,
+        bgRotation: window.bgRotation,
+        bgOpacity: window.bgOpacity,
+        bgImageBase64: window.bgImageBase64
     };
 
     // Download file
@@ -191,6 +232,7 @@ function importJSON(file) {
             rooms = data.rooms || [];
             nextRoomId = 1;
             rooms.forEach(function (r) {
+                applyDefaultRoomLabelStyle(r);
                 if (r.id >= nextRoomId) nextRoomId = r.id + 1;
             });
 
@@ -231,6 +273,25 @@ function importJSON(file) {
             qrs.forEach(function (q) {
                 if (q.id >= nextQrId) nextQrId = q.id + 1;
             });
+            
+            // Load background properties
+            window.bgX = data.bgX || 0;
+            window.bgY = data.bgY || 0;
+            window.bgScale = data.bgScale || 1.0;
+            window.bgRotation = data.bgRotation || 0;
+            window.bgOpacity = data.bgOpacity || 0.5;
+            window.bgImageBase64 = data.bgImageBase64 || '';
+            
+            if (window.bgImageBase64) {
+                var img = new Image();
+                img.onload = function() {
+                    window.bgImage = img;
+                    draw();
+                };
+                img.src = window.bgImageBase64;
+            } else {
+                window.bgImage = null;
+            }
 
             // Reset selection
             selectedRoom = null;

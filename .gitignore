@@ -8,10 +8,18 @@ local.properties
 *.log
 .DS_Store
 Thumbs.db
+node_modules/
+**/node_modules/
+
+# Secrets - KHÔNG bao giờ commit lên Git
+.env
+*.env
+Backend_server/.env
 
 Docs/
 lichsu/
 Test_pdr/
+THIETKEGIAODIEN/
 
 ANDROID_INTEGRATION.md
 bang_chuc_nang_va_kich_ban.md

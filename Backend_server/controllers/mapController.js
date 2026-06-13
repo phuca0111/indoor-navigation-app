@@ -4,7 +4,6 @@
 // ĐÂY LÀ FILE CỐT LÕI: Nối Web Map Editor với Database
 // ============================================
 
-const MapData    = require('../models/MapData');     // giữ lại cho tương thích ngược
 const Floor      = require('../models/Floor');
 const Building   = require('../models/Building');
 const MapVersion = require('../models/MapVersion');
@@ -19,17 +18,25 @@ function logActivity(data) {
 async function syncQrCodes(floorDoc) {
     const anchors = floorDoc.map_data?.qr_anchors || [];
     for (const anchor of anchors) {
-        if (!anchor.qr_code) continue;
+        // Web Editor hiện lưu mã ngắn ở qr_id (VD: QR-001).
+        // Bảng qrcodes cần qr_code đúng chuỗi in trong QR để Android scan tra được.
+        const qrId = anchor.qr_id || anchor.serial || anchor.qr_code;
+        if (!qrId) continue;
+
+        const x = Math.round(anchor.x || 0);
+        const y = Math.round(anchor.y || 0);
+        const qrCode = anchor.qr_code || `MAP_NAV|${floorDoc.building_id}|${floorDoc.floor_number}|${x}|${y}|${qrId}`;
+
         await QrCode.updateOne(
-            { qr_code: anchor.qr_code },
+            { qr_code: qrCode },
             {
                 $set: {
                     building_id:  floorDoc.building_id,
                     floor_number: floorDoc.floor_number,
-                    x:            anchor.x,
-                    y:            anchor.y,
+                    x:            x,
+                    y:            y,
                     node_id:      anchor.node_id || '',
-                    label:        anchor.label   || ''
+                    label:        anchor.label || anchor.room_name || ''
                 }
             },
             { upsert: true }
@@ -47,7 +54,7 @@ const saveMap = async (req, res) => {
         const { map_data } = req.body;              // Lấy cục JSON bản đồ từ body
 
         // Tìm xem bản đồ tầng này đã tồn tại chưa
-        let existingMap = await MapData.findOne({
+        let existingMap = await Floor.findOne({
             building_id: buildingId,
             floor_number: floor
         });
@@ -145,7 +152,7 @@ const loadMap = async (req, res) => {
     try {
         const { buildingId, floor } = req.params;
 
-        const map = await MapData.findOne({
+        const map = await Floor.findOne({
             building_id: buildingId,
             floor_number: floor
         });
@@ -171,7 +178,7 @@ const downloadMap = async (req, res) => {
         const { buildingId } = req.params;
 
         // Lấy tất cả tầng của tòa nhà này
-        const maps = await MapData.find({ building_id: buildingId });
+        const maps = await Floor.find({ building_id: buildingId });
 
         if (!maps.length) {
             return res.status(404).json({ message: 'Tòa nhà này chưa có bản đồ!' });

@@ -31,17 +31,21 @@ app.use('/editor', express.static(path.join(__dirname, '../WebMapEditor'))); // 
 // ==========================================
 // 4. GẮN CÁC TẤM BIỂN BÁO ĐƯỜNG DẪN (ROUTES)
 // ==========================================
-const authRoutes     = require('./routes/authRoutes');
-const buildingRoutes = require('./routes/buildingRoutes');
-const mapRoutes      = require('./routes/mapRoutes');
-const userRoutes     = require('./routes/userRoutes');
-const qrRoutes       = require('./routes/qrRoutes');
+const authRoutes        = require('./routes/authRoutes');
+const buildingRoutes    = require('./routes/buildingRoutes');
+const mapRoutes         = require('./routes/mapRoutes');
+const userRoutes        = require('./routes/userRoutes');
+const qrRoutes          = require('./routes/qrRoutes');
+const activityLogRoutes = require('./routes/activityLogRoutes');
+const mapVersionRoutes  = require('./routes/mapVersionRoutes');
 
-app.use('/api/auth',      authRoutes);
-app.use('/api/buildings', buildingRoutes);
-app.use('/api/maps',      mapRoutes);
-app.use('/api/users',     userRoutes);
-app.use('/api/qr',        qrRoutes);    // Public — Android scan QR tra cứu vị trí
+app.use('/api/auth',          authRoutes);
+app.use('/api/buildings',     buildingRoutes);
+app.use('/api/maps',          mapRoutes);
+app.use('/api/users',         userRoutes);
+app.use('/api/qr',            qrRoutes);
+app.use('/api/activity-logs', activityLogRoutes);
+app.use('/api/map-versions',  mapVersionRoutes);
 
 // Đường chào khách khi truy cập trang chủ
 app.get('/', (req, res) => {

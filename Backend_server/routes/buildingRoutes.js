@@ -6,19 +6,15 @@
 const express = require('express');
 const router = express.Router();
 
-const { getBuildings, createBuilding, checkLocation } = require('../controllers/buildingController');
+const { getBuildings, createBuilding, updateBuilding, deleteBuilding, checkLocation } = require('../controllers/buildingController');
 const { auth } = require('../middlewares/auth');
 
-// Đường 1: Lấy danh sách tòa nhà (Quản trị viên)
-router.get('/', auth, getBuildings);
+router.get('/',                auth, getBuildings);    // Web Admin — phải đăng nhập để thấy DRAFT
+router.get('/public',          getBuildings);          // Android public — chỉ thấy PUBLISHED
+router.get('/check-location',  checkLocation);         // Android kiểm tra GPS
 
-// Đường 1.1: Lấy danh sách tòa nhà cho App Di động (Công khai)
-router.get('/public', getBuildings);
-
-// Đường 2: Tạo tòa nhà mới (Phải đăng nhập)
-router.post('/', auth, createBuilding);
-
-// Đường 3: App Android kiểm tra GPS (Không cần đăng nhập)
-router.get('/check-location', checkLocation);
+router.post('/',       auth, createBuilding);          // Tạo mới — phải đăng nhập
+router.put('/:id',     auth, updateBuilding);          // Sửa — phải đăng nhập
+router.delete('/:id',  auth, deleteBuilding);          // Xóa — phải đăng nhập
 
 module.exports = router;

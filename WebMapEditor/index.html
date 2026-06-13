@@ -27,6 +27,9 @@
                 <input type="hidden" id="mapName" value="Bản đồ mới">
             </div>
             <div class="header-right">
+                <button id="btnLockEditor" class="btn-lock" title="Khóa editor (Ctrl+L)">
+                    <i data-lucide="lock"></i> Khóa
+                </button>
                 <button onclick="exportJSON()"><i data-lucide="download"></i> Lưu File</button>
                 <button onclick="document.getElementById('importFile').click()"><i data-lucide="upload"></i> Mở
                     File</button>
@@ -84,6 +87,7 @@
                         <div class="prop-row">
                             <label>Tầng:</label>
                             <select id="floorSelect" onchange="loadMapFromServer()" style="width: 80px;">
+                                <option value="0">Tầng trệt GF</option>
                                 <option value="1">Tầng 1</option>
                                 <option value="2">Tầng 2</option>
                                 <option value="3">Tầng 3</option>
@@ -155,6 +159,53 @@
         </div>
     </div>
 
+    <div id="secureLockOverlay" class="secure-lock-overlay" aria-hidden="true">
+        <div class="secure-lock-modal" role="dialog" aria-modal="true" aria-labelledby="secureLockTitle">
+            <div class="secure-lock-avatar">
+                <i data-lucide="shield-lock"></i>
+            </div>
+            <h2 id="secureLockTitle">Session Locked</h2>
+            <p id="secureLockSubtitle" class="secure-lock-subtitle">Nhập mật khẩu để tiếp tục chỉnh sửa bản đồ.</p>
+
+            <label class="secure-lock-label" for="unlockPassword">Mật khẩu</label>
+            <input id="unlockPassword" class="secure-lock-input" type="password" autocomplete="current-password" placeholder="••••••••">
+            <div id="unlockError" class="secure-lock-error"></div>
+
+            <div class="secure-lock-actions">
+                <button id="btnUnlockEditor" class="btn-primary">Mở khóa</button>
+                <button id="btnForceLogout" class="btn-ghost-danger">Đăng xuất</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SECURE LOCK OVERLAY -->
+    <div id="secureLockOverlay" class="lock-overlay hidden">
+        <div class="lock-modal glass">
+            <div class="lock-header">
+                <div class="avatar-circle">
+                    <i data-lucide="user"></i>
+                </div>
+                <h2>Session Locked</h2>
+                <p>Nhập mật khẩu để tiếp tục làm việc</p>
+            </div>
+            <div class="lock-body">
+                <div class="input-group">
+                    <i data-lucide="key-round"></i>
+                    <input type="password" id="lockPasswordInput" placeholder="Mật khẩu của bạn..." 
+                        onkeydown="if(event.key === 'Enter') unlockEditor()">
+                </div>
+                <div id="lockError" class="error-msg hidden">Mật khẩu không chính xác!</div>
+                <button id="btnUnlock" class="btn-unlock" onclick="unlockEditor()">
+                    <span>Mở khóa Editor</span>
+                    <i data-lucide="unlock"></i>
+                </button>
+            </div>
+            <div class="lock-footer">
+                <button class="btn-text" onclick="handleLogout()">Đăng xuất tài khoản</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Script Scripts -->
     <script src="js/state.js?v=2"></script>
     <script src="js/history.js?v=2"></script>
@@ -169,6 +220,7 @@
     <script src="js/canvas.js?v=2"></script>
     <script src="js/io.js?v=2"></script>
     <script src="js/api.js?v=2"></script>
+    <script src="js/secure-lock.js?v=2"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
     <script src="js/properties.js?v=2"></script>
     <script src="js/qrs.js?v=2"></script>
