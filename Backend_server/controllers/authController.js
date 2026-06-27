@@ -19,6 +19,88 @@ function logActivity(data) {
     ActivityLog.create(data).catch(() => {});  // fire-and-forget
 }
 
+function validateRegisterInput(fullName, email, password, confirmPassword) {
+    const errors = [];
+    if (!fullName || fullName.trim() === '') {
+        errors.push('Họ tên là bắt buộc.');
+    }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        errors.push('Email không hợp lệ.');
+    }
+    if (!password || password.length < 8) {
+        errors.push('Mật khẩu phải có ít nhất 8 ký tự.');
+    }
+    if (!/(?=.*[a-z])/.test(password)) {
+        errors.push('Mật khẩu phải chứa ít nhất 1 chữ thường.');
+    }
+    if (!/(?=.*[A-Z])/.test(password)) {
+        errors.push('Mật khẩu phải chứa ít nhất 1 chữ hoa.');
+    }
+    if (!/(?=.*\d)/.test(password)) {
+        errors.push('Mật khẩu phải chứa ít nhất 1 số.');
+    }
+    if (!/(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/.test(password)) {
+        errors.push('Mật khẩu phải chứa ít nhất 1 ký tự đặc biệt.');
+    }
+    if (password !== confirmPassword) {
+        errors.push('Xác nhận mật khẩu không khớp.');
+    }
+    return errors;
+}
+
+// Đăng ký công khai — is_active=false, chờ Super Admin duyệt (Phase 1A)
+const registerPublic = async (req, res) => {
+    try {
+        const { fullName, email, password, confirmPassword } = req.body;
+
+        const validationErrors = validateRegisterInput(fullName, email, password, confirmPassword);
+        if (validationErrors.length > 0) {
+            return res.status(400).json({
+                message: 'Dữ liệu không hợp lệ.',
+                errors: validationErrors
+            });
+        }
+
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return res.status(400).json({ message: 'Email này đã được đăng ký rồi!' });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const newUser = await User.create({
+            email,
+            password: hashedPassword,
+            role: 'BUILDING_ADMIN',
+            full_name: fullName.trim(),
+            is_active: false,
+            assigned_buildings: [],
+            created_by: null
+        });
+
+        logActivity({
+            user_id: newUser._id,
+            action: 'REGISTER',
+            target_type: 'user',
+            target_id: String(newUser._id),
+            target: newUser.email,
+            ip_address: req.ip || ''
+        });
+
+        res.status(201).json({
+            message: 'Đăng ký thành công, tài khoản đang chờ quản trị viên duyệt.',
+            user: {
+                id: newUser._id,
+                email: newUser.email,
+                role: newUser.role,
+                is_active: newUser.is_active
+            }
+        });
+    } catch (error) {
+        console.error('Register error:', error);
+        res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+    }
+};
+
 // ==========================================
 // HÀM 1: ĐĂNG KÝ TÀI KHOẢN MỚI (REGISTER)
 // ==========================================
@@ -263,4 +345,4 @@ const unlockSession = async (req, res) => {
     }
 };
 
-module.exports = { register, login, refresh, logout, unlockSession };
+module.exports = { register, login, refresh, logout, unlockSession, registerPublic };

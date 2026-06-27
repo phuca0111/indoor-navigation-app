@@ -17,6 +17,21 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    flavorDimensions += "env"
+    productFlavors {
+        create("local") {
+            dimension = "env"
+            // Bản test nội bộ: điện thoại gọi backend đang chạy trên laptop.
+            buildConfigField("String", "BASE_URL", "\"http://192.168.2.29:5000/api/\"")
+        }
+
+        create("prod") {
+            dimension = "env"
+            // Bản gửi người khác dùng: gọi backend Render online.
+            buildConfigField("String", "BASE_URL", "\"https://indoor-navigation-app-sqiu.onrender.com/api/\"")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -32,6 +47,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -50,6 +66,7 @@ dependencies {
     implementation(libs.retrofit)
     implementation(libs.converter.gson)
     implementation(libs.coil.compose)
+    implementation(libs.okhttp.logging.interceptor) // Issue 25: logging interceptor
 
     // CameraX
     implementation(libs.androidx.camera.core)
@@ -62,6 +79,9 @@ dependencies {
     implementation(libs.com.google.mlkit.barcode.scanning)
 
     testImplementation(libs.junit)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.robolectric)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

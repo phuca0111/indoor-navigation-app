@@ -95,6 +95,14 @@ body {
     font-size: 14px;
 }
 
+.success-msg {
+    text-align: center;
+    color: #27ae60;
+    margin-top: 15px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
 /* ==========================================
    MODAL CSS (Bảng hiện lên)
    ========================================== */
@@ -113,8 +121,10 @@ body {
     background: white;
     padding: 25px;
     border-radius: 12px;
-    width: 400px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    width: min(520px, calc(100vw - 32px));
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
 }
 
 .modal-content h3 { margin-top: 0; color: #2c3e50; }
@@ -319,6 +329,341 @@ body {
 }
 
 /* ==========================================
+   USER MANAGEMENT PAGE — FULL WIDTH LAYOUT
+   ========================================== */
+
+.user-management-page {
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100vw - 48px);
+  max-width: 1400px;
+  margin: 0;
+  padding: 0;
+}
+
+.user-management-container {
+  background: transparent;
+}
+
+/* Header Card */
+.um-header-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 14px;
+  padding: 32px 28px;
+  margin-bottom: 24px;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.25);
+}
+
+.um-header-title {
+  font-size: 26px;
+  margin: 0 0 8px 0;
+  font-weight: 700;
+}
+
+.um-header-subtitle {
+  font-size: 15px;
+  margin: 0;
+  opacity: 0.9;
+}
+
+/* Form Card */
+.um-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+  padding: 20px 24px;
+  margin-bottom: 24px;
+}
+
+.um-form-card {
+  /* same as .um-card */
+}
+
+.um-create-account {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.um-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.um-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12);
+}
+
+.um-input::placeholder {
+  color: #9ca3af;
+}
+
+.um-btn {
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.um-btn-primary {
+  background: #667eea;
+  color: white;
+}
+
+.um-btn-primary:hover {
+  background: #5a6fd6;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+/* User Table Card */
+.user-table-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+  margin-bottom: 32px;
+}
+
+.utc-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid #eef2f7;
+  background: #f9fafb;
+}
+
+.utc-title {
+  margin: 0;
+  font-size: 18px;
+  color: #1e293b;
+  font-weight: 700;
+}
+
+/* Users Table Styles (improved) */
+.users-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.users-table {
+  width: 100%;
+  min-width: 1180px;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.users-table th,
+.users-table td {
+  padding: 14px 12px;
+  vertical-align: middle;
+  text-align: left;
+  border-bottom: 1px solid #eef2f7;
+  font-size: 14px;
+}
+
+.users-table th {
+  background: #f8fafc;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.users-table tr:hover {
+  background: #f9fafb;
+}
+
+.users-table td {
+  color: #334155;
+  line-height: 1.5;
+}
+
+/* Column widths (total ~1180px) */
+.users-table th:nth-child(1),
+.users-table td:nth-child(1) { width: 210px; } /* Email */
+.users-table th:nth-child(2),
+.users-table td:nth-child(2) { width: 150px; } /* Họ tên */
+.users-table th:nth-child(3),
+.users-table td:nth-child(3) { width: 130px; } /* SĐT */
+.users-table th:nth-child(4),
+.users-table td:nth-child(4) { width: 140px; } /* Vai trò */
+.users-table th:nth-child(5),
+.users-table td:nth-child(5) { width: 120px; } /* Trạng thái */
+.users-table th:nth-child(6),
+.users-table td:nth-child(6) { width: 170px; } /* Tòa nhà */
+.users-table th:nth-child(7),
+.users-table td:nth-child(7) { width: 110px; } /* Ngày tạo */
+.users-table th:nth-child(8),
+.users-table td:nth-child(8) { width: 150px; } /* Thao tác */
+
+/* Text truncation with ellipsis for long content */
+.users-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Ensure role/status/action cells stay single line */
+.users-table td:nth-child(4),
+.users-table td:nth-child(5),
+.users-table td:nth-child(8) {
+  white-space: nowrap;
+}
+
+/* Badges */
+.role-badge,
+.status-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.role-badge.super-admin {
+  background: #ede7fe;
+  color: #5b21b6;
+}
+
+.role-badge.building-admin {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.status-badge.active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-badge.inactive {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* Actions cell */
+.actions-cell {
+  white-space: nowrap;
+}
+
+.user-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.user-actions button {
+  flex-shrink: 0;
+}
+
+.badge-inactive {
+  background: #94a3b8 !important;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #fff;
+}
+
+/* Header actions for User Management */
+.um-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.um-header-info {
+  flex: 1;
+}
+
+.um-header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.um-filter-select {
+  padding: 10px 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #333;
+  font-size: 14px;
+  cursor: pointer;
+  min-width: 140px;
+  transition: all 0.2s;
+}
+
+.um-filter-select:hover {
+  border-color: rgba(255, 255, 255, 0.8);
+  background: #f8fafc;
+}
+
+.um-filter-select:focus {
+  outline: none;
+  border-color: white;
+  background: white;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.2);
+}
+
+.um-btn-secondary {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.um-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+/* Responsive cho User Management */
+@media (max-width: 768px) {
+  .user-management-page {
+    width: calc(100vw - 24px);
+    max-width: none;
+  }
+
+  .um-header-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .um-header-actions {
+    justify-content: flex-start;
+    margin-top: 12px;
+  }
+
+  .um-create-account {
+    grid-template-columns: 1fr;
+  }
+
+  .um-btn-primary {
+    width: 100%;
+  }
+}
+
+/* ==========================================
    TAB NAVIGATION (Dashboard Super Admin)
    ========================================== */
 
@@ -352,3 +697,323 @@ body {
     background: #2c3e50;
     color: #fff;
 }
+
+/* ==========================================
+   LOGS PAGE — WIDE TABLE LAYOUT
+   ========================================== */
+
+.logs-page {
+  width: calc(100vw - 48px);
+  max-width: 1400px;
+  margin-left: 50%;
+  transform: translateX(-50%);
+}
+
+.logs-section {
+  width: 100%;
+  background: transparent;
+  padding: 0;
+  margin-bottom: 25px;
+}
+
+.logs-section h3 {
+  color: #2c3e50;
+}
+
+/* User Management Section */
+.user-management-section {
+  width: calc(100vw - 48px);
+  max-width: 1280px;
+  margin-left: 50%;
+  transform: translateX(-50%);
+}
+
+.users-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+.users-table {
+  width: 100%;
+  min-width: 1150px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.users-table thead {
+  background: #e8ecf1;
+}
+
+.users-table th {
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: #2c3e50;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  border-bottom: 2px solid #dce2e8;
+}
+
+.users-table tbody tr:hover {
+  background: #f8f9fa;
+}
+
+.users-table td {
+  padding: 10px 12px;
+  vertical-align: middle;
+  border-bottom: 1px solid #edf2f7;
+  font-size: 13px;
+  color: #333;
+  line-height: 1.5;
+}
+
+/* Column widths (8 columns) */
+.users-table th:nth-child(1),
+.users-table td:nth-child(1) { width: 200px; } /* Email */
+
+.users-table th:nth-child(2),
+.users-table td:nth-child(2) { width: 150px; } /* Họ tên */
+
+.users-table th:nth-child(3),
+.users-table td:nth-child(3) { width: 130px; } /* SĐT */
+
+.users-table th:nth-child(4),
+.users-table td:nth-child(4) { width: 130px; } /* Vai trò */
+
+.users-table th:nth-child(5),
+.users-table td:nth-child(5) { width: 120px; } /* Trạng thái */
+
+.users-table th:nth-child(6),
+.users-table td:nth-child(6) { width: 180px; } /* Tòa nhà */
+
+.users-table th:nth-child(7),
+.users-table td:nth-child(7) { width: 140px; } /* Ngày tạo */
+
+.users-table th:nth-child(8),
+.users-table td:nth-child(8) { width: 160px; } /* Thao tác */
+
+/* Actions cell */
+.actions-cell {
+  white-space: nowrap;
+}
+
+.user-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.user-actions button {
+  flex-shrink: 0;
+}
+
+/* Ensure email truncation */
+.users-table td:nth-child(1) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+
+.logs-filter-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  background: #fff;
+  padding: 16px;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  margin-bottom: 12px;
+}
+
+.logs-filter-bar label {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 4px;
+  display: block;
+}
+
+.logs-filter-bar select,
+.logs-filter-bar input[type="text"],
+.logs-filter-bar input[type="date"] {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  font-size: 14px;
+  background: #fff;
+}
+
+.logs-filter-bar select:focus,
+.logs-filter-bar input:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.12);
+}
+
+.logs-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+.logs-table {
+  width: 100%;
+  min-width: 1150px;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.logs-table thead {
+  background: #34495e;
+  color: #fff;
+}
+
+.logs-table th {
+  padding: 12px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.logs-table th:last-child {
+  border-right: none;
+}
+
+.logs-table tbody tr:hover {
+  background: #f8f9fa;
+}
+
+.logs-table td {
+  padding: 10px 12px;
+  vertical-align: top;
+  border-bottom: 1px solid #eee;
+  font-size: 13px;
+  color: #333;
+  line-height: 1.5;
+}
+
+.logs-table td:nth-child(1) { /* Thời gian */
+  width: 140px;
+  white-space: nowrap;
+}
+
+.logs-table td:nth-child(2) { /* Người dùng */
+  width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.logs-table td:nth-child(3) { /* Role */
+  width: 130px;
+  white-space: nowrap;
+}
+
+.logs-table td:nth-child(4) { /* Hành động */
+  width: 150px;
+  white-space: nowrap;
+}
+
+.logs-table td:nth-child(5) { /* Đối tượng */
+  width: 220px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.logs-table td:nth-child(6) { /* Chi tiết */
+  width: 260px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #555;
+}
+
+.logs-table td:nth-child(7) { /* IP */
+  width: 90px;
+  white-space: nowrap;
+}
+
+.logs-table .badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.logs-table .role-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  background: #ecf0f1;
+  color: #2c3e50;
+}
+
+#logsTotal {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+#logsPagination button {
+  padding: 6px 14px;
+  border: 1px solid #ddd;
+  background: #fff;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+#logsPagination button:hover:not(:disabled) {
+  background: #f8f9fa;
+}
+
+#logsPagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#logsPagination .page-info {
+  font-size: 13px;
+  color: #666;
+  line-height: 28px;
+}
+
+/* Responsive cho Logs Page */
+@media (max-width: 768px) {
+  .logs-page {
+    width: calc(100vw - 24px);
+    max-width: none;
+  }
+
+  .logs-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .logs-filter-bar > div {
+    width: 100%;
+  }
+
+  .logs-filter-bar select,
+  .logs-filter-bar input[type="text"],
+  .logs-filter-bar input[type="date"] {
+    width: 100%;
+  }
+}
+

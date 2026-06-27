@@ -6,21 +6,32 @@
 const express = require('express');
 const router = express.Router();
 
-const { getUsers, updateUser, deleteUser } = require('../controllers/userController');
+const {
+  getUsers,
+  getUserById,
+  updateUser,
+  deleteUser,
+  getMe,
+  updateMe,
+  changePassword
+} = require('../controllers/userController');
 const { auth, requireSuperAdmin } = require('../middlewares/auth');
 
-// Bắt buộc tất cả các đường dẫn ở đây phải đi qua 2 trạm gác:
-// 1. Phải có Thẻ (auth)
-// 2. Thẻ đó phải là của SUPER ADMIN (requireSuperAdmin)
+// Route cho current user profile — chỉ cần auth, không phải Super Admin
+router.get('/me', auth, getMe);
+router.put('/me', auth, updateMe);
+router.put('/me/password', auth, changePassword); // Change own password
+
+// Admin-only routes (Super Admin)
 router.use(auth, requireSuperAdmin);
 
-// Đường 1: Xem danh sách Admin (GET /api/users)
+// Đường 1: Xem danh sách User (GET /api/users) — Super Admin only
 router.get('/', getUsers);
 
-// Đường 2: Sửa tài khoản (Gán tòa nhà, khóa/mở) (PUT /api/users/:userId)
-router.put('/:userId', updateUser);
+// Đường 2: Xem chi tiết 1 user (GET /api/users/:userId) — Super Admin only
+router.get('/:userId', getUserById);
 
-// Đường 3: Xóa tài khoản (DELETE /api/users/:userId)
-router.delete('/:userId', deleteUser);
+// Đường 3: Sửa tài khoản (Gán tòa nhà, khóa/mở, chỉnh role) (PUT /api/users/:userId) — Super Admin only
+router.put('/:userId', updateUser);
 
 module.exports = router;

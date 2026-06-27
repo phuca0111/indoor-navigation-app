@@ -28,6 +28,7 @@
             <button class="tab-btn active" onclick="switchTab('buildings')">🏢 Tòa Nhà</button>
             <button class="tab-btn" onclick="switchTab('users')">👑 Tài Khoản</button>
             <button class="tab-btn" onclick="switchTab('logs')">📋 Lịch Sử Thao Tác</button>
+            <button class="tab-btn" onclick="switchTab('profile')">👤 Thông Tin Cá Nhân</button>
         </div>
 
         <!-- ===== TAB: BUILDINGS ===== -->
@@ -35,7 +36,7 @@
             <div class="buildings-section">
                 <div class="section-header">
                     <h3>🏢 Danh Sách Tòa Nhà</h3>
-                    <button class="btn-add" onclick="openAddBuildingModal()">+ Thêm Tòa Nhà Mới</button>
+                    <button id="btnAddBuilding" class="btn-add" onclick="openAddBuildingModal()">+ Thêm Tòa Nhà Mới</button>
                 </div>
                 <table class="buildings-table">
                     <thead>
@@ -57,72 +58,193 @@
 
         <!-- ===== TAB: USERS (chỉ Super Admin) ===== -->
         <div id="tab-users" class="tab-content" style="display:none;">
-            <div class="admin-section">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-                    <h3>👑 Quản Lý Tài Khoản</h3>
+            <div class="admin-section user-management-section">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:15px; flex-wrap:wrap; gap:10px;">
+                    <div>
+                        <h3>👑 Quản Lý Tài Khoản</h3>
+                        <p style="font-size:13px; color:#666; margin-top:4px;">Duyệt tài khoản đăng ký, quản lý trạng thái và phân quyền người dùng.</p>
+                    </div>
+                    <button class="btn-add" onclick="fetchUsers()">🔄 Làm mới</button>
                 </div>
-                <div class="create-account-form" style="margin-bottom:25px;">
-                    <input type="email"    id="newEmail"    placeholder="Email tài khoản mới...">
-                    <input type="password" id="newPassword" placeholder="Mật khẩu tạm thời...">
-                    <button id="btnCreateAccount" class="btn-create">+ Tạo Tài Khoản</button>
+
+                <div class="users-table-wrapper" style="overflow-x:auto;">
+                    <table class="users-table" style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+                        <thead style="background:#34495e; color:white;">
+                            <tr>
+                                <th style="padding:12px; text-align:left;">Email</th>
+                                <th style="padding:12px; text-align:left;">Họ Tên</th>
+                                <th style="padding:12px; text-align:left;">Số Điện Thoại</th>
+                                <th style="padding:12px; text-align:left;">Vai Trò</th>
+                                <th style="padding:12px; text-align:left;">Trạng Thái</th>
+                                <th style="padding:12px; text-align:left;">Tòa Nhà Quản Lý</th>
+                                <th style="padding:12px; text-align:left;">Ngày Tạo</th>
+                                <th style="padding:12px; text-align:left;">Thao Tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersList">
+                            <tr><td colspan="8" style="text-align:center;color:#888;">Đang tải...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
-                <h4 style="margin-bottom:10px; color:#2c3e50;">📋 Danh Sách Quản Trị Viên</h4>
-                <table class="buildings-table" style="background:white; border-radius:8px; overflow:hidden; margin-bottom:10px;">
-                    <thead>
-                        <tr>
-                            <th>Email</th>
-                            <th>Vai Trò</th>
-                            <th>Trạng Thái</th>
-                            <th>Tòa Nhà Quản Lý</th>
-                            <th>Thao Tác</th>
-                        </tr>
-                    </thead>
-                    <tbody id="usersList">
-                        <tr><td colspan="5" style="text-align:center;color:#888;">Đang tải...</td></tr>
-                    </tbody>
-                </table>
             </div>
         </div>
 
         <!-- ===== TAB: LOGS (chỉ Super Admin) ===== -->
-        <div id="tab-logs" class="tab-content" style="display:none;">
-            <div class="admin-section">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-                    <h3>📋 Lịch Sử Thao Tác Hệ Thống</h3>
-                    <button class="btn-add" onclick="loadLogs()">🔄 Làm mới</button>
-                </div>
-                <div style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;">
-                    <select id="filterAction" onchange="loadLogs()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
-                        <option value="">Tất cả hành động</option>
-                        <option value="LOGIN">LOGIN</option>
-                        <option value="LOGOUT">LOGOUT</option>
-                        <option value="CREATE_BUILDING">CREATE_BUILDING</option>
-                        <option value="UPDATE_BUILDING">UPDATE_BUILDING</option>
-                        <option value="DELETE_BUILDING">DELETE_BUILDING</option>
-                        <option value="PUBLISH_MAP">PUBLISH_MAP</option>
-                        <option value="CREATE_USER">CREATE_USER</option>
-                        <option value="UPDATE_USER">UPDATE_USER</option>
-                        <option value="DELETE_USER">DELETE_USER</option>
-                        <option value="ASSIGN_BUILDING">ASSIGN_BUILDING</option>
-                    </select>
-                </div>
-                <table class="buildings-table">
-                    <thead>
-                        <tr>
-                            <th>Thời gian</th>
-                            <th>Người dùng</th>
-                            <th>Hành động</th>
-                            <th>Đối tượng</th>
-                            <th>IP</th>
-                        </tr>
-                    </thead>
-                    <tbody id="logsList">
-                        <tr><td colspan="5" style="text-align:center;color:#888;">Nhấn "Làm mới" để tải logs.</td></tr>
-                    </tbody>
-                </table>
-                <div id="logsTotal" style="margin-top:10px; color:#666; font-size:13px;"></div>
+        <div id="tab-logs" class="tab-content logs-page" style="display:none;">
+          <div class="admin-section logs-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+              <h3>Lịch Sử Thao Tác Hệ Thống</h3>
+              <button class="btn-add" onclick="loadLogs()">Làm mới</button>
             </div>
-        </div>
+
+            <div class="logs-filter-bar" style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+              <div>
+                <label style="font-size:13px; color:#666; margin-bottom:4px; display:block;">Hành động</label>
+                <select id="filterAction" onchange="loadLogs()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd; min-width:220px;">
+                  <option value="">Tất cả hành động</option>
+                  <option value="LOGIN">Đăng nhập</option>
+                  <option value="LOGOUT">Đăng xuất</option>
+                  <option value="REGISTER">Đăng ký công khai</option>
+                  <option value="UPDATE_PROFILE">Cập nhật hồ sơ</option>
+                  <option value="CHANGE_PASSWORD">Đổi mật khẩu</option>
+                  <option value="CREATE_BUILDING">Tạo tòa nhà</option>
+                  <option value="UPDATE_BUILDING">Cập nhật tòa nhà</option>
+                  <option value="DELETE_BUILDING">Xóa tòa nhà (cũ)</option>
+                  <option value="DEACTIVATE_BUILDING">Vô hiệu hóa tòa nhà</option>
+                  <option value="PUBLISH_MAP">Xuất bản bản đồ</option>
+                  <option value="LOAD_MAP">Tải bản đồ</option>
+                  <option value="ADMIN_UPDATE_USER">Admin sửa user</option>
+                  <option value="ACTIVATE_USER">Kích hoạt tài khoản</option>
+                  <option value="DEACTIVATE_USER">Vô hiệu hóa tài khoản</option>
+                  <option value="BUILDING_ACCESS_DENIED">Từ chối truy cập tòa</option>
+                  <option value="BUILDING_ASSIGN">Gán tòa nhà</option>
+                  <option value="BUILDING_UNASSIGN">Bỏ gán tòa nhà</option>
+                  <option value="CREATE_QR">Tạo mã QR</option>
+                  <option value="DELETE_QR">Xóa mã QR</option>
+                </select>
+              </div>
+
+              <div>
+                <label style="font-size:13px; color:#666; margin-bottom:4px; display:block;">Email người dùng</label>
+                <input type="text" id="filterEmail" placeholder="Tìm theo email..." style="padding:8px 12px; border-radius:6px; border:1px solid #ddd; min-width:200px;" onkeydown="if(event.key=='Enter') loadLogs()">
+              </div>
+
+              <div>
+                <label style="font-size:13px; color:#666; margin-bottom:4px; display:block;">Tên target/ID</label>
+                <input type="text" id="filterTarget" placeholder="Tìm theo target hoặc ID..." style="padding:8px 12px; border-radius:6px; border:1px solid #ddd; min-width:200px;" onkeydown="if(event.key=='Enter') loadLogs()">
+              </div>
+
+              <div>
+                <label style="font-size:13px; color:#666; margin-bottom:4px; display:block;">Từ ngày</label>
+                <input type="date" id="filterFromDate" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
+              </div>
+
+              <div>
+                <label style="font-size:13px; color:#666; margin-bottom:4px; display:block;">Đến ngày</label>
+                <input type="date" id="filterToDate" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
+              </div>
+            </div>
+
+            <p style="margin-bottom:10px; color:#666;">Tổng số bản ghi: <span id="logsTotal">0</span></p>
+
+            <div class="logs-table-wrapper" style="overflow-x:auto;">
+              <table class="logs-table" style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+                <thead style="background:#34495e; color:white;">
+                  <tr>
+                    <th style="padding:12px; text-align:left;">Thời gian</th>
+                    <th style="padding:12px; text-align:left;">Người dùng</th>
+                    <th style="padding:12px; text-align:left;">Role</th>
+                    <th style="padding:12px; text-align:left;">Hành động</th>
+                    <th style="padding:12px; text-align:left;">Đối tượng</th>
+                    <th style="padding:12px; text-align:left;">Chi tiết</th>
+                    <th style="padding:12px; text-align:left;">IP</th>
+                  </tr>
+                </thead>
+                <tbody id="logsList">
+                  <tr><td colspan="7" style="text-align:center; color:#888; padding:20px;">Đang tải...</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div id="logsPagination" style="margin-top:15px; display:flex; justify-content:center; gap:10px;"></div>
+          </div>
+        </div><!-- end tab-logs -->
+
+        <!-- ===== TAB: PROFILE ===== -->
+        <div id="tab-profile" class="tab-content" style="display:none;">
+          <div class="admin-section">
+            <h3>Thông Tin Cá Nhân</h3>
+
+            <div class="profile-form" style="max-width:600px;">
+              <div class="form-group">
+                <label>Email (không thể thay đổi):</label>
+                <input type="email" id="profileEmail" readonly>
+              </div>
+
+              <div class="form-group">
+                <label>Vai trò:</label>
+                <input type="text" id="profileRole" readonly>
+              </div>
+
+              <div class="form-group">
+                <label>Trạng thái tài khoản:</label>
+                <input type="text" id="profileStatus" readonly>
+              </div>
+
+              <div class="form-group">
+                <label>Ngày tạo tài khoản:</label>
+                <input type="text" id="profileCreatedAt" readonly>
+              </div>
+
+              <div class="form-group">
+                <label>Họ tên:</label>
+                <input type="text" id="profileFullName" placeholder="Nhập họ tên...">
+              </div>
+
+              <div class="form-group">
+                <label>Số điện thoại:</label>
+                <input type="text" id="profilePhone" placeholder="Nhập số điện thoại...">
+              </div>
+
+              <button id="btnSaveProfile" class="btn-create">Lưu Thay Đổi</button>
+              <p id="profileMessage" class="error-msg" style="display:none; margin-top:10px;"></p>
+            </div>
+
+            <hr style="margin:25px 0; border:none; border-top:1px solid #e0e0e0;">
+
+            <h4 style="margin-bottom:15px; color:#2c3e50;">Đổi Mật Khẩu</h4>
+
+            <div class="password-change-form" style="max-width:600px;">
+              <div class="form-group">
+                <label>Mật khẩu hiện tại <span style="color:#e74c3c;">*</span>:</label>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <input type="password" id="currentPassword" placeholder="Nhập mật khẩu hiện tại của bạn..." style="flex:1;">
+                  <button type="button" class="toggle-password-btn" data-target="currentPassword" style="background:none; border:none; cursor:pointer; font-size:14px; color:#7f8c8d; padding:5px 10px;">Hiện</button>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>Mật khẩu mới <span style="color:#e74c3c;">*</span>:</label>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <input type="password" id="newPassword" placeholder="Nhập mật khẩu mới..." style="flex:1;">
+                  <button type="button" class="toggle-password-btn" data-target="newPassword" style="background:none; border:none; cursor:pointer; font-size:14px; color:#7f8c8d; padding:5px 10px;">Hiện</button>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>Xác nhận mật khẩu mới <span style="color:#e74c3c;">*</span>:</label>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <input type="password" id="confirmPassword" placeholder="Nhập lại mật khẩu mới..." style="flex:1;">
+                  <button type="button" class="toggle-password-btn" data-target="confirmPassword" style="background:none; border:none; cursor:pointer; font-size:14px; color:#7f8c8d; padding:5px 10px;">Hiện</button>
+                </div>
+              </div>
+
+              <button id="btnChangePassword" class="btn-create" style="background:#9b59b6;">Đổi Mật Khẩu</button>
+              <p id="passwordMessage" class="error-msg" style="display:none; margin-top:10px;"></p>
+              <p style="font-size:12px; color:#e74c3c; margin-top:8px;">Sau khi đổi mật khẩu thành công, bạn sẽ được tự động đăng xuất và phải đăng nhập lại.</p>
+            </div>
+          </div>
+        </div><!-- end tab-profile -->
 
     </div><!-- end dashboard-content -->
 
@@ -148,6 +270,10 @@
                     <input type="number" id="addBuildingLng" step="any" value="106.6">
                 </div>
             </div>
+            <label>Organization:</label>
+            <select id="addBuildingOrganizationId" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
+                <option value="">Chọn organization...</option>
+            </select>
             <div class="modal-actions">
                 <button onclick="closeAddBuildingModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
                 <button id="btnSaveNewBuilding" class="btn-create">Lưu Tòa Nhà</button>
@@ -183,6 +309,10 @@
                 <option value="DRAFT">DRAFT</option>
                 <option value="PUBLISHED">PUBLISHED</option>
             </select>
+            <label>Organization:</label>
+            <select id="editBuildingOrganizationId" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
+                <option value="">Chọn organization...</option>
+            </select>
             <div class="modal-actions">
                 <button onclick="closeEditBuildingModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
                 <button onclick="saveEditBuilding()" class="btn-create">Lưu Thay Đổi</button>
@@ -191,28 +321,43 @@
     </div>
 
     <!-- ===== MODAL: CHỈNH SỬA TÀI KHOẢN ===== -->
-    <div id="editUserModal" class="modal" style="display:none;">
-        <div class="modal-content">
-            <h3>🖊️ Chỉnh Sửa Quản Trị Viên</h3>
-            <input type="hidden" id="editUserId">
-            <label>Email:</label>
-            <input type="email" id="editEmail">
-            <label>Mật khẩu mới (để trống nếu không đổi):</label>
-            <input type="password" id="editPassword" placeholder="Nhập mật khẩu mới...">
-            <label>Vai trò:</label>
-            <select id="editRole">
-                <option value="BUILDING_ADMIN">Building Admin</option>
-                <option value="SUPER_ADMIN">Super Admin</option>
-            </select>
-            <label>Tòa nhà quản lý:</label>
-            <div id="editUserBuildingsList" style="max-height:150px; overflow-y:auto; background:#f9f9f9; padding:10px; border-radius:6px; border:1px solid #ddd; margin-top:5px;">
-                <p style="font-size:13px; color:#888;">Đang tải...</p>
-            </div>
-            <div class="modal-actions">
-                <button onclick="closeEditModal()" class="btn-logout" style="background:#95a5a6;">Hủy Bỏ</button>
-                <button onclick="saveEditAdmin()" class="btn-create">Lưu Thay Đổi</button>
-            </div>
+    <div id="modalUpdateUser" class="modal" style="display:none;">
+      <div class="modal-content">
+        <h3>Chỉnh Sửa Tài Khoản</h3>
+
+        <input type="hidden" id="updateUserId">
+
+        <label>Email:</label>
+        <input type="email" id="updateUserEmail" readonly style="background:#f9f9f9; color:#888;">
+
+        <label>Họ tên:</label>
+        <input type="text" id="updateUserFullName" placeholder="Nhập họ tên...">
+
+        <label>Số điện thoại:</label>
+        <input type="text" id="updateUserPhone" placeholder="Nhập số điện thoại...">
+
+        <label>Vai trò:</label>
+        <select id="updateUserRole">
+          <option value="BUILDING_ADMIN">BUILDING_ADMIN</option>
+          <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+        </select>
+
+        <label>Tòa nhà quản lý:</label>
+        <p style="font-size:12px; color:#666; margin-top:4px; margin-bottom:6px;">
+          Giữ <strong>Ctrl</strong> + click để chọn/bỏ chọn từng tòa. Bỏ hết chọn = user không quản lý tòa nào.
+        </p>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+          <button type="button" onclick="clearAssignedBuildingsSelection()" class="btn-edit" style="padding:4px 10px; font-size:12px; background:#ecf0f1; color:#333;">
+            Bỏ chọn tất cả
+          </button>
         </div>
+        <select id="updateUserAssignedBuildings" multiple style="width:100%; min-height:140px;"></select>
+
+        <div class="modal-actions">
+          <button type="button" onclick="closeUpdateUserModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
+          <button type="button" id="btnUpdateUser" class="btn-create">Lưu Thay Đổi</button>
+        </div>
+      </div>
     </div>
 
     <!-- ===== MODAL: LỊCH SỬ PHIÊN BẢN BẢN ĐỒ ===== -->

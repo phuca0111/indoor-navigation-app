@@ -59,6 +59,20 @@ const buildingSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         default: null
+    },
+
+    // Cột 9: Soft delete flag
+    is_active: {
+        type: Boolean,
+        default: true
+    },
+
+    // Cột 10: Organization mà tòa nhà thuộc về (multi-tenant)
+    // Sau migration, tất cả building đều có organization_id
+    organization_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Organization',
+        default: null
     }
 
 }, {

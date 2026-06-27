@@ -1,9 +1,11 @@
 const express = require('express');
-const router  = express.Router();
+const router = express.Router();
 const { getVersions, getVersionDetail } = require('../controllers/mapVersionController');
 const { auth } = require('../middlewares/auth');
+const { requireBuildingAccess } = require('../middlewares/buildingAccess');
 
-router.get('/:buildingId/:floor',          auth, getVersions);
-router.get('/:buildingId/:floor/:version', auth, getVersionDetail);
+// Yêu cầu quyền truy cập building
+router.get('/:buildingId/:floor', auth, requireBuildingAccess, getVersions);
+router.get('/:buildingId/:floor/:version', auth, requireBuildingAccess, getVersionDetail);
 
 module.exports = router;

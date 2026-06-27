@@ -36,34 +36,58 @@ class SensorCollector(context: Context) : SensorEventListener {
     var gyroTimestamp = 0L
         private set
 
+    var linearAccelValues = FloatArray(3)
+        private set
+
+    var linearAccelTimestamp = 0L
+        private set
+
     // ── Callbacks ─────────────────────────────────────────────────────────────
     var onAccelUpdate: ((values: FloatArray, timestampNs: Long) -> Unit)? = null
     var onGyroUpdate: ((values: FloatArray, timestampNs: Long) -> Unit)? = null
     var onRotationUpdate: ((values: FloatArray, timestampNs: Long) -> Unit)? = null
+    var onLinearAccelUpdate: ((values: FloatArray, timestampNs: Long) -> Unit)? = null
     var onStepSensorUpdate: (() -> Unit)? = null
 
     // ── Trạng thái ─────────────────────────────────────────────────────────────
     var isRunning = false
         private set
 
+    private var currentDelay = SensorManager.SENSOR_DELAY_GAME
+
     /** Bắt đầu lắng nghe cảm biến */
     fun start() {
         if (isRunning) return
-        val delay = SensorManager.SENSOR_DELAY_GAME
+        currentDelay = SensorManager.SENSOR_DELAY_GAME
+        registerSensors()
+        isRunning = true
+    }
 
+    private fun registerSensors() {
         sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let {
-            sensorManager.registerListener(this, it, delay)
+            sensorManager.registerListener(this, it, currentDelay)
         }
         sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)?.let {
-            sensorManager.registerListener(this, it, delay)
+            sensorManager.registerListener(this, it, currentDelay)
         }
         sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)?.let {
-            sensorManager.registerListener(this, it, delay)
+            sensorManager.registerListener(this, it, currentDelay)
+        }
+        sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)?.let {
+            sensorManager.registerListener(this, it, currentDelay)
         }
         sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_FASTEST)
         }
-        isRunning = true
+    }
+
+    /** Điều chỉnh tần số lấy mẫu tự động (Dynamic Sensor Rate) */
+    fun setDynamicRate(isMoving: Boolean) {
+        val newDelay = if (isMoving) SensorManager.SENSOR_DELAY_GAME else SensorManager.SENSOR_DELAY_UI
+        if (newDelay != currentDelay && isRunning) {
+            currentDelay = newDelay
+            registerSensors() // Android tự động thay thế (replace) đăng ký cũ với delay mới
+        }
     }
 
     /** Ngừng lắng nghe — gọi khi rời khỏi màn hình để tiết kiệm pin */
@@ -87,6 +111,11 @@ class SensorCollector(context: Context) : SensorEventListener {
             Sensor.TYPE_ROTATION_VECTOR -> {
                 rotationValues = event.values.clone()
                 onRotationUpdate?.invoke(rotationValues, event.timestamp)
+            }
+            Sensor.TYPE_LINEAR_ACCELERATION -> {
+                linearAccelValues = event.values.clone()
+                linearAccelTimestamp = event.timestamp
+                onLinearAccelUpdate?.invoke(linearAccelValues, event.timestamp)
             }
             Sensor.TYPE_STEP_DETECTOR -> {
                 onStepSensorUpdate?.invoke()

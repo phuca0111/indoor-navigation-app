@@ -19,9 +19,9 @@ import kotlin.math.*
  *   2. Đi hết 10m → Dist = 9.5-10.5m? → chỉnh K
  */
 class StepDetector(
-    threshold: Float = 1.8f,               // Tăng nhẹ lên 1.8 để lọc rung nhấc máy
-    private var minIntervalMs: Long = 450L, // Tăng lên 0.45s để tránh nhiễu kép
-    private var kWeinberg: Float = 0.33f    // Hằng số Weinberg (giảm xuống 0.33 để hợp chân người Châu Á ~0.4m)
+    threshold: Float = 1.2f,               // Giảm xuống 1.2 → peakThreshold=11.01, dễ detect hơn với LPF mới
+    private var minIntervalMs: Long = 450L,
+    private var kWeinberg: Float = 0.42f    // Hằng số Weinberg (điều chỉnh cho step length ~0.5m người Việt)
 ) {
     /** Callback khi phát hiện 1 bước. stepLength đơn vị: mét */
     var onStepDetected: ((stepLength: Float) -> Unit)? = null
@@ -56,9 +56,9 @@ class StepDetector(
     fun onAccelData(x: Float, y: Float, z: Float) {
         val rawMag = sqrt(x * x + y * y + z * z)
 
-        // 1. Áp dụng Low-Pass Filter (LPF) cực mạnh alpha = 0.9
-        // Giúp đồ thị gia tốc cực kỳ mịn, không bị răng cưa nhiễu
-        val alpha = 0.9f
+        // 1. Áp dụng Low-Pass Filter — alpha=0.7 để phản ứng kịp peak bước chân (~2Hz)
+        // alpha=0.9 quá nặng: tại 50Hz filteredMag không kịp vượt peakThreshold khi đi bộ
+        val alpha = 0.7f
         filteredMag = alpha * filteredMag + (1f - alpha) * rawMag
         val magnitude = filteredMag
 

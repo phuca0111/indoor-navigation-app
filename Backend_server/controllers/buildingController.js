@@ -1,9 +1,10 @@
-// ============================================
+﻿// ============================================
 // FILE: buildingController.js
 // MỤC ĐÍCH: NÃO BỘ xử lý logic Tạo / Xem / Sửa Tòa Nhà
 // ============================================
 
 const Building = require('../models/Building');
+const Organization = require('../models/Organization');
 const ActivityLog = require('../models/ActivityLog');
 
 function logActivity(data) {
@@ -17,19 +18,26 @@ function logActivity(data) {
 const getBuildings = async (req, res) => {
     try {
         let buildings;
+        // Tòa nhà cũ có thể chưa có field is_active — coi là active trừ khi is_active === false
+        const activeOnlyFilter = { is_active: { $ne: false } };
 
         // KIỂM TRA: Nếu không có req.user (truy cập công khai từ Mobile)
         if (!req.user) {
-            // App Di động → Chỉ thấy các tòa nhà đã được PUBLISHED (Đã vẽ xong bản đồ)
-            buildings = await Building.find({ status: 'PUBLISHED' });
+            // App Di động → Chỉ thấy các tòa nhà đã được PUBLISHED và còn active
+            buildings = await Building.find({ ...activeOnlyFilter, status: 'PUBLISHED' });
         } else if (req.user.role === 'SUPER_ADMIN') {
-            // Super Admin → Thấy TẤT CẢ tòa nhà
-            buildings = await Building.find();
+            // Super Admin → tòa nhà active; ?include_inactive=true để xem cả đã vô hiệu hóa
+            const filter = req.query.include_inactive === 'true' ? {} : activeOnlyFilter;
+            buildings = await Building.find(filter);
         } else {
-            // Building Admin → Chỉ thấy tòa nhà được gán
+            // Building Admin → Chỉ thấy tòa nhà được gán, thuộc organization của mình, và còn active
             const User = require('../models/User');
-            const user = await User.findById(req.user.userId);
-            buildings = await Building.find({ _id: { $in: user.assigned_buildings } });
+            const user = await User.findById(req.user.userId).select('assigned_buildings organization_id').lean();
+            buildings = await Building.find({
+                _id: { $in: user.assigned_buildings },
+                organization_id: user.organization_id,
+                ...activeOnlyFilter
+            });
         }
 
         res.status(200).json(buildings);
@@ -41,9 +49,26 @@ const getBuildings = async (req, res) => {
 // ==========================================
 // HÀM 2: TẠO TÒA NHÀ MỚI
 // ==========================================
+// Super Admin bắt buộc gửi organization_id trong body
 const createBuilding = async (req, res) => {
     try {
-        const { name, address, lat, lng, activation_radius } = req.body;
+        const { name, address, lat, lng, activation_radius, organization_id } = req.body;
+
+        // VALIDATE: organization_id bắt buộc
+        if (!organization_id) {
+            return res.status(400).json({
+                message: 'Thiếu organization_id. Super Admin phải chỉ định organization khi tạo building.'
+            });
+        }
+
+        // Kiểm tra organization tồn tại và active
+        const org = await Organization.findById(organization_id);
+        if (!org) {
+            return res.status(400).json({ message: 'Organization không tồn tại.' });
+        }
+        if (!org.is_active) {
+            return res.status(400).json({ message: 'Organization đã bị vô hiệu hóa.' });
+        }
 
         const building = await Building.create({
             name:              name,
@@ -52,7 +77,8 @@ const createBuilding = async (req, res) => {
             activation_radius: activation_radius || 50,
             description:       req.body.description || '',
             total_floors:      req.body.total_floors || 1,
-            created_by:        req.user ? req.user.userId : null
+            created_by:        req.user ? req.user.userId : null,
+            organization_id:   organization_id
         });
 
         logActivity({
@@ -61,7 +87,12 @@ const createBuilding = async (req, res) => {
             target_type: 'building',
             target_id:   String(building._id),
             target:      building.name,
-            ip_address:  req.ip || ''
+            details:     {
+                message: 'Tạo tòa nhà mới',
+                organization_id: organization_id
+            },
+            ip_address:  req.ip || '',
+            organization_id: organization_id
         });
 
         res.status(201).json({
@@ -81,8 +112,8 @@ const checkLocation = async (req, res) => {
     try {
         const { lat, lng } = req.query;   // Lấy tọa độ từ URL: ?lat=10.7&lng=106.6
 
-        // Lấy tất cả tòa nhà đã Publish
-        const buildings = await Building.find({ status: 'PUBLISHED' });
+        // Lấy tất cả tòa nhà đã Publish và còn active
+        const buildings = await Building.find({ status: 'PUBLISHED', is_active: { $ne: false } });
 
         // Chạy thuật toán Haversine tìm tòa nhà trong bán kính
         const nearbyBuildings = buildings.filter(function (b) {
@@ -127,7 +158,7 @@ function haversine(lat1, lon1, lat2, lon2) {
 const updateBuilding = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, address, lat, lng, activation_radius, description, total_floors, status } = req.body;
+        const { name, address, lat, lng, activation_radius, description, total_floors, status, organization_id } = req.body;
 
         const updateData = {};
         if (name !== undefined)              updateData.name = name;
@@ -141,7 +172,22 @@ const updateBuilding = async (req, res) => {
             updateData['gps_location.lng'] = lng;
         }
 
-        const building = await Building.findByIdAndUpdate(id, updateData, { new: true });
+        const oldBuilding = await Building.findById(id).select('organization_id');
+
+if (organization_id !== undefined && organization_id !== '') {
+  if (req.user.role !== 'SUPER_ADMIN') {
+    return res.status(403).json({ message: 'Chỉ Super Admin được thay đổi organization của tòa nhà.' });
+  }
+  const org = await Organization.findById(organization_id);
+  if (!org) {
+    return res.status(400).json({ message: 'Organization không tồn tại.' });
+  }
+  if (!org.is_active) {
+    return res.status(400).json({ message: 'Organization đã bị vô hiệu hóa.' });
+  }
+  updateData.organization_id = organization_id;
+}
+  const building = await Building.findByIdAndUpdate(id, updateData, { new: true });
         if (!building) return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
 
         logActivity({
@@ -150,7 +196,9 @@ const updateBuilding = async (req, res) => {
             target_type: 'building',
             target_id:   String(building._id),
             target:      building.name,
-            ip_address:  req.ip || ''
+            details:     { message: 'Cập nhật thông tin tòa nhà' },
+            ip_address:  req.ip || '',
+            organization_id: oldBuilding.organization_id
         });
 
         res.status(200).json({ message: 'Cập nhật tòa nhà thành công!', building });
@@ -160,27 +208,56 @@ const updateBuilding = async (req, res) => {
 };
 
 // ==========================================
-// HÀM 5: XÓA TÒA NHÀ
+// HÀM 5: XÓA TÒA NHÀ (SOFT DELETE)
 // ==========================================
 const deleteBuilding = async (req, res) => {
     try {
         const { id } = req.params;
-        const building = await Building.findByIdAndDelete(id);
-        if (!building) return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
 
+        // Kiểm tra building tồn tại
+        const building = await Building.findById(id);
+        if (!building) {
+            return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
+        }
+
+        // Nếu đã bị deactivate rồi (chỉ khi explicitly false)
+        if (building.is_active === false) {
+            return res.status(400).json({ message: 'Tòa nhà đã được vô hiệu hóa trước đó!' });
+        }
+
+        // Soft delete: set is_active = false
+        const updated = await Building.findByIdAndUpdate(
+            id,
+            { is_active: false },
+            { new: true }
+        );
+
+        if (!updated) {
+            return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
+        }
+
+        // Log DEACTIVATE_BUILDING (giữ DELETE_BUILDING để backward compat)
         logActivity({
             user_id:     req.user ? req.user.userId : null,
-            action:      'DELETE_BUILDING',
+            action:      'DEACTIVATE_BUILDING',
             target_type: 'building',
             target_id:   String(id),
             target:      building.name,
-            ip_address:  req.ip || ''
+            details:     {
+                message: 'Vô hiệu hóa tòa nhà (soft delete)',
+                changes: {
+                    is_active: { from: true, to: false }
+                }
+            },
+            ip_address:  req.ip || '',
+            organization_id: building.organization_id
         });
 
-        res.status(200).json({ message: 'Đã xóa tòa nhà thành công!' });
+        res.status(200).json({ message: 'Đã vô hiệu hóa tòa nhà thành công!' });
     } catch (error) {
         res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
     }
 };
 
 module.exports = { getBuildings, createBuilding, updateBuilding, deleteBuilding, checkLocation };
+

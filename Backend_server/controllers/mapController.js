@@ -1,4 +1,4 @@
-// ============================================
+﻿// ============================================
 // FILE: mapController.js
 // MỤC ĐÍCH: NÃO BỘ xử lý logic Lưu / Tải / Publish Bản Đồ JSON
 // ĐÂY LÀ FILE CỐT LÕI: Nối Web Map Editor với Database
@@ -11,7 +11,7 @@ const QrCode     = require('../models/QrCode');
 const ActivityLog = require('../models/ActivityLog');
 
 function logActivity(data) {
-    ActivityLog.create(data).catch(() => {});
+    return ActivityLog.create(data).catch(() => {});
 }
 
 // Sync qr_anchors từ floor document sang collection QrCode riêng (fire-and-forget)
@@ -90,7 +90,7 @@ const saveMap = async (req, res) => {
                 target_type: 'floor',
                 target_id:   String(existingMap._id),
                 target:      `Building ${buildingId} - Tầng ${floor}`,
-                details:     `Version ${existingMap.version}`,
+                details:     `Phiên bản ${existingMap.version}`,
                 ip_address:  req.ip || ''
             });
 
@@ -131,7 +131,7 @@ const saveMap = async (req, res) => {
                 target_type: 'floor',
                 target_id:   String(newMap._id),
                 target:      `Building ${buildingId} - Tầng ${floor}`,
-                details:     'Version 1 (tạo mới)',
+                details:     'Phiên bản 1 (tạo mới)',
                 ip_address:  req.ip || ''
             });
 
@@ -160,6 +160,19 @@ const loadMap = async (req, res) => {
         if (!map) {
             console.log(`⚠️ LOAD: Không tìm thấy bản đồ [Tòa nhà: ${buildingId}, Tầng: ${floor}]`);
             return res.status(404).json({ message: 'Chưa có bản đồ cho tầng này!' });
+        }
+
+        // Log LOAD_MAP (chỉ route private có req.user; public route bỏ qua)
+        if (req.user?.userId) {
+            logActivity({
+                user_id: req.user.userId,
+                action: 'LOAD_MAP',
+                target_type: 'floor',
+                target_id: String(map._id),
+                target: `Building ${buildingId} - Tầng ${floor}`,
+                details: { version: map.version, message: 'Tải bản đồ lên Editor' },
+                ip_address: req.ip || ''
+            });
         }
 
         console.log(`📥 LOAD: Tải bản đồ thành công [Tòa nhà: ${buildingId}, Tầng: ${floor}] - Phòng: ${map.map_data?.rooms?.length || 0}`);
