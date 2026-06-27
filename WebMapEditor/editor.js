@@ -107,13 +107,31 @@ if (bSli) {
 // === SERVER SYNC ===
 // Nút Publish đã có onclick trong HTML
 
-if (document.getElementById('floorSelect')) {
-    document.getElementById('floorSelect').addEventListener('change', function () {
-        if (confirm('⚠️ CẢNH BÁO: Chuyển tầng sẽ xóa các thay đổi chưa lưu trên Canvas hiện tại. Bạn có muốn tiếp tục?')) {
-            loadMapFromServer();
+(function initFloorSelectHandler() {
+    var floorSelect = document.getElementById('floorSelect');
+    if (!floorSelect) return;
+
+    // Tầng đang hiển thị trên canvas (khác với value select khi user vừa đổi rồi bấm Hủy)
+    var activeFloor = floorSelect.value;
+
+    floorSelect.addEventListener('change', function () {
+        var targetFloor = this.value;
+        if (targetFloor === activeFloor) return;
+
+        if (!confirm('⚠️ CẢNH BÁO: Chuyển tầng sẽ xóa các thay đổi chưa lưu trên Canvas hiện tại. Bạn có muốn tiếp tục?')) {
+            this.value = activeFloor;
+            return;
         }
+
+        loadMapFromServer().then(function () {
+            activeFloor = floorSelect.value;
+        });
     });
-}
+
+    window.syncActiveFloor = function () {
+        activeFloor = floorSelect.value;
+    };
+})();
 
 // === RESIZE CANVAS ===
 window.addEventListener('resize', resizeCanvas);

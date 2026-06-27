@@ -55,10 +55,25 @@ const userSchema = new mongoose.Schema({
         default: ''
     },
 
-    // Cột 8: Super Admin nào đã tạo account này
+    // Cột 8: Số điện thoại (optional)
+    phone: {
+        type: String,
+        default: ''
+    },
+
+    // Cột 9: Super Admin nào đã tạo account này
     created_by: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
+        default: null
+    },
+
+    // Cột 10: Organization mà user thuộc về (multi-tenant)
+    // SUPER_ADMIN: null (cross-tenant)
+    // BUILDING_ADMIN: bắt buộc sau migration
+    organization_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Organization',
         default: null
     }
 

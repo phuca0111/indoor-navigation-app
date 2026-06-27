@@ -1,6 +1,9 @@
+@file:OptIn(androidx.camera.core.ExperimentalGetImage::class)
+
 package com.khoaluan.indoornav.ui.screens
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.util.Log
 import android.view.ViewGroup
@@ -39,6 +42,8 @@ import java.util.concurrent.ExecutorService
  * MỤC ĐÍCH: Màn hình quét QR code để định vị điểm xuất phát.
  * Sử dụng CameraX + ML Kit Barcode Scanning.
  */
+@OptIn(androidx.camera.core.ExperimentalGetImage::class)
+@SuppressLint("UnsafeOptInUsageError")
 @Composable
 fun QRScanScreen(
     onResult: (String) -> Unit,

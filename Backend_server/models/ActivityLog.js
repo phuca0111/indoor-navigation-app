@@ -9,59 +9,69 @@ const mongoose = require('mongoose');
 
 const activityLogSchema = new mongoose.Schema({
 
-    // Cột 1: Ai đã thực hiện hành động (Liên kết sang bảng User)
-    user_id: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
-    },
+  // Cột 1: Ai đã thực hiện hành động (Liên kết sang bảng User)
+  user_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
 
-    // Cột 2: Hành động gì (enum đầy đủ)
-    action: {
-        type: String,
-        required: true,
-        enum: [
-            'LOGIN', 'LOGOUT',
-            'PUBLISH_MAP', 'LOAD_MAP',
-            'CREATE_BUILDING', 'UPDATE_BUILDING', 'DELETE_BUILDING',
-            'CREATE_USER', 'UPDATE_USER', 'DELETE_USER', 'ASSIGN_BUILDING',
-            'CREATE_QR', 'DELETE_QR'
-        ]
-    },
+  // Cột 2: Hành động gì (enum đầy đủ)
+  action: {
+    type: String,
+    required: true,
+    enum: [
+      'LOGIN', 'LOGOUT', 'REGISTER', 'UPDATE_PROFILE', 'CHANGE_PASSWORD',
+      'PUBLISH_MAP', 'LOAD_MAP',
+      'CREATE_BUILDING', 'UPDATE_BUILDING', 'DELETE_BUILDING', 'DEACTIVATE_BUILDING',
+      'CREATE_USER', 'ADMIN_UPDATE_USER', 'ACTIVATE_USER', 'DEACTIVATE_USER', 'DELETE_USER',
+      'ASSIGN_BUILDING', 'BUILDING_ASSIGN', 'BUILDING_UNASSIGN',
+      'BUILDING_ACCESS_DENIED',
+      'CREATE_QR', 'DELETE_QR',
+      'PASSWORD_RESET_REQUEST', 'PASSWORD_RESET_COMPLETE'
+    ]
+  },
 
-    // Cột 3: Loại đối tượng bị tác động — 'building' | 'floor' | 'user' | 'qr'
-    target_type: {
-        type: String,
-        default: ''
-    },
+  // Cột 3: Loại đối tượng bị tác động — 'building' | 'floor' | 'user' | 'qr'
+  target_type: {
+    type: String,
+    default: ''
+  },
 
-    // Cột 4: ID của đối tượng bị tác động (dạng String để linh hoạt với ObjectId)
-    target_id: {
-        type: String,
-        default: ''
-    },
+  // Cột 4: ID của đối tượng bị tác động (dạng String để linh hoạt với ObjectId)
+  target_id: {
+    type: String,
+    default: ''
+  },
 
-    // Cột 5: Mô tả dạng text — VD: "Bệnh viện Chợ Rẫy - Tầng 3"
-    target: {
-        type: String,
-        default: ''
-    },
+  // Cột 5: Mô tả dạng text — VD: "Bệnh viện Chợ Rẫy - Tầng 3"
+  target: {
+    type: String,
+    default: ''
+  },
 
-    // Cột 6: Ghi chú chi tiết thêm
-    details: {
-        type: String,
-        default: ''
-    },
+  // Cột 6: Ghi chú chi tiết thêm
+  details: {
+    type: Object,
+    default: {}
+  },
 
-    // Cột 7: Địa chỉ IP của máy thực hiện
-    ip_address: {
-        type: String,
-        default: ''
-    }
+  // Cột 7: Địa chỉ IP của máy thực hiện
+  ip_address: {
+    type: String,
+    default: ''
+  },
+
+  // Cột 8: Organization mà hoạt động thuộc về (tenant context)
+  organization_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization',
+    default: null
+  }
 
 }, {
-    // Tự động thêm cột createdAt = thời điểm ghi log
-    timestamps: true
+  // Tự động thêm 2 cột: createdAt (ngày tạo) và updatedAt (ngày cập nhật)
+  timestamps: true
 });
 
 module.exports = mongoose.model('ActivityLog', activityLogSchema);

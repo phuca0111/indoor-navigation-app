@@ -22,6 +22,7 @@
             <div class="header-left">
                 <i data-lucide="map" style="color: var(--primary)"></i>
                 <h1>Editor V3</h1>
+                <span id="editorCurrentUser" style="margin-left:12px; color:#666; font-size:14px; align-self:center;">Đang chỉnh sửa bởi: <strong>...</strong></span>
                 <button onclick="if(confirm('Bạn có muốn xóa sạch bản đồ hiện tại?')) clearCanvasData()"
                     class="btn-new-map">Bản đồ mới</button>
                 <input type="hidden" id="mapName" value="Bản đồ mới">
@@ -86,7 +87,7 @@
                     <div class="prop-group" style="margin-top: 10px;">
                         <div class="prop-row">
                             <label>Tầng:</label>
-                            <select id="floorSelect" onchange="loadMapFromServer()" style="width: 80px;">
+                            <select id="floorSelect" style="width: 80px;">
                                 <option value="0">Tầng trệt GF</option>
                                 <option value="1">Tầng 1</option>
                                 <option value="2">Tầng 2</option>
@@ -219,14 +220,14 @@
     <script src="js/tools.js?v=2"></script>
     <script src="js/canvas.js?v=2"></script>
     <script src="js/io.js?v=2"></script>
-    <script src="js/api.js?v=2"></script>
+    <script src="js/api.js?v=3"></script>
     <script src="js/secure-lock.js?v=2"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
     <script src="js/properties.js?v=2"></script>
     <script src="js/qrs.js?v=2"></script>
     <script src="js/autosave.js?v=2"></script>
     <script src="js/events.js?v=2"></script>
-    <script src="editor.js?v=2"></script>
+    <script src="editor.js?v=3"></script>
     <script>
         // Khởi tạo Lucide Icons
         lucide.createIcons();

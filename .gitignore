@@ -11,15 +11,53 @@ Thumbs.db
 node_modules/
 **/node_modules/
 
-# Secrets - KHÔNG bao giờ commit lên Git
+# Secrets — KHÔNG BAO GIỜ commit
 .env
-*.env
+.env.*
+!.env.example
+!**/.env.example
 Backend_server/.env
+*_token.json
+**/admin_token.json
+**/building_admin_token.json
 
+# Báo cáo test / coverage (tạo lại được)
+Backend_server/coverage/
+**/coverage/
+
+# File tạm & dữ liệu test local
+Backend_server/temp_map.json
+Backend_server/test_data.json
+Backend_server/test_data2.json
+Backend_server/check_*.js
+Backend_server/get_real_test_data.js
+Backend_server/test_api_*.js
+Backend_server/test_get_data*.js
+
+# Unit test Jest — luôn đưa lên Git
+!Backend_server/test/
+!Backend_server/test/**
+
+# Gradle cache local (JDK zip, rất nặng)
+IndoorNavigationApp/.gradle-user-home/
+
+# Script patch Python một lần (AI debug Android)
+IndoorNavigationApp/patch_*.py
+IndoorNavigationApp/comment_*.py
+IndoorNavigationApp/find_*.py
+IndoorNavigationApp/fix_*.py
+IndoorNavigationApp/check_*.py
+
+# Cursor / Claude local
+.claude/
+
+# Tài liệu luận văn & nội bộ (giữ private)
 Docs/
 lichsu/
-Test_pdr/
+# Thư mục thí nghiệm PDR (không nhầm với Backend_server/test/)
+/Test_pdr/
 THIETKEGIAODIEN/
+Assets/
 
 ANDROID_INTEGRATION.md
 bang_chuc_nang_va_kich_ban.md
@@ -38,3 +76,13 @@ task_chi_tiet.md
 test-thuc_nghiem.md
 Tracking Thesis Progress.md
 update_weeks.py
+CHANGES_SUMMARY.md
+DATA_COLLECTION_CHECKLIST.md
+chitiet_xoay_laban_map.md
+phan_tich_yeu_cau.md
+IndoorNavigationApp/ANALYSIS_CURSOR_STUCK.md
+IndoorNavigationApp/FIX_PLAN.md
+IndoorNavigationApp/FIXES_SUMMARY.md
+
+# Roadmap AI — bỏ comment dòng dưới nếu MUỐN đưa SaaS.md lên GitHub
+SaaS.md

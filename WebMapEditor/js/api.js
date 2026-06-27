@@ -11,10 +11,118 @@ const buildingId = urlParams.get('buildingId') || urlParams.get('building'); // 
 let token = localStorage.getItem('token');   // WHY: dùng let để có thể cập nhật khi refresh
 window.buildingId = buildingId;
 
-// 2. Kiểm tra quyền truy cập
+// 2. Kiểm tra quyền truy cập (chỉ warning, không chặn)
 if (!token && buildingId) {
     // alert('Vui lòng đăng nhập để sử dụng tính năng lưu trữ đám mây!');
 }
+
+// ==========================================
+// AUTH GUARD - Web Map Editor
+// ==========================================
+function clearEditorAuthStorage() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('userEmail');
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('userId');
+    localStorage.removeItem('activeDashboardTab');
+}
+
+async function verifyEditorSession() {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        console.warn('🔒 Editor: Không có token - redirect đến login');
+        clearEditorAuthStorage();
+        window.location.replace('/admin/index.html');
+        return null;
+    }
+
+    try {
+        const response = await apiFetch(BASE_API_URL + '/users/me', {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (!response.ok) {
+            console.warn('🔒 Editor: Token không hợp lệ - redirect đến login');
+            clearEditorAuthStorage();
+            window.location.replace('/admin/index.html');
+            return null;
+        }
+
+        const currentUser = await response.json();
+        console.log('✅ Editor session verified:', currentUser.email);
+        return currentUser;
+    } catch (error) {
+        console.error('🔒 Editor: Lỗi verify session:', error);
+        clearEditorAuthStorage();
+        window.location.replace('/admin/index.html');
+        return null;
+    }
+}
+
+async function initEditor() {
+    console.log('🚀 Editor: Khởi tạo...');
+    const currentUser = await verifyEditorSession();
+    if (!currentUser) {
+        console.log('🛑 Editor: Dừng init - không có session hợp lệ');
+        return;
+    }
+
+    // Hiển thị thông tin user đang edit
+    renderEditorUser(currentUser);
+
+    // Sau khi xác thực, load map tự động
+    console.log('📥 Editor: Tự động load map cho tầng:', document.getElementById('floorSelect')?.value);
+    await loadMapFromServer();
+    if (typeof syncActiveFloor === 'function') syncActiveFloor();
+}
+
+// ==========================================
+// UI: Hiển thị user hiện tại đang chỉnh sửa
+// ==========================================
+function renderEditorUser(currentUser) {
+    const el = document.getElementById('editorCurrentUser');
+    if (!el) return;
+
+    const fullName = currentUser.full_name || currentUser.fullName || currentUser.name || '';
+    const email = currentUser.email || '';
+    const role = currentUser.role || '';
+
+    let displayHtml = '';
+    if (fullName) {
+        displayHtml = `Đang chỉnh sửa bởi: <strong>${escapeHtml(fullName)} — ${escapeHtml(email)} (${escapeHtml(role)})</strong>`;
+    } else {
+        displayHtml = `Đang chỉnh sửa bởi: <strong>${escapeHtml(email)} (${escapeHtml(role)})</strong>`;
+    }
+
+    el.innerHTML = displayHtml;
+}
+
+// Helper: escape HTML để tránh XSS
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// ==========================================
+// SYNC LOGOUT: Đồng bộ logout giữa các tab
+// ==========================================
+window.addEventListener('storage', event => {
+    if (['token', 'refreshToken', 'userEmail', 'userRole', 'userId', 'authEvent'].includes(event.key)) {
+        console.log('🔄 Editor: Phát hiện thay đổi storage - kiểm tra session...');
+        verifyEditorSession();
+    }
+});
+
+window.addEventListener('focus', () => {
+    verifyEditorSession();
+});
+
+// Đăng ký initEditor khi DOM sẵn sàng
+document.addEventListener('DOMContentLoaded', initEditor);
 
 // ============================================================
 // HELPER: Tự động gia hạn thẻ (Refresh Token)
@@ -291,11 +399,8 @@ async function loadMapFromServer() {
     const floor = document.getElementById('floorSelect').value;
     showLoading('Đang tải dữ liệu tầng ' + floor + '...');
 
-    // WHY: Tách thành 1 helper để thử 2 endpoint (private có auth → public)
-    // mà không phải duplicate logic parse response.
+    // WHY: Tách thành 1 helper để thử endpoint private (chỉ có auth)
     async function tryFetch(url, useAuth) {
-        const headers = {};
-        // WHY: useAuth check nếu cần dùng token (private endpoint)
         const resp = useAuth
             ? await apiFetch(url)
             : await fetch(url);
@@ -308,19 +413,17 @@ async function loadMapFromServer() {
 
     try {
         const privateUrl = `${BASE_API_URL}/maps/${buildingId}/${floor}`;
-        const publicUrl = `${BASE_API_URL}/maps/${buildingId}/${floor}/public`;
 
-        // Ưu tiên endpoint private (có auth) khi còn token; nếu 401/thiếu token
-        // → rơi xuống endpoint public để admin vẫn xem + sửa được map (save
-        // vẫn yêu cầu đăng nhập, xử lý riêng trong saveMapToServer).
+        // CHỈ dùng endpoint private - editor yêu cầu xác thực
         let result = token
             ? await tryFetch(privateUrl, true)
             : { unauthorized: true };
 
         if (result.unauthorized) {
-            console.warn('🔒 Token không có hoặc đã hết hạn — fallback endpoint /public');
-            showToast('Phiên đăng nhập hết hạn, tải ở chế độ xem. Đăng nhập lại để lưu.', 'error');
-            result = await tryFetch(publicUrl, false);
+            console.warn('🔒 Editor: Token không hợp lệ - redirect login');
+            clearEditorAuthStorage();
+            window.location.replace('/admin/index.html');
+            return { loaded: false, unauthorized: true };
         }
 
         hideLoading();

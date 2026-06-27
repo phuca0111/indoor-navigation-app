@@ -48,7 +48,15 @@ class GraphModel(private val mapData: MapData) {
     }
 
     /** Map nodeId (String) → PathNode để tra cứu O(1) */
-    val nodeMap: Map<String, PathNode> = mapData.nodes.associateBy { it.nodeId }
+    val nodeMap: Map<String, PathNode> = mapData.nodes.orEmpty().associateBy { it.nodeId }
+
+    // WHY: Phải init safeScaleRatio + wallSegments TRƯỚC edges vì buildEdges()
+    // gọi intersectsAnyWall() — hàm này truy cập wallSegments.isEmpty().
+    // Nếu khai báo wallSegments sau edges → lúc buildEdges chạy wallSegments
+    // còn là null (JVM default) → NPE "boolean List.isEmpty() on null".
+    /** scaleRatio từ MapData (metersPerGrid, 1 grid = 40px) */
+    private val safeScaleRatio = mapData.scaleRatio.toFloat().takeIf { it > 0f } ?: DEFAULT_SCALE_RATIO
+    private val wallSegments: List<WallSegment> = buildWallSegments()
 
     /** Tất cả GraphEdge (bao gồm cả 2 chiều của mỗi edge gốc) */
     val edges: List<GraphEdge> = buildEdges()
@@ -56,16 +64,19 @@ class GraphModel(private val mapData: MapData) {
     /** Adjacency list: nodeId → danh sách Edge xuất phát từ node đó */
     val adjacency: Map<String, List<GraphEdge>> = buildAdjacency()
 
-    /** scaleRatio từ MapData (metersPerGrid, 1 grid = 40px) */
-    private val safeScaleRatio = mapData.scaleRatio.toFloat().takeIf { it > 0f } ?: DEFAULT_SCALE_RATIO
-    private val wallSegments: List<WallSegment> = buildWallSegments()
+    /** Chuyển đổi pixel sang mét để đồng bộ heuristic và cost */
+    fun pixelsToMeters(pixels: Float): Float {
+        return (pixels / GRID_SIZE_PX) * safeScaleRatio
+    }
 
     // ── Build Edges ────────────────────────────────────────────────────────────
 
     private fun buildEdges(): List<GraphEdge> {
         val result = mutableListOf<GraphEdge>()
 
-        mapData.edges.forEach { edge ->
+        // WHY: .orEmpty() để Gson có lỡ trả null (khi JSON thiếu field) thì vẫn
+        // không NPE — mọi layer của bản đồ đều optional ở phía server.
+        mapData.edges.orEmpty().forEach { edge ->
             val src = nodeMap[edge.source] ?: return@forEach
             val tgt = nodeMap[edge.target] ?: return@forEach
 
@@ -114,7 +125,11 @@ class GraphModel(private val mapData: MapData) {
             )
         }
 
-        return result.filterNot { intersectsAnyWall(it) }
+        // WHY: Tắt tính năng tự động xóa Edge khi cắt qua Tường.
+        // Vì Admin đã tự tay vẽ Graph (các đường màu xanh), ta nên tin tưởng tuyệt đối
+        // vào Graph này. Việc filter theo tường dễ làm đứt gãy đồ thị nếu Admin vẽ tường
+        // hơi lẹch hoặc cố ý cho đi xuyên qua vùng không gian hở.
+        return result
     }
 
     private fun buildAdjacency(): Map<String, List<GraphEdge>> {
@@ -187,8 +202,8 @@ class GraphModel(private val mapData: MapData) {
 
     private fun buildWallSegments(): List<WallSegment> {
         val segments = mutableListOf<WallSegment>()
-        mapData.walls.forEach { wall ->
-            val pts = wall.points
+        mapData.walls.orEmpty().forEach { wall ->
+            val pts = wall.points.orEmpty()
             if (pts.size >= 2) {
                 for (i in 0 until pts.size - 1) {
                     segments.add(

@@ -8,20 +8,16 @@ const router = express.Router();
 
 const { saveMap, loadMap, downloadMap } = require('../controllers/mapController');
 const { auth } = require('../middlewares/auth');
+const { requireBuildingAccess } = require('../middlewares/buildingAccess');
 
-// Đường 1: Web Editor lưu bản đồ lên Server (Phải đăng nhập)
-// URL: POST /api/maps/:buildingId/:floor/publish
-router.post('/:buildingId/:floor/publish', auth, saveMap);
-
-// Đường 2: Web Editor tải bản đồ về sửa tiếp (Phải đăng nhập)
-// URL: GET /api/maps/:buildingId/:floor
-router.get('/:buildingId/:floor', auth, loadMap);
-
-// Đường 2.1: App Android tải bản đồ từng tầng (Public - Không cần đăng nhập)
+// PUBLIC ROUTES — đặt trước để không bị generic :buildingId match trước
+// Android/Public có thể tải bản đồ mà không cần đăng nhập
 router.get('/:buildingId/:floor/public', loadMap);
-
-// Đường 3: App Android tải toàn bộ bản đồ offline (Không cần đăng nhập)
-// URL: GET /api/maps/:buildingId/download
 router.get('/:buildingId/download', downloadMap);
+
+// PRIVATE ROUTES — yêu cầu xác thực và quyền truy cập building
+// Web Editor (login) — chỉ user có quyền trên building mới được load/publish
+router.get('/:buildingId/:floor', auth, requireBuildingAccess, loadMap);
+router.post('/:buildingId/:floor/publish', auth, requireBuildingAccess, saveMap);
 
 module.exports = router;

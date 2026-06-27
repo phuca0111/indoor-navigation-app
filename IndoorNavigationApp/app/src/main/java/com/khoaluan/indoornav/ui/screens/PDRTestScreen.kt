@@ -1,6 +1,5 @@
 package com.khoaluan.indoornav.ui.screens
 
-import android.content.Context
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -12,8 +11,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -22,9 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.khoaluan.indoornav.navigation.NavigationLogger
-import com.khoaluan.indoornav.navigation.pdr.SensorCollector
-import com.khoaluan.indoornav.navigation.pdr.StepDetector
-import com.khoaluan.indoornav.navigation.pdr.HeadingEstimator
+import com.khoaluan.indoornav.navigation.pdr.RuntimePdrTestController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlin.math.*
@@ -33,17 +32,9 @@ import kotlin.math.*
  * FILE: PDRTestScreen.kt
  * MỤC ĐÍCH: Màn hình hiệu chuẩn PDR — Canvas trắng + vết đường đi + Debug HUD
  *
- * KHÔNG cần bản đồ, không cần server.
- * Chỉ cần điện thoại thật + không gian di chuyển.
- *
- * CÁCH DÙNG:
- *   1. Bật màn hình → chấm xanh xuất hiện ở giữa
- *   2. Cầm điện thoại ngang ngực → đi bộ tự nhiên
- *   3. Quan sát vết đường đi + Debug HUD
- *   4. Điều chỉnh K và Threshold theo kết quả
- *   5. Bấm "Export Log" để lưu CSV phân tích sau
- *
- * SCALE: 1 mét = PIXELS_PER_METER pixel trên màn hình test
+ * PHIÊN BẢN MỚI (REFACTORED):
+ * KHÔNG tự khởi tạo thuật toán PDR.
+ * Chỉ lấy dữ liệu qua RuntimePdrTestController để đảm bảo test đúng pipeline production.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,85 +43,46 @@ fun PDRTestScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    // ── Giao tiếp với Runtime Pipeline ─────────────────────────────────────────
+    val controller = remember { RuntimePdrTestController(context) }
+    val testState by controller.testState.collectAsState()
+
     // ── Vị trí & Trail ────────────────────────────────────────────────────────
-    var posX by remember { mutableFloatStateOf(-1f) }
-    var posY by remember { mutableFloatStateOf(-1f) }
     val trail = remember { mutableStateListOf<Offset>() }
     var startPos by remember { mutableStateOf(Offset.Zero) }
     var isInitialized by remember { mutableStateOf(false) }
 
-    // ── Thống kê Debug HUD ────────────────────────────────────────────────────
-    var totalSteps by remember { mutableIntStateOf(0) }
-    var totalDistM by remember { mutableFloatStateOf(0f) }
-    var currentHeading by remember { mutableFloatStateOf(0f) }
-    var lastStepLen by remember { mutableFloatStateOf(0f) }
-    var accelMag by remember { mutableFloatStateOf(9.81f) }
-    var exportMessage by remember { mutableStateOf("") }
-    
     // ── Viewport transform (Pan + Zoom + Rotate) ────────────────────────────
     var panOffset by remember { mutableStateOf(Offset.Zero) }
     var zoomScale by remember { mutableFloatStateOf(1f) }
     var mapRotationDeg by remember { mutableFloatStateOf(0f) }
+    
+    var exportMessage by remember { mutableStateOf("") }
 
-    // ── Navigation modules ────────────────────────────────────────────────────
-    val sensorCollector = remember { SensorCollector(context) }
-    val stepDetector = remember { StepDetector() }
-    val headingEstimator = remember { HeadingEstimator() }
-
-    // Scale: 1 mét = pixel
+    // Scale: 1 mét = pixel. RuntimePdrTestController fallback dùng MapData() rỗng
+    // có scaleRatio = 0.5 -> pixelsPerMeter = 40.0 / 0.5 = 80f. Khớp với màn Test cũ.
     val SCALE = 80f
 
     // ── Khởi tạo cảm biến ────────────────────────────────────────────────────
     LaunchedEffect(Unit) {
         NavigationLogger.clear()
-        var hasRotationVectorFix = false
-
-        // Callback: mỗi bước chân
-        stepDetector.onStepDetected = { stepLen ->
-            val headingRad = headingEstimator.getHeadingRad()
-            val dx = stepLen * sin(headingRad) * SCALE
-            val dy = -stepLen * cos(headingRad) * SCALE  // Canvas Y tăng xuống → đảo
-            posX += dx
-            posY += dy
-            trail.add(Offset(posX, posY))
-            totalSteps++
-            totalDistM += stepLen
-            lastStepLen = stepLen
-        }
-
-        // Callback: Accelerometer
-        sensorCollector.onAccelUpdate = { values, timestampNs ->
-            stepDetector.onAccelData(values[0], values[1], values[2])
-            accelMag = sqrt(values[0].pow(2) + values[1].pow(2) + values[2].pow(2))
-        }
-
-        // Callback: Rotation Vector (La bàn siêu mượt của Google)
-        // Hệ thống này lấy hướng tuyệt đối (Bắc thực tế) và chống nhiễu loạn cực tốt
-        sensorCollector.onRotationUpdate = { values, timestampNs ->
-            hasRotationVectorFix = true
-            headingEstimator.updateRotationVector(values, timestampNs)
-            currentHeading = headingEstimator.getHeading()
-        }
-        
-        // Callback: Hardware Step Sensor (Cảm biến đếm bước chuyên dụng)
-        sensorCollector.onStepSensorUpdate = {
-            stepDetector.onHardwareStep()
-        }
-
-        // Callback: Gyroscope
-        sensorCollector.onGyroUpdate = { values, timestampNs ->
-            // Tránh double-update: khi đã có Rotation Vector thì gyro chỉ làm fallback.
-            if (!hasRotationVectorFix) {
-                headingEstimator.updateGyro(values, timestampNs)
-            }
-            currentHeading = headingEstimator.getHeading()
-        }
-
-        sensorCollector.start()
+        controller.start()
     }
 
     DisposableEffect(Unit) {
-        onDispose { sensorCollector.stop() }
+        onDispose { controller.stop() }
+    }
+
+    // ── Cập nhật Trail liên tục ─────────────────────────────────────────────
+    LaunchedEffect(testState.x, testState.y) {
+        if (isInitialized) {
+            val currentPt = startPos + Offset(testState.x, testState.y)
+            val lastPt = trail.lastOrNull()
+            // Chỉ thêm điểm mới nếu khoảng cách > 1 pixel (tránh rác bộ nhớ)
+            if (lastPt == null || (currentPt - lastPt).getDistanceSquared() > 1f) {
+                trail.add(currentPt)
+            }
+        }
     }
 
     // ── UI ────────────────────────────────────────────────────────────────────
@@ -195,9 +147,7 @@ fun PDRTestScreen(onBack: () -> Unit) {
             // Khởi tạo vị trí bắt đầu ở giữa màn hình
             LaunchedEffect(screenW, screenH) {
                 if (!isInitialized && screenW > 0 && screenH > 0) {
-                    posX = screenW / 2f
-                    posY = screenH / 2f
-                    startPos = Offset(posX, posY)
+                    startPos = Offset(screenW / 2f, screenH / 2f)
                     trail.add(startPos)
                     isInitialized = true
                 }
@@ -233,21 +183,6 @@ fun PDRTestScreen(onBack: () -> Unit) {
                 drawCircle(Color(0xFF4CAF50).copy(alpha = 0.5f), 14f, startPos)
                 drawCircle(Color(0xFF4CAF50), 6f, startPos)
 
-                // Khoảng cách drift (đường đứt nét từ gốc đến vị trí hiện tại)
-                if (trail.size > 1) {
-                    val current = Offset(posX, posY)
-                    drawLine(
-                        Color.Yellow.copy(alpha = 0.2f),
-                        startPos, current, 1.5f,
-                        pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(
-                            floatArrayOf(
-                                10f,
-                                10f
-                            )
-                        )
-                    )
-                }
-
                 // Vết đường đi
                 if (trail.size > 1) {
                     for (i in 1 until trail.size) {
@@ -262,35 +197,37 @@ fun PDRTestScreen(onBack: () -> Unit) {
                 }
 
                 // Chấm xanh — vị trí hiện tại
-                val current = Offset(posX, posY)
+                val current = startPos + Offset(testState.x, testState.y)
+                
+                // Khoảng cách drift (đường đứt nét từ gốc đến vị trí hiện tại)
+                if (trail.size > 1) {
+                    drawLine(
+                        Color.Yellow.copy(alpha = 0.2f),
+                        startPos, current, 1.5f,
+                        pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(
+                            floatArrayOf(10f, 10f)
+                        )
+                    )
+                }
+                
                 drawCircle(Color(0xFF00E5FF).copy(alpha = 0.25f), 22f, current)
                 drawCircle(Color(0xFF00E5FF), 10f, current)
                 drawCircle(Color.White, 10f, current, style = Stroke(2f))
 
-                // Mũi tên Heading
-                val headRad = Math.toRadians(currentHeading.toDouble()).toFloat()
-                val arrowLen = 36f
-                val tip = Offset(
-                    current.x + arrowLen * sin(headRad),
-                    current.y - arrowLen * cos(headRad)
-                )
-                drawLine(Color(0xFFFFEB3B), current, tip, 3f)
-                // Đầu mũi tên
-                val perpLen = 8f
-                val perpX = cos(headRad) * perpLen
-                val perpY = sin(headRad) * perpLen
-                drawLine(
-                    Color(0xFFFFEB3B),
-                    tip,
-                    Offset(tip.x - 8 * sin(headRad) + perpX, tip.y + 8 * cos(headRad) + perpY),
-                    2f
-                )
-                drawLine(
-                    Color(0xFFFFEB3B),
-                    tip,
-                    Offset(tip.x - 8 * sin(headRad) - perpX, tip.y + 8 * cos(headRad) - perpY),
-                    2f
-                )
+                // Mũi tên heading — tam giác đối xứng, không dùng 3 drawLine
+                withTransform({
+                    translate(current.x, current.y)
+                    rotate(testState.heading, pivot = Offset.Zero)
+                }) {
+                    val arrowPath = Path().apply {
+                        moveTo(0f, -36f)
+                        lineTo(-10f, -8f)
+                        lineTo(10f, -8f)
+                        close()
+                    }
+                    drawPath(arrowPath, Color(0xFFFFEB3B))
+                    drawPath(arrowPath, Color.White, style = Stroke(1.5f))
+                }
             }
         }
 
@@ -306,17 +243,22 @@ fun PDRTestScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                HudStat("STEPS", "$totalSteps")
-                HudStat("DIST", "${"%.2f".format(totalDistM)}m")
-                HudStat("STEP LEN", "${"%.3f".format(lastStepLen)}m")
-                HudStat("HEAD", "${"%.0f".format(currentHeading)}°")
+                HudStat("STEPS", "${testState.stepCount}")
+                HudStat("DIST", "${"%.2f".format(testState.totalDistance)}m")
+                HudStat("STEP LEN", "${"%.3f".format(testState.stepLength)}m")
+                HudStat("HEAD", "${"%.0f".format(testState.heading)}°")
             }
 
             Spacer(Modifier.height(6.dp))
 
-            // Accel bar
-            HudRow("Accel magnitude", "${"%.2f".format(accelMag)} m/s²",
-                if (accelMag > 11f) Color(0xFFFF5722) else Color(0xFF00E5FF))
+            // Info bar
+            // Confidence chỉ có nghĩa khi TPF active (có bản đồ). Test mode = PDR thuần → hiện "PDR"
+            if (testState.isTpfActive) {
+                HudRow("Confidence (TPF)", "${"%.2f".format(testState.confidence)}",
+                    if (testState.confidence < 0.3f) Color(0xFFFF5722) else Color(0xFF4CAF50))
+            } else {
+                HudRow("Mode", "PDR (no map)", Color(0xFF90CAF9))
+            }
             HudRow("Log events", "${NavigationLogger.getCount()}", Color.Gray)
 
             if (exportMessage.isNotEmpty()) {
@@ -334,17 +276,13 @@ fun PDRTestScreen(onBack: () -> Unit) {
                 Button(
                     onClick = {
                         trail.clear()
-                        totalSteps = 0
-                        totalDistM = 0f
-                        lastStepLen = 0f
                         isInitialized = false
                         panOffset = Offset.Zero
                         zoomScale = 1f
                         mapRotationDeg = 0f
                         exportMessage = ""
                         NavigationLogger.clear()
-                        stepDetector.reset()
-                        headingEstimator.reset()
+                        controller.reset()
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(8.dp),

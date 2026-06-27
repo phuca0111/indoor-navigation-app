@@ -41,7 +41,9 @@ class AStarPathfinder(private val graph: GraphModel) {
 
         // ── Khởi tạo ──
         // openSet: (fScore, nodeId) — ưu tiên fScore thấp nhất
-        val openSet = PriorityQueue<Pair<Float, String>>(compareBy { it.first })
+        // Issue 20: Thêm thenBy { it.second } để tie-break ổn định khi 2 node có cùng fScore
+        // Đảm bảo A* deterministic (cùng input → cùng output) dù thứ tự add có thể khác
+        val openSet = PriorityQueue<Pair<Float, String>>(compareBy<Pair<Float, String>> { it.first }.thenBy { it.second })
         val gScore = mutableMapOf<String, Float>().withDefault { Float.MAX_VALUE }
         val cameFromNode = mutableMapOf<String, String>()
         val cameFromEdge = mutableMapOf<String, GraphEdge>()
@@ -81,12 +83,13 @@ class AStarPathfinder(private val graph: GraphModel) {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /** Heuristic: khoảng cách Euclid pixel (admissible vì scaleRatio đồng nhất) */
+    /** Heuristic: khoảng cách Euclid (đơn vị mét) */
     private fun heuristic(nodeId: String, goalX: Float, goalY: Float): Float {
         val node = graph.nodeMap[nodeId] ?: return 0f
         val dx = node.x - goalX
         val dy = node.y - goalY
-        return sqrt(dx * dx + dy * dy)
+        val distPx = sqrt(dx * dx + dy * dy)
+        return graph.pixelsToMeters(distPx)
     }
 
     /** Truy ngược đường đi từ goal về start */

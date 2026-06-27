@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Indoor Navigation System - Hệ thống dẫn đường trong nhà</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+/* Add minimal inline styles for auth buttons to ensure visibility */
+.auth-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.auth-btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    font-size: 14px;
+}
+
+.login-btn {
+    background-color: #f0f0f0;
+    color: #333;
+    border: 1px solid #ddd;
+}
+
+.login-btn:hover {
+    background-color: #e0e0e0;
+}
+
+.register-btn {
+    background-color: #007AFF;
+    color: white;
+    border: 1px solid #0062cc;
+}
+
+.register-btn:hover {
+    background-color: #0062cc;
+}
+
+/* Make sure header-inner can accommodate new buttons */
+.header-inner {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+/* Hide buttons on mobile initially, show in mobile menu */
+@media (max-width: 768px) {
+    .auth-actions {
+        display: none;
+        width: 100%;
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 10px;
+    }
+
+    .auth-actions.show-mobile {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+}
+</style>
+</head>
+<body>
+<!-- Header -->
+<header class="header">
+<div class="container header-inner">
+<div class="logo">
+<span class="logo-icon">📍</span>
+<span class="logo-text">IndoorNav</span>
+</div>
+<nav class="nav" id="mainNav">
+<a href="#overview">Tổng quan</a>
+<a href="#features">Tính năng</a>
+<a href="#process">Quy trình</a>
+<a href="#tech">Công nghệ</a>
+<a href="#demo">Demo</a>
+</nav>
+<div class="auth-actions" id="authActions">
+<a href="/admin/index.html" class="auth-btn login-btn" id="loginBtn">Đăng nhập</a>
+<a href="/admin/register.html" class="auth-btn register-btn" id="registerBtn">Đăng ký</a>
+</div>
+<button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">☰</button>
+</div>
+</header>
+
+<!-- Hero Section -->
+<section class="hero">
+<div class="container hero-inner">
+<div class="hero-content">
+<h1>Hệ thống bản đồ và dẫn đường trong nhà</h1>
+<p class="hero-description">
+Giải pháp định vị và chỉ đường trong nhà bằng QR, PDR, TPF và thuật toán A*.
+Ứng dụng Android kết nối backend Node.js, quản lý bản đồ qua Web Editor.
+</p>
+</div>
+<div class="hero-visual">
+<!-- CSS-only mockup: phone + map -->
+<div class="phone-mockup">
+<div class="phone-screen">
+<div class="map-preview">
+<div class="room room-1">Phòng A</div>
+<div class="room room-2">Phòng B</div>
+<div class="room room-3">Phòng C</div>
+<div class="path"></div>
+<div class="user-dot"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<!-- Features Section -->
+<section class="features" id="features">
+<div class="container">
+<h2 class="section-title">Tính năng chính</h2>
+<div class="features-grid">
+<div class="feature-card">
+<div class="feature-icon">🏢</div>
+<h3>Quản lý tòa nhà</h3>
+<p>Tạo và quản lý nhiều tòa nhà, từng tầng, thông tin metadata.</p>
+</div>
+<div class="feature-card">
+<div class="feature-icon">🛠️</div>
+<h3>Web Map Editor</h3>
+<p>Công cụ vẽ bản đồ indoor trực quan: phòng, tường, node, edge, POI.</p>
+</div>
+<div class="feature-card">
+<div class="feature-icon">📷</div>
+<h3>QR Anchor</h3>
+<p>Đặt điểm QR để xác định vị trí tuyệt đối khi vào nhà.</p>
+</div>
+<div class="feature-card">
+<div class="feature-icon">🧭</div>
+<h3>Tìm đường A*</h3>
+<p>Thuật toán A* tìm đường đi ngắn nhất trên đồ thị topology.</p>
+</div>
+<div class="feature-card">
+<div class="feature-icon">📡</div>
+<h3>PDR/TPF</h3>
+<p>Theo dõi vị trí realtime bằng cảm biến (bước, heading) và bộ lọc particle.</p>
+</div>
+<div class="feature-card">
+<div class="feature-icon">📱</div>
+<h3>App Android</h3>
+<p>Ứng dụng Android Jetpack Compose, quét QR, định vị, chỉ đường.</p>
+</div>
+</div>
+</div>
+</section>
+
+<!-- Process Section -->
+<section class="process" id="process">
+<div class="container">
+<h2 class="section-title">Quy trình hoạt động</h2>
+<div class="process-steps">
+<div class="step">
+<div class="step-number">1</div>
+<h3>Vẽ bản đồ</h3>
+<p>Admin sử dụng Web Editor để vẽ bản đồ tầng, đặt node, edge và QR anchor.</p>
+</div>
+<div class="step-arrow">→</div>
+<div class="step">
+<div class="step-number">2</div>
+<h3>Publish</h3>
+<p>Xuất bản bản đồ lên server Node.js, lưu vào MongoDB.</p>
+</div>
+<div class="step-arrow">→</div>
+<div class="step">
+<div class="step-number">3</div>
+<h3>Quét QR</h3>
+<p>Người dùng quét QR tại vị trí bắt đầu để xác định tọa độ và tầng.</p>
+</div>
+<div class="step-arrow">→</div>
+<div class="step">
+<div class="step-number">4</div>
+<h3>Định vị & Chỉ đường</h3>
+<p>App sử dụng PDR/TPF theo dõi, A* tính đường, hiển thị hướng dẫn.</p>
+</div>
+</div>
+</div>
+</section>
+
+<!-- Tech Stack Section -->
+<section class="tech" id="tech">
+<div class="container">
+<h2 class="section-title">Công nghệ sử dụng</h2>
+<div class="tech-grid">
+<div class="tech-badge">Node.js</div>
+<div class="tech-badge">Express</div>
+<div class="tech-badge">MongoDB Atlas</div>
+<div class="tech-badge">Kotlin</div>
+<div class="tech-badge">Jetpack Compose</div>
+<div class="tech-badge">QR Code</div>
+<div class="tech-badge">PDR</div>
+<div class="tech-badge">TPF</div>
+<div class="tech-badge">A* Pathfinding</div>
+<div class="tech-badge">HTML/CSS/JS</div>
+</div>
+</div>
+</section>
+
+<!-- Demo CTA Section -->
+<section class="cta" id="demo">
+<div class="container">
+<h2>Trải nghiệm thực tế</h2>
+<p>Tải ứng dụng Android để trải nghiệm định vị và chỉ đường trong nhà.</p>
+<div class="cta-buttons">
+<a href="#" class="btn btn-primary btn-large">Tải APK (coming soon)</a>
+</div>
+<p class="cta-note">Dự án luận văn tốt nghiệp ngành Công nghệ thông tin.</p>
+</div>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+<div class="container">
+<p>&copy; 2025 - Hệ thống Bản đồ và Dẫn đường Trong nhà</p>
+<p>Đồ án/Luận văn tốt nghiệp - Trình độ Đại học</p>
+</div>
+</footer>
+
+<script src="landing.js"></script>
+</body>
+</html>

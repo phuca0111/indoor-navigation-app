@@ -7,34 +7,68 @@
 // Dùng relative URL để chạy được cả local và Render cùng domain.
 const API_URL = '/api';
 
-// Bắt sự kiện khi Admin bấm nút "Đăng Nhập"
+// ============================================
+// HELPER: Xóa toàn bộ auth data khỏi localStorage
+// ============================================
+function clearAuthStorage() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('userEmail');
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('userId');
+}
+
+// ============================================
+// KIỂM TRA SESSION HIỆN TẠI KHI MỞ LOGIN PAGE
+// ============================================
+// Nếu user đã login và token còn hợp lệ → tự redirect sang dashboard.
+// Nếu token hết hạn/lỗi → xóa token, ở lại login.
+(async function checkExistingSessionOnLoad() {
+    const token = localStorage.getItem('token');
+    if (!token) return; // Chưa login, ở lại trang login
+
+    try {
+        const res = await fetch(API_URL + '/users/me', {
+            method: 'GET',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+
+        if (res.ok) {
+            // Token hợp lệ, user đang login → redirect dashboard
+            window.location.replace('/admin/dashboard.html');
+        } else {
+            // Token không hợp lệ (401/403) → clear storage
+            clearAuthStorage();
+        }
+    } catch (error) {
+        console.error('Session check failed:', error);
+        clearAuthStorage();
+    }
+})();
+
+// ============================================
+// XỬ LÝ ĐĂNG NHẬP
+// ============================================
 document.getElementById('loginForm').addEventListener('submit', async function(e) {
-    // Chặn form tự động reload trang (hành vi mặc định của HTML)
     e.preventDefault();
 
-    // Bước 1: Lấy giá trị Email và Mật khẩu mà Admin vừa gõ
     const email = document.getElementById('email').value;
     const password = document.getElementById('password').value;
     const errorMsg = document.getElementById('errorMessage');
 
-    // Ẩn thông báo lỗi cũ (nếu có)
     errorMsg.style.display = 'none';
 
     try {
-        // Bước 2: Đóng gói Email + Pass thành JSON, bắn tới API đăng nhập
         const response = await fetch(API_URL + '/auth/login', {
-            method: 'POST',                            // Phương thức POST (gửi dữ liệu lên)
-            headers: { 'Content-Type': 'application/json' },  // Nói cho Server biết mình gửi JSON
-            body: JSON.stringify({ email, password })   // Biến object thành chuỗi JSON gửi đi
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
         });
 
-        // Bước 3: Nhận phản hồi từ Server
         const data = await response.json();
 
-        // Bước 4: Kiểm tra kết quả
         if (response.ok) {
-            // THÀNH CÔNG! Server trả về Thẻ JWT
-            // Cất Thẻ JWT vào tủ đồ của trình duyệt (localStorage)
+            // Lưu token và user info vào localStorage
             localStorage.setItem('token', data.token);
             if (data.refreshToken) {
                 localStorage.setItem('refreshToken', data.refreshToken);
@@ -43,17 +77,15 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
             localStorage.setItem('userRole', data.user.role);
             localStorage.setItem('userId', data.user.id);
 
-            // Nhảy sang trang Dashboard
-            window.location.href = 'dashboard.html';
+            // Redirect sang dashboard bằng replace (không lưu login page vào history)
+            window.location.replace('/admin/dashboard.html');
 
         } else {
-            // THẤT BẠI! Hiển thị lỗi (sai mật khẩu, email không tồn tại...)
             errorMsg.textContent = data.message;
             errorMsg.style.display = 'block';
         }
 
     } catch (error) {
-        // Lỗi mạng (Server chưa bật, mất internet...)
         errorMsg.textContent = 'Không thể kết nối tới máy chủ! Hãy kiểm tra Server đã bật chưa.';
         errorMsg.style.display = 'block';
     }
