@@ -10,6 +10,14 @@ const getLogs = async (req, res) => {
 
         const filter = {};
 
+        if (req.user.role === 'ORG_ADMIN') {
+            const me = await User.findById(req.user.userId).select('organization_id').lean();
+            if (!me?.organization_id) {
+                return res.status(403).json({ message: 'Tài khoản ORG_ADMIN chưa được gán tổ chức.' });
+            }
+            filter.organization_id = me.organization_id;
+        }
+
         if (req.query.action)  filter.action  = req.query.action;
         if (req.query.user_id) filter.user_id = req.query.user_id;
         if (req.query.target)  filter.$or = [
@@ -36,10 +44,13 @@ const getLogs = async (req, res) => {
         // Email search: find user IDs first, then filter logs
         if (req.query.email) {
             const emailRegex = new RegExp(req.query.email, 'i');
-            const matchingUsers = await User.find({ email: emailRegex }).select('_id').lean();
+            const userQuery = { email: emailRegex };
+            if (req.user.role === 'ORG_ADMIN' && filter.organization_id) {
+                userQuery.organization_id = filter.organization_id;
+            }
+            const matchingUsers = await User.find(userQuery).select('_id').lean();
             const userIds = matchingUsers.map(u => u._id);
             if (userIds.length === 0) {
-                // No such user, return empty result
                 return res.status(200).json({ total: 0, page, limit, logs: [] });
             }
             filter.user_id = { $in: userIds };

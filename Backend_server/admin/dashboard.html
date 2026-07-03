@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Quản Lý Tòa Nhà</title>
-    <link rel="stylesheet" href="css/admin.css">
+    <link rel="stylesheet" href="css/admin.css?v=20260703c">
 </head>
 <body>
     <nav class="navbar">
@@ -26,6 +26,8 @@
         <!-- Tab navigation (chỉ Super Admin thấy đầy đủ) -->
         <div id="tabNav" class="tab-nav" style="display:none; margin-bottom: 20px;">
             <button class="tab-btn active" onclick="switchTab('buildings')">🏢 Tòa Nhà</button>
+            <button class="tab-btn super-admin-only" onclick="switchTab('organizations')">🏛️ Tổ Chức</button>
+            <button class="tab-btn super-admin-only" onclick="switchTab('registrations')">📝 Hồ Sơ ĐK</button>
             <button class="tab-btn" onclick="switchTab('users')">👑 Tài Khoản</button>
             <button class="tab-btn" onclick="switchTab('logs')">📋 Lịch Sử Thao Tác</button>
             <button class="tab-btn" onclick="switchTab('profile')">👤 Thông Tin Cá Nhân</button>
@@ -38,6 +40,29 @@
                     <h3>🏢 Danh Sách Tòa Nhà</h3>
                     <button id="btnAddBuilding" class="btn-add" onclick="openAddBuildingModal()">+ Thêm Tòa Nhà Mới</button>
                 </div>
+                <div class="filter-bar" style="display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin-bottom:10px;">
+                  <div class="super-admin-only">
+                    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Tổ chức</label>
+                    <select id="filterBuildingOrg" onchange="applyBuildingFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:150px;">
+                      <option value="">Tất cả</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Từ khóa</label>
+                    <input id="filterBuildingKeyword" type="text" placeholder="Tên / địa chỉ" oninput="applyBuildingFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:160px;">
+                  </div>
+                  <div>
+                    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Trạng thái</label>
+                    <select id="filterBuildingStatus" onchange="applyBuildingFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:130px;">
+                      <option value="">Tất cả</option>
+                      <option value="DRAFT">Nháp</option>
+                      <option value="PUBLISHED">Đã xuất bản</option>
+                    </select>
+                  </div>
+                  <button type="button" onclick="applyBuildingFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #3498db; background:#3498db; color:white; cursor:pointer;">Lọc</button>
+                  <button type="button" onclick="clearBuildingFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #ddd; background:white; cursor:pointer;">Xóa lọc</button>
+                </div>
+                <div class="table-scroll-wrapper">
                 <table class="buildings-table">
                     <thead>
                         <tr>
@@ -45,14 +70,17 @@
                             <th>Địa Chỉ</th>
                             <th>Số Tầng</th>
                             <th>Trạng Thái</th>
+                            <th>Tổ Chức</th>
                             <th>Cập Nhật</th>
                             <th>Thao Tác</th>
                         </tr>
                     </thead>
                     <tbody id="buildingsList">
-                        <tr><td colspan="6" style="text-align:center;color:#888;">Đang tải...</td></tr>
+                        <tr><td colspan="7" style="text-align:center;color:#888;">Đang tải...</td></tr>
                     </tbody>
                 </table>
+                </div>
+                <div id="buildingsPagination" class="table-pagination"></div>
             </div>
         </div>
 
@@ -64,10 +92,42 @@
                         <h3>👑 Quản Lý Tài Khoản</h3>
                         <p style="font-size:13px; color:#666; margin-top:4px;">Duyệt tài khoản đăng ký, quản lý trạng thái và phân quyền người dùng.</p>
                     </div>
-                    <button class="btn-add" onclick="fetchUsers()">🔄 Làm mới</button>
+                    <button id="btnAddUser" class="btn-add" onclick="openCreateUserModal()" style="display:none;">+ Thêm Tài Khoản</button>
+<button class="btn-add" onclick="fetchUsers()">🔄 Làm mới</button>
                 </div>
 
-                <div class="users-table-wrapper" style="overflow-x:auto;">
+                <div class="filter-bar" style="display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin-bottom:10px;">
+  <div class="super-admin-only">
+    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Tổ chức</label>
+    <select id="filterUserOrg" onchange="applyUserFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:150px;">
+      <option value="">Tất cả</option>
+    </select>
+  </div>
+  <div>
+    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Từ khóa</label>
+    <input id="filterUserKeyword" type="text" placeholder="Email / họ tên / SĐT" oninput="applyUserFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:160px;">
+  </div>
+  <div>
+    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Vai trò</label>
+    <select id="filterUserRole" onchange="applyUserFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:130px;">
+      <option value="">Tất cả</option>
+      <option value="SUPER_ADMIN">Super Admin</option>
+      <option value="ORG_ADMIN">Org Admin</option>
+      <option value="BUILDING_ADMIN">Building Admin</option>
+    </select>
+  </div>
+  <div>
+    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Trạng thái</label>
+    <select id="filterUserStatus" onchange="applyUserFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:130px;">
+      <option value="">Tất cả</option>
+      <option value="active">Đang hoạt động</option>
+      <option value="inactive">Đã khóa</option>
+    </select>
+  </div>
+  <button onclick="applyUserFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #3498db; background:#3498db; color:white; cursor:pointer;">Lọc</button>
+  <button onclick="clearUserFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #ddd; background:white; cursor:pointer;">Xóa lọc</button>
+</div>
+<div class="users-table-wrapper" style="overflow-x:auto;">
                     <table class="users-table" style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
                         <thead style="background:#34495e; color:white;">
                             <tr>
@@ -76,20 +136,126 @@
                                 <th style="padding:12px; text-align:left;">Số Điện Thoại</th>
                                 <th style="padding:12px; text-align:left;">Vai Trò</th>
                                 <th style="padding:12px; text-align:left;">Trạng Thái</th>
+                                <th style="padding:12px; text-align:left;">Tổ Chức</th>
                                 <th style="padding:12px; text-align:left;">Tòa Nhà Quản Lý</th>
                                 <th style="padding:12px; text-align:left;">Ngày Tạo</th>
                                 <th style="padding:12px; text-align:left;">Thao Tác</th>
                             </tr>
                         </thead>
                         <tbody id="usersList">
-                            <tr><td colspan="8" style="text-align:center;color:#888;">Đang tải...</td></tr>
+                            <tr><td colspan="9" style="text-align:center;color:#888;">Đang tải...</td></tr>
                         </tbody>
                     </table>
                 </div>
+                <div id="usersPagination" class="table-pagination"></div>
             </div>
         </div>
 
-        <!-- ===== TAB: LOGS (chỉ Super Admin) ===== -->
+        <!-- ===== TAB: REGISTRATIONS (Super Admin duyệt hồ sơ) ===== -->
+<div id="tab-registrations" class="tab-content" style="display:none;">
+  <div class="admin-section">
+    <div class="section-header org-section-header">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; width:100%;">
+        <h3>📝 Hồ Sơ Đăng Ký Tổ Chức</h3>
+        <button class="btn-add" onclick="fetchRegistrations()">🔄 Làm mới</button>
+      </div>
+      <p style="font-size:13px; color:#666; margin:0;">Khách gửi form công khai → chờ duyệt → tạo tổ chức + quản trị viên.</p>
+      <div class="filter-bar org-filter-bar" style="margin-top:10px;">
+        <div>
+          <label style="font-size:12px; color:#666;">Trạng thái</label>
+          <select id="filterRegStatus" onchange="renderRegistrationsFromCache()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd;">
+            <option value="">Tất cả</option>
+            <option value="PENDING" selected>Chờ duyệt</option>
+            <option value="APPROVED">Đã duyệt</option>
+            <option value="REJECTED">Đã từ chối</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="table-scroll-wrapper">
+      <table class="buildings-table">
+        <thead>
+          <tr>
+            <th>Tên tổ chức</th>
+            <th>Mã định danh</th>
+            <th>Người liên hệ</th>
+            <th>Email</th>
+            <th>SĐT</th>
+            <th>Nguồn</th>
+            <th>Trạng thái</th>
+            <th>Ngày gửi</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="registrationsList">
+          <tr><td colspan="9" style="text-align:center;color:#888;">Đang tải...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+        <!-- ===== TAB: ORGANIZATIONS (chỉ Super Admin) ===== -->
+<div id="tab-organizations" class="tab-content" style="display:none;">
+  <div class="admin-section">
+    <div class="section-header">
+      <h3>🏛️ Danh Sách Tổ Chức</h3>
+      <button id="btnAddOrg" class="btn-add super-admin-only" onclick="openAddOrgModal()" style="background:#8e44ad; color:white;">+ Thêm Tổ Chức</button>
+    </div>
+    <div class="filter-bar org-filter-bar" style="display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin-bottom:10px;">
+      <div>
+        <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Tên tổ chức</label>
+        <input id="filterOrgKeyword" type="text" placeholder="Tìm theo tên..." oninput="applyOrganizationFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:160px;">
+      </div>
+      <div>
+        <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Slug / mã</label>
+        <input id="filterOrgCode" type="text" placeholder="aeon-tan-phu" oninput="applyOrganizationFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:140px;">
+      </div>
+      <div>
+        <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Gói</label>
+        <select id="filterOrgPlan" onchange="applyOrganizationFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:120px;">
+          <option value="">Tất cả</option>
+          <option value="FREE">FREE</option>
+          <option value="PRO">PRO</option>
+          <option value="ENTERPRISE">ENTERPRISE</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Trạng thái</label>
+        <select id="filterOrgStatus" onchange="applyOrganizationFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:130px;">
+          <option value="">Tất cả</option>
+          <option value="active">Hoạt động</option>
+          <option value="inactive">Tạm dừng</option>
+        </select>
+      </div>
+      <button type="button" onclick="applyOrganizationFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #3498db; background:#3498db; color:white; cursor:pointer;">Lọc</button>
+      <button type="button" onclick="clearOrganizationFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #ddd; background:white; cursor:pointer;">Xóa lọc</button>
+    </div>
+    <div class="table-scroll-wrapper">
+      <table class="buildings-table">
+        <thead>
+          <tr>
+            <th>Tên</th>
+            <th>Slug</th>
+            <th>Gói</th>
+            <th>Trạng thái</th>
+            <th>Số tòa</th>
+            <th>Số user</th>
+            <th>Quản trị viên</th>
+            <th>Ngày tạo</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="organizationsList">
+          <tr><td colspan="9" style="text-align:center;color:#888;">Đang tải...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="organizationsPagination" class="table-pagination"></div>
+  </div>
+</div>
+
+<!-- ===== TAB: LOGS (chỉ Super Admin) ===== -->
         <div id="tab-logs" class="tab-content logs-page" style="display:none;">
           <div class="admin-section logs-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
@@ -100,7 +266,7 @@
             <div class="logs-filter-bar" style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
               <div>
                 <label style="font-size:13px; color:#666; margin-bottom:4px; display:block;">Hành động</label>
-                <select id="filterAction" onchange="loadLogs()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd; min-width:220px;">
+                <select id="filterAction" onchange="resetLogsPageAndLoad()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd; min-width:220px;">
                   <option value="">Tất cả hành động</option>
                   <option value="LOGIN">Đăng nhập</option>
                   <option value="LOGOUT">Đăng xuất</option>
@@ -121,17 +287,20 @@
                   <option value="BUILDING_UNASSIGN">Bỏ gán tòa nhà</option>
                   <option value="CREATE_QR">Tạo mã QR</option>
                   <option value="DELETE_QR">Xóa mã QR</option>
+                  <option value="CREATE_ORG">Tạo tổ chức</option>
+                  <option value="APPROVE_ORG_REGISTRATION">Duyệt hồ sơ đăng ký</option>
+                  <option value="REJECT_ORG_REGISTRATION">Từ chối hồ sơ đăng ký</option>
                 </select>
               </div>
 
               <div>
                 <label style="font-size:13px; color:#666; margin-bottom:4px; display:block;">Email người dùng</label>
-                <input type="text" id="filterEmail" placeholder="Tìm theo email..." style="padding:8px 12px; border-radius:6px; border:1px solid #ddd; min-width:200px;" onkeydown="if(event.key=='Enter') loadLogs()">
+                <input type="text" id="filterEmail" placeholder="Tìm theo email..." style="padding:8px 12px; border-radius:6px; border:1px solid #ddd; min-width:200px;" onkeydown="if(event.key=='Enter') resetLogsPageAndLoad()">
               </div>
 
               <div>
                 <label style="font-size:13px; color:#666; margin-bottom:4px; display:block;">Tên target/ID</label>
-                <input type="text" id="filterTarget" placeholder="Tìm theo target hoặc ID..." style="padding:8px 12px; border-radius:6px; border:1px solid #ddd; min-width:200px;" onkeydown="if(event.key=='Enter') loadLogs()">
+                <input type="text" id="filterTarget" placeholder="Tìm theo target hoặc ID..." style="padding:8px 12px; border-radius:6px; border:1px solid #ddd; min-width:200px;" onkeydown="if(event.key=='Enter') resetLogsPageAndLoad()">
               </div>
 
               <div>
@@ -143,6 +312,7 @@
                 <label style="font-size:13px; color:#666; margin-bottom:4px; display:block;">Đến ngày</label>
                 <input type="date" id="filterToDate" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
               </div>
+              <button type="button" class="btn-add" onclick="resetLogsPageAndLoad()" style="padding:8px 16px;height:38px;">Lọc</button>
             </div>
 
             <p style="margin-bottom:10px; color:#666;">Tổng số bản ghi: <span id="logsTotal">0</span></p>
@@ -339,6 +509,7 @@
         <label>Vai trò:</label>
         <select id="updateUserRole">
           <option value="BUILDING_ADMIN">BUILDING_ADMIN</option>
+          <option value="ORG_ADMIN">ORG_ADMIN</option>
           <option value="SUPER_ADMIN">SUPER_ADMIN</option>
         </select>
 
@@ -386,6 +557,47 @@
         </div>
     </div>
 
-    <script src="../js/dashboard.js"></script>
+    <!-- ===== MODAL: THÊM TỔ CHỨC ===== -->
+    <div id="addOrgModal" class="modal" style="display:none;">
+      <div class="modal-content">
+        <h3>🏛️ Thêm Tổ Chức Mới</h3>
+        <p style="font-size:13px; color:#666; margin:0 0 12px 0; font-weight:600;">Thông tin tổ chức</p>
+        <div class="form-group">
+          <label>Tên tổ chức <span style="color:#e74c3c;">*</span>:</label>
+          <input type="text" id="addOrgName" placeholder="Ví dụ: AEON Tân Phú..." onblur="prefillSlug()">
+        </div>
+        <div class="form-group">
+          <label>Slug <span style="color:#e74c3c;">*</span>:</label>
+          <input type="text" id="addOrgSlug" placeholder="aeon-tan-phu (tự sinh khi nhập tên)" oninput="this.dataset.manual='1'">
+        </div>
+        <div class="form-group">
+          <label>Gói:</label>
+          <select id="addOrgPlan">
+            <option value="FREE">FREE</option>
+            <option value="PRO">PRO</option>
+            <option value="ENTERPRISE">ENTERPRISE</option>
+          </select>
+        </div>
+        <p style="font-size:13px; color:#666; margin:0 0 12px 0; font-weight:600;">Tài khoản quản trị (ORG_ADMIN)</p>
+        <div class="form-group">
+          <label>Họ tên <span style="color:#e74c3c;">*</span>:</label>
+          <input type="text" id="addOrgAdminName" placeholder="Nguyễn Văn A">
+        </div>
+        <div class="form-group">
+          <label>Email <span style="color:#e74c3c;">*</span>:</label>
+          <input type="email" id="addOrgAdminEmail" placeholder="admin@example.com">
+        </div>
+        <div class="form-group">
+          <label>Mật khẩu <span style="color:#e74c3c;">*</span>:</label>
+          <input type="password" id="addOrgAdminPassword" placeholder="Ít nhất 8 ký tự">
+        </div>
+        <div class="modal-actions">
+          <button type="button" onclick="closeAddOrgModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
+          <button type="button" onclick="createOrganization()" class="btn-create" style="background:#8e44ad;">Tạo Tổ Chức</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="../js/dashboard.js?v=20260703c"></script>
 </body>
 </html>

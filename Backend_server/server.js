@@ -88,6 +88,7 @@ const qrRoutes          = require('./routes/qrRoutes');
 const activityLogRoutes = require('./routes/activityLogRoutes');
 const mapVersionRoutes  = require('./routes/mapVersionRoutes');
 const organizationRoutes = require('./routes/organizationRoutes');
+const orgRegistrationRoutes = require('./routes/orgRegistrationRoutes');
 
 app.use('/api/auth',          authRoutes);
 app.use('/api/buildings',     buildingRoutes);
@@ -97,6 +98,7 @@ app.use('/api/qr',            qrRoutes);
 app.use('/api/activity-logs', activityLogRoutes);
 app.use('/api/map-versions',  mapVersionRoutes);
 app.use('/api/organizations', organizationRoutes);
+app.use('/api/org-registrations', orgRegistrationRoutes);
 
 // Export app cho testing
 module.exports = app;

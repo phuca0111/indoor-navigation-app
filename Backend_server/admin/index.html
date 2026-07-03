@@ -36,11 +36,13 @@
             <!-- Nút Đăng nhập -->
             <button type="submit" class="btn-login">Đăng Nhập</button>
 
-            <!-- Link chuyển sang trang đăng ký -->
-            <p style="margin-top:15px; font-size:14px;">
-                Chưa có tài khoản?
-                <a href="register.html" style="color:#007AFF; text-decoration:none; font-weight:500;">Đăng ký ngay</a>
-            </p>
+            <!-- Lựa chọn đăng ký theo luồng SaaS -->
+            <div style="margin-top:18px;">
+                <p style="font-size:13px; color:#555; margin:0 0 10px;">Chưa có tài khoản? Bạn muốn:</p>
+                <a href="/org-trial.html" class="btn-trial">Dùng thử miễn phí</a>
+                <a href="/org-register.html" class="btn-org-register">Đăng ký tổ chức</a>
+                <p style="font-size:12px; color:#999; margin:12px 0 0;">Đã thuộc tổ chức? <a href="register.html" style="color:#007AFF;">Đăng ký nhân sự vận hành</a></p>
+            </div>
 
             <!-- Dòng hiển thị lỗi (ẩn mặc định, chỉ hiện khi sai mật khẩu) -->
             <p id="errorMessage" class="error-msg" style="display: none;"></p>

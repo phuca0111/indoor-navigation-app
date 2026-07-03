@@ -4,6 +4,89 @@
 // Khi deploy lên Render, cùng domain nên không cần CORS.
 const API_URL = '/api';
 
+const PAGE_SIZE = 15;
+const LOGS_PAGE_SIZE = 20;
+
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function tdEllipsis(text, innerHtml) {
+  const safe = escapeHtml(text || '');
+  const body = innerHtml != null ? innerHtml : escapeHtml(text || '-');
+  if (!safe) return '<td>-</td>';
+  return '<td title="' + safe + '"><span class="cell-ellipsis">' + body + '</span></td>';
+}
+
+const PAGINATION_CONFIG = {
+  buildings: {
+    containerId: 'buildingsPagination',
+    pageVar: '_buildingsPage',
+    render: () => renderBuildingsFromCache()
+  },
+  users: {
+    containerId: 'usersPagination',
+    pageVar: '_usersPage',
+    render: () => renderUsersFromCache()
+  },
+  organizations: {
+    containerId: 'organizationsPagination',
+    pageVar: '_organizationsPage',
+    render: () => renderOrganizationsFromCache()
+  }
+};
+
+function renderPagination(tabKey, totalItems, currentPage) {
+  const cfg = PAGINATION_CONFIG[tabKey];
+  if (!cfg) return;
+  const container = document.getElementById(cfg.containerId);
+  if (!container) return;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const page = Math.min(Math.max(1, currentPage), totalPages);
+  if (totalPages <= 1) {
+    container.innerHTML = '';
+    return;
+  }
+  const prev = Math.max(1, page - 1);
+  const next = Math.min(totalPages, page + 1);
+  let html = '<span class="page-info">Trang ' + page + '/' + totalPages + ' (' + totalItems + ' mục)</span> ';
+  html += '<button type="button" data-page="' + prev + '"' + (page <= 1 ? ' disabled' : '') + '>&laquo;</button>';
+  const windowSize = 5;
+  let start = Math.max(1, page - Math.floor(windowSize / 2));
+  let end = Math.min(totalPages, start + windowSize - 1);
+  start = Math.max(1, end - windowSize + 1);
+  for (let i = start; i <= end; i++) {
+    if (i === page) {
+      html += '<span class="page-info" style="background:#3498db;color:#fff;padding:6px 10px;border-radius:4px;">' + i + '</span>';
+    } else {
+      html += '<button type="button" data-page="' + i + '">' + i + '</button>';
+    }
+  }
+  html += '<button type="button" data-page="' + next + '"' + (page >= totalPages ? ' disabled' : '') + '>&raquo;</button>';
+  container.innerHTML = html;
+  container.querySelectorAll('button[data-page]').forEach(btn => {
+    btn.onclick = () => {
+      window[cfg.pageVar] = parseInt(btn.getAttribute('data-page'), 10);
+      cfg.render();
+    };
+  });
+}
+
+const WIDE_LAYOUT_TABS = new Set(['buildings', 'users', 'logs', 'organizations', 'registrations']);
+
+function applyDashboardLayout(tabName) {
+  const root = document.querySelector('.dashboard-content');
+  if (!root) return;
+  if (WIDE_LAYOUT_TABS.has(tabName)) root.classList.add('wide-layout');
+  else root.classList.remove('wide-layout');
+}
+
+
 let currentUser = null;
 let allOrganizations = [];
 // Wrapper cho fetch() tự động thêm Authorization header từ localStorage
@@ -39,42 +122,53 @@ function clearAuthStorage() {
 // APPLY CURRENT USER TO UI
 // WHY: Cập nhật toàn bộ UI header và tab visibility theo currentUser.
 // ============================================================
-function applyCurrentUserToUI(currentUser) {
-  if (!currentUser) return;
-
-  // Update header
+function applyCurrentUserToUI(user) {
+  if (!user) return;
+  currentUser = user;
   const emailEl = document.getElementById('userEmail');
   const nameEl = document.getElementById('userName');
   const roleEl = document.getElementById('userRole');
-  if (emailEl) emailEl.textContent = currentUser.email || '';
-  if (nameEl) nameEl.textContent = currentUser.full_name || currentUser.email || 'User';
-  if (roleEl) roleEl.textContent = currentUser.role || '';
+  if (emailEl) emailEl.textContent = user.email || '';
+  if (nameEl) nameEl.textContent = user.full_name || user.email || 'User';
+  if (roleEl) roleEl.textContent = user.role || '';
+  localStorage.setItem('userEmail', user.email || '');
+  localStorage.setItem('userRole', user.role || '');
+  localStorage.setItem('userId', user._id || user.id || '');
 
-  // Update localStorage để các tab khác biết (nếu chưa có)
-  localStorage.setItem('userEmail', currentUser.email || '');
-  localStorage.setItem('userRole', currentUser.role || '');
-  localStorage.setItem('userId', currentUser._id || currentUser.id || '');
-
-  // Show/hide Super Admin tabs
-  const isSuperAdmin = currentUser.role === 'SUPER_ADMIN';
+  const isSuperAdmin = user.role === 'SUPER_ADMIN';
+  const isOrgAdmin = user.role === 'ORG_ADMIN';
   document.querySelectorAll('.super-admin-only').forEach(el => {
     el.style.display = isSuperAdmin ? '' : 'none';
   });
 
-  // If not Super Admin and currently on users/logs tab, switch away
+  const usersBtn = document.querySelector('button[onclick*="users"]');
+  const logsBtn = document.querySelector('button[onclick*="logs"]');
+  const orgTabBtn = document.querySelector('button[onclick*="organizations"]');
+  if (usersBtn) usersBtn.style.display = (isSuperAdmin || isOrgAdmin) ? '' : 'none';
+  if (logsBtn) logsBtn.style.display = (isSuperAdmin || isOrgAdmin) ? '' : 'none';
+  if (orgTabBtn) orgTabBtn.style.display = isSuperAdmin ? '' : 'none';
+
+  const btnAddUser = document.getElementById('btnAddUser');
+  const btnAddBuilding = document.getElementById('btnAddBuilding');
+  if (btnAddUser) btnAddUser.style.display = (isSuperAdmin || isOrgAdmin) ? '' : 'none';
+  if (btnAddBuilding) btnAddBuilding.style.display = (isSuperAdmin || isOrgAdmin) ? '' : 'none';
+
   const currentTab = document.querySelector('.tab-btn.active');
   if (currentTab && !isSuperAdmin) {
-    const tabName = currentTab.getAttribute('onclick')?.match(/'([^']+)'/) ?.[1];
+    const tabName = currentTab.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
+    if (tabName === 'organizations' || tabName === 'registrations') {
+      switchTab('buildings');
+    }
+  }
+  if (currentTab && !isSuperAdmin && !isOrgAdmin) {
+    const tabName = currentTab.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
     if (tabName === 'users' || tabName === 'logs') {
       switchTab('buildings');
     }
   }
 
-  // Show tab navigation
   const tabNav = document.getElementById('tabNav');
-  if (tabNav) {
-    tabNav.style.display = 'flex';
-  }
+  if (tabNav) tabNav.style.display = 'flex';
 }
 
 // ============================================================
@@ -96,14 +190,23 @@ async function syncCurrentSession(reason) {
       window.location.replace('/admin/index.html');
       return null;
     }
-    const currentUser = await res.json();
+    currentUser = await res.json();
     applyCurrentUserToUI(currentUser);
+    if (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ORG_ADMIN') {
+      const currentTab = document.querySelector('.tab-btn.active');
+      const onclick = currentTab ? (currentTab.getAttribute('onclick') || '') : '';
+      const match = onclick.match(/'([^']+)'/);
+      const tabName = match ? match[1] : null;
+      if (tabName === 'users' || tabName === 'logs' || tabName === 'organizations' || tabName === 'registrations') {
+        switchTab('buildings');
+      }
+    }
     if (currentUser.role !== 'SUPER_ADMIN') {
       const currentTab = document.querySelector('.tab-btn.active');
       const onclick = currentTab ? (currentTab.getAttribute('onclick') || '') : '';
       const match = onclick.match(/'([^']+)'/);
       const tabName = match ? match[1] : null;
-      if (tabName === 'users' || tabName === 'logs') {
+      if (tabName === 'organizations' || tabName === 'registrations') {
         switchTab('buildings');
       }
     }
@@ -142,33 +245,27 @@ async function handleLogout() {
 // DASHBOARD STARTUP INIT
 // ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
-  const currentUser = await syncCurrentSession('initial-load');
+  currentUser = await syncCurrentSession('initial-load');
   if (!currentUser) return;
 
-  // Load organizations for Super Admin (for building creation)
-  if (currentUser.role === 'SUPER_ADMIN') {
+  if (currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'ORG_ADMIN') {
     fetchOrganizations();
   }
 
   const logoutBtn = document.getElementById('btnLogout');
-  if (logoutBtn) {
-    logoutBtn.addEventListener('click', handleLogout);
-  }
+  if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
 
-  // Hide tabs that require SUPER_ADMIN role
-  if (currentUser.role !== 'SUPER_ADMIN') {
-    const usersBtn = document.querySelector('button[onclick*="users"]');
-    const logsBtn = document.querySelector('button[onclick*="logs"]');
-    if (usersBtn) usersBtn.style.display = 'none';
-    if (logsBtn) logsBtn.style.display = 'none';
-  }
-
-  // Determine initial tab based on saved preference, with role validation
   let initialTab = localStorage.getItem('activeDashboardTab') || 'buildings';
-  if (currentUser.role !== 'SUPER_ADMIN') {
-    if (initialTab === 'users' || initialTab === 'logs') {
+  if (currentUser.role === 'BUILDING_ADMIN') {
+    if (initialTab === 'users' || initialTab === 'logs' || initialTab === 'organizations') {
       initialTab = 'buildings';
     }
+  }
+  if (currentUser.role === 'ORG_ADMIN' && initialTab === 'organizations') {
+    initialTab = 'buildings';
+  }
+  if (currentUser.role !== 'SUPER_ADMIN' && initialTab === 'registrations') {
+    initialTab = 'buildings';
   }
 
   await switchTab(initialTab);
@@ -209,89 +306,470 @@ async function switchTab(name) {
       break;
     }
   }
-
-  // Save active tab to localStorage
   localStorage.setItem('activeDashboardTab', name);
+  applyDashboardLayout(name);
 
-  if (name === 'buildings') await fetchBuildings();
-  if (name === 'users') {
-    // Reset filter về "all" mỗi khi vào tab
-    const filterSelect = document.getElementById('userFilter');
-    if (filterSelect) filterSelect.value = 'all';
-    await fetchUsers();
-  }
+  if (name === 'buildings') { restoreBuildingFilters(); await fetchBuildings(); }
+  if (name === 'users') { restoreUserFilters(); await fetchUsers(); }
   if (name === 'logs') await loadLogs();
   if (name === 'profile') await loadProfile();
+  if (name === 'organizations') {
+    restoreOrganizationFilters();
+    await fetchOrganizations();
+    if (!allBuildings.length) await fetchBuildings();
+    if (!allUsers.length) await fetchUsers();
+  }
+  if (name === 'registrations') await fetchRegistrations();
 }
 
 // ============================================================
 // BUILDINGS
 let allBuildings = [];
+let displayedBuildings = [];
+
+function getOrgName(orgId) {
+  if (!orgId) return '—';
+  const id = String(orgId);
+  const org = allOrganizations.find(o => String(o._id) === id);
+  return org ? org.name : id.slice(0, 8) + '…';
+}
 
 async function fetchBuildings() {
   const tbody = document.getElementById('buildingsList');
+  if (currentUser?.role === 'SUPER_ADMIN' && allOrganizations.length === 0) {
+    await fetchOrganizations();
+  }
   try {
     const res = await apiFetch('/buildings');
     if (!res.ok) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:red;">Không tải được danh sách tòa nhà (HTTP ' + res.status + '). Thử đăng nhập lại.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:red;">Không tải được danh sách tòa nhà (HTTP ' + res.status + '). Thử đăng nhập lại.</td></tr>';
       return;
     }
     const data = await res.json();
     allBuildings = Array.isArray(data) ? data : [];
-    if (!allBuildings.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Chưa có tòa nhà nào. Bấm "Thêm Tòa Nhà Mới"!</td></tr>';
-      return;
-    }
-    tbody.innerHTML = allBuildings.map(b => {
-      const date = new Date(b.updatedAt).toLocaleDateString('vi-VN');
-      return `<tr>
-<td><strong>${b.name}</strong>${b.description ? '<br><small style="color:#888">' + b.description + '</small>' : ''}</td>
-<td>${b.address || '-'}</td>
-<td style="text-align:center;">${b.total_floors || 1}</td>
-<td><span class="badge">${b.status}</span></td>
-<td>${date}</td>
-<td>
-<button class="btn-edit" onclick="openEditor('${b._id}')" style="margin-right:4px;">Vẽ bản đồ</button>
-<button class="btn-edit" onclick="openEditBuildingModal('${b._id}')" style="background:#f39c12; color:white; margin-right:4px;">Sửa</button>
-<button class="btn-logout" onclick="deleteBuilding('${b._id}')" style="background:#e74c3c; padding:6px 12px;">Xóa</button>
-</td>
-</tr>`;
-    }).join('');
+    applyBuildingFilters(false);
   } catch (e) {
     console.error('Lỗi tải tòa nhà:', e);
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:red;">Lỗi kết nối API: ' + (e.message || e) + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:red;">Lỗi kết nối API: ' + (e.message || e) + '</td></tr>';
   }
+}
+
+function applyBuildingFilters(resetPage) {
+  if (resetPage !== false) window._buildingsPage = 1;
+  const orgId = document.getElementById('filterBuildingOrg')?.value || '';
+  const keyword = (document.getElementById('filterBuildingKeyword')?.value || '').trim().toLowerCase();
+  const status = document.getElementById('filterBuildingStatus')?.value || '';
+  localStorage.setItem('buildingsFilters', JSON.stringify({ orgId, keyword, status }));
+  let filtered = allBuildings.slice();
+  if (orgId) filtered = filtered.filter(b => String(b.organization_id) === orgId);
+  if (keyword) {
+    filtered = filtered.filter(b =>
+      (b.name || '').toLowerCase().includes(keyword) ||
+      (b.address || '').toLowerCase().includes(keyword)
+    );
+  }
+  if (status) filtered = filtered.filter(b => b.status === status);
+  displayedBuildings = filtered;
+  renderBuildingsFromCache();
+}
+
+function clearBuildingFilters() {
+  ['filterBuildingOrg', 'filterBuildingKeyword', 'filterBuildingStatus'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  localStorage.removeItem('buildingsFilters');
+  window._buildingsPage = 1;
+  applyBuildingFilters(false);
+}
+
+function restoreBuildingFilters() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('buildingsFilters') || '{}');
+    if (saved.orgId != null) { const el = document.getElementById('filterBuildingOrg'); if (el) el.value = saved.orgId; }
+    if (saved.keyword != null) { const el = document.getElementById('filterBuildingKeyword'); if (el) el.value = saved.keyword; }
+    if (saved.status != null) { const el = document.getElementById('filterBuildingStatus'); if (el) el.value = saved.status; }
+  } catch (e) {}
+}
+
+function renderBuildingsFromCache() {
+  const tbody = document.getElementById('buildingsList');
+  if (!tbody) return;
+  const list = displayedBuildings.length ? displayedBuildings : allBuildings;
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Chưa có tòa nhà nào. Bấm "Thêm Tòa Nhà Mới"!</td></tr>';
+    renderPagination('buildings', 0, 1);
+    return;
+  }
+  const page = window._buildingsPage || 1;
+  const start = (page - 1) * PAGE_SIZE;
+  const pageItems = list.slice(start, start + PAGE_SIZE);
+  tbody.innerHTML = pageItems.map(b => {
+    const date = b.updatedAt ? new Date(b.updatedAt).toLocaleDateString('vi-VN') : '-';
+    const desc = b.description ? '<br><small style="color:#888">' + escapeHtml(b.description) + '</small>' : '';
+    return '<tr>' +
+      tdEllipsis(b.name, '<strong>' + escapeHtml(b.name) + '</strong>' + desc) +
+      tdEllipsis(b.address || '-') +
+      '<td style="text-align:center;">' + (b.total_floors || 1) + '</td>' +
+      '<td><span class="badge">' + escapeHtml(b.status) + '</span></td>' +
+      tdEllipsis(getOrgName(b.organization_id)) +
+      '<td>' + date + '</td>' +
+      '<td class="actions-cell"><div class="building-actions">' +
+        '<button class="btn-edit" onclick="openEditor(\'' + b._id + '\')" style="margin-right:4px;">Vẽ bản đồ</button>' +
+        '<button class="btn-edit" onclick="openEditBuildingModal(\'' + b._id + '\')" style="background:#f39c12;color:white;margin-right:4px;">Sửa</button>' +
+        '<button class="btn-logout" onclick="deleteBuilding(\'' + b._id + '\')" style="background:#e74c3c;padding:6px 12px;">Xóa</button>' +
+      '</div></td></tr>';
+  }).join('');
+  renderPagination('buildings', list.length, page);
 }
 
 // ============================================================
 // ORGANIZATIONS
 async function fetchOrganizations() {
+  const tbody = document.getElementById('organizationsList');
   try {
-    const res = await apiFetch('/organizations');
+    const res = await apiFetch('/organizations?with_counts=true');
     if (!res.ok) {
-      console.error('Failed to fetch organizations:', res.status);
+      const d = await res.json().catch(() => ({}));
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:red;">' +
+          escapeHtml(d.message || 'Không tải được danh sách tổ chức (HTTP ' + res.status + ')') + '</td></tr>';
+      }
       return;
     }
     const data = await res.json();
     allOrganizations = Array.isArray(data) ? data : [];
     populateOrganizationDropdown();
+    renderOrganizationsFromCache();
   } catch (e) {
     console.error('Error fetching organizations:', e);
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:red;">Lỗi kết nối khi tải tổ chức.</td></tr>';
+    }
   }
 }
 
 function populateOrganizationDropdown() {
-  const options = '<option value="">Chọn organization...</option>' +
+  const options = '<option value="">Tất cả</option>' +
     allOrganizations.map(org =>
-      `<option value="${org._id}">${org.name} (${org.slug})${org.is_active ? '' : ' [inactive]'}</option>`
+      '<option value="' + org._id + '">' + escapeHtml(org.name) + ' (' + escapeHtml(org.slug) + ')' + (org.is_active ? '' : ' [inactive]') + '</option>'
     ).join('');
 
+  const filterOpts = '<option value="">Tất cả</option>' +
+    allOrganizations.map(org =>
+      '<option value="' + org._id + '">' + escapeHtml(org.name) + '</option>'
+    ).join('');
+
+  ['filterBuildingOrg', 'filterUserOrg'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = filterOpts;
+  });
+
   const addSelect = document.getElementById('addBuildingOrganizationId');
-  if (addSelect) addSelect.innerHTML = options;
+  if (addSelect) {
+    addSelect.innerHTML = '<option value="">Chọn organization...</option>' +
+      allOrganizations.map(org =>
+        '<option value="' + org._id + '">' + escapeHtml(org.name) + ' (' + escapeHtml(org.slug) + ')</option>'
+      ).join('');
+  }
 
   const editSelect = document.getElementById('editBuildingOrganizationId');
-  if (editSelect) editSelect.innerHTML = options;
+  if (editSelect) {
+    editSelect.innerHTML = '<option value="">Chọn organization...</option>' +
+      allOrganizations.map(org =>
+        '<option value="' + org._id + '">' + escapeHtml(org.name) + ' (' + escapeHtml(org.slug) + ')</option>'
+      ).join('');
+  }
 }
+
+
+function renderOrganizationsFromCache() {
+  const tbody = document.getElementById('organizationsList');
+  if (!tbody) return;
+  const keyword = (document.getElementById('filterOrgKeyword')?.value || '').trim().toLowerCase();
+  const code = (document.getElementById('filterOrgCode')?.value || '').trim().toLowerCase();
+  const plan = document.getElementById('filterOrgPlan')?.value || '';
+  const status = document.getElementById('filterOrgStatus')?.value || '';
+  let list = allOrganizations.slice();
+  if (keyword) list = list.filter(o => (o.name || '').toLowerCase().includes(keyword));
+  if (code) list = list.filter(o => (o.slug || '').toLowerCase().includes(code));
+  if (plan) list = list.filter(o => (o.plan || 'FREE') === plan);
+  if (status === 'active') list = list.filter(o => o.is_active);
+  if (status === 'inactive') list = list.filter(o => !o.is_active);
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#888;">Chưa có tổ chức nào.</td></tr>';
+    renderPagination('organizations', 0, 1);
+    return;
+  }
+  const page = window._organizationsPage || 1;
+  const start = (page - 1) * PAGE_SIZE;
+  const pageItems = list.slice(start, start + PAGE_SIZE);
+  tbody.innerHTML = pageItems.map(org => {
+    const date = org.createdAt ? new Date(org.createdAt).toLocaleDateString('vi-VN') : (org.created_at ? new Date(org.created_at).toLocaleDateString('vi-VN') : '-');
+    const statusBadge = org.is_active
+      ? '<span class="status-badge active">Hoạt động</span>'
+      : '<span class="status-badge inactive">Tạm dừng</span>';
+    const bCount = org.building_count != null ? org.building_count : '—';
+    const uCount = org.user_count != null ? org.user_count : '—';
+    const admin = org.org_admin ? escapeHtml(org.org_admin.full_name || org.org_admin.email || '') : '—';
+    const oid = String(org._id);
+    return '<tr>' +
+      tdEllipsis(org.name, '<strong>' + escapeHtml(org.name) + '</strong>') +
+      tdEllipsis(org.slug) +
+      '<td><span class="badge">' + escapeHtml(org.plan || 'FREE') + '</span></td>' +
+      '<td>' + statusBadge + '</td>' +
+      '<td style="text-align:center;cursor:pointer;" onclick="jumpToBuildings(\'' + oid + '\')" title="Xem tòa nhà">' + bCount + '</td>' +
+      '<td style="text-align:center;cursor:pointer;" onclick="jumpToUsers(\'' + oid + '\')" title="Xem tài khoản">' + uCount + '</td>' +
+      tdEllipsis(org.org_admin ? (org.org_admin.full_name || org.org_admin.email) : '', admin) +
+      '<td>' + date + '</td>' +
+      '<td class="actions-cell"><div class="building-actions">' +
+        '<button type="button" class="btn-edit" onclick="jumpToBuildings(\'' + oid + '\')">Tòa nhà</button>' +
+        '<button type="button" class="btn-edit" onclick="jumpToUsers(\'' + oid + '\')" style="background:#f39c12;color:#fff;">User</button>' +
+      '</div></td></tr>';
+  }).join('');
+  renderPagination('organizations', list.length, page);
+}
+
+function applyOrganizationFilters(resetPage) {
+  if (resetPage !== false) window._organizationsPage = 1;
+  const keyword = document.getElementById('filterOrgKeyword')?.value || '';
+  const code = document.getElementById('filterOrgCode')?.value || '';
+  const plan = document.getElementById('filterOrgPlan')?.value || '';
+  const status = document.getElementById('filterOrgStatus')?.value || '';
+  localStorage.setItem('organizationsFilters', JSON.stringify({ keyword, code, plan, status }));
+  renderOrganizationsFromCache();
+}
+
+function clearOrganizationFilters() {
+  ['filterOrgKeyword', 'filterOrgCode', 'filterOrgPlan', 'filterOrgStatus'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  localStorage.removeItem('organizationsFilters');
+  window._organizationsPage = 1;
+  renderOrganizationsFromCache();
+}
+
+function restoreOrganizationFilters() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('organizationsFilters') || '{}');
+    if (saved.keyword != null) { const el = document.getElementById('filterOrgKeyword'); if (el) el.value = saved.keyword; }
+    if (saved.code != null) { const el = document.getElementById('filterOrgCode'); if (el) el.value = saved.code; }
+    if (saved.plan != null) { const el = document.getElementById('filterOrgPlan'); if (el) el.value = saved.plan; }
+    if (saved.status != null) { const el = document.getElementById('filterOrgStatus'); if (el) el.value = saved.status; }
+  } catch (e) {}
+}
+
+function jumpToBuildings(orgId) {
+  const el = document.getElementById('filterBuildingOrg');
+  if (el) el.value = orgId;
+  window._buildingsPage = 1;
+  localStorage.setItem('buildingsFilters', JSON.stringify({
+    orgId,
+    keyword: document.getElementById('filterBuildingKeyword')?.value || '',
+    status: document.getElementById('filterBuildingStatus')?.value || ''
+  }));
+  switchTab('buildings');
+}
+
+function jumpToUsers(orgId) {
+  const el = document.getElementById('filterUserOrg');
+  if (el) el.value = orgId;
+  window._usersPage = 1;
+  localStorage.setItem('usersFilters', JSON.stringify({
+    orgId,
+    keyword: document.getElementById('filterUserKeyword')?.value || '',
+    role: document.getElementById('filterUserRole')?.value || '',
+    status: document.getElementById('filterUserStatus')?.value || ''
+  }));
+  switchTab('users');
+}
+
+function slugifyFromName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+}
+
+function prefillSlug() {
+  const nameEl = document.getElementById('addOrgName');
+  const slugEl = document.getElementById('addOrgSlug');
+  if (!nameEl || !slugEl || slugEl.dataset.manual === '1') return;
+  const s = slugifyFromName(nameEl.value.trim());
+  if (s) slugEl.value = s;
+}
+
+function openAddOrgModal() {
+  const modal = document.getElementById('addOrgModal');
+  if (!modal) { alert('Modal Thêm Tổ Chức chưa được cấu hình trong HTML.'); return; }
+  ['addOrgName', 'addOrgSlug', 'addOrgAdminName', 'addOrgAdminEmail', 'addOrgAdminPassword'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const planEl = document.getElementById('addOrgPlan');
+  if (planEl) planEl.value = 'FREE';
+  const slugEl = document.getElementById('addOrgSlug');
+  if (slugEl) delete slugEl.dataset.manual;
+  modal.style.display = 'flex';
+}
+
+function closeAddOrgModal() {
+  const modal = document.getElementById('addOrgModal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function createOrganization() {
+  const organizationName = document.getElementById('addOrgName')?.value?.trim();
+  let slug = document.getElementById('addOrgSlug')?.value?.trim().toLowerCase();
+  const plan = document.getElementById('addOrgPlan')?.value || 'FREE';
+  const adminName = document.getElementById('addOrgAdminName')?.value?.trim();
+  const adminEmail = document.getElementById('addOrgAdminEmail')?.value?.trim();
+  const adminPassword = document.getElementById('addOrgAdminPassword')?.value || '';
+  if (!organizationName) return alert('Vui lòng nhập tên tổ chức!');
+  if (!slug) slug = slugifyFromName(organizationName);
+  if (!adminName || !adminEmail || !adminPassword) return alert('Vui lòng nhập đầy đủ thông tin quản trị viên.');
+  const body = { organizationName, slug, plan, adminName, adminEmail, adminPassword };
+  try {
+    let res = await apiFetch('/organizations/with-admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (res.status === 404) {
+      res = await apiFetch('/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    }
+    const d = await res.json().catch(() => ({}));
+    if (res.ok) {
+      alert(d.message || 'Tạo tổ chức thành công!');
+      closeAddOrgModal();
+      await fetchOrganizations();
+      renderOrganizationsFromCache();
+    } else {
+      alert('Lỗi: ' + (d.message || 'HTTP ' + res.status));
+    }
+  } catch (e) {
+    alert('Lỗi kết nối!');
+  }
+}
+
+// ============================================================
+// ORG REGISTRATIONS (2.8)
+let allRegistrations = [];
+
+async function fetchRegistrations() {
+  const tbody = document.getElementById('registrationsList');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">Đang tải...</td></tr>';
+  try {
+    const res = await apiFetch('/org-registrations');
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:red;">' + escapeHtml(d.message || 'Không tải được hồ sơ') + '</td></tr>';
+      return;
+    }
+    allRegistrations = await res.json();
+    renderRegistrationsFromCache();
+  } catch (e) {
+    if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:red;">Lỗi kết nối</td></tr>';
+  }
+}
+
+function regStatusLabel(status) {
+  if (status === 'PENDING') return '<span class="status-badge" style="background:#fff3cd;color:#856404;">Chờ duyệt</span>';
+  if (status === 'APPROVED') return '<span class="status-badge active">Đã duyệt</span>';
+  if (status === 'REJECTED') return '<span class="status-badge inactive">Từ chối</span>';
+  return escapeHtml(status || '-');
+}
+
+function regSourceLabel(source) {
+  if (source === 'SELF_SERVICE') return '<span style="font-size:12px;color:#27ae60;">Trial tự động</span>';
+  return '<span style="font-size:12px;color:#666;">Chờ duyệt</span>';
+}
+
+function renderRegistrationsFromCache() {
+  const tbody = document.getElementById('registrationsList');
+  if (!tbody) return;
+  const statusFilter = document.getElementById('filterRegStatus')?.value || '';
+  let list = allRegistrations.slice();
+  if (statusFilter) list = list.filter(r => r.status === statusFilter);
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#888;">Không có hồ sơ nào.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(r => {
+    const date = r.createdAt ? new Date(r.createdAt).toLocaleString('vi-VN') : '-';
+    let actions = '-';
+    if (r.status === 'PENDING') {
+      actions = '<button type="button" class="btn-edit" onclick="approveRegistration(\'' + r._id + '\')" style="margin-right:4px;">Duyệt</button>' +
+        '<button type="button" class="btn-logout" onclick="rejectRegistration(\'' + r._id + '\')" style="padding:6px 10px;background:#e74c3c;">Từ chối</button>';
+    } else if (r.status === 'REJECTED' && r.reject_reason) {
+      actions = '<span title="' + escapeHtml(r.reject_reason) + '" style="font-size:12px;color:#888;">' + escapeHtml(r.reject_reason) + '</span>';
+    } else if (r.source === 'SELF_SERVICE' && r.status === 'APPROVED') {
+      actions = '<span style="font-size:12px;color:#27ae60;">Tự kích hoạt</span>';
+    }
+    return '<tr>' +
+      tdEllipsis(r.organization_name, '<strong>' + escapeHtml(r.organization_name) + '</strong>') +
+      tdEllipsis(r.slug) +
+      tdEllipsis(r.contact_name) +
+      tdEllipsis(r.contact_email) +
+      tdEllipsis(r.contact_phone || '-') +
+      '<td>' + regSourceLabel(r.source) + '</td>' +
+      '<td>' + regStatusLabel(r.status) + '</td>' +
+      '<td style="font-size:12px;">' + date + '</td>' +
+      '<td class="actions-cell">' + actions + '</td></tr>';
+  }).join('');
+}
+
+async function approveRegistration(id) {
+  if (!confirm('Duyệt hồ sơ này và tạo tổ chức + tài khoản quản trị?')) return;
+  try {
+    const res = await apiFetch('/org-registrations/' + id + '/approve', { method: 'POST' });
+    const d = await res.json().catch(() => ({}));
+    if (res.ok) {
+      alert(d.message || 'Đã duyệt thành công!');
+      await fetchRegistrations();
+      await fetchOrganizations();
+    } else {
+      alert('Lỗi: ' + (d.message || 'HTTP ' + res.status));
+    }
+  } catch (e) {
+    alert('Lỗi kết nối');
+  }
+}
+
+async function rejectRegistration(id) {
+  const reason = prompt('Nhập lý do từ chối:');
+  if (reason === null) return;
+  if (!reason.trim()) return alert('Vui lòng nhập lý do từ chối.');
+  try {
+    const res = await apiFetch('/org-registrations/' + id + '/reject', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: reason.trim() })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (res.ok) {
+      alert(d.message || 'Đã từ chối hồ sơ.');
+      await fetchRegistrations();
+    } else {
+      alert('Lỗi: ' + (d.message || 'HTTP ' + res.status));
+    }
+  } catch (e) {
+    alert('Lỗi kết nối');
+  }
+}
+
+function openCreateUserModal() {
+  alert('Chức năng tạo tài khoản mới sẽ được bổ sung ở task tiếp theo.');
+}
+
 
 function openEditor(id) { window.location.href = '/editor/index.html?buildingId=' + id; }
 
@@ -299,6 +777,16 @@ function openAddBuildingModal() {
   // Nếu là Super Admin và chưa load organizations, load ngay
   if (currentUser?.role === 'SUPER_ADMIN' && allOrganizations.length === 0) {
     fetchOrganizations();
+  }
+  if (currentUser?.role === 'ORG_ADMIN' && currentUser.organization_id) {
+    const orgSelect = document.getElementById('addBuildingOrganizationId');
+    if (orgSelect) {
+      orgSelect.value = currentUser.organization_id;
+      orgSelect.disabled = true;
+    }
+  } else {
+    const orgSelect = document.getElementById('addBuildingOrganizationId');
+    if (orgSelect) orgSelect.disabled = false;
   }
   document.getElementById('addBuildingModal').style.display = 'flex';
 }
@@ -311,7 +799,8 @@ async function saveNewBuilding() {
   const floors = parseInt(document.getElementById('addBuildingFloors').value) || 1;
   const lat = parseFloat(document.getElementById('addBuildingLat').value) || 0;
   const lng = parseFloat(document.getElementById('addBuildingLng').value) || 0;
-  const orgId = document.getElementById('addBuildingOrganizationId').value.trim();
+  let orgId = document.getElementById('addBuildingOrganizationId').value.trim();
+  if (!orgId && currentUser?.role === 'ORG_ADMIN') orgId = currentUser.organization_id || '';
   if (!name) return alert('Vui lòng nhập tên tòa nhà!');
   if (!orgId) return alert('Vui lòng chọn organization!');
   try {
@@ -420,28 +909,73 @@ async function loadMapVersions(buildingId) {
 // NEW USER MANAGEMENT FUNCTIONS (THEO YÊU CẦU TASK UI FIX ROUND 3)
 
 async function fetchUsers() {
-  const filter = document.getElementById('userFilter')?.value || 'all';
-  let url = '/users';
-  if (filter === 'active') url += '?is_active=true';
-  else if (filter === 'inactive') url += '?is_active=false';
-  // 'all' thì Không query
-
+  if (currentUser?.role === 'SUPER_ADMIN' && allOrganizations.length === 0) {
+    await fetchOrganizations();
+  }
+  const tbody = document.getElementById('usersList');
+  const keyword = (document.getElementById('filterUserKeyword')?.value || '').trim();
+  const role = document.getElementById('filterUserRole')?.value || '';
+  const status = document.getElementById('filterUserStatus')?.value || '';
+  const orgId = document.getElementById('filterUserOrg')?.value || '';
+  const params = new URLSearchParams();
+  if (keyword) params.set('search', keyword);
+  if (role) params.set('role', role);
+  if (status === 'active') params.set('is_active', 'true');
+  else if (status === 'inactive') params.set('is_active', 'false');
+  const qs = params.toString();
+  const url = '/users' + (qs ? '?' + qs : '');
   try {
     const res = await apiFetch(url);
     if (!res.ok) {
-      const tbody = document.getElementById('usersList');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:red;">Không tải được danh sách user (HTTP ' + res.status + '). Vui lòng tải lại trang.</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:red;">Không tải được danh sách user (HTTP ' + res.status + '). Vui lòng tải lại trang.</td></tr>';
       return;
     }
     const data = await res.json();
-    const users = Array.isArray(data) ? data : (data.users || data.data || []);
-    renderUsers(users);
+    let users = Array.isArray(data) ? data : (data.users || data.data || []);
+    if (orgId) users = users.filter(u => String(u.organization_id) === orgId);
+    allUsers = users;
+    localStorage.setItem('usersFilters', JSON.stringify({ orgId, keyword, role, status }));
+    renderUsersFromCache();
   } catch (err) {
-    const tbody = document.getElementById('usersList');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:red;">Lỗi khi tải danh sách user: ' + (err.message || err) + '</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:red;">Lỗi khi tải danh sách user: ' + (err.message || err) + '</td></tr>';
     console.error('Fetch users error:', err);
   }
 }
+
+function applyUserFilters() {
+  window._usersPage = 1;
+  fetchUsers();
+}
+
+function clearUserFilters() {
+  ['filterUserOrg', 'filterUserKeyword', 'filterUserRole', 'filterUserStatus'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  localStorage.removeItem('usersFilters');
+  window._usersPage = 1;
+  fetchUsers();
+}
+
+function restoreUserFilters() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('usersFilters') || '{}');
+    if (saved.orgId != null) { const el = document.getElementById('filterUserOrg'); if (el) el.value = saved.orgId; }
+    if (saved.keyword != null) { const el = document.getElementById('filterUserKeyword'); if (el) el.value = saved.keyword; }
+    if (saved.role != null) { const el = document.getElementById('filterUserRole'); if (el) el.value = saved.role; }
+    if (saved.status != null) { const el = document.getElementById('filterUserStatus'); if (el) el.value = saved.status; }
+  } catch (e) {}
+}
+
+let allUsers = [];
+
+function renderUsersFromCache() {
+  const page = window._usersPage || 1;
+  const start = (page - 1) * PAGE_SIZE;
+  const slice = allUsers.slice(start, start + PAGE_SIZE);
+  renderUsers(slice);
+  renderPagination('users', allUsers.length, page);
+}
+
 
 function formatAssignedBuildings(buildings) {
   if (!buildings || !buildings.length) return 'Chưa gán';
@@ -473,9 +1007,14 @@ function renderUsers(users) {
   const tbody = document.getElementById('usersList');
   if (!tbody) return;
   if (!users || users.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#888;">Không có tài khoản.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:#888;">Không có tài khoản.</td></tr>';
     return;
   }
+  const ROLE_DISPLAY = {
+    SUPER_ADMIN: 'Super Admin',
+    ORG_ADMIN: 'Quản trị tổ chức',
+    BUILDING_ADMIN: 'Quản trị tòa nhà'
+  };
   tbody.innerHTML = users.map(u => {
     const createdAtStr = u.createdAt ? new Date(u.createdAt).toLocaleDateString('vi-VN') : '-';
     const isSuperAdmin = u.role === 'SUPER_ADMIN';
@@ -488,26 +1027,27 @@ function renderUsers(users) {
       const isActive = u.is_active;
       const btnClass = isActive ? 'btn-logout' : 'btn-create';
       const btnText = isActive ? 'Khóa' : 'Duyệt';
-      actionBtn = `<button class="${btnClass}" onclick="toggleUserActive('${u._id}', ${isActive})" style="padding:6px 12px;">${btnText}</button>`;
+      actionBtn = '<button class="' + btnClass + '" onclick="toggleUserActive(\'' + u._id + '\', ' + isActive + ')" style="padding:6px 12px;">' + btnText + '</button>';
     }
     let editBtn = '';
     if (!isAdminSelf) {
-      editBtn = `<button class="btn-edit" onclick="openUpdateUserModal('${u._id}')" style="font-size:13px;padding:6px 10px;">Sửa</button>`;
+      editBtn = '<button class="btn-edit" onclick="openUpdateUserModal(\'' + u._id + '\')" style="font-size:13px;padding:6px 10px;">Sửa</button>';
     }
-    const roleClass = isSuperAdmin ? 'role-badge super-admin' : 'role-badge building-admin';
+    const roleClass = isSuperAdmin ? 'role-badge super-admin' : (u.role === 'ORG_ADMIN' ? 'role-badge org-admin' : 'role-badge building-admin');
     const statusClass = u.is_active ? 'status-badge active' : 'status-badge inactive';
     const statusText = u.is_active ? 'Hoạt động' : 'Bị khóa';
-    const roleText = isSuperAdmin ? 'Super Admin' : 'Quản trị tòa nhà';
-    return `<tr>
-<td>${u.email || '-'}</td>
-<td>${u.full_name || '-'}</td>
-<td>${u.phone || '-'}</td>
-<td><span class="${roleClass}" style="font-size:12px;">${roleText}</span></td>
-<td><span class="${statusClass}">${statusText}</span></td>
-<td>${formatAssignedBuildings(u.assigned_buildings)}</td>
-<td>${createdAtStr}</td>
-<td class="actions-cell"><div class="user-actions">${actionBtn}${editBtn}</div></td>
-</tr>`;
+    const roleText = ROLE_DISPLAY[u.role] || u.role || '-';
+    const orgText = u.role === 'SUPER_ADMIN' ? '—' : getOrgName(u.organization_id);
+    return '<tr>' +
+      tdEllipsis(u.email || '-') +
+      tdEllipsis(u.full_name || '-') +
+      '<td>' + escapeHtml(u.phone || '-') + '</td>' +
+      '<td><span class="' + roleClass + '" style="font-size:12px;">' + escapeHtml(roleText) + '</span></td>' +
+      '<td><span class="' + statusClass + '">' + statusText + '</span></td>' +
+      tdEllipsis(orgText) +
+      tdEllipsis(formatAssignedBuildings(u.assigned_buildings)) +
+      '<td>' + createdAtStr + '</td>' +
+      '<td class="actions-cell"><div class="user-actions">' + actionBtn + editBtn + '</div></td></tr>';
   }).join('');
 }
 
@@ -648,7 +1188,11 @@ const ACTION_LABELS = {
   BUILDING_ACCESS_DENIED: 'Từ chối truy cập tòa',
   CREATE_QR: 'Tạo mã QR',
   DELETE_QR: 'Xóa mã QR',
-  UNLOCK_SESSION: 'Mở khóa phiên'
+  UNLOCK_SESSION: 'Mở khóa phiên',
+  CREATE_ORG: 'Tạo tổ chức',
+  APPROVE_ORG_REGISTRATION: 'Duyệt hồ sơ đăng ký',
+  REJECT_ORG_REGISTRATION: 'Từ chối hồ sơ đăng ký',
+  SELF_SERVICE_ORG_TRIAL: 'Trial tự động (self-service)'
 };
 
 const FIELD_LABELS = {
@@ -656,11 +1200,23 @@ const FIELD_LABELS = {
   phone: 'Số điện thoại',
   role: 'Vai trò',
   is_active: 'Trạng thái',
-  assigned_buildings: 'Tòa nhà được gán'
+  assigned_buildings: 'Tòa nhà được gán',
+  name: 'Tên tòa nhà',
+  address: 'Địa chỉ',
+  description: 'Mô tả',
+  total_floors: 'Số tầng',
+  status: 'Trạng thái tòa',
+  organization_id: 'Tổ chức',
+  gps_location: 'Tọa độ GPS',
+  activation_radius: 'Bán kính kích hoạt',
+  slug: 'Mã định danh',
+  plan: 'Gói dịch vụ',
+  source: 'Nguồn'
 };
 
 const ROLE_LABELS = {
   SUPER_ADMIN: 'Quản trị hệ thống',
+  ORG_ADMIN: 'Quản trị tổ chức',
   BUILDING_ADMIN: 'Quản trị tòa nhà'
 };
 
@@ -681,6 +1237,15 @@ function formatActiveStatus(val) {
 function formatLogValue(val, field) {
   if (field === 'is_active') return formatActiveStatus(val);
   if (field === 'role') return ROLE_LABELS[val] || val;
+  if (field === 'status') {
+    if (val === 'DRAFT') return 'Nháp';
+    if (val === 'PUBLISHED') return 'Đã xuất bản';
+  }
+  if (field === 'gps_location' && val && typeof val === 'object') {
+    const lat = val.lat != null ? val.lat : '?';
+    const lng = val.lng != null ? val.lng : '?';
+    return lat + ', ' + lng;
+  }
   if (Array.isArray(val)) return val.length ? val.map(String).join(', ') : '(không có)';
   if (val === null || val === undefined || val === '') return '(trống)';
   return String(val);
@@ -717,6 +1282,12 @@ function getActionFallbackDetail(action, target) {
     BUILDING_ASSIGN: 'Gán quyền quản lý tòa nhà' + name,
     BUILDING_UNASSIGN: 'Thu hồi quyền quản lý tòa nhà' + name,
     CHANGE_PASSWORD: 'Đổi mật khẩu tài khoản',
+    CREATE_ORG: 'Tạo tổ chức' + name,
+    APPROVE_ORG_REGISTRATION: 'Duyệt hồ sơ đăng ký tổ chức' + name,
+    REJECT_ORG_REGISTRATION: 'Từ chối hồ sơ đăng ký' + name,
+    ADMIN_UPDATE_USER: 'Admin cập nhật tài khoản' + name,
+    ACTIVATE_USER: 'Kích hoạt tài khoản' + name,
+    DEACTIVATE_USER: 'Vô hiệu hóa tài khoản' + name,
     UNLOCK_SESSION: 'Mở khóa editor sau khi khóa'
   };
   return fallbacks[action] || (target ? `Đối tượng: ${target}` : '—');
@@ -796,6 +1367,48 @@ function formatDetails(details, log) {
   return getActionFallbackDetail(action, target);
 }
 
+function resetLogsPageAndLoad() {
+  window._logsPage = 1;
+  loadLogs();
+}
+
+function renderLogsPagination(total, page) {
+  const container = document.getElementById('logsPagination');
+  if (!container) return;
+  const totalPages = Math.max(1, Math.ceil(total / LOGS_PAGE_SIZE));
+  const current = Math.min(Math.max(1, page || 1), totalPages);
+  window._logsPage = current;
+
+  if (!total) {
+    container.innerHTML = '';
+    return;
+  }
+
+  let html = '<span class="page-info">Trang ' + current + '/' + totalPages + ' (' + total + ' bản ghi)</span> ';
+  const prev = Math.max(1, current - 1);
+  const next = Math.min(totalPages, current + 1);
+  html += '<button type="button" data-logs-page="' + prev + '"' + (current <= 1 ? ' disabled' : '') + '>&laquo;</button> ';
+  const windowSize = 5;
+  let start = Math.max(1, current - Math.floor(windowSize / 2));
+  let end = Math.min(totalPages, start + windowSize - 1);
+  start = Math.max(1, end - windowSize + 1);
+  for (let i = start; i <= end; i++) {
+    if (i === current) {
+      html += '<span class="page-info" style="background:#3498db;color:#fff;padding:6px 10px;border-radius:4px;">' + i + '</span> ';
+    } else {
+      html += '<button type="button" data-logs-page="' + i + '">' + i + '</button> ';
+    }
+  }
+  html += '<button type="button" data-logs-page="' + next + '"' + (current >= totalPages ? ' disabled' : '') + '>&raquo;</button>';
+  container.innerHTML = html;
+  container.querySelectorAll('button[data-logs-page]').forEach(btn => {
+    btn.onclick = () => {
+      window._logsPage = parseInt(btn.getAttribute('data-logs-page'), 10);
+      loadLogs();
+    };
+  });
+}
+
 async function loadLogs() {
   const action = document.getElementById('filterAction')?.value || '';
   const email = document.getElementById('filterEmail')?.value.trim() || '';
@@ -809,7 +1422,8 @@ async function loadLogs() {
   tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Đang tải...</td></tr>';
 
   try {
-    let url = '/activity-logs?limit=100';
+    const page = window._logsPage || 1;
+    let url = '/activity-logs?limit=' + LOGS_PAGE_SIZE + '&page=' + page;
     if (action) url += `&action=${encodeURIComponent(action)}`;
     if (email) url += `&email=${encodeURIComponent(email)}`;
     if (target) url += `&target=${encodeURIComponent(target)}`;
@@ -835,6 +1449,7 @@ async function loadLogs() {
 
     if (!logs.length) {
       tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;">Chưa có log nào.</td></tr>';
+      renderLogsPagination(data.total || 0, page);
       return;
     }
 
@@ -863,6 +1478,7 @@ async function loadLogs() {
 <td style="font-size:12px;color:#999;">${l.ip_address || '-'}</td>
 </tr>`;
     }).join('');
+    renderLogsPagination(data.total || 0, data.page || page);
   } catch (e) {
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:red;">Lỗi tải logs: ' + (e.message || e) + '</td></tr>';
     document.getElementById('logsTotal').textContent = '';

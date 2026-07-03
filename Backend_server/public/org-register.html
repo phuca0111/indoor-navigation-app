@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Đăng ký tổ chức — Indoor Navigation</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body { background: #f5f6fa; font-family: system-ui, sans-serif; }
+    .wrap { max-width: 520px; margin: 40px auto; background: #fff; padding: 28px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.08); }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    .sub { color: #666; font-size: 14px; margin-bottom: 20px; }
+    label { display: block; font-size: 13px; margin: 12px 0 4px; color: #444; }
+    input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+    button { width: 100%; margin-top: 20px; padding: 12px; background: #8e44ad; color: #fff; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; }
+    button:hover { background: #732d91; }
+    .msg { margin-top: 16px; padding: 12px; border-radius: 6px; display: none; }
+    .msg.ok { background: #d4edda; color: #155724; }
+    .msg.err { background: #f8d7da; color: #721c24; }
+    .back { display: inline-block; margin-top: 16px; color: #3498db; text-decoration: none; font-size: 14px; }
+    small { color: #888; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Đăng ký tổ chức</h1>
+    <p class="sub">Gửi hồ sơ để sử dụng hệ thống dẫn đường trong nhà. Super Admin sẽ duyệt trong 1–2 ngày làm việc.</p>
+
+    <form id="orgRegForm">
+      <label>Tên tổ chức *</label>
+      <input type="text" id="organizationName" required placeholder="VD: Bệnh viện ABC">
+
+      <label>Mã định danh *</label>
+      <input type="text" id="slug" placeholder="VD: benh-vien-abc (tự sinh khi nhập tên)" oninput="this.dataset.manual='1'">
+      <small>Chỉ chữ thường, số và dấu gạch ngang.</small>
+
+      <label>Họ tên người đại diện *</label>
+      <input type="text" id="contactName" required placeholder="Nguyễn Văn A">
+
+      <label>Email đăng nhập *</label>
+      <input type="email" id="contactEmail" required placeholder="admin@congty.com">
+
+      <label>Số điện thoại</label>
+      <input type="text" id="contactPhone" placeholder="0901234567">
+
+      <label>Mật khẩu *</label>
+      <input type="password" id="password" required minlength="8" placeholder="Ít nhất 8 ký tự">
+
+      <button type="submit">Gửi hồ sơ đăng ký</button>
+    </form>
+
+    <div id="msgOk" class="msg ok"></div>
+    <div id="msgErr" class="msg err"></div>
+    <a class="back" href="/">← Về trang chủ</a>
+    <a class="back" href="/admin/index.html" style="margin-left:12px;">Đăng nhập admin</a>
+  </div>
+
+  <script src="org-register.js"></script>
+</body>
+</html>

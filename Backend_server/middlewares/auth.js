@@ -38,14 +38,19 @@ const auth = (req, res, next) => {
 };
 
 // Hàm kiểm tra vai trò: Chỉ cho Super Admin đi qua
-// Dùng cho các API nhạy cảm như: Tạo tài khoản mới, Xóa tài khoản
 const requireSuperAdmin = (req, res, next) => {
-    // Kiểm tra vai trò đã được gắn ở bước trên
     if (req.user.role !== 'SUPER_ADMIN') {
         return res.status(403).json({ message: 'Bạn không có quyền Super Admin để thực hiện thao tác này!' });
     }
-    // Đúng là Super Admin -> Cho qua
     next();
 };
 
-module.exports = { auth, requireSuperAdmin };
+// Super Admin hoặc Org Admin (quản lý trong phạm vi organization)
+const requireAdmin = (req, res, next) => {
+    if (!req.user || !['SUPER_ADMIN', 'ORG_ADMIN'].includes(req.user.role)) {
+        return res.status(403).json({ message: 'Bạn không có quyền thực hiện thao tác quản trị này!' });
+    }
+    next();
+};
+
+module.exports = { auth, requireSuperAdmin, requireAdmin };

@@ -23,11 +23,11 @@ const userSchema = new mongoose.Schema({
         required: true
     },
 
-    // Cột 3: Vai trò của người dùng (Chỉ được chọn 1 trong 2)
+    // Cột 3: Vai trò của người dùng
     role: {
         type: String,
-        enum: ['SUPER_ADMIN', 'BUILDING_ADMIN'],  // Chỉ chấp nhận 2 giá trị này
-        default: 'BUILDING_ADMIN'                  // Mặc định khi tạo mới là Building Admin
+        enum: ['SUPER_ADMIN', 'ORG_ADMIN', 'BUILDING_ADMIN'],
+        default: 'BUILDING_ADMIN'
     },
 
     // Cột 4: Danh sách các tòa nhà được gán cho Admin này quản lý
@@ -70,7 +70,7 @@ const userSchema = new mongoose.Schema({
 
     // Cột 10: Organization mà user thuộc về (multi-tenant)
     // SUPER_ADMIN: null (cross-tenant)
-    // BUILDING_ADMIN: bắt buộc sau migration
+    // ORG_ADMIN / BUILDING_ADMIN: bắt buộc organization_id sau migration
     organization_id: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Organization',
