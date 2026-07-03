@@ -5,6 +5,8 @@
 // ============================================
 
 const User = require('../models/User');
+const Organization = require('../models/Organization');
+const Building = require('../models/Building');
 const ActivityLog = require('../models/ActivityLog');
 const RefreshToken = require('../models/RefreshToken');
 const bcrypt = require('bcryptjs');
@@ -104,54 +106,128 @@ const registerPublic = async (req, res) => {
 // ==========================================
 // HÀM 1: ĐĂNG KÝ TÀI KHOẢN MỚI (REGISTER)
 // ==========================================
-// Khi Super Admin muốn tạo tài khoản cho nhân viên quản trị tòa nhà
+// Super Admin hoặc Org Admin tạo tài khoản nhân viên
 const register = async (req, res) => {
     try {
-        // Bước 1: Lấy thông tin người dùng gửi lên từ form Web
-        const { email, password, role } = req.body;
+        const { email, password, role, full_name, phone, organization_id, assigned_buildings } = req.body;
+        const callerRole = req.user?.role;
 
-        // Bước 2: Kiểm tra xem email này đã có ai đăng ký trước đó chưa
-        const userDaTonTai = await User.findOne({ email: email });
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ message: 'Email không hợp lệ.' });
+        }
+        if (!password || password.length < 8) {
+            return res.status(400).json({ message: 'Mật khẩu phải có ít nhất 8 ký tự.' });
+        }
+        if (!full_name || full_name.trim() === '') {
+            return res.status(400).json({ message: 'Họ tên không được để trống.' });
+        }
+        if (phone !== undefined && phone !== null && phone !== '' && typeof phone !== 'string') {
+            return res.status(400).json({ message: 'Số điện thoại phải là chuỗi.' });
+        }
+        if (phone && !/^[0-9\+\-\s]{1,20}$/.test(phone)) {
+            return res.status(400).json({ message: 'Số điện thoại không hợp lệ.' });
+        }
+
+        const userDaTonTai = await User.findOne({ email: email.trim() });
         if (userDaTonTai) {
-            // Nếu đã tồn tại -> Từ chối, báo lỗi
             return res.status(400).json({ message: 'Email này đã được đăng ký rồi!' });
         }
 
-        // Bước 3: Ném mật khẩu gốc vào máy xay bcrypt nghiền nát
-        // Số 10 là độ mạnh của máy xay (càng cao càng an toàn nhưng càng chậm)
+        let targetRole = role || 'BUILDING_ADMIN';
+        let targetOrgId = organization_id || null;
+        let targetBuildings = Array.isArray(assigned_buildings) ? assigned_buildings : [];
+
+        if (callerRole === 'ORG_ADMIN') {
+            if (targetRole !== 'BUILDING_ADMIN') {
+                return res.status(403).json({ message: 'Org Admin chỉ được tạo tài khoản BUILDING_ADMIN.' });
+            }
+            const me = await User.findById(req.user.userId).select('organization_id').lean();
+            if (!me?.organization_id) {
+                return res.status(403).json({ message: 'Tài khoản ORG_ADMIN chưa được gán tổ chức.' });
+            }
+            targetRole = 'BUILDING_ADMIN';
+            targetOrgId = me.organization_id;
+            if (organization_id !== undefined && organization_id !== null &&
+                String(organization_id) !== String(targetOrgId)) {
+                return res.status(403).json({ message: 'Org Admin không được gán user sang tổ chức khác.' });
+            }
+        } else if (callerRole === 'SUPER_ADMIN') {
+            const validRoles = ['SUPER_ADMIN', 'ORG_ADMIN', 'BUILDING_ADMIN'];
+            if (!validRoles.includes(targetRole)) {
+                return res.status(400).json({ message: `role phải là: ${validRoles.join(', ')}` });
+            }
+            if (targetRole === 'SUPER_ADMIN') {
+                targetOrgId = null;
+                targetBuildings = [];
+            } else if (!targetOrgId) {
+                return res.status(400).json({ message: `${targetRole} bắt buộc phải có organization_id.` });
+            }
+        } else {
+            return res.status(403).json({ message: 'Bạn không có quyền tạo tài khoản.' });
+        }
+
+        if (targetOrgId) {
+            const org = await Organization.findById(targetOrgId).select('is_active name').lean();
+            if (!org) {
+                return res.status(400).json({ message: 'Organization không tồn tại.' });
+            }
+            if (!org.is_active) {
+                return res.status(400).json({ message: 'Organization đã bị vô hiệu hóa.' });
+            }
+        }
+
+        if (targetRole === 'BUILDING_ADMIN' && targetBuildings.length > 0 && targetOrgId) {
+            const buildings = await Building.find({ _id: { $in: targetBuildings } }).select('organization_id');
+            const mismatched = buildings.filter(b => String(b.organization_id) !== String(targetOrgId));
+            if (mismatched.length > 0) {
+                return res.status(400).json({
+                    message: 'Một số tòa nhà không thuộc organization của user.',
+                    mismatched_building_ids: mismatched.map(b => b._id)
+                });
+            }
+        }
+
         const matKhauDaNghien = await bcrypt.hash(password, 10);
 
-        // Bước 4: Tạo 1 dòng dữ liệu mới trong bảng User của MongoDB
         const userMoi = await User.create({
-            email:      email,
-            password:   matKhauDaNghien,
-            role:       role || 'BUILDING_ADMIN',
-            full_name:  req.body.full_name || '',
+            email: email.trim(),
+            password: matKhauDaNghien,
+            role: targetRole,
+            full_name: full_name.trim(),
+            phone: phone ? String(phone).trim() : '',
+            organization_id: targetOrgId,
+            assigned_buildings: targetRole === 'BUILDING_ADMIN' ? targetBuildings : [],
+            is_active: true,
             created_by: req.user ? req.user.userId : null
         });
 
-        // Ghi log CREATE_USER
         logActivity({
-            user_id:     req.user ? req.user.userId : userMoi._id,
-            action:      'CREATE_USER',
+            user_id: req.user ? req.user.userId : userMoi._id,
+            action: 'CREATE_USER',
             target_type: 'user',
-            target_id:   String(userMoi._id),
-            target:      userMoi.email,
-            ip_address:  req.ip || ''
+            target_id: String(userMoi._id),
+            target: userMoi.email,
+            details: {
+                role: userMoi.role,
+                organization_id: userMoi.organization_id ? String(userMoi.organization_id) : null,
+                assigned_buildings: (userMoi.assigned_buildings || []).map(String)
+            },
+            ip_address: req.ip || '',
+            organization_id: userMoi.organization_id ? String(userMoi.organization_id) : undefined
         });
 
-        // Bước 5: Báo thành công về cho Web
         res.status(201).json({
             message: 'Tạo tài khoản thành công!',
             user: {
                 id: userMoi._id,
                 email: userMoi.email,
-                role: userMoi.role
+                role: userMoi.role,
+                full_name: userMoi.full_name,
+                organization_id: userMoi.organization_id
             }
         });
 
     } catch (error) {
-        // Nếu xảy ra lỗi bất ngờ (mất mạng, DB sập...) -> Báo lỗi server
         res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
     }
 };
@@ -220,7 +296,8 @@ const login = async (req, res) => {
             target_type: 'user',
             target_id:   String(user._id),
             target:      user.email,
-            ip_address:  req.ip || ''
+            ip_address:  req.ip || '',
+            organization_id: user.organization_id || undefined
         });
 
         // Bước 7: Trả token về (access + refresh)
@@ -278,17 +355,48 @@ const refresh = async (req, res) => {
 const logout = async (req, res) => {
     try {
         const { refreshToken } = req.body;
+        let userId = null;
+
+        // Ưu tiên JWT access token (dashboard gửi qua Authorization khi đăng xuất)
+        try {
+            const authHeader = req.headers.authorization;
+            if (authHeader) {
+                const token = authHeader.split(' ')[1];
+                try {
+                    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                    userId = decoded.userId;
+                } catch (_) {
+                    // Token hết hạn vẫn decode để ghi log đăng xuất
+                    const decoded = jwt.decode(token);
+                    if (decoded?.userId) userId = decoded.userId;
+                }
+            }
+        } catch (_) { /* bỏ qua */ }
+
         if (refreshToken) {
             const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-            await RefreshToken.updateOne({ token_hash: tokenHash }, { is_revoked: true });
+            const record = await RefreshToken.findOne({ token_hash: tokenHash });
+            if (record) {
+                if (!record.is_revoked) {
+                    await RefreshToken.updateOne({ token_hash: tokenHash }, { is_revoked: true });
+                }
+                if (!userId) userId = record.user_id;
+            }
         }
-        logActivity({
-            user_id:     req.user ? req.user.userId : null,
-            action:      'LOGOUT',
-            target_type: 'user',
-            target_id:   req.user ? String(req.user.userId) : '',
-            ip_address:  req.ip || ''
-        });
+
+        if (userId) {
+            const user = await User.findById(userId).select('email organization_id').lean();
+            logActivity({
+                user_id:     userId,
+                action:      'LOGOUT',
+                target_type: 'user',
+                target_id:   String(userId),
+                target:      user?.email || '',
+                ip_address:  req.ip || '',
+                organization_id: user?.organization_id || undefined
+            });
+        }
+
         res.status(200).json({ message: 'Đăng xuất thành công!' });
     } catch (error) {
         res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
@@ -333,7 +441,8 @@ const unlockSession = async (req, res) => {
             target_type: 'user',
             target_id: String(user._id),
             target: user.email,
-            ip_address: req.ip || ''
+            ip_address: req.ip || '',
+            organization_id: user.organization_id || undefined
         });
 
         return res.status(200).json({
