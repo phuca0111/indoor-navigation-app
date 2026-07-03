@@ -5,14 +5,16 @@
 
 const express = require('express');
 const router = express.Router();
-const { listOrganizations } = require('../controllers/organizationController');
-const { auth } = require('../middlewares/auth');
+const { listOrganizations, createWithAdmin } = require('../controllers/organizationController');
+const { auth, requireSuperAdmin } = require('../middlewares/auth');
 
 // Tất cả routes organization đều yêu cầu xác thực
 router.use(auth);
 
-// GET /api/organizations
-// Query params: ?active=true (optional) - chỉ trả về active organizations
+// GET /api/organizations?active=true&with_counts=true
 router.get('/', listOrganizations);
+
+// POST /api/organizations/with-admin — Super Admin tạo org + ORG_ADMIN (2.7)
+router.post('/with-admin', requireSuperAdmin, createWithAdmin);
 
 module.exports = router;

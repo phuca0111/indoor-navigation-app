@@ -20,7 +20,35 @@ const Building = require('../models/Building');
 const ActivityLog = require('../models/ActivityLog');
 
 function logActivity(data) {
-  return ActivityLog.create(data).catch(() => {}); // KhÃ´ng fail API náº¿u log lá»—i
+  return ActivityLog.create(data).catch(() => {});
+}
+
+async function getOrgAdminOrganizationId(req, res) {
+  const me = await User.findById(req.user.userId).select('organization_id role').lean();
+  if (!me?.organization_id) {
+    res.status(403).json({ message: 'Tài khoản ORG_ADMIN chưa được gán tổ chức.' });
+    return null;
+  }
+  return me.organization_id;
+}
+
+async function assertUserInOrgScope(req, res, targetUser) {
+  if (req.user.role === 'SUPER_ADMIN') return true;
+  if (req.user.role !== 'ORG_ADMIN') {
+    res.status(403).json({ message: 'Không có quyền truy cập tài khoản này.' });
+    return false;
+  }
+  const orgId = await getOrgAdminOrganizationId(req, res);
+  if (!orgId) return false;
+  if (!targetUser || String(targetUser.organization_id) !== String(orgId)) {
+    res.status(403).json({ message: 'Bạn chỉ được quản lý user trong tổ chức của mình.' });
+    return false;
+  }
+  if (targetUser.role === 'SUPER_ADMIN') {
+    res.status(403).json({ message: 'Không thể truy cập tài khoản Super Admin.' });
+    return false;
+  }
+  return true;
 }
 
 // ==========================================
@@ -183,7 +211,20 @@ const listUsers = async (req, res) => {
       query.is_active = is_active === 'true';
     }
 
-    // Cháº·n: khÃ´ng tráº£ chÃ­nh admin Ä‘ang Ä‘Äƒng nháº­p
+    if (req.user.role === 'ORG_ADMIN') {
+      const orgId = await getOrgAdminOrganizationId(req, res);
+      if (!orgId) return;
+      query.organization_id = orgId;
+      if (role === 'SUPER_ADMIN') {
+        return res.status(200).json([]);
+      }
+      if (role) {
+        query.role = role;
+      } else {
+        query.role = { $ne: 'SUPER_ADMIN' };
+      }
+    }
+
     const users = await User.find({
       ...query,
       _id: { $ne: req.user.userId }
@@ -195,7 +236,7 @@ const listUsers = async (req, res) => {
     res.status(200).json(users);
   } catch (error) {
     console.error('ListUsers error:', error);
-    res.status(500).json({ message: 'Lá»—i láº¥y danh sÃ¡ch tÃ i khoáº£n: ' + error.message });
+    res.status(500).json({ message: 'Lỗi lấy danh sách tài khoản: ' + error.message });
   }
 };
 
@@ -213,8 +254,11 @@ const getUserById = async (req, res) => {
       .lean();
 
     if (!user) {
-      return res.status(404).json({ message: 'KhÃ´ng tÃ¬m tháº¥y tÃ i khoáº£n.' });
+      return res.status(404).json({ message: 'Không tìm thấy tài khoản.' });
     }
+
+    const allowed = await assertUserInOrgScope(req, res, user);
+    if (!allowed) return;
 
     res.status(200).json(user);
   } catch (error) {
@@ -248,6 +292,18 @@ const updateUser = async (req, res) => {
     const oldUser = await User.findById(userId).select('full_name phone role is_active assigned_buildings organization_id').lean();
     if (!oldUser) {
       return res.status(404).json({ message: 'Không tìm thấy tài khoản để cập nhật!' });
+    }
+
+    const allowed = await assertUserInOrgScope(req, res, oldUser);
+    if (!allowed) return;
+
+    if (req.user.role === 'ORG_ADMIN') {
+      if (role !== undefined && role !== 'BUILDING_ADMIN') {
+        return res.status(403).json({ message: 'Org Admin chỉ được gán role BUILDING_ADMIN.' });
+      }
+      if (organization_id !== undefined) {
+        return res.status(403).json({ message: 'Org Admin không được thay đổi organization của user.' });
+      }
     }
 
     const updateData = {};
@@ -323,8 +379,9 @@ const updateUser = async (req, res) => {
       updateData.assigned_buildings = assigned_buildings;
     }
 
-    // Validation role enum
-    const validRoles = ['SUPER_ADMIN', 'BUILDING_ADMIN'];
+    const validRoles = req.user.role === 'ORG_ADMIN'
+      ? ['BUILDING_ADMIN']
+      : ['SUPER_ADMIN', 'ORG_ADMIN', 'BUILDING_ADMIN'];
     if (role !== undefined && !validRoles.includes(role)) {
       return res.status(400).json({
         message: `role phải là: ${validRoles.join(' hoặc ')}`

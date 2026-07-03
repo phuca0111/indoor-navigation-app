@@ -1,9 +1,9 @@
 const express = require('express');
 const router  = express.Router();
 const { getLogs } = require('../controllers/activityLogController');
-const { auth, requireSuperAdmin } = require('../middlewares/auth');
+const { auth, requireAdmin } = require('../middlewares/auth');
 
-// Chỉ Super Admin được xem lịch sử thao tác
-router.get('/', auth, requireSuperAdmin, getLogs);
+// Super Admin: toàn hệ thống; Org Admin: log trong org (2.6)
+router.get('/', auth, requireAdmin, getLogs);
 
 module.exports = router;

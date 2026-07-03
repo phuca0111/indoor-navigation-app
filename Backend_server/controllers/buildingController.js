@@ -29,6 +29,14 @@ const getBuildings = async (req, res) => {
             // Super Admin → tòa nhà active; ?include_inactive=true để xem cả đã vô hiệu hóa
             const filter = req.query.include_inactive === 'true' ? {} : activeOnlyFilter;
             buildings = await Building.find(filter);
+        } else if (req.user.role === 'ORG_ADMIN') {
+            const User = require('../models/User');
+            const user = await User.findById(req.user.userId).select('organization_id').lean();
+            const orgFilter = user?.organization_id ? { organization_id: user.organization_id } : { _id: null };
+            const filter = req.query.include_inactive === 'true'
+                ? orgFilter
+                : { ...orgFilter, ...activeOnlyFilter };
+            buildings = await Building.find(filter);
         } else {
             // Building Admin → Chỉ thấy tòa nhà được gán, thuộc organization của mình, và còn active
             const User = require('../models/User');
@@ -172,7 +180,8 @@ const updateBuilding = async (req, res) => {
             updateData['gps_location.lng'] = lng;
         }
 
-        const oldBuilding = await Building.findById(id).select('organization_id');
+        const oldBuilding = await Building.findById(id);
+        if (!oldBuilding) return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
 
 if (organization_id !== undefined && organization_id !== '') {
   if (req.user.role !== 'SUPER_ADMIN') {
@@ -190,13 +199,35 @@ if (organization_id !== undefined && organization_id !== '') {
   const building = await Building.findByIdAndUpdate(id, updateData, { new: true });
         if (!building) return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
 
+        const changes = {};
+        const trackFields = ['name', 'address', 'description', 'total_floors', 'status', 'activation_radius'];
+        trackFields.forEach(field => {
+          if (updateData[field] !== undefined && String(oldBuilding[field] ?? '') !== String(updateData[field] ?? '')) {
+            changes[field] = { from: oldBuilding[field], to: updateData[field] };
+          }
+        });
+        if (updateData['gps_location.lat'] !== undefined || updateData['gps_location.lng'] !== undefined) {
+          const oldLat = oldBuilding.gps_location?.lat;
+          const oldLng = oldBuilding.gps_location?.lng;
+          const newLat = updateData['gps_location.lat'] ?? oldLat;
+          const newLng = updateData['gps_location.lng'] ?? oldLng;
+          if (oldLat !== newLat || oldLng !== newLng) {
+            changes.gps_location = { from: { lat: oldLat, lng: oldLng }, to: { lat: newLat, lng: newLng } };
+          }
+        }
+        if (updateData.organization_id !== undefined && String(oldBuilding.organization_id || '') !== String(updateData.organization_id || '')) {
+          changes.organization_id = { from: oldBuilding.organization_id, to: updateData.organization_id };
+        }
+
         logActivity({
             user_id:     req.user ? req.user.userId : null,
             action:      'UPDATE_BUILDING',
             target_type: 'building',
             target_id:   String(building._id),
             target:      building.name,
-            details:     { message: 'Cập nhật thông tin tòa nhà' },
+            details:     Object.keys(changes).length
+              ? { message: 'Cập nhật thông tin tòa nhà', changes }
+              : { message: 'Cập nhật thông tin tòa nhà (không có thay đổi)' },
             ip_address:  req.ip || '',
             organization_id: oldBuilding.organization_id
         });
