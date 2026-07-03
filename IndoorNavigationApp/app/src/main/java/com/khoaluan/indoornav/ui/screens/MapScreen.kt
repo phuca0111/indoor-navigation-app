@@ -211,6 +211,9 @@ fun MapScreen(
                     
                     val showBottomCard   = currentDestinationName != null || navState.path != null
                     val isSearchingPath  = currentDestinationName != null && navState.path == null && navState.userPos != null
+                    val isPathPreview    = currentDestinationName != null
+                        && !navState.isNavigatingMode
+                        && !isSearchingPath
 
                     // Data class dùng chung cho danh sách tìm kiếm
                     data class SearchItem(val id: Int, val name: String, val isRoom: Boolean)
@@ -457,12 +460,15 @@ fun MapScreen(
                                 destination       = currentDestinationName ?: "Đang tải...",
                                 isSearchingPath   = isSearchingPath,
                                 isNavigating      = navState.isNavigatingMode,
+                                isPathPreview     = isPathPreview,
+                                navigationError   = navState.navigationError,
                                 progress          = navProgress,
                                 distanceMeters    = navState.totalDistanceMeters,
                                 etaSeconds        = navState.etaSeconds,
                                 rerouteCount      = navState.rerouteCount,
                                 isRerouting       = navState.isRerouting,
                                 onQrScan          = onScanQR,
+                                onPreviewPath     = { viewModel.previewPath() },
                                 onStartNavigation = { viewModel.startNavigationMode() },
                                 onStopNavigation  = {
                                     viewModel.stopNavigation()
