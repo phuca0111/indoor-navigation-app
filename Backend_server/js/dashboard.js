@@ -223,12 +223,14 @@ async function syncCurrentSession(reason) {
 // ============================================================
 async function handleLogout() {
   const refreshToken = localStorage.getItem('refreshToken');
+  const token = localStorage.getItem('token');
   try {
-    if (refreshToken) {
+    // Luôn gọi API khi còn token hoặc refreshToken (tránh bỏ qua session chỉ có JWT)
+    if (token || refreshToken) {
       await apiFetch('/auth/logout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken })
+        body: JSON.stringify({ refreshToken: refreshToken || undefined })
       });
     }
   } catch (e) {
@@ -475,6 +477,14 @@ function populateOrganizationDropdown() {
   const editSelect = document.getElementById('editBuildingOrganizationId');
   if (editSelect) {
     editSelect.innerHTML = '<option value="">Chọn organization...</option>' +
+      allOrganizations.map(org =>
+        '<option value="' + org._id + '">' + escapeHtml(org.name) + ' (' + escapeHtml(org.slug) + ')</option>'
+      ).join('');
+  }
+
+  const createUserOrgSelect = document.getElementById('createUserOrganizationId');
+  if (createUserOrgSelect) {
+    createUserOrgSelect.innerHTML = '<option value="">Chọn organization...</option>' +
       allOrganizations.map(org =>
         '<option value="' + org._id + '">' + escapeHtml(org.name) + ' (' + escapeHtml(org.slug) + ')</option>'
       ).join('');
@@ -766,9 +776,137 @@ async function rejectRegistration(id) {
   }
 }
 
-function openCreateUserModal() {
-  alert('Chức năng tạo tài khoản mới sẽ được bổ sung ở task tiếp theo.');
+async function openCreateUserModal() {
+  const modal = document.getElementById('createUserModal');
+  if (!modal) return;
+
+  document.getElementById('createUserEmail').value = '';
+  document.getElementById('createUserFullName').value = '';
+  document.getElementById('createUserPhone').value = '';
+  document.getElementById('createUserPassword').value = '';
+
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+  const isOrgAdmin = currentUser?.role === 'ORG_ADMIN';
+
+  const roleGroup = document.getElementById('createUserRoleGroup');
+  const orgGroup = document.getElementById('createUserOrgGroup');
+  const buildingsGroup = document.getElementById('createUserBuildingsGroup');
+  const roleSelect = document.getElementById('createUserRole');
+  const orgSelect = document.getElementById('createUserOrganizationId');
+
+  if (roleGroup) roleGroup.style.display = isSuperAdmin ? '' : 'none';
+  if (orgGroup) orgGroup.style.display = isSuperAdmin ? '' : 'none';
+  if (buildingsGroup) buildingsGroup.style.display = isOrgAdmin || isSuperAdmin ? '' : 'none';
+
+  if (roleSelect) {
+    roleSelect.value = 'BUILDING_ADMIN';
+    roleSelect.onchange = () => {
+      const role = roleSelect.value;
+      if (buildingsGroup) buildingsGroup.style.display = role === 'BUILDING_ADMIN' ? '' : 'none';
+      if (orgGroup) orgGroup.style.display = role === 'SUPER_ADMIN' ? 'none' : '';
+    };
+  }
+
+  if (isSuperAdmin && allOrganizations.length === 0) {
+    await fetchOrganizations();
+  } else if (isSuperAdmin) {
+    populateOrganizationDropdown();
+  }
+  if (orgSelect && isSuperAdmin) orgSelect.value = '';
+
+  if (!allBuildings.length) await fetchBuildings();
+  populateUserBuildingsSelect('createUserAssignedBuildings', []);
+  modal.style.display = 'flex';
 }
+
+function closeCreateUserModal() {
+  const modal = document.getElementById('createUserModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function clearCreateUserBuildingsSelection() {
+  const sel = document.getElementById('createUserAssignedBuildings');
+  if (!sel) return;
+  Array.from(sel.options).forEach(opt => { opt.selected = false; });
+}
+
+function populateUserBuildingsSelect(selectId, selectedIds) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const ids = (selectedIds || []).map(id => String(id));
+  if (!allBuildings || allBuildings.length === 0) {
+    sel.innerHTML = '<option value="">Chưa có tòa nhà nào để gán</option>';
+    sel.disabled = true;
+    return;
+  }
+  sel.disabled = false;
+  sel.innerHTML = allBuildings.map(b =>
+    `<option value="${b._id}">${escapeHtml(b.name)} (${escapeHtml(b.address || '-')})</option>`
+  ).join('');
+  Array.from(sel.options).forEach(opt => {
+    if (ids.includes(String(opt.value))) opt.selected = true;
+  });
+}
+
+async function saveNewUser() {
+  const email = document.getElementById('createUserEmail').value.trim();
+  const full_name = document.getElementById('createUserFullName').value.trim();
+  const phone = document.getElementById('createUserPhone').value.trim();
+  const password = document.getElementById('createUserPassword').value;
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+
+  if (!email) return alert('Vui lòng nhập email.');
+  if (!full_name) return alert('Họ tên không được để trống.');
+  if (!password || password.length < 8) return alert('Mật khẩu phải có ít nhất 8 ký tự.');
+  if (phone && !/^[0-9\+\-\s]+$/.test(phone)) {
+    return alert('Số điện thoại chỉ được chứa số, dấu +, - và khoảng trắng.');
+  }
+
+  if (!allBuildings || allBuildings.length === 0) {
+    await fetchBuildings();
+  }
+
+  const payload = { email, full_name, phone, password, role: 'BUILDING_ADMIN' };
+
+  if (isSuperAdmin) {
+    const role = document.getElementById('createUserRole').value;
+    payload.role = role;
+    if (role !== 'SUPER_ADMIN') {
+      const orgId = document.getElementById('createUserOrganizationId').value.trim();
+      if (!orgId) return alert('Vui lòng chọn organization.');
+      payload.organization_id = orgId;
+    }
+    if (role === 'BUILDING_ADMIN') {
+      payload.assigned_buildings = Array.from(
+        document.getElementById('createUserAssignedBuildings').selectedOptions
+      ).map(o => o.value);
+    }
+  } else {
+    payload.assigned_buildings = Array.from(
+      document.getElementById('createUserAssignedBuildings').selectedOptions
+    ).map(o => o.value);
+  }
+
+  try {
+    const res = await apiFetch('/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (res.ok) {
+      alert('Tạo tài khoản thành công!');
+      closeCreateUserModal();
+      fetchUsers();
+    } else {
+      alert('Lỗi: ' + (data.message || 'Tạo tài khoản thất bại.'));
+    }
+  } catch (e) {
+    alert('Lỗi kết nối: ' + (e.message || e));
+  }
+}
+
+document.getElementById('btnSaveNewUser')?.addEventListener('click', saveNewUser);
 
 
 function openEditor(id) { window.location.href = '/editor/index.html?buildingId=' + id; }
@@ -1083,22 +1221,23 @@ async function openUpdateUserModal(userId) {
     document.getElementById('updateUserEmail').value = user.email;
     document.getElementById('updateUserFullName').value = user.full_name || '';
     document.getElementById('updateUserPhone').value = user.phone || '';
-    document.getElementById('updateUserRole').value = user.role;
 
-    const sel = document.getElementById('updateUserAssignedBuildings');
-    if (sel) {
-      if (allBuildings && allBuildings.length > 0) {
-        sel.innerHTML = allBuildings.map(b => `<option value="${b._id}">${b.name} (${b.address || '-'})</option>`).join('');
-        // Preselect assigned buildings
-        if (user.assigned_buildings && user.assigned_buildings.length) {
-          const ids = user.assigned_buildings.map(b => typeof b === 'string' ? b : (b._id || b.id));
-          Array.from(sel.options).forEach(opt => { if (ids.includes(opt.value)) opt.selected = true; });
-        }
-      } else {
-        sel.innerHTML = '<option value="">Chưa có tòa nhà nào để gán</option>';
-        sel.disabled = true;
+    const roleSelect = document.getElementById('updateUserRole');
+    const roleGroup = document.getElementById('updateUserRoleGroup');
+    if (roleSelect) {
+      roleSelect.value = user.role;
+      if (currentUser?.role === 'ORG_ADMIN') {
+        if (roleGroup) roleGroup.style.display = 'none';
+        roleSelect.value = 'BUILDING_ADMIN';
+      } else if (roleGroup) {
+        roleGroup.style.display = '';
       }
     }
+
+    const assignedIds = (user.assigned_buildings || []).map(b =>
+      typeof b === 'string' ? b : (b._id || b.id)
+    );
+    populateUserBuildingsSelect('updateUserAssignedBuildings', assignedIds);
 
     // Gán sự kiện click cho nút Lưu (nếu Chưa gán)
     const saveBtn = document.getElementById('btnUpdateUser');
@@ -1123,7 +1262,8 @@ async function updateUserProfile() {
   const userId = document.getElementById('updateUserId').value;
   let full_name = document.getElementById('updateUserFullName').value.trim();
   let phone = document.getElementById('updateUserPhone').value.trim();
-  const role = document.getElementById('updateUserRole').value;
+  const roleSelect = document.getElementById('updateUserRole');
+  const role = currentUser?.role === 'ORG_ADMIN' ? 'BUILDING_ADMIN' : roleSelect.value;
   const assigned_buildings = Array.from(document.getElementById('updateUserAssignedBuildings').selectedOptions).map(o => o.value);
 
   console.log('[DEBUG] Updating user:', { userId, full_name, phone, role, assigned_buildings });
@@ -1462,7 +1602,8 @@ async function loadLogs() {
       const actionBadgeColor =
         l.action.startsWith('DELETE') || l.action === 'DEACTIVATE_BUILDING' || l.action === 'DEACTIVATE_USER' ? '#e74c3c' :
         l.action.startsWith('CREATE') ? '#27ae60' :
-        l.action === 'LOGIN' || l.action === 'LOGOUT' ? '#3498db' :
+        l.action === 'LOGIN' ? '#3498db' :
+        l.action === 'LOGOUT' ? '#e67e22' :
         l.action.startsWith('ACTIVATE') || l.action.startsWith('DEACTIVATE') ? '#f39c12' :
         '#7f8c8d';
 
