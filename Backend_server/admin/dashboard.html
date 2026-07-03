@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Quản Lý Tòa Nhà</title>
-    <link rel="stylesheet" href="css/admin.css?v=20260703c">
+    <link rel="stylesheet" href="css/admin.css?v=20260703h">
 </head>
 <body>
     <nav class="navbar">
@@ -255,7 +255,7 @@
   </div>
 </div>
 
-<!-- ===== TAB: LOGS (chỉ Super Admin) ===== -->
+<!-- ===== TAB: LOGS (Super Admin + Org Admin) ===== -->
         <div id="tab-logs" class="tab-content logs-page" style="display:none;">
           <div class="admin-section logs-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
@@ -279,6 +279,7 @@
                   <option value="DEACTIVATE_BUILDING">Vô hiệu hóa tòa nhà</option>
                   <option value="PUBLISH_MAP">Xuất bản bản đồ</option>
                   <option value="LOAD_MAP">Tải bản đồ</option>
+                  <option value="CREATE_USER">Tạo tài khoản</option>
                   <option value="ADMIN_UPDATE_USER">Admin sửa user</option>
                   <option value="ACTIVATE_USER">Kích hoạt tài khoản</option>
                   <option value="DEACTIVATE_USER">Vô hiệu hóa tài khoản</option>
@@ -290,6 +291,8 @@
                   <option value="CREATE_ORG">Tạo tổ chức</option>
                   <option value="APPROVE_ORG_REGISTRATION">Duyệt hồ sơ đăng ký</option>
                   <option value="REJECT_ORG_REGISTRATION">Từ chối hồ sơ đăng ký</option>
+                  <option value="SELF_SERVICE_ORG_TRIAL">Trial tự động (self-service)</option>
+                  <option value="UNLOCK_SESSION">Mở khóa phiên editor</option>
                 </select>
               </div>
 
@@ -490,6 +493,59 @@
         </div>
     </div>
 
+    <!-- ===== MODAL: TẠO TÀI KHOẢN MỚI (2.10) ===== -->
+    <div id="createUserModal" class="modal" style="display:none;">
+      <div class="modal-content">
+        <h3>➕ Thêm Tài Khoản Mới</h3>
+
+        <label>Email <span style="color:#e74c3c;">*</span>:</label>
+        <input type="email" id="createUserEmail" placeholder="nhanvien@example.com">
+
+        <label>Họ tên <span style="color:#e74c3c;">*</span>:</label>
+        <input type="text" id="createUserFullName" placeholder="Nhập họ tên...">
+
+        <label>Số điện thoại:</label>
+        <input type="text" id="createUserPhone" placeholder="Nhập số điện thoại...">
+
+        <label>Mật khẩu <span style="color:#e74c3c;">*</span>:</label>
+        <input type="password" id="createUserPassword" placeholder="Ít nhất 8 ký tự">
+
+        <div id="createUserRoleGroup">
+          <label>Vai trò:</label>
+          <select id="createUserRole">
+            <option value="BUILDING_ADMIN" selected>BUILDING_ADMIN</option>
+            <option value="ORG_ADMIN">ORG_ADMIN</option>
+            <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+          </select>
+        </div>
+
+        <div id="createUserOrgGroup">
+          <label>Organization <span style="color:#e74c3c;">*</span>:</label>
+          <select id="createUserOrganizationId" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
+            <option value="">Chọn organization...</option>
+          </select>
+        </div>
+
+        <div id="createUserBuildingsGroup">
+          <label>Tòa nhà quản lý:</label>
+          <p style="font-size:12px; color:#666; margin-top:4px; margin-bottom:6px;">
+            Giữ <strong>Ctrl</strong> + click để chọn/bỏ chọn từng tòa. Có thể gán sau khi tạo.
+          </p>
+          <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+            <button type="button" onclick="clearCreateUserBuildingsSelection()" class="btn-edit" style="padding:4px 10px; font-size:12px; background:#ecf0f1; color:#333;">
+              Bỏ chọn tất cả
+            </button>
+          </div>
+          <select id="createUserAssignedBuildings" multiple style="width:100%; min-height:140px;"></select>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" onclick="closeCreateUserModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
+          <button type="button" id="btnSaveNewUser" class="btn-create">Tạo Tài Khoản</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ===== MODAL: CHỈNH SỬA TÀI KHOẢN ===== -->
     <div id="modalUpdateUser" class="modal" style="display:none;">
       <div class="modal-content">
@@ -506,12 +562,14 @@
         <label>Số điện thoại:</label>
         <input type="text" id="updateUserPhone" placeholder="Nhập số điện thoại...">
 
-        <label>Vai trò:</label>
-        <select id="updateUserRole">
-          <option value="BUILDING_ADMIN">BUILDING_ADMIN</option>
-          <option value="ORG_ADMIN">ORG_ADMIN</option>
-          <option value="SUPER_ADMIN">SUPER_ADMIN</option>
-        </select>
+        <div id="updateUserRoleGroup">
+          <label>Vai trò:</label>
+          <select id="updateUserRole">
+            <option value="BUILDING_ADMIN">BUILDING_ADMIN</option>
+            <option value="ORG_ADMIN">ORG_ADMIN</option>
+            <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+          </select>
+        </div>
 
         <label>Tòa nhà quản lý:</label>
         <p style="font-size:12px; color:#666; margin-top:4px; margin-bottom:6px;">
@@ -598,6 +656,6 @@
       </div>
     </div>
 
-    <script src="../js/dashboard.js?v=20260703c"></script>
+    <script src="../js/dashboard.js?v=20260703h"></script>
 </body>
 </html>
