@@ -41,7 +41,9 @@ import com.khoaluan.indoornav.ui.theme.NavLightBlue
  * @param rerouteCount     Số lần hệ thống đã tự tính lại đường
  * @param isRerouting      True trong lúc hệ thống vừa trigger tính lại đường
  * @param onQrScan         Callback nhấn nút Quét QR
- * @param onStopNavigation Callback nhấn nút Hủy điều hướng (chỉ hiện khi isNavigating)
+ * @param isPathPreview    True khi đã có đường preview, chưa bắt đầu điều hướng
+ * @param navigationError  Thông báo lỗi khi không tìm được đường
+ * @param onPreviewPath    Callback nút "Xem đường"
  */
 @Composable
 fun BottomInfoCard(
@@ -54,7 +56,10 @@ fun BottomInfoCard(
     etaSeconds: Int = 0,
     rerouteCount: Int = 0,
     isRerouting: Boolean = false,
+    isPathPreview: Boolean = false,
+    navigationError: String? = null,
     onQrScan: () -> Unit,
+    onPreviewPath: (() -> Unit)? = null,
     onStartNavigation: (() -> Unit)? = null,
     onStopNavigation: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -214,21 +219,41 @@ fun BottomInfoCard(
                             }
                         }
                     }
-                    destination != "Đang tải..." && destination.isNotEmpty() -> {
-                        // Chế độ xem trước (Preview)
-                        Column {
+                    isPathPreview -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
                                 text = "Tổng khoảng cách: $distanceLabel · ETA $etaLabel",
                                 fontSize = 12.sp,
                                 color = Color(0xFF757575),
                             )
-                            Spacer(Modifier.height(8.dp))
-                            Button(
-                                onClick = { onStartNavigation?.invoke() },
-                                colors = ButtonDefaults.buttonColors(containerColor = NavBlue),
-                                modifier = Modifier.fillMaxWidth().height(40.dp)
+                            navigationError?.let { err ->
+                                Text(
+                                    text = err,
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFE53935),
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                Text("Bắt đầu chỉ đường", fontWeight = FontWeight.Bold)
+                                OutlinedButton(
+                                    onClick = { onPreviewPath?.invoke() },
+                                    modifier = Modifier.weight(1f).height(40.dp),
+                                    enabled = onPreviewPath != null,
+                                ) {
+                                    Text("Xem đường", fontWeight = FontWeight.SemiBold)
+                                }
+                                Button(
+                                    onClick = { onStartNavigation?.invoke() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = NavBlue),
+                                    modifier = Modifier.weight(1f).height(40.dp),
+                                    enabled = onStartNavigation != null
+                                        && navigationError == null
+                                        && distanceMeters > 0f,
+                                ) {
+                                    Text("Bắt đầu", fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
