@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Quản Lý Tòa Nhà</title>
-    <link rel="stylesheet" href="css/admin.css?v=20260703h">
+    <link rel="stylesheet" href="css/admin.css?v=20260707h">
 </head>
 <body>
     <nav class="navbar">
@@ -19,6 +19,9 @@
 
         <!-- Thông tin chào mừng -->
         <div class="welcome-box">
+            <p id="userOrgLine" class="user-org-line" style="display:none;">
+                🏛️ Tổ chức: <strong id="userOrgName">—</strong>
+            </p>
             <h3>Xin chào, <span id="userName">Admin</span>!</h3>
             <p>Vai trò: <span id="userRole" class="badge">BUILDING_ADMIN</span></p>
         </div>
@@ -292,6 +295,12 @@
                   <option value="APPROVE_ORG_REGISTRATION">Duyệt hồ sơ đăng ký</option>
                   <option value="REJECT_ORG_REGISTRATION">Từ chối hồ sơ đăng ký</option>
                   <option value="SELF_SERVICE_ORG_TRIAL">Trial tự động (self-service)</option>
+                  <option value="UPDATE_ORGANIZATION">Cập nhật tổ chức</option>
+                  <option value="DEACTIVATE_ORGANIZATION">Tạm dừng tổ chức</option>
+                  <option value="ACTIVATE_ORGANIZATION">Kích hoạt tổ chức</option>
+                  <option value="ADMIN_RESET_PASSWORD">Admin đặt lại mật khẩu</option>
+                  <option value="ROLLBACK_MAP">Khôi phục phiên bản bản đồ</option>
+                  <option value="DELETE_USER">Xóa / khóa tài khoản (cũ)</option>
                   <option value="UNLOCK_SESSION">Mở khóa phiên editor</option>
                 </select>
               </div>
@@ -531,10 +540,12 @@
           <p style="font-size:12px; color:#666; margin-top:4px; margin-bottom:6px;">
             Giữ <strong>Ctrl</strong> + click để chọn/bỏ chọn từng tòa. Có thể gán sau khi tạo.
           </p>
+          <input type="text" id="createUserBuildingSearch" placeholder="Tìm tòa nhà theo tên hoặc địa chỉ..." oninput="filterUserBuildingsSelect('createUserAssignedBuildings', this.value)" style="width:100%; padding:8px; margin-bottom:6px; border:1px solid #ddd; border-radius:6px; box-sizing:border-box;">
           <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
             <button type="button" onclick="clearCreateUserBuildingsSelection()" class="btn-edit" style="padding:4px 10px; font-size:12px; background:#ecf0f1; color:#333;">
               Bỏ chọn tất cả
             </button>
+            <span id="createUserBuildingCount" style="font-size:12px; color:#888;"></span>
           </div>
           <select id="createUserAssignedBuildings" multiple style="width:100%; min-height:140px;"></select>
         </div>
@@ -575,12 +586,23 @@
         <p style="font-size:12px; color:#666; margin-top:4px; margin-bottom:6px;">
           Giữ <strong>Ctrl</strong> + click để chọn/bỏ chọn từng tòa. Bỏ hết chọn = user không quản lý tòa nào.
         </p>
+        <input type="text" id="updateUserBuildingSearch" placeholder="Tìm tòa nhà theo tên hoặc địa chỉ..." oninput="filterUserBuildingsSelect('updateUserAssignedBuildings', this.value)" style="width:100%; padding:8px; margin-bottom:6px; border:1px solid #ddd; border-radius:6px; box-sizing:border-box;">
         <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
           <button type="button" onclick="clearAssignedBuildingsSelection()" class="btn-edit" style="padding:4px 10px; font-size:12px; background:#ecf0f1; color:#333;">
             Bỏ chọn tất cả
           </button>
+          <span id="updateUserBuildingCount" style="font-size:12px; color:#888;"></span>
         </div>
         <select id="updateUserAssignedBuildings" multiple style="width:100%; min-height:140px;"></select>
+
+        <div id="updateUserPasswordGroup" style="margin-top:14px; padding-top:14px; border-top:1px solid #ecf0f1;">
+          <label>Cấp lại mật khẩu</label>
+          <p class="org-detail-note" style="margin-top:4px;">Mật khẩu được mã hóa — không xem được. Chỉ đặt mật khẩu mới.</p>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+            <button type="button" class="btn-edit org-reset-pwd-btn" onclick="promptResetUserPassword(document.getElementById('updateUserId').value)">Đặt mật khẩu mới</button>
+            <button type="button" class="btn-create org-reset-pwd-btn" onclick="generateResetUserPassword(document.getElementById('updateUserId').value)">Tạo mật khẩu ngẫu nhiên</button>
+          </div>
+        </div>
 
         <div class="modal-actions">
           <button type="button" onclick="closeUpdateUserModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
@@ -667,6 +689,20 @@
       </div>
     </div>
 
-    <script src="../js/dashboard.js?v=20260704f"></script>
+    <!-- ===== MODAL: CHI TIẾT TỔ CHỨC ===== -->
+    <div id="orgDetailModal" class="modal" style="display:none;">
+      <div class="modal-content org-detail-modal" style="max-width:800px;">
+        <h3 id="orgDetailTitle">Chi tiết tổ chức</h3>
+        <div id="orgDetailBody" class="org-detail-body"></div>
+        <div class="modal-actions">
+          <button type="button" id="orgDetailAddAdmin" class="btn-create" style="background:#8e44ad;">+ Thêm quản trị viên</button>
+          <button type="button" id="orgDetailJumpBuildings" class="btn-edit">Xem tòa nhà</button>
+          <button type="button" id="orgDetailJumpUsers" class="btn-edit" style="background:#f39c12;color:#fff;">Xem tài khoản</button>
+          <button type="button" onclick="closeOrgDetailModal()" class="btn-logout" style="background:#95a5a6;">Đóng</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="../js/dashboard.js?v=20260707h"></script>
 </body>
 </html>

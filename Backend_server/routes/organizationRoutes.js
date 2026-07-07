@@ -5,7 +5,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { listOrganizations, createWithAdmin } = require('../controllers/organizationController');
+const { listOrganizations, createWithAdmin, getOrganization, updateOrganization } = require('../controllers/organizationController');
 const { auth, requireSuperAdmin } = require('../middlewares/auth');
 
 // Tất cả routes organization đều yêu cầu xác thực
@@ -16,5 +16,11 @@ router.get('/', listOrganizations);
 
 // POST /api/organizations/with-admin — Super Admin tạo org + ORG_ADMIN (2.7)
 router.post('/with-admin', requireSuperAdmin, createWithAdmin);
+
+// GET /api/organizations/:id — Super Admin: chi tiết tổ chức (Phase 4.1)
+router.get('/:id', requireSuperAdmin, getOrganization);
+
+// PATCH /api/organizations/:id — Super Admin: plan, is_active (Phase 4.1a)
+router.patch('/:id', requireSuperAdmin, updateOrganization);
 
 module.exports = router;

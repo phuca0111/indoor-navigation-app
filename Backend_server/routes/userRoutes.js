@@ -13,7 +13,8 @@ const {
   deleteUser,
   getMe,
   updateMe,
-  changePassword
+  changePassword,
+  adminResetPassword
 } = require('../controllers/userController');
 const { auth, requireAdmin } = require('../middlewares/auth');
 
@@ -26,6 +27,7 @@ router.put('/me/password', auth, changePassword);
 router.use(auth, requireAdmin);
 
 router.get('/', getUsers);
+router.put('/:userId/reset-password', adminResetPassword);
 router.get('/:userId', getUserById);
 router.put('/:userId', updateUser);
 
