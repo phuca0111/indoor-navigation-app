@@ -251,6 +251,181 @@ body {
     white-space: nowrap;
 }
 
+.org-plan-select {
+    padding: 4px 6px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    font-size: 12px;
+    font-weight: 600;
+    background: #f8f9fa;
+    cursor: pointer;
+    max-width: 120px;
+}
+
+.org-status-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.org-name-link {
+    cursor: pointer;
+    color: #2980b9;
+}
+
+.org-name-link:hover {
+    text-decoration: underline;
+}
+
+.org-detail-btn {
+    background: #8e44ad !important;
+    color: #fff !important;
+}
+
+.org-detail-modal {
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.org-detail-body {
+    margin-top: 8px;
+}
+
+.org-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.org-detail-label {
+    display: block;
+    font-size: 11px;
+    color: #7f8c8d;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+
+.org-detail-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.org-detail-section {
+    margin-bottom: 16px;
+}
+
+.org-detail-section h4 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    color: #34495e;
+}
+
+.org-detail-hint {
+    font-size: 11px;
+    font-weight: normal;
+    color: #95a5a6;
+}
+
+.org-detail-empty {
+    color: #95a5a6;
+    font-size: 13px;
+    margin: 0;
+}
+
+.org-detail-list {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 13px;
+}
+
+.org-detail-logs li {
+    margin-bottom: 6px;
+}
+
+.org-detail-log-time {
+    color: #7f8c8d;
+    font-size: 12px;
+    margin-right: 4px;
+}
+
+.org-detail-mini-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.org-detail-mini-table th,
+.org-detail-mini-table td {
+    border: 1px solid #ecf0f1;
+    padding: 6px 8px;
+    text-align: left;
+}
+
+.org-detail-mini-table th {
+    background: #f4f6f7;
+    font-weight: 600;
+}
+
+.org-detail-id {
+    font-family: monospace;
+    font-size: 11px;
+    word-break: break-all;
+    cursor: pointer;
+}
+
+.org-detail-note {
+    font-size: 12px;
+    color: #7f8c8d;
+    margin: 10px 0 8px;
+    line-height: 1.4;
+}
+
+.org-admin-card {
+    border: 1px solid #e0e6ed;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    background: #fff;
+}
+
+.org-admin-card-title {
+    font-weight: 700;
+    font-size: 15px;
+    color: #2c3e50;
+    margin-bottom: 8px;
+}
+
+.org-admin-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+    padding: 4px 0;
+    border-bottom: 1px solid #f4f6f7;
+}
+
+.org-admin-row span:first-child {
+    color: #7f8c8d;
+    flex-shrink: 0;
+}
+
+.org-admin-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.org-reset-pwd-btn {
+    padding: 6px 10px !important;
+    font-size: 12px !important;
+}
+
 .table-pagination {
     display: flex;
     flex-wrap: wrap;
@@ -289,6 +464,18 @@ body {
     border-radius: 10px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
     margin-bottom: 25px;
+}
+
+.user-org-line {
+    margin: 0 0 8px 0;
+    font-size: 15px;
+    color: #2c3e50;
+    line-height: 1.4;
+}
+
+.user-org-line strong {
+    color: #8e44ad;
+    font-weight: 700;
 }
 
 .welcome-box h3 {
@@ -671,12 +858,17 @@ body {
 .user-actions {
   display: flex;
   flex-direction: row;
-  gap: 8px;
-  flex-wrap: nowrap;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  max-width: 270px;
 }
 
 .user-actions button {
   flex-shrink: 0;
+  font-size: 12px !important;
+  padding: 5px 8px !important;
+  white-space: nowrap;
 }
 
 .badge-inactive {
@@ -842,7 +1034,7 @@ body {
 
 .users-table {
   width: 100%;
-  min-width: 1280px;
+  min-width: 1320px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -903,7 +1095,8 @@ body {
 
 .users-table th:nth-child(9),
 .users-table td:nth-child(9) {
-  width: 150px;
+  width: 280px;
+  min-width: 280px;
   position: sticky;
   right: 0;
   background: #fff;
@@ -928,12 +1121,17 @@ body {
 .user-actions {
   display: flex;
   flex-direction: row;
-  gap: 8px;
-  flex-wrap: nowrap;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  max-width: 270px;
 }
 
 .user-actions button {
   flex-shrink: 0;
+  font-size: 12px !important;
+  padding: 5px 8px !important;
+  white-space: nowrap;
 }
 
 /* Ensure email truncation */

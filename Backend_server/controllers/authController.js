@@ -12,6 +12,7 @@ const RefreshToken = require('../models/RefreshToken');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const { assertUserOrgActive } = require('../utils/orgAccess');
 
 // WHY: Tránh bị buộc đăng nhập lại sau mỗi 15 phút.
 // Có thể override bằng ENV JWT_ACCESS_EXPIRES_IN (ví dụ: 12h, 7d).
@@ -253,6 +254,11 @@ const login = async (req, res) => {
             return res.status(403).json({ message: 'Tài khoản đã bị Super Admin khóa!' });
         }
 
+        const orgCheck = await assertUserOrgActive(user);
+        if (!orgCheck.ok) {
+            return res.status(403).json({ message: orgCheck.message, code: orgCheck.code });
+        }
+
         // BƯỚC 4: So sánh mật khẩu
         let matKhauDung = await bcrypt.compare(password, user.password);
         
@@ -335,6 +341,11 @@ const refresh = async (req, res) => {
         const user = await User.findById(record.user_id);
         if (!user || !user.is_active) {
             return res.status(401).json({ message: 'Tài khoản không tồn tại hoặc đã bị khóa!' });
+        }
+
+        const orgCheck = await assertUserOrgActive(user);
+        if (!orgCheck.ok) {
+            return res.status(403).json({ message: orgCheck.message, code: orgCheck.code });
         }
 
         const newAccessToken = jwt.sign(

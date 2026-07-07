@@ -4,35 +4,39 @@
 // MỌI API CẦN BẢO MẬT ĐỀU PHẢI ĐI QUA ÔNG NÀY TRƯỚC
 // ============================================
 
-const jwt = require('jsonwebtoken');   // Máy soi thẻ
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+const { assertUserOrgActive } = require('../utils/orgAccess');
 
 // Hàm bảo vệ: Kiểm tra thẻ JWT có hợp lệ không
-const auth = (req, res, next) => {
+const auth = async (req, res, next) => {
     try {
-        // Bước 1: Lục túi áo của khách (Header) xem có mang thẻ không
-        // Thẻ nằm trong Header có dạng: "Bearer eyJhbGciOi..."
         const authHeader = req.headers.authorization;
 
-        // Nếu khách không mang thẻ -> Đuổi cổ ngay
         if (!authHeader) {
             return res.status(401).json({ message: 'Truy cập bị từ chối! Bạn chưa đăng nhập (không có token).' });
         }
 
-        // Bước 2: Tách lấy phần mã thẻ (bỏ chữ "Bearer " phía trước)
         const token = authHeader.split(' ')[1];
-
-        // Bước 3: Đưa thẻ vào máy soi để kiểm tra
-        // jwt.verify sẽ dùng con dấu bí mật trong .env để xác minh thẻ có phải do mình in ra không
         const thongTinTrongThe = jwt.verify(token, process.env.JWT_SECRET);
-
-        // Bước 4: Thẻ hợp lệ! Gắn thông tin người dùng vào yêu cầu để các hàm phía sau dùng
         req.user = thongTinTrongThe;
 
-        // Bước 5: Mở barie cho đi qua -> Chạy tiếp vào hàm xử lý phía sau
-        next();
+        if (['ORG_ADMIN', 'BUILDING_ADMIN'].includes(req.user.role)) {
+            const dbUser = await User.findById(req.user.userId)
+                .select('organization_id is_active role')
+                .lean();
+            if (!dbUser || !dbUser.is_active) {
+                return res.status(403).json({ message: 'Tài khoản đã bị khóa.', code: 'USER_INACTIVE' });
+            }
+            const orgCheck = await assertUserOrgActive(dbUser);
+            if (!orgCheck.ok) {
+                return res.status(403).json({ message: orgCheck.message, code: orgCheck.code });
+            }
+            req.user.organization_id = String(dbUser.organization_id);
+        }
 
+        next();
     } catch (error) {
-        // Thẻ giả hoặc hết hạn -> Đuổi cổ
         res.status(401).json({ message: 'Thẻ không hợp lệ hoặc đã hết hạn! Vui lòng đăng nhập lại.' });
     }
 };

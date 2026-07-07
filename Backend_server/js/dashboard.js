@@ -131,6 +131,21 @@ function applyCurrentUserToUI(user) {
   if (emailEl) emailEl.textContent = user.email || '';
   if (nameEl) nameEl.textContent = user.full_name || user.email || 'User';
   if (roleEl) roleEl.textContent = user.role || '';
+
+  const orgLine = document.getElementById('userOrgLine');
+  const orgNameEl = document.getElementById('userOrgName');
+  const isTenantUser = user.role === 'ORG_ADMIN' || user.role === 'BUILDING_ADMIN';
+  if (orgLine && orgNameEl) {
+    if (isTenantUser && user.organization_id) {
+      seedOrgCacheFromUser(user);
+      orgNameEl.textContent = getOrgName(user.organization_id);
+      orgLine.style.display = '';
+    } else {
+      orgLine.style.display = 'none';
+      orgNameEl.textContent = '—';
+    }
+  }
+
   localStorage.setItem('userEmail', user.email || '');
   localStorage.setItem('userRole', user.role || '');
   localStorage.setItem('userId', user._id || user.id || '');
@@ -191,6 +206,7 @@ async function syncCurrentSession(reason) {
       return null;
     }
     currentUser = await res.json();
+    seedOrgCacheFromUser(currentUser);
     applyCurrentUserToUI(currentUser);
     if (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ORG_ADMIN') {
       const currentTab = document.querySelector('.tab-btn.active');
@@ -250,8 +266,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   currentUser = await syncCurrentSession('initial-load');
   if (!currentUser) return;
 
-  if (currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'ORG_ADMIN') {
+  if (currentUser.role === 'SUPER_ADMIN') {
     fetchOrganizations();
+  } else if (currentUser.role === 'ORG_ADMIN') {
+    seedOrgCacheFromUser(currentUser);
   }
 
   const logoutBtn = document.getElementById('btnLogout');
@@ -329,17 +347,47 @@ async function switchTab(name) {
 let allBuildings = [];
 let displayedBuildings = [];
 
+function seedOrgCacheFromUser(user) {
+  if (!user) return;
+  const org = user.organization;
+  const orgId = user.organization_id;
+  if (!orgId) return;
+  const id = String(orgId);
+  const existing = allOrganizations.find((o) => String(o._id) === id);
+  const entry = {
+    _id: orgId,
+    name: (org && org.name) || (existing && existing.name) || 'Tổ chức của tôi',
+    slug: (org && org.slug) || (existing && existing.slug) || '',
+    is_active: org ? org.is_active !== false : true,
+    plan: (org && org.plan) || (existing && existing.plan) || 'FREE'
+  };
+  if (existing) {
+    Object.assign(existing, entry);
+  } else {
+    allOrganizations.push(entry);
+  }
+}
+
 function getOrgName(orgId) {
   if (!orgId) return '—';
   const id = String(orgId);
-  const org = allOrganizations.find(o => String(o._id) === id);
-  return org ? org.name : id.slice(0, 8) + '…';
+  const org = allOrganizations.find((o) => String(o._id) === id);
+  if (org?.name) return org.name;
+  if (currentUser?.organization && String(currentUser.organization_id) === id) {
+    return currentUser.organization.name || currentUser.organization.slug || 'Tổ chức của tôi';
+  }
+  if (currentUser?.role === 'ORG_ADMIN' && String(currentUser.organization_id) === id) {
+    return currentUser.organization?.name || 'Tổ chức của tôi';
+  }
+  return id.slice(0, 8) + '…';
 }
 
 async function fetchBuildings() {
   const tbody = document.getElementById('buildingsList');
   if (currentUser?.role === 'SUPER_ADMIN' && allOrganizations.length === 0) {
     await fetchOrganizations();
+  } else if (currentUser?.role === 'ORG_ADMIN') {
+    seedOrgCacheFromUser(currentUser);
   }
   try {
     const res = await apiFetch('/buildings');
@@ -533,28 +581,311 @@ function renderOrganizationsFromCache() {
   const pageItems = list.slice(start, start + PAGE_SIZE);
   tbody.innerHTML = pageItems.map(org => {
     const date = org.createdAt ? new Date(org.createdAt).toLocaleDateString('vi-VN') : (org.created_at ? new Date(org.created_at).toLocaleDateString('vi-VN') : '-');
-    const statusBadge = org.is_active
+    const isActive = org.is_active !== false;
+    const statusBadge = isActive
       ? '<span class="status-badge active">Hoạt động</span>'
       : '<span class="status-badge inactive">Tạm dừng</span>';
     const bCount = org.building_count != null ? org.building_count : '—';
     const uCount = org.user_count != null ? org.user_count : '—';
     const admin = org.org_admin ? escapeHtml(org.org_admin.full_name || org.org_admin.email || '') : '—';
     const oid = String(org._id);
+    const currentPlan = org.plan || 'FREE';
+    const planSelect = '<select class="org-plan-select" onchange="changeOrganizationPlan(\'' + oid + '\', this)" title="Đổi gói">' +
+      ['FREE', 'PRO', 'ENTERPRISE'].map((p) =>
+        '<option value="' + p + '"' + (currentPlan === p ? ' selected' : '') + '>' + p + '</option>'
+      ).join('') + '</select>';
+    const isLegacy = org.slug === 'legacy';
+    let statusBtn;
+    if (isLegacy) {
+      statusBtn = '<span class="badge badge-inactive" style="cursor:default;font-size:11px;" title="Không thể tạm dừng tổ chức legacy">—</span>';
+    } else {
+      const btnClass = isActive ? 'btn-logout' : 'btn-create';
+      const btnText = isActive ? 'Tạm dừng' : 'Kích hoạt';
+      statusBtn = '<button type="button" class="' + btnClass + ' org-status-btn" onclick="toggleOrganizationActive(\'' + oid + '\', ' + isActive + ')">' + btnText + '</button>';
+    }
     return '<tr>' +
-      tdEllipsis(org.name, '<strong>' + escapeHtml(org.name) + '</strong>') +
+      tdEllipsis(org.name, '<strong class="org-name-link" onclick="openOrgDetailModal(\'' + oid + '\')" title="Xem chi tiết">' + escapeHtml(org.name) + '</strong>') +
       tdEllipsis(org.slug) +
-      '<td><span class="badge">' + escapeHtml(org.plan || 'FREE') + '</span></td>' +
+      '<td>' + planSelect + '</td>' +
       '<td>' + statusBadge + '</td>' +
       '<td style="text-align:center;cursor:pointer;" onclick="jumpToBuildings(\'' + oid + '\')" title="Xem tòa nhà">' + bCount + '</td>' +
       '<td style="text-align:center;cursor:pointer;" onclick="jumpToUsers(\'' + oid + '\')" title="Xem tài khoản">' + uCount + '</td>' +
       tdEllipsis(org.org_admin ? (org.org_admin.full_name || org.org_admin.email) : '', admin) +
       '<td>' + date + '</td>' +
       '<td class="actions-cell"><div class="building-actions">' +
+        '<button type="button" class="btn-edit org-detail-btn" onclick="openOrgDetailModal(\'' + oid + '\')">Chi tiết</button>' +
+        statusBtn +
         '<button type="button" class="btn-edit" onclick="jumpToBuildings(\'' + oid + '\')">Tòa nhà</button>' +
         '<button type="button" class="btn-edit" onclick="jumpToUsers(\'' + oid + '\')" style="background:#f39c12;color:#fff;">User</button>' +
       '</div></td></tr>';
   }).join('');
   renderPagination('organizations', list.length, page);
+}
+
+async function patchOrganization(orgId, body, confirmMsg) {
+  if (confirmMsg && !confirm(confirmMsg)) return false;
+  try {
+    const res = await apiFetch('/organizations/' + orgId, {
+      method: 'PATCH',
+      body: JSON.stringify(body)
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('Lỗi: ' + (d.message || 'HTTP ' + res.status));
+      return false;
+    }
+    const updated = d.organization;
+    if (updated) {
+      const idx = allOrganizations.findIndex((o) => String(o._id) === String(orgId));
+      if (idx >= 0) {
+        allOrganizations[idx] = { ...allOrganizations[idx], ...updated };
+        populateOrganizationDropdown();
+        renderOrganizationsFromCache();
+      }
+    }
+    return true;
+  } catch (e) {
+    console.error('patchOrganization error:', e);
+    alert('Lỗi kết nối khi cập nhật tổ chức.');
+    return false;
+  }
+}
+
+async function changeOrganizationPlan(orgId, selectEl) {
+  const newPlan = selectEl.value;
+  const org = allOrganizations.find((o) => String(o._id) === String(orgId));
+  const oldPlan = org?.plan || 'FREE';
+  if (newPlan === oldPlan) return;
+  const ok = await patchOrganization(
+    orgId,
+    { plan: newPlan },
+    'Đổi gói "' + (org?.name || '') + '" từ ' + oldPlan + ' → ' + newPlan + '?'
+  );
+  if (!ok && selectEl) selectEl.value = oldPlan;
+}
+
+async function toggleOrganizationActive(orgId, currentActive) {
+  const org = allOrganizations.find((o) => String(o._id) === String(orgId));
+  const orgName = org?.name || 'tổ chức';
+  const next = !currentActive;
+  const msg = next
+    ? 'Kích hoạt lại tổ chức "' + orgName + '"?'
+    : 'Tạm dừng tổ chức "' + orgName + '"?';
+  await patchOrganization(orgId, { is_active: next }, msg);
+}
+
+let _orgDetailId = null;
+let _orgDetailData = null;
+
+async function openOrgDetailModal(orgId) {
+  _orgDetailId = orgId;
+  const modal = document.getElementById('orgDetailModal');
+  const body = document.getElementById('orgDetailBody');
+  if (!modal || !body) return;
+  modal.style.display = 'flex';
+  body.innerHTML = '<p style="text-align:center;color:#888;padding:24px;">Đang tải...</p>';
+  try {
+    const res = await apiFetch('/organizations/' + orgId);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      body.innerHTML = '<p style="color:#e74c3c;text-align:center;">' + escapeHtml(d.message || 'HTTP ' + res.status) + '</p>';
+      return;
+    }
+    renderOrgDetailBody(d);
+    _orgDetailData = d;
+  } catch (e) {
+    console.error('openOrgDetailModal error:', e);
+    body.innerHTML = '<p style="color:#e74c3c;text-align:center;">Lỗi kết nối khi tải chi tiết tổ chức.</p>';
+  }
+}
+
+function closeOrgDetailModal() {
+  const modal = document.getElementById('orgDetailModal');
+  if (modal) modal.style.display = 'none';
+  _orgDetailId = null;
+  _orgDetailData = null;
+}
+
+function formatDateTime(val) {
+  if (!val) return 'Chưa có';
+  return new Date(val).toLocaleString('vi-VN');
+}
+
+function renderOrgAdminCards(admins) {
+  if (!admins || !admins.length) {
+    return '<p class="org-detail-empty">Chưa có ORG_ADMIN.</p>';
+  }
+  return admins.map((a) => {
+    const uid = String(a._id);
+    const email = escapeHtml(a.email || '-');
+    const statusHtml = a.is_active === false
+      ? '<span class="status-badge inactive">Đã khóa</span>'
+      : '<span class="status-badge active">Hoạt động</span>';
+    return '<div class="org-admin-card">' +
+      '<div class="org-admin-card-title">' + escapeHtml(a.full_name || a.email || 'ORG_ADMIN') + '</div>' +
+      '<div class="org-admin-row"><span>Email đăng nhập</span><strong>' + email + '</strong></div>' +
+      '<div class="org-admin-row"><span>Họ tên</span>' + escapeHtml(a.full_name || '—') + '</div>' +
+      '<div class="org-admin-row"><span>Số điện thoại</span>' + escapeHtml(a.phone || '—') + '</div>' +
+      '<div class="org-admin-row"><span>Trạng thái</span>' + statusHtml + '</div>' +
+      '<div class="org-admin-row"><span>Đăng nhập lần cuối</span>' + escapeHtml(formatDateTime(a.last_login)) + '</div>' +
+      '<div class="org-admin-row"><span>Ngày tạo TK</span>' + escapeHtml(formatDateTime(a.createdAt)) + '</div>' +
+      '<p class="org-detail-note">Mật khẩu được mã hóa trong hệ thống — <strong>không thể xem</strong>. Dùng nút bên dưới để cấp mật khẩu mới.</p>' +
+      '<div class="org-admin-actions">' +
+        '<button type="button" class="btn-edit org-reset-pwd-btn" onclick="promptResetOrgAdminPassword(\'' + uid + '\')">Đặt mật khẩu mới</button>' +
+        '<button type="button" class="btn-create org-reset-pwd-btn" onclick="generateResetOrgAdminPassword(\'' + uid + '\')">Tạo mật khẩu ngẫu nhiên</button>' +
+      '</div></div>';
+  }).join('');
+}
+
+async function callAdminResetPassword(userId, body) {
+  const res = await apiFetch('/users/' + userId + '/reset-password', {
+    method: 'PUT',
+    body: JSON.stringify(body)
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    alert('Lỗi: ' + (d.message || 'HTTP ' + res.status));
+    return false;
+  }
+  if (d.temporary_password) {
+    alert(
+      'Đặt lại mật khẩu thành công!\n\n' +
+      'Mật khẩu mới (chỉ hiện một lần — hãy sao chép ngay):\n\n' +
+      d.temporary_password +
+      '\n\nGửi thông tin đăng nhập cho quản trị viên tổ chức.'
+    );
+  } else {
+    alert(d.message || 'Đặt lại mật khẩu thành công.');
+  }
+  if (_orgDetailId) openOrgDetailModal(_orgDetailId);
+  if (typeof fetchUsers === 'function') fetchUsers();
+  return true;
+}
+
+function findUserEmailForReset(userId) {
+  const fromUsers = (allUsers || []).find((u) => String(u._id) === String(userId));
+  if (fromUsers?.email) return fromUsers.email;
+  const fromOrg = (_orgDetailData?.org_admins || []).find((a) => String(a._id) === String(userId));
+  if (fromOrg?.email) return fromOrg.email;
+  const fromRecent = (_orgDetailData?.recent_users || []).find((u) => String(u._id) === String(userId));
+  return fromRecent?.email || document.getElementById('updateUserEmail')?.value || 'tài khoản';
+}
+
+async function promptResetUserPassword(userId) {
+  if (!userId) return;
+  const email = findUserEmailForReset(userId);
+  const newPassword = prompt('Nhập mật khẩu mới cho ' + email + ' (ít nhất 8 ký tự):');
+  if (!newPassword) return;
+  if (newPassword.length < 8) {
+    alert('Mật khẩu phải có ít nhất 8 ký tự.');
+    return;
+  }
+  const confirmPwd = prompt('Nhập lại mật khẩu để xác nhận:');
+  if (newPassword !== confirmPwd) {
+    alert('Mật khẩu xác nhận không khớp.');
+    return;
+  }
+  await callAdminResetPassword(userId, { newPassword });
+}
+
+async function generateResetUserPassword(userId) {
+  if (!userId) return;
+  const email = findUserEmailForReset(userId);
+  if (!confirm('Tạo mật khẩu ngẫu nhiên cho ' + email + '?\nMật khẩu sẽ hiện một lần sau khi tạo.')) return;
+  await callAdminResetPassword(userId, { generate: true });
+}
+
+async function promptResetOrgAdminPassword(userId) {
+  await promptResetUserPassword(userId);
+}
+
+async function generateResetOrgAdminPassword(userId) {
+  await generateResetUserPassword(userId);
+}
+
+function renderOrgDetailBody(data) {
+  const org = data.organization || {};
+  const oid = String(org._id || _orgDetailId || '');
+  const isActive = org.is_active !== false;
+  const created = formatDateTime(org.createdAt);
+  const updated = formatDateTime(org.updatedAt);
+  const titleEl = document.getElementById('orgDetailTitle');
+  if (titleEl) titleEl.textContent = org.name || 'Chi tiết tổ chức';
+
+  const rc = data.role_counts || {};
+  const bsc = data.building_status_counts || {};
+  const orgAdminCount = rc.ORG_ADMIN || 0;
+  const buildingAdminCount = rc.BUILDING_ADMIN || 0;
+  const publishedCount = bsc.PUBLISHED || 0;
+  const draftCount = bsc.DRAFT || 0;
+
+  const adminsHtml = renderOrgAdminCards(data.org_admins);
+
+  const buildingsHtml = (data.recent_buildings || []).length
+    ? '<table class="org-detail-mini-table"><thead><tr><th>Tên</th><th>Trạng thái</th><th>Số tầng</th><th>Cập nhật</th></tr></thead><tbody>' +
+      data.recent_buildings.map((b) =>
+        '<tr><td>' + escapeHtml(b.name || '-') + '</td><td>' + escapeHtml(b.status || '-') + '</td><td>' +
+        (b.total_floors != null ? b.total_floors : '—') + '</td><td>' +
+        (b.updatedAt ? new Date(b.updatedAt).toLocaleDateString('vi-VN') : '-') + '</td></tr>'
+      ).join('') + '</tbody></table>'
+    : '<p class="org-detail-empty">Chưa có tòa nhà.</p>';
+
+  const ROLE_DISPLAY = {
+    SUPER_ADMIN: 'Super Admin',
+    ORG_ADMIN: 'Quản trị tổ chức',
+    BUILDING_ADMIN: 'Quản trị tòa'
+  };
+  const usersHtml = (data.recent_users || []).length
+    ? '<table class="org-detail-mini-table"><thead><tr><th>Email</th><th>Họ tên</th><th>Vai trò</th><th>Đăng nhập cuối</th><th>Trạng thái</th></tr></thead><tbody>' +
+      data.recent_users.map((u) =>
+        '<tr><td>' + escapeHtml(u.email || '-') + '</td><td>' + escapeHtml(u.full_name || '-') + '</td><td>' +
+        escapeHtml(ROLE_DISPLAY[u.role] || u.role || '-') + '</td><td>' + escapeHtml(formatDateTime(u.last_login)) + '</td><td>' +
+        (u.is_active === false ? '<span class="status-badge inactive">Khóa</span>' : '<span class="status-badge active">OK</span>') +
+        '</td></tr>'
+      ).join('') + '</tbody></table>'
+    : '<p class="org-detail-empty">Chưa có tài khoản.</p>';
+
+  const logsHtml = (data.recent_logs || []).length
+    ? '<ul class="org-detail-list org-detail-logs">' + data.recent_logs.map((l) =>
+      '<li><span class="org-detail-log-time">' + formatDateTime(l.createdAt) +
+      '</span> ' + escapeHtml(formatActionLabel(l.action)) +
+      (l.target ? ' — <em>' + escapeHtml(l.target) + '</em>' : '') + '</li>'
+    ).join('') + '</ul>'
+    : '<p class="org-detail-empty">Chưa có nhật ký hoạt động.</p>';
+
+  const body = document.getElementById('orgDetailBody');
+  if (!body) return;
+  body.innerHTML =
+    '<div class="org-detail-grid">' +
+      '<div><span class="org-detail-label">Mã tổ chức</span><div class="org-detail-value org-detail-id" title="Sao chép ID">' + escapeHtml(oid) + '</div></div>' +
+      '<div><span class="org-detail-label">Slug</span><div class="org-detail-value">' + escapeHtml(org.slug || '-') + '</div></div>' +
+      '<div><span class="org-detail-label">Gói</span><div class="org-detail-value"><span class="badge">' + escapeHtml(org.plan || 'FREE') + '</span></div></div>' +
+      '<div><span class="org-detail-label">Trạng thái</span><div class="org-detail-value">' +
+        (isActive ? '<span class="status-badge active">Hoạt động</span>' : '<span class="status-badge inactive">Tạm dừng</span>') +
+      '</div></div>' +
+      '<div><span class="org-detail-label">Ngày tạo</span><div class="org-detail-value">' + escapeHtml(created) + '</div></div>' +
+      '<div><span class="org-detail-label">Cập nhật</span><div class="org-detail-value">' + escapeHtml(updated) + '</div></div>' +
+      '<div><span class="org-detail-label">Tòa nhà</span><div class="org-detail-value">' + (data.building_count != null ? data.building_count : '—') +
+        ' <span class="org-detail-hint">(PUBLISHED: ' + publishedCount + ', DRAFT: ' + draftCount + ')</span></div></div>' +
+      '<div><span class="org-detail-label">Tài khoản</span><div class="org-detail-value">' + (data.user_count != null ? data.user_count : '—') +
+        ' <span class="org-detail-hint">(ORG_ADMIN: ' + orgAdminCount + ', BUILDING_ADMIN: ' + buildingAdminCount + ')</span></div></div>' +
+    '</div>' +
+    '<div class="org-detail-section"><h4>Quản trị viên tổ chức (ORG_ADMIN)</h4>' + adminsHtml + '</div>' +
+    '<div class="org-detail-section"><h4>Tòa nhà <span class="org-detail-hint">(mới nhất, tối đa 10)</span></h4>' + buildingsHtml + '</div>' +
+    '<div class="org-detail-section"><h4>Tài khoản <span class="org-detail-hint">(mới nhất, tối đa 10)</span></h4>' + usersHtml + '</div>' +
+    '<div class="org-detail-section"><h4>Nhật ký gần đây <span class="org-detail-hint">(tối đa 10)</span></h4>' + logsHtml + '</div>';
+
+  const jumpB = document.getElementById('orgDetailJumpBuildings');
+  const jumpU = document.getElementById('orgDetailJumpUsers');
+  const addAdminBtn = document.getElementById('orgDetailAddAdmin');
+  if (jumpB) jumpB.onclick = () => { closeOrgDetailModal(); jumpToBuildings(oid); };
+  if (jumpU) jumpU.onclick = () => { closeOrgDetailModal(); jumpToUsers(oid); };
+  if (addAdminBtn) {
+    addAdminBtn.onclick = () => {
+      closeOrgDetailModal();
+      openCreateUserModalForOrg(oid, 'ORG_ADMIN');
+    };
+  }
 }
 
 function applyOrganizationFilters(resetPage) {
@@ -795,6 +1126,10 @@ async function rejectRegistration(id) {
 }
 
 async function openCreateUserModal() {
+  await openCreateUserModalForOrg(null, null);
+}
+
+async function openCreateUserModalForOrg(orgId, defaultRole) {
   const modal = document.getElementById('createUserModal');
   if (!modal) return;
 
@@ -802,6 +1137,8 @@ async function openCreateUserModal() {
   document.getElementById('createUserFullName').value = '';
   document.getElementById('createUserPhone').value = '';
   document.getElementById('createUserPassword').value = '';
+  const createSearch = document.getElementById('createUserBuildingSearch');
+  if (createSearch) createSearch.value = '';
 
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
   const isOrgAdmin = currentUser?.role === 'ORG_ADMIN';
@@ -816,13 +1153,17 @@ async function openCreateUserModal() {
   if (orgGroup) orgGroup.style.display = isSuperAdmin ? '' : 'none';
   if (buildingsGroup) buildingsGroup.style.display = isOrgAdmin || isSuperAdmin ? '' : 'none';
 
+  const applyRoleUi = () => {
+    const role = roleSelect ? roleSelect.value : 'BUILDING_ADMIN';
+    if (buildingsGroup) buildingsGroup.style.display = role === 'BUILDING_ADMIN' ? '' : 'none';
+    if (orgGroup) orgGroup.style.display = role === 'SUPER_ADMIN' ? 'none' : '';
+    const orgFilter = role === 'SUPER_ADMIN' ? null : (orgSelect?.value || orgId || null);
+    refreshUserBuildingsSelect('createUserAssignedBuildings', [], orgFilter, '');
+  };
+
   if (roleSelect) {
-    roleSelect.value = 'BUILDING_ADMIN';
-    roleSelect.onchange = () => {
-      const role = roleSelect.value;
-      if (buildingsGroup) buildingsGroup.style.display = role === 'BUILDING_ADMIN' ? '' : 'none';
-      if (orgGroup) orgGroup.style.display = role === 'SUPER_ADMIN' ? 'none' : '';
-    };
+    roleSelect.value = defaultRole || 'BUILDING_ADMIN';
+    roleSelect.onchange = applyRoleUi;
   }
 
   if (isSuperAdmin && allOrganizations.length === 0) {
@@ -830,10 +1171,22 @@ async function openCreateUserModal() {
   } else if (isSuperAdmin) {
     populateOrganizationDropdown();
   }
-  if (orgSelect && isSuperAdmin) orgSelect.value = '';
+  if (orgSelect && isSuperAdmin) {
+    orgSelect.value = orgId || '';
+    orgSelect.onchange = () => applyRoleUi();
+  }
 
   if (!allBuildings.length) await fetchBuildings();
-  populateUserBuildingsSelect('createUserAssignedBuildings', []);
+  const orgFilter = isOrgAdmin
+    ? (currentUser.organization_id || null)
+    : (defaultRole === 'ORG_ADMIN' || defaultRole === 'BUILDING_ADMIN' ? (orgId || orgSelect?.value || null) : null);
+  if (defaultRole) {
+    if (roleSelect) roleSelect.value = defaultRole;
+    applyRoleUi();
+  } else {
+    refreshUserBuildingsSelect('createUserAssignedBuildings', [], orgFilter, '');
+  }
+
   modal.style.display = 'flex';
 }
 
@@ -848,20 +1201,73 @@ function clearCreateUserBuildingsSelection() {
   Array.from(sel.options).forEach(opt => { opt.selected = false; });
 }
 
-function populateUserBuildingsSelect(selectId, selectedIds) {
+const _buildingSelectState = {};
+
+function getBuildingsForUserSelect(orgIdFilter) {
+  let list = (allBuildings || []).slice();
+  if (orgIdFilter) {
+    list = list.filter((b) => String(b.organization_id) === String(orgIdFilter));
+  } else if (currentUser?.role === 'ORG_ADMIN' && currentUser.organization_id) {
+    list = list.filter((b) => String(b.organization_id) === String(currentUser.organization_id));
+  }
+  return list;
+}
+
+function refreshUserBuildingsSelect(selectId, selectedIds, orgIdFilter, keyword) {
+  _buildingSelectState[selectId] = { orgIdFilter: orgIdFilter || null, keyword: keyword || '' };
+  populateUserBuildingsSelect(selectId, selectedIds, { orgIdFilter, keyword });
+}
+
+function filterUserBuildingsSelect(selectId, keyword) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
-  const ids = (selectedIds || []).map(id => String(id));
-  if (!allBuildings || allBuildings.length === 0) {
-    sel.innerHTML = '<option value="">Chưa có tòa nhà nào để gán</option>';
+  const selectedIds = Array.from(sel.selectedOptions).map((o) => o.value);
+  const state = _buildingSelectState[selectId] || {};
+  populateUserBuildingsSelect(selectId, selectedIds, {
+    orgIdFilter: state.orgIdFilter,
+    keyword
+  });
+}
+
+function populateUserBuildingsSelect(selectId, selectedIds, opts) {
+  const options = opts || {};
+  const orgIdFilter = options.orgIdFilter || null;
+  const keyword = (options.keyword || '').trim().toLowerCase();
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const ids = (selectedIds || []).map((id) => String(id));
+  const pool = getBuildingsForUserSelect(orgIdFilter);
+
+  let list = pool.slice();
+  if (keyword) {
+    list = list.filter((b) =>
+      (b.name || '').toLowerCase().includes(keyword) ||
+      (b.address || '').toLowerCase().includes(keyword)
+    );
+  }
+
+  const visibleIds = new Set(list.map((b) => String(b._id)));
+  const pinned = (allBuildings || []).filter((b) => ids.includes(String(b._id)) && !visibleIds.has(String(b._id)));
+  list = [...pinned, ...list];
+
+  const countEl = document.getElementById(
+    selectId === 'createUserAssignedBuildings' ? 'createUserBuildingCount' : 'updateUserBuildingCount'
+  );
+  if (countEl) {
+    countEl.textContent = list.length + ' / ' + pool.length + ' tòa hiển thị';
+  }
+
+  if (!list.length) {
+    sel.innerHTML = '<option value="" disabled>' + (pool.length ? 'Không khớp tìm kiếm' : 'Chưa có tòa nhà trong tổ chức') + '</option>';
     sel.disabled = true;
     return;
   }
+
   sel.disabled = false;
-  sel.innerHTML = allBuildings.map(b =>
-    `<option value="${b._id}">${escapeHtml(b.name)} (${escapeHtml(b.address || '-')})</option>`
+  sel.innerHTML = list.map((b) =>
+    '<option value="' + b._id + '">' + escapeHtml(b.name) + ' (' + escapeHtml(b.address || '-') + ')</option>'
   ).join('');
-  Array.from(sel.options).forEach(opt => {
+  Array.from(sel.options).forEach((opt) => {
     if (ids.includes(String(opt.value))) opt.selected = true;
   });
 }
@@ -1187,6 +1593,8 @@ window.onMapVersionFloorChange = onMapVersionFloorChange;
 async function fetchUsers() {
   if (currentUser?.role === 'SUPER_ADMIN' && allOrganizations.length === 0) {
     await fetchOrganizations();
+  } else if (currentUser?.role === 'ORG_ADMIN') {
+    seedOrgCacheFromUser(currentUser);
   }
   const tbody = document.getElementById('usersList');
   const keyword = (document.getElementById('filterUserKeyword')?.value || '').trim();
@@ -1306,8 +1714,13 @@ function renderUsers(users) {
       actionBtn = '<button class="' + btnClass + '" onclick="toggleUserActive(\'' + u._id + '\', ' + isActive + ')" style="padding:6px 12px;">' + btnText + '</button>';
     }
     let editBtn = '';
+    let pwdBtn = '';
+    const canResetPwd = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'ORG_ADMIN';
     if (!isAdminSelf) {
       editBtn = '<button class="btn-edit" onclick="openUpdateUserModal(\'' + u._id + '\')" style="font-size:13px;padding:6px 10px;">Sửa</button>';
+      if (canResetPwd && !isSuperAdmin) {
+        pwdBtn = '<button class="btn-edit" onclick="promptResetUserPassword(\'' + u._id + '\')" style="font-size:12px;padding:6px 8px;background:#8e44ad;color:#fff;">Cấp MK</button>';
+      }
     }
     const roleClass = isSuperAdmin ? 'role-badge super-admin' : (u.role === 'ORG_ADMIN' ? 'role-badge org-admin' : 'role-badge building-admin');
     const statusClass = u.is_active ? 'status-badge active' : 'status-badge inactive';
@@ -1323,7 +1736,7 @@ function renderUsers(users) {
       tdEllipsis(orgText) +
       tdEllipsis(formatAssignedBuildings(u.assigned_buildings)) +
       '<td>' + createdAtStr + '</td>' +
-      '<td class="actions-cell"><div class="user-actions">' + actionBtn + editBtn + '</div></td></tr>';
+      '<td class="actions-cell"><div class="user-actions">' + actionBtn + pwdBtn + editBtn + '</div></td></tr>';
   }).join('');
 }
 
@@ -1375,7 +1788,16 @@ async function openUpdateUserModal(userId) {
     const assignedIds = (user.assigned_buildings || []).map(b =>
       typeof b === 'string' ? b : (b._id || b.id)
     );
-    populateUserBuildingsSelect('updateUserAssignedBuildings', assignedIds);
+    const orgFilter = user.role === 'SUPER_ADMIN' ? null : (user.organization_id || null);
+    const searchEl = document.getElementById('updateUserBuildingSearch');
+    if (searchEl) searchEl.value = '';
+    refreshUserBuildingsSelect('updateUserAssignedBuildings', assignedIds, orgFilter, '');
+
+    const pwdGroup = document.getElementById('updateUserPasswordGroup');
+    const canResetPwd = (currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'ORG_ADMIN')
+      && user.role !== 'SUPER_ADMIN'
+      && String(user._id) !== String(localStorage.getItem('userId'));
+    if (pwdGroup) pwdGroup.style.display = canResetPwd ? '' : 'none';
 
     // Gán sự kiện click cho nút Lưu (nếu Chưa gán)
     const saveBtn = document.getElementById('btnUpdateUser');
@@ -1461,6 +1883,7 @@ const ACTION_LABELS = {
   ADMIN_UPDATE_USER: 'Admin sửa user',
   ACTIVATE_USER: 'Kích hoạt tài khoản',
   DEACTIVATE_USER: 'Vô hiệu hóa tài khoản',
+  DELETE_USER: 'Xóa / khóa tài khoản',
   ASSIGN_BUILDING: 'Gán tòa nhà',
   BUILDING_ASSIGN: 'Gán tòa nhà',
   BUILDING_UNASSIGN: 'Bỏ gán tòa nhà',
@@ -1471,7 +1894,11 @@ const ACTION_LABELS = {
   CREATE_ORG: 'Tạo tổ chức',
   APPROVE_ORG_REGISTRATION: 'Duyệt hồ sơ đăng ký',
   REJECT_ORG_REGISTRATION: 'Từ chối hồ sơ đăng ký',
-  SELF_SERVICE_ORG_TRIAL: 'Trial tự động (self-service)'
+  SELF_SERVICE_ORG_TRIAL: 'Trial tự động (self-service)',
+  UPDATE_ORGANIZATION: 'Cập nhật tổ chức',
+  DEACTIVATE_ORGANIZATION: 'Tạm dừng tổ chức',
+  ACTIVATE_ORGANIZATION: 'Kích hoạt tổ chức',
+  ADMIN_RESET_PASSWORD: 'Admin đặt lại mật khẩu'
 };
 
 const FIELD_LABELS = {
@@ -1490,7 +1917,8 @@ const FIELD_LABELS = {
   activation_radius: 'Bán kính kích hoạt',
   slug: 'Mã định danh',
   plan: 'Gói dịch vụ',
-  source: 'Nguồn'
+  source: 'Nguồn',
+  generated: 'Tự sinh mật khẩu'
 };
 
 const ROLE_LABELS = {
@@ -1516,6 +1944,8 @@ function formatActiveStatus(val) {
 function formatLogValue(val, field) {
   if (field === 'is_active') return formatActiveStatus(val);
   if (field === 'role') return ROLE_LABELS[val] || val;
+  if (field === 'plan') return String(val);
+  if (field === 'generated') return val ? 'Có' : 'Không';
   if (field === 'status') {
     if (val === 'DRAFT') return 'Nháp';
     if (val === 'PUBLISHED') return 'Đã xuất bản';
@@ -1536,7 +1966,10 @@ function translateDetailMessage(msg) {
     'User changed password': 'Người dùng đã đổi mật khẩu',
     'Tạo tòa nhà mới': 'Tạo tòa nhà mới',
     'Cập nhật thông tin tòa nhà': 'Cập nhật thông tin tòa nhà',
-    'Vô hiệu hóa tòa nhà (soft delete)': 'Vô hiệu hóa tòa nhà (không xóa dữ liệu)'
+    'Tạm dừng tổ chức': 'Tạm dừng tổ chức',
+    'Kích hoạt lại tổ chức': 'Kích hoạt lại tổ chức',
+    'Cập nhật tổ chức': 'Cập nhật tổ chức',
+    'Admin đặt lại mật khẩu': 'Admin đặt lại mật khẩu'
   };
   if (map[msg]) return map[msg];
   if (msg.startsWith('Version ')) {
@@ -1568,6 +2001,10 @@ function getActionFallbackDetail(action, target) {
     ADMIN_UPDATE_USER: 'Admin cập nhật tài khoản' + name,
     ACTIVATE_USER: 'Kích hoạt tài khoản' + name,
     DEACTIVATE_USER: 'Vô hiệu hóa tài khoản' + name,
+    UPDATE_ORGANIZATION: 'Cập nhật tổ chức' + name,
+    DEACTIVATE_ORGANIZATION: 'Tạm dừng tổ chức' + name,
+    ACTIVATE_ORGANIZATION: 'Kích hoạt lại tổ chức' + name,
+    ADMIN_RESET_PASSWORD: 'Admin đặt lại mật khẩu' + name,
     UNLOCK_SESSION: 'Mở khóa editor sau khi khóa'
   };
   return fallbacks[action] || (target ? `Đối tượng: ${target}` : '—');
@@ -1740,10 +2177,11 @@ async function loadLogs() {
       const role = formatRoleLabel(user.role || '-');
       const actionLabel = formatActionLabel(l.action);
       const actionBadgeColor =
-        l.action.startsWith('DELETE') || l.action === 'DEACTIVATE_BUILDING' || l.action === 'DEACTIVATE_USER' ? '#e74c3c' :
-        l.action.startsWith('CREATE') ? '#27ae60' :
+        l.action.startsWith('DELETE') || l.action === 'DEACTIVATE_BUILDING' || l.action === 'DEACTIVATE_USER' || l.action === 'DEACTIVATE_ORGANIZATION' ? '#e74c3c' :
+        l.action.startsWith('CREATE') || l.action === 'ACTIVATE_ORGANIZATION' ? '#27ae60' :
         l.action === 'LOGIN' ? '#3498db' :
         l.action === 'LOGOUT' ? '#e67e22' :
+        l.action === 'UPDATE_ORGANIZATION' || l.action === 'ADMIN_RESET_PASSWORD' ? '#8e44ad' :
         l.action.startsWith('ACTIVATE') || l.action.startsWith('DEACTIVATE') ? '#f39c12' :
         '#7f8c8d';
 

@@ -8,6 +8,11 @@
     "test:watch": "jest --watch",
     "test:api": "node test_api_1a6.js",
     "test:phase3": "jest test/integration/phase3MapRegression.test.js --verbose",
+    "test:phase4-1a": "jest test/integration/phase4_1aOrganization.test.js --verbose",
+    "test:phase4-1b": "jest test/integration/phase4_1bOrgDetail.test.js --verbose",
+    "test:phase4-1-reset-pwd": "jest test/integration/phase4_1ResetPassword.test.js --verbose",
+    "test:phase4-1d": "jest test/integration/phase4_1dOrgInactive.test.js --verbose",
+    "test:phase4-1": "jest test/integration/phase4_1aOrganization.test.js test/integration/phase4_1bOrgDetail.test.js test/integration/phase4_1ResetPassword.test.js test/integration/phase4_1dOrgInactive.test.js --verbose --runInBand",
     "start": "node server.js",
     "migrate:org": "node scripts/migrate-organization-legacy.js",
     "verify:org": "node scripts/verify-org-migration.js"

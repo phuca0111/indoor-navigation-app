@@ -13,6 +13,7 @@
 // ============================================
 
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { getClientIp } = require('../utils/ipHelper');
 const User = require('../models/User');
 const Organization = require('../models/Organization');
@@ -59,10 +60,16 @@ const getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId)
       .select('-password')
+      .populate('organization_id', 'name slug is_active plan')
       .lean();
 
     if (!user) {
       return res.status(404).json({ message: 'KhÃ´ng tÃ¬m tháº¥y ngÆ°á»i dÃ¹ng.' });
+    }
+
+    if (user.organization_id && typeof user.organization_id === 'object') {
+      user.organization = user.organization_id;
+      user.organization_id = user.organization._id;
     }
 
     res.status(200).json(user);
@@ -562,9 +569,70 @@ const deleteUser = async (req, res) => {
 
   } catch (error) {
     console.error('DeleteUser error:', error);
-    res.status(500).json({ message: 'Lỗi xóa tài khoản: ' + error.message });
+    res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
   }
 };
+
+// PUT /api/users/:userId/reset-password — Super Admin / Org Admin đặt lại mật khẩu user
+const adminResetPassword = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { newPassword, generate } = req.body || {};
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Không tìm thấy tài khoản.' });
+    }
+
+    if (user.role === 'SUPER_ADMIN') {
+      return res.status(403).json({ message: 'Không thể đặt lại mật khẩu Super Admin qua API này.' });
+    }
+
+    const allowed = await assertUserInOrgScope(req, res, user);
+    if (!allowed) return;
+
+    if (req.user.role === 'ORG_ADMIN' && user.role === 'ORG_ADMIN') {
+      return res.status(403).json({ message: 'Org Admin không thể đặt lại mật khẩu Org Admin khác.' });
+    }
+
+    let plain = typeof newPassword === 'string' ? newPassword.trim() : '';
+    const wasGenerated = !!generate;
+    if (wasGenerated) {
+      plain = crypto.randomBytes(9).toString('base64url').slice(0, 12);
+    }
+    if (!plain || plain.length < 8) {
+      return res.status(400).json({
+        message: 'Mật khẩu mới phải có ít nhất 8 ký tự (hoặc gửi generate: true để tạo ngẫu nhiên).'
+      });
+    }
+
+    user.password = await bcrypt.hash(plain, 10);
+    await user.save();
+
+    logActivity({
+      user_id: req.user.userId,
+      action: 'ADMIN_RESET_PASSWORD',
+      target_type: 'user',
+      target_id: String(user._id),
+      target: user.email,
+      details: {
+        message: 'Admin đặt lại mật khẩu',
+        generated: wasGenerated
+      },
+      ip_address: getClientIp(req),
+      organization_id: user.organization_id || null
+    });
+
+    res.status(200).json({
+      message: 'Đặt lại mật khẩu thành công.',
+      temporary_password: plain
+    });
+  } catch (error) {
+    console.error('AdminResetPassword error:', error);
+    res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+  }
+};
+
 module.exports = {
   getUsers: listUsers, // TÃªn cÅ©
   listUsers, // TÃªn má»›i
@@ -573,7 +641,8 @@ module.exports = {
   deleteUser,
   getMe,
   updateMe,
-  changePassword
+  changePassword,
+  adminResetPassword
 };
 
 
