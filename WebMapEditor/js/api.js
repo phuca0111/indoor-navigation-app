@@ -10,6 +10,8 @@ const urlParams = new URLSearchParams(window.location.search);
 const buildingId = urlParams.get('buildingId') || urlParams.get('building'); // Chấp nhận cả 2 cách gọi cho chắc chắn
 let token = localStorage.getItem('token');   // WHY: dùng let để có thể cập nhật khi refresh
 window.buildingId = buildingId;
+window.editorBuildingMeta = null;
+window.editorAccessBlocked = false;
 
 // 2. Kiểm tra quyền truy cập (chỉ warning, không chặn)
 if (!token && buildingId) {
@@ -62,6 +64,7 @@ async function verifyEditorSession() {
 }
 
 async function initEditor() {
+    window.editorMapLoadStarted = true;
     console.log('🚀 Editor: Khởi tạo...');
     const currentUser = await verifyEditorSession();
     if (!currentUser) {
@@ -69,13 +72,27 @@ async function initEditor() {
         return;
     }
 
-    // Hiển thị thông tin user đang edit
     renderEditorUser(currentUser);
+    updateEditorFloorLabel();
 
-    // Sau khi xác thực, load map tự động
+    const building = await loadBuildingContext();
+    if (window.editorAccessBlocked) {
+        window.editorMapLoadHandled = true;
+        console.warn('🛑 Editor: Không có quyền tòa nhà — dừng load map');
+        return;
+    }
+
     console.log('📥 Editor: Tự động load map cho tầng:', document.getElementById('floorSelect')?.value);
-    await loadMapFromServer();
+    const loadResult = await loadMapFromServer();
+    if (loadResult && loadResult.loaded && loadResult.version != null) {
+        updateEditorMapVersion(loadResult.version);
+    }
     if (typeof syncActiveFloor === 'function') syncActiveFloor();
+    window.editorMapLoadHandled = true;
+    if (loadResult && loadResult.notFound && typeof checkAutoSave === 'function') {
+        checkAutoSave();
+    }
+    if (typeof startAutoSave === 'function') startAutoSave();
 }
 
 // ==========================================
@@ -97,6 +114,111 @@ function renderEditorUser(currentUser) {
     }
 
     el.innerHTML = displayHtml;
+}
+
+const BUILDING_STATUS_LABELS = {
+    DRAFT: 'Nháp (DRAFT)',
+    PUBLISHED: 'Đã xuất bản'
+};
+
+function updateEditorFloorLabel() {
+    const floor = document.getElementById('floorSelect')?.value ?? '1';
+    const label = document.getElementById('editorFloorLabel');
+    if (label) label.textContent = floor;
+}
+
+function updateEditorMapVersion(version) {
+    const el = document.getElementById('editorMapVersion');
+    if (!el) return;
+    if (version === null || version === undefined || version === '') {
+        el.textContent = '—';
+        return;
+    }
+    el.textContent = String(version);
+}
+
+function renderEditorBuildingContext(building) {
+    const nameEl = document.getElementById('editorBuildingName');
+    const statusEl = document.getElementById('editorBuildingStatus');
+    if (!nameEl || !statusEl) return;
+
+    if (!building) {
+        nameEl.textContent = buildingId ? 'Không tải được tòa nhà' : 'Chưa chọn tòa nhà';
+        statusEl.textContent = '—';
+        statusEl.className = 'editor-status-badge editor-status-draft';
+        return;
+    }
+
+    nameEl.textContent = building.name || buildingId;
+    const status = building.status || 'DRAFT';
+    statusEl.textContent = BUILDING_STATUS_LABELS[status] || status;
+    statusEl.className = 'editor-status-badge ' + (status === 'PUBLISHED' ? 'editor-status-published' : 'editor-status-draft');
+}
+
+function showEditorAccessBanner(message) {
+    window.editorAccessBlocked = true;
+    const banner = document.getElementById('editorAccessBanner');
+    const msgEl = document.getElementById('editorAccessBannerMsg');
+    if (msgEl && message) msgEl.textContent = message;
+    if (banner) banner.style.display = 'flex';
+    const bar = document.getElementById('editorBuildingBar');
+    if (bar) bar.style.opacity = '0.5';
+}
+
+function hideEditorAccessBanner() {
+    window.editorAccessBlocked = false;
+    const banner = document.getElementById('editorAccessBanner');
+    if (banner) banner.style.display = 'none';
+    const bar = document.getElementById('editorBuildingBar');
+    if (bar) bar.style.opacity = '';
+}
+
+async function loadBuildingContext() {
+    hideEditorAccessBanner();
+    updateEditorFloorLabel();
+    updateEditorMapVersion(null);
+
+    if (!buildingId) {
+        renderEditorBuildingContext(null);
+        return null;
+    }
+
+    try {
+        const response = await apiFetch(`${BASE_API_URL}/buildings/${buildingId}`);
+        const data = await response.json().catch(() => ({}));
+
+        if (response.status === 403) {
+            renderEditorBuildingContext(null);
+            showEditorAccessBanner(data.message || 'Bạn không có quyền truy cập tòa nhà này.');
+            showToast(data.message || 'Không có quyền truy cập tòa nhà này.', 'error');
+            return null;
+        }
+
+        if (response.status === 404) {
+            renderEditorBuildingContext(null);
+            showToast('Không tìm thấy tòa nhà.', 'error');
+            return null;
+        }
+
+        if (!response.ok) {
+            renderEditorBuildingContext(null);
+            showToast(data.message || 'Không tải được thông tin tòa nhà.', 'error');
+            return null;
+        }
+
+        window.editorBuildingMeta = data;
+        renderEditorBuildingContext(data);
+        return data;
+    } catch (error) {
+        console.error('loadBuildingContext error:', error);
+        renderEditorBuildingContext(null);
+        return null;
+    }
+}
+
+function getEditorForbiddenMessage(data, fallback) {
+    if (data && data.message) return data.message;
+    return fallback || 'Bạn không có quyền thực hiện thao tác này.';
 }
 
 // Helper: escape HTML để tránh XSS
@@ -226,6 +348,25 @@ function showToast(message, type = 'success') {
         setTimeout(() => toast.remove(), 500);
     }, 4000);
 }
+
+function showPublishValidationErrors(validation) {
+    var errors = (validation && validation.errors) || [];
+    if (!errors.length) {
+        showToast('Không thể xuất bản — dữ liệu chưa hợp lệ.', 'error');
+        return;
+    }
+    var lines = errors.map(function (e) { return '• ' + e.message; }).join('\n');
+    console.warn('[Validation]', validation);
+    showToast(errors[0].message, 'error');
+    alert('Không thể xuất bản — sửa các lỗi sau:\n\n' + lines);
+}
+
+function confirmPublishWarnings(warnings) {
+    if (!warnings || !warnings.length) return true;
+    var lines = warnings.map(function (w) { return '• ' + w.message; }).join('\n');
+    return confirm('Cảnh báo trước khi xuất bản:\n\n' + lines + '\n\nVẫn xuất bản?');
+}
+
 async function saveMapToServer() {
     if (!buildingId) {
         alert('Lỗi: Không tìm thấy ID tòa nhà! Vui lòng mở từ Dashboard.');
@@ -233,88 +374,37 @@ async function saveMapToServer() {
     }
 
     const floor = document.getElementById('floorSelect').value;
-    const mapName = document.getElementById('mapName').value;
 
-    // Gom toàn bộ dữ liệu hiện tại trên Canvas (Đồng bộ với Schema của Server)
-    const mapData = {
-        scale_ratio: (Number.isFinite(metersPerGrid) && metersPerGrid > 0) ? metersPerGrid : 0.5,
-        background_image: bgImageBase64 || '',
+    // Export Pipeline: Validation → map_data (Phase 0)
+    var pipelineResult;
+    try {
+        if (window.EditorCore && EditorCore.ExportPipeline) {
+            pipelineResult = EditorCore.ExportPipeline.run({ skipValidation: false });
+        } else {
+            pipelineResult = {
+                ok: true,
+                mapData: buildPublishPayloadInline(),
+                validation: { ok: true, errors: [], warnings: [] }
+            };
+        }
+    } catch (err) {
+        console.error('Export pipeline error:', err);
+        showToast('Lỗi chuẩn bị xuất bản: ' + err.message, 'error');
+        return;
+    }
 
-        // 1. Phải là Object, không được là String
-        rooms: rooms.filter(r => typeof r === 'object').map(r => ({
-            id: r.id,
-            name: r.name || 'Phòng mới',
-            shape: r.shape || 'rect',
-            color: r.color || '#ccc',
-            labelRotation: Number.isFinite(r.labelRotation) ? r.labelRotation : 0,
-            labelFontSize: Number.isFinite(r.labelFontSize) ? r.labelFontSize : 14,
-            labelAutoScale: typeof r.labelAutoScale === 'boolean' ? r.labelAutoScale : true,
-            labelLineHeight: Number.isFinite(r.labelLineHeight) ? r.labelLineHeight : 1.2,
-            x: Math.round(r.x || 0),
-            y: Math.round(r.y || 0),
-            width: Math.round(r.width || 0),
-            height: Math.round(r.height || 0),
-            points: Array.isArray(r.points) ? r.points.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })) : [],
-            cx: r.cx ? Math.round(r.cx) : undefined,
-            cy: r.cy ? Math.round(r.cy) : undefined,
-            radius: r.radius ? Math.round(r.radius) : undefined
-        })),
+    if (!pipelineResult.ok) {
+        showPublishValidationErrors(pipelineResult.validation);
+        return;
+    }
 
-        doors: doors.filter(d => typeof d === 'object').map(d => ({
-            id: d.id,
-            name: d.name || 'Cửa',
-            x: Math.round(d.x || 0),
-            y: Math.round(d.y || 0),
-            width: d.width || 40,
-            type: d.type || 'Đơn',
-            rotation: d.rotation || 0
-        })),
+    if (pipelineResult.validation && pipelineResult.validation.warnings.length > 0) {
+        if (!confirmPublishWarnings(pipelineResult.validation.warnings)) {
+            return;
+        }
+    }
 
-        pois: pois.filter(p => typeof p === 'object').map(p => ({
-            id: p.id,
-            name: p.name || 'P.O.I',
-            x: Math.round(p.x || 0),
-            y: Math.round(p.y || 0),
-            type: p.type || 'Điểm mốc',
-            typeIndex: p.typeIndex || 0
-        })),
-
-        // ĐỔI TÊN: pathNodes -> nodes
-        nodes: pathNodes.filter(n => typeof n === 'object').map(n => ({
-            id: n.id,
-            x: Math.round(n.x || 0),
-            y: Math.round(n.y || 0),
-            neighbors: Array.isArray(n.neighbors) ? n.neighbors : [],
-            is_elevator: n.nodeType === 'elevator',
-            is_stairs: n.nodeType === 'stairs'
-        })),
-
-        // ĐỔI TÊN: pathEdges -> edges
-        edges: pathEdges.filter(e => typeof e === 'object').map(e => ({
-            source: String(e.from),
-            target: String(e.to),
-            distance: e.distance || 0
-        })),
-
-        walls: (walls || []).filter(w => typeof w === 'object').map(w => ({
-            id: w.id,
-            type: w.type || 'segment',
-            thickness: w.thickness || 4,
-            is_outer: !!w.is_outer,
-            points: Array.isArray(w.points)
-                ? w.points.map(p => ({ x: Math.round(p.x || 0), y: Math.round(p.y || 0) }))
-                : []
-        })),
-
-        // ĐỔI TÊN: qrs -> qr_anchors
-        qr_anchors: qrs.filter(q => typeof q === 'object').map(q => ({
-            qr_id: q.serial || String(q.id),
-            x: Math.round(q.x || 0),
-            y: Math.round(q.y || 0),
-            room_name: q.name || 'Vị trí QR',
-            node_id: q.node_id || null  // Phương án B: Node được Admin gán để TPF khởi tạo hạt
-        }))
-    };
+    const mapData = pipelineResult.mapData;
 
     console.log(`📤 SENDING: Đang gửi bản đồ lên Server...`, {
         buildingId: buildingId,
@@ -338,12 +428,16 @@ async function saveMapToServer() {
         hideLoading();
 
         if (response.ok) {
-            showToast('Đã lưu bản đồ tầng ' + floor + ' thành công!');
+            const newVersion = result.map && result.map.version != null ? result.map.version : null;
+            showToast('Đã xuất bản bản đồ tầng ' + floor + ' thành công!');
             if (typeof clearAutoSave === 'function') clearAutoSave();
+            if (newVersion != null) updateEditorMapVersion(newVersion);
+            window.editorBuildingMeta = Object.assign({}, window.editorBuildingMeta || {}, { status: 'PUBLISHED' });
+            renderEditorBuildingContext(window.editorBuildingMeta);
         } else if (response.status === 401) {
-            // WHY: save bắt buộc đăng nhập (Publish là hành động ghi). Nếu token
-            // hết hạn/missing, báo rõ cho admin biết phải làm gì thay vì nuốt lỗi.
             showToast('Phiên đăng nhập hết hạn! Vui lòng đăng nhập lại để lưu.', 'error');
+        } else if (response.status === 403) {
+            showToast(getEditorForbiddenMessage(result, 'Bạn không có quyền xuất bản bản đồ tòa nhà này.'), 'error');
         } else {
             showToast(result.message || ('Lỗi lưu trữ (HTTP ' + response.status + ')'), 'error');
         }
@@ -407,6 +501,10 @@ async function loadMapFromServer() {
 
         if (resp.status === 404) return { notFound: true, resp };
         if (resp.status === 401) return { unauthorized: true, resp };
+        if (resp.status === 403) {
+            const data = await resp.json().catch(() => ({}));
+            return { forbidden: true, data, resp };
+        }
         const data = await resp.json().catch(() => null);
         return { ok: resp.ok, data, resp };
     }
@@ -414,7 +512,6 @@ async function loadMapFromServer() {
     try {
         const privateUrl = `${BASE_API_URL}/maps/${buildingId}/${floor}`;
 
-        // CHỈ dùng endpoint private - editor yêu cầu xác thực
         let result = token
             ? await tryFetch(privateUrl, true)
             : { unauthorized: true };
@@ -428,15 +525,24 @@ async function loadMapFromServer() {
 
         hideLoading();
 
+        if (result.forbidden) {
+            const msg = getEditorForbiddenMessage(result.data, 'Bạn không có quyền tải bản đồ tòa nhà này.');
+            showEditorAccessBanner(msg);
+            showToast(msg, 'error');
+            return { loaded: false, forbidden: true };
+        }
+
         if (result.notFound) {
             console.warn('Tầng này chưa có bản đồ trên Server.');
+            updateEditorMapVersion(null);
             return { loaded: false, notFound: true };
         }
 
         if (result.ok && result.data && result.data.map_data) {
             console.log('📥 Đã tải bản đồ từ Server:', result.data);
             applyMapData(result.data.map_data);
-            return { loaded: true };
+            updateEditorFloorLabel();
+            return { loaded: true, version: result.data.version };
         }
 
         // Không khớp điều kiện nào ở trên → lỗi server / format lạ
@@ -465,6 +571,10 @@ function applyMapData(data) {
     var parsedScale = parseFloat(rawScale);
     metersPerGrid = (Number.isFinite(parsedScale) && parsedScale > 0) ? parsedScale : 0.5;
     document.getElementById('scaleInput').value = metersPerGrid.toFixed(2);
+
+    window.mapBearingOffset = Number(data.map_bearing_offset) || 0;
+    var bearingInp = document.getElementById('mapBearingInput');
+    if (bearingInp) bearingInp.value = window.mapBearingOffset;
 
     // 2. Khôi phục Ảnh nền
     if (data.background_image) {
@@ -561,4 +671,97 @@ function applyMapData(data) {
     updateObjectList();
     if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
     draw();
+
+    if (window.EditorCore && EditorCore.LegacyBridge) {
+        EditorCore.LegacyBridge.syncDocumentFromLegacy();
+    }
+}
+
+/** EditorCore publish — bật khi Phase 0 checklist 100% (core/index.js) */
+function isEditorCorePublishReady() {
+    return !!(window.EditorCore &&
+        EditorCore.PHASE0_STABLE === true &&
+        EditorCore.LegacyBridge &&
+        typeof EditorCore.LegacyBridge.buildPublishPayloadFromEditor === 'function' &&
+        typeof EditorCore.assertPublishSchema === 'function');
+}
+
+/** Inline publish — không phụ thuộc EditorCore (Phần 17.5) */
+function buildPublishPayloadInline() {
+    return {
+        scale_ratio: (Number.isFinite(metersPerGrid) && metersPerGrid > 0) ? metersPerGrid : 0.5,
+        map_bearing_offset: Number.isFinite(window.mapBearingOffset) ? window.mapBearingOffset : 0,
+        background_image: bgImageBase64 || '',
+
+        rooms: rooms.filter(r => typeof r === 'object').map(r => ({
+            id: r.id,
+            name: r.name || 'Phòng mới',
+            shape: r.shape || 'rect',
+            color: r.color || '#ccc',
+            labelRotation: Number.isFinite(r.labelRotation) ? r.labelRotation : 0,
+            labelFontSize: Number.isFinite(r.labelFontSize) ? r.labelFontSize : 14,
+            labelAutoScale: typeof r.labelAutoScale === 'boolean' ? r.labelAutoScale : true,
+            labelLineHeight: Number.isFinite(r.labelLineHeight) ? r.labelLineHeight : 1.2,
+            x: Math.round(r.x || 0),
+            y: Math.round(r.y || 0),
+            width: Math.round(r.width || 0),
+            height: Math.round(r.height || 0),
+            points: Array.isArray(r.points) ? r.points.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })) : [],
+            cx: r.cx ? Math.round(r.cx) : undefined,
+            cy: r.cy ? Math.round(r.cy) : undefined,
+            radius: r.radius ? Math.round(r.radius) : undefined
+        })),
+
+        doors: doors.filter(d => typeof d === 'object').map(d => ({
+            id: d.id,
+            name: d.name || 'Cửa',
+            x: Math.round(d.x || 0),
+            y: Math.round(d.y || 0),
+            width: d.width || 40,
+            type: d.type || 'Đơn',
+            rotation: d.rotation || 0
+        })),
+
+        pois: pois.filter(p => typeof p === 'object').map(p => ({
+            id: p.id,
+            name: p.name || 'P.O.I',
+            x: Math.round(p.x || 0),
+            y: Math.round(p.y || 0),
+            type: p.type || 'Điểm mốc',
+            typeIndex: p.typeIndex || 0
+        })),
+
+        nodes: pathNodes.filter(n => typeof n === 'object').map(n => ({
+            id: n.id,
+            x: Math.round(n.x || 0),
+            y: Math.round(n.y || 0),
+            neighbors: Array.isArray(n.neighbors) ? n.neighbors : [],
+            is_elevator: n.nodeType === 'elevator',
+            is_stairs: n.nodeType === 'stairs'
+        })),
+
+        edges: pathEdges.filter(e => typeof e === 'object').map(e => ({
+            source: String(e.from),
+            target: String(e.to),
+            distance: e.distance || 0
+        })),
+
+        walls: (walls || []).filter(w => typeof w === 'object').map(w => ({
+            id: w.id,
+            type: w.type || 'segment',
+            thickness: w.thickness || 4,
+            is_outer: !!w.is_outer,
+            points: Array.isArray(w.points)
+                ? w.points.map(p => ({ x: Math.round(p.x || 0), y: Math.round(p.y || 0) }))
+                : []
+        })),
+
+        qr_anchors: qrs.filter(q => typeof q === 'object').map(q => ({
+            qr_id: q.serial || String(q.id),
+            x: Math.round(q.x || 0),
+            y: Math.round(q.y || 0),
+            room_name: q.name || 'Vị trí QR',
+            node_id: q.node_id != null ? q.node_id : null
+        }))
+    };
 }

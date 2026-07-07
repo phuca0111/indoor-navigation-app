@@ -97,6 +97,7 @@ window.bgX = 0;              // Vị trí X của ảnh
 window.bgY = 0;              // Vị trí Y của ảnh
 window.bgScale = 1.0;        // Tỉ lệ phóng to/thu nhỏ
 window.bgRotation = 0;       // Góc xoay của ảnh (độ)
+window.mapBearingOffset = 0; // Góc lệch Bắc địa lý so với trục map (độ) — Android la bàn
 window.bgImageBase64 = '';   // Dữ liệu ảnh dạng chuỗi (Base64) để lưu Server
 window.isBgAdjustMode = false; // Chế độ điều chỉnh ảnh nền
 window.bgLastX = 0;          // Vị trí chuột X cuối cùng khi kéo nền

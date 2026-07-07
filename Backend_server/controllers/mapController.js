@@ -1,4 +1,4 @@
-﻿// ============================================
+// ============================================
 // FILE: mapController.js
 // MỤC ĐÍCH: NÃO BỘ xử lý logic Lưu / Tải / Publish Bản Đồ JSON
 // ĐÂY LÀ FILE CỐT LÕI: Nối Web Map Editor với Database
@@ -9,9 +9,19 @@ const Building   = require('../models/Building');
 const MapVersion = require('../models/MapVersion');
 const QrCode     = require('../models/QrCode');
 const ActivityLog = require('../models/ActivityLog');
+const { buildMapSnapshot } = require('../utils/mapSnapshot');
 
 function logActivity(data) {
     return ActivityLog.create(data).catch(() => {});
+}
+
+async function assertPublicBuildingAccess(buildingId, res) {
+    const building = await Building.findById(buildingId).select('status is_active').lean();
+    if (!building || building.is_active === false || building.status !== 'PUBLISHED') {
+        res.status(404).json({ message: 'Không tìm thấy bản đồ hoặc tòa nhà chưa được xuất bản.' });
+        return false;
+    }
+    return true;
 }
 
 // Sync qr_anchors từ floor document sang collection QrCode riêng (fire-and-forget)
@@ -51,12 +61,16 @@ async function syncQrCodes(floorDoc) {
 const saveMap = async (req, res) => {
     try {
         const { buildingId, floor } = req.params;   // Lấy ID tòa nhà và tầng từ URL
+        const floorNum = parseInt(floor, 10);
+        if (!Number.isFinite(floorNum)) {
+            return res.status(400).json({ message: 'Số tầng không hợp lệ.' });
+        }
         const { map_data } = req.body;              // Lấy cục JSON bản đồ từ body
 
         // Tìm xem bản đồ tầng này đã tồn tại chưa
         let existingMap = await Floor.findOne({
             building_id: buildingId,
-            floor_number: floor
+            floor_number: floorNum
         });
 
         const userId = req.user ? req.user.userId : null;
@@ -68,15 +82,18 @@ const saveMap = async (req, res) => {
             existingMap.last_modified_by = userId;
             await existingMap.save();
 
+            await Building.findByIdAndUpdate(buildingId, { status: 'PUBLISHED' });
+
             // Lưu snapshot version (không lưu ảnh nền để tiết kiệm dung lượng)
             MapVersion.create({
                 building_id:    buildingId,
-                floor_number:   floor,
+                floor_number:   floorNum,
                 version:        existingMap.version,
                 rooms_count:    map_data.rooms?.length  || 0,
                 nodes_count:    map_data.nodes?.length  || 0,
                 edges_count:    map_data.edges?.length  || 0,
                 graph_snapshot: { nodes: map_data.nodes, edges: map_data.edges },
+                map_snapshot:   buildMapSnapshot(map_data),
                 published_by:   userId,
                 published_at:   new Date()
             }).catch(() => {});
@@ -101,8 +118,8 @@ const saveMap = async (req, res) => {
         } else {
             const newMap = await Floor.create({
                 building_id:      buildingId,
-                floor_number:     floor,
-                floor_name:       'Tầng ' + floor,
+                floor_number:     floorNum,
+                floor_name:       'Tầng ' + floorNum,
                 version:          1,
                 map_data:         map_data,
                 published_at:     new Date(),
@@ -113,12 +130,13 @@ const saveMap = async (req, res) => {
 
             MapVersion.create({
                 building_id:    buildingId,
-                floor_number:   floor,
+                floor_number:   floorNum,
                 version:        1,
                 rooms_count:    map_data.rooms?.length  || 0,
                 nodes_count:    map_data.nodes?.length  || 0,
                 edges_count:    map_data.edges?.length  || 0,
                 graph_snapshot: { nodes: map_data.nodes, edges: map_data.edges },
+                map_snapshot:   buildMapSnapshot(map_data),
                 published_by:   userId,
                 published_at:   new Date()
             }).catch(() => {});
@@ -151,6 +169,11 @@ const saveMap = async (req, res) => {
 const loadMap = async (req, res) => {
     try {
         const { buildingId, floor } = req.params;
+
+        if (!req.user) {
+            const allowed = await assertPublicBuildingAccess(buildingId, res);
+            if (!allowed) return;
+        }
 
         const map = await Floor.findOne({
             building_id: buildingId,
@@ -190,6 +213,9 @@ const downloadMap = async (req, res) => {
     try {
         const { buildingId } = req.params;
 
+        const allowed = await assertPublicBuildingAccess(buildingId, res);
+        if (!allowed) return;
+
         // Lấy tất cả tầng của tòa nhà này
         const maps = await Floor.find({ building_id: buildingId });
 
@@ -207,4 +233,4 @@ const downloadMap = async (req, res) => {
     }
 };
 
-module.exports = { saveMap, loadMap, downloadMap };
+module.exports = { saveMap, loadMap, downloadMap, syncQrCodes };

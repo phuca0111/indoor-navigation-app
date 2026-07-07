@@ -25,6 +25,16 @@ if (scaleInp) {
     });
 }
 
+var mapBearingInp = document.getElementById('mapBearingInput');
+if (mapBearingInp) {
+    mapBearingInp.addEventListener('change', function (e) {
+        if (!e.target) return;
+        var parsed = parseFloat(e.target.value);
+        window.mapBearingOffset = Number.isFinite(parsed) ? parsed : 0;
+        e.target.value = window.mapBearingOffset;
+    });
+}
+
 // === TOGGLE LƯỚI & KÍCH THƯỚC ===
 if (document.getElementById('gridCheck')) document.getElementById('gridCheck').addEventListener('change', draw);
 if (document.getElementById('dimCheck')) document.getElementById('dimCheck').addEventListener('change', draw);
@@ -123,8 +133,12 @@ if (bSli) {
             return;
         }
 
-        loadMapFromServer().then(function () {
+        if (typeof updateEditorFloorLabel === 'function') updateEditorFloorLabel();
+        loadMapFromServer().then(function (result) {
             activeFloor = floorSelect.value;
+            if (typeof updateEditorMapVersion === 'function') {
+                updateEditorMapVersion(result && result.version != null ? result.version : null);
+            }
         });
     });
 
@@ -150,19 +164,8 @@ window.addEventListener('load', function() {
 
         draw();
 
-        // Ưu tiên dữ liệu từ Server cho tòa nhà/tầng hiện tại.
-        // Chỉ hỏi khôi phục Auto-save khi tầng đó chưa có map trên Server.
-        if (typeof loadMapFromServer === 'function' && window.buildingId) {
-            loadMapFromServer()
-                .then(function(result) {
-                    if (result && result.notFound && typeof checkAutoSave === 'function') {
-                        checkAutoSave();
-                    }
-                })
-                .finally(function() {
-                    if (typeof startAutoSave === 'function') startAutoSave();
-                });
-        } else {
+        // initEditor (api.js) là nguồn load map duy nhất — không gọi loadMapFromServer ở đây
+        if (!window.editorMapLoadHandled) {
             if (typeof checkAutoSave === 'function') checkAutoSave();
             if (typeof startAutoSave === 'function') startAutoSave();
         }

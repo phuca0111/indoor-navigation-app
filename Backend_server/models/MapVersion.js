@@ -37,6 +37,12 @@ const mapVersionSchema = new mongoose.Schema({
         default: null
     },
 
+    // Snapshot map đầy đủ (không background_image) — dùng rollback toàn bộ
+    map_snapshot: {
+        type: mongoose.Schema.Types.Mixed,
+        default: null
+    },
+
     // Ai bấm Publish
     published_by: {
         type: mongoose.Schema.Types.ObjectId,

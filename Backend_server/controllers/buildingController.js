@@ -5,6 +5,7 @@
 
 const Building = require('../models/Building');
 const Organization = require('../models/Organization');
+const User = require('../models/User');
 const ActivityLog = require('../models/ActivityLog');
 
 function logActivity(data) {
@@ -60,17 +61,31 @@ const getBuildings = async (req, res) => {
 // Super Admin bắt buộc gửi organization_id trong body
 const createBuilding = async (req, res) => {
     try {
+        if (req.user.role === 'BUILDING_ADMIN') {
+            return res.status(403).json({ message: 'Building Admin không được tạo tòa nhà mới.' });
+        }
+
         const { name, address, lat, lng, activation_radius, organization_id } = req.body;
 
-        // VALIDATE: organization_id bắt buộc
-        if (!organization_id) {
+        let orgId = organization_id;
+
+        if (req.user.role === 'ORG_ADMIN') {
+            const me = await User.findById(req.user.userId).select('organization_id').lean();
+            if (!me?.organization_id) {
+                return res.status(403).json({ message: 'Tài khoản ORG_ADMIN chưa được gán tổ chức.' });
+            }
+            if (organization_id && String(organization_id) !== String(me.organization_id)) {
+                return res.status(403).json({ message: 'Org Admin không được tạo tòa nhà cho tổ chức khác.' });
+            }
+            orgId = me.organization_id;
+        }
+
+        if (!orgId) {
             return res.status(400).json({
                 message: 'Thiếu organization_id. Super Admin phải chỉ định organization khi tạo building.'
             });
         }
-
-        // Kiểm tra organization tồn tại và active
-        const org = await Organization.findById(organization_id);
+        const org = await Organization.findById(orgId);
         if (!org) {
             return res.status(400).json({ message: 'Organization không tồn tại.' });
         }
@@ -86,7 +101,7 @@ const createBuilding = async (req, res) => {
             description:       req.body.description || '',
             total_floors:      req.body.total_floors || 1,
             created_by:        req.user ? req.user.userId : null,
-            organization_id:   organization_id
+            organization_id:   orgId
         });
 
         logActivity({
@@ -97,10 +112,10 @@ const createBuilding = async (req, res) => {
             target:      building.name,
             details:     {
                 message: 'Tạo tòa nhà mới',
-                organization_id: organization_id
+                organization_id: orgId
             },
             ip_address:  req.ip || '',
-            organization_id: organization_id
+            organization_id: orgId
         });
 
         res.status(201).json({
@@ -165,6 +180,12 @@ function haversine(lat1, lon1, lat2, lon2) {
 // ==========================================
 const updateBuilding = async (req, res) => {
     try {
+        if (req.user.role === 'BUILDING_ADMIN') {
+            return res.status(403).json({
+                message: 'Building Admin không được sửa thông tin tòa nhà. Chỉ được vẽ và xuất bản bản đồ.'
+            });
+        }
+
         const { id } = req.params;
         const { name, address, lat, lng, activation_radius, description, total_floors, status, organization_id } = req.body;
 
@@ -243,6 +264,12 @@ if (organization_id !== undefined && organization_id !== '') {
 // ==========================================
 const deleteBuilding = async (req, res) => {
     try {
+        if (req.user.role === 'BUILDING_ADMIN') {
+            return res.status(403).json({
+                message: 'Building Admin không được xóa tòa nhà. Liên hệ Org Admin hoặc Super Admin.'
+            });
+        }
+
         const { id } = req.params;
 
         // Kiểm tra building tồn tại
@@ -290,5 +317,19 @@ const deleteBuilding = async (req, res) => {
     }
 };
 
-module.exports = { getBuildings, createBuilding, updateBuilding, deleteBuilding, checkLocation };
+// GET /api/buildings/:id — chi tiết tòa nhà (editor / dashboard)
+const getBuildingById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const building = await Building.findById(id).lean();
+        if (!building) {
+            return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
+        }
+        res.status(200).json(building);
+    } catch (error) {
+        res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+    }
+};
+
+module.exports = { getBuildings, getBuildingById, createBuilding, updateBuilding, deleteBuilding, checkLocation };
 

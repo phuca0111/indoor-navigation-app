@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Web Map Editor | Indoor Navigation System</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=20260704">
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -21,7 +21,7 @@
         <header class="header">
             <div class="header-left">
                 <i data-lucide="map" style="color: var(--primary)"></i>
-                <h1>Editor V3</h1>
+                <h1>Editor V4</h1>
                 <span id="editorCurrentUser" style="margin-left:12px; color:#666; font-size:14px; align-self:center;">Đang chỉnh sửa bởi: <strong>...</strong></span>
                 <button onclick="if(confirm('Bạn có muốn xóa sạch bản đồ hiện tại?')) clearCanvasData()"
                     class="btn-new-map">Bản đồ mới</button>
@@ -38,10 +38,32 @@
 
                 <div style="width: 1px; height: 24px; background: var(--border); margin: 0 8px;"></div>
 
-                <button class="btn-primary" onclick="saveMapToServer()"><i data-lucide="cloud-upload"></i> Lưu lên
+                <button class="btn-primary" onclick="saveMapToServer()" title="Lưu và xuất bản bản đồ — tòa nhà sẽ chuyển PUBLISHED"><i data-lucide="cloud-upload"></i> Xuất bản
                     Server</button>
             </div>
         </header>
+
+        <div id="editorAccessBanner" class="editor-access-banner" style="display:none;" role="alert">
+            <div class="editor-access-banner__text">
+                <strong>Không có quyền truy cập tòa nhà này.</strong>
+                <span id="editorAccessBannerMsg">Bạn không được phép mở Map Editor cho tòa nhà này.</span>
+            </div>
+            <button type="button" class="editor-access-banner__btn" onclick="window.location.href='/admin/dashboard.html'">Về Dashboard</button>
+        </div>
+
+        <div id="editorBuildingBar" class="editor-building-bar">
+            <div class="editor-building-bar__main">
+                <span id="editorBuildingName" class="editor-building-bar__name">—</span>
+                <span id="editorBuildingStatus" class="editor-status-badge editor-status-draft">—</span>
+            </div>
+            <div class="editor-building-bar__meta">
+                <span>Tầng <strong id="editorFloorLabel">1</strong></span>
+                <span class="editor-meta-sep">·</span>
+                <span>Phiên bản map: <strong id="editorMapVersion">—</strong></span>
+                <span class="editor-meta-sep">·</span>
+                <span id="editorPublishHint" class="editor-publish-hint">Lưu lên Server = xuất bản (PUBLISHED)</span>
+            </div>
+        </div>
 
         <!-- MAIN -->
         <div class="main-content">
@@ -99,6 +121,10 @@
                         <div class="prop-row">
                             <label>Tỷ lệ (m/ô):</label>
                             <input type="number" id="scaleInput" value="1.0" step="0.1" style="width: 60px;">
+                        </div>
+                        <div class="prop-row">
+                            <label>Căn Bắc (°):</label>
+                            <input type="number" id="mapBearingInput" value="0" step="1" style="width: 60px;" title="Góc lệch Bắc địa lý so với trục bản đồ (Android la bàn)">
                         </div>
                         <div class="prop-row">
                             <label><input type="checkbox" id="gridCheck" checked> Hiện lưới</label>
@@ -179,37 +205,18 @@
         </div>
     </div>
 
-    <!-- SECURE LOCK OVERLAY -->
-    <div id="secureLockOverlay" class="lock-overlay hidden">
-        <div class="lock-modal glass">
-            <div class="lock-header">
-                <div class="avatar-circle">
-                    <i data-lucide="user"></i>
-                </div>
-                <h2>Session Locked</h2>
-                <p>Nhập mật khẩu để tiếp tục làm việc</p>
-            </div>
-            <div class="lock-body">
-                <div class="input-group">
-                    <i data-lucide="key-round"></i>
-                    <input type="password" id="lockPasswordInput" placeholder="Mật khẩu của bạn..." 
-                        onkeydown="if(event.key === 'Enter') unlockEditor()">
-                </div>
-                <div id="lockError" class="error-msg hidden">Mật khẩu không chính xác!</div>
-                <button id="btnUnlock" class="btn-unlock" onclick="unlockEditor()">
-                    <span>Mở khóa Editor</span>
-                    <i data-lucide="unlock"></i>
-                </button>
-            </div>
-            <div class="lock-footer">
-                <button class="btn-text" onclick="handleLogout()">Đăng xuất tài khoản</button>
-            </div>
-        </div>
-    </div>
+    <!-- EditorCore V4 Phase 0 -->
+    <script src="core/event-bus.js?v=20260704"></script>
+    <script src="core/document.js?v=20260704"></script>
+    <script src="core/map-adapter.js?v=20260707"></script>
+    <script src="core/validation-engine.js?v=20260707"></script>
+    <script src="core/legacy-bridge.js?v=20260707"></script>
+    <script src="core/command-manager.js?v=20260707"></script>
+    <script src="core/index.js?v=20260707"></script>
 
     <!-- Script Scripts -->
     <script src="js/state.js?v=2"></script>
-    <script src="js/history.js?v=2"></script>
+    <script src="js/history.js?v=20260707"></script>
     <script src="js/utils.js?v=2"></script>
     <script src="js/autodetect.js?v=2"></script>
     <script src="js/rooms.js?v=2"></script>
@@ -220,14 +227,15 @@
     <script src="js/tools.js?v=2"></script>
     <script src="js/canvas.js?v=2"></script>
     <script src="js/io.js?v=2"></script>
-    <script src="js/api.js?v=3"></script>
+    <script src="js/api.js?v=20260707"></script>
+    <script src="core/export-pipeline.js?v=20260707"></script>
     <script src="js/secure-lock.js?v=2"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
-    <script src="js/properties.js?v=2"></script>
+    <script src="js/properties.js?v=20260707"></script>
     <script src="js/qrs.js?v=2"></script>
     <script src="js/autosave.js?v=2"></script>
     <script src="js/events.js?v=2"></script>
-    <script src="editor.js?v=3"></script>
+    <script src="editor.js?v=20260707"></script>
     <script>
         // Khởi tạo Lucide Icons
         lucide.createIcons();

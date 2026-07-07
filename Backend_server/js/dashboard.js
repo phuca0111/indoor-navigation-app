@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // 1. CONFIG & CONSTANTS
 // Dùng relative URL để dashboard gọi đúng backend trên cùng domain.
 // Khi deploy lên Render, cùng domain nên không cần CORS.
@@ -393,12 +393,26 @@ function restoreBuildingFilters() {
   } catch (e) {}
 }
 
+function canManageBuildingMeta() {
+  const role = currentUser?.role;
+  return role === 'SUPER_ADMIN' || role === 'ORG_ADMIN';
+}
+
+function canDeleteBuilding() {
+  return canManageBuildingMeta();
+}
+
 function renderBuildingsFromCache() {
   const tbody = document.getElementById('buildingsList');
   if (!tbody) return;
   const list = displayedBuildings.length ? displayedBuildings : allBuildings;
+  const canEditMeta = canManageBuildingMeta();
+  const canDelete = canDeleteBuilding();
   if (!list.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Chưa có tòa nhà nào. Bấm "Thêm Tòa Nhà Mới"!</td></tr>';
+    const emptyMsg = canEditMeta
+      ? 'Chưa có tòa nhà nào. Bấm "Thêm Tòa Nhà Mới"!'
+      : 'Chưa có tòa nhà nào được gán cho tài khoản của bạn.';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">' + emptyMsg + '</td></tr>';
     renderPagination('buildings', 0, 1);
     return;
   }
@@ -408,6 +422,14 @@ function renderBuildingsFromCache() {
   tbody.innerHTML = pageItems.map(b => {
     const date = b.updatedAt ? new Date(b.updatedAt).toLocaleDateString('vi-VN') : '-';
     const desc = b.description ? '<br><small style="color:#888">' + escapeHtml(b.description) + '</small>' : '';
+    let actions = '<button class="btn-edit" onclick="openEditor(\'' + b._id + '\')" style="margin-right:4px;">Vẽ bản đồ</button>' +
+      '<button class="btn-edit" onclick="openMapVersionModal(\'' + b._id + '\', ' + (b.total_floors || 1) + ')" style="background:#8e44ad;color:white;margin-right:4px;">Phiên bản</button>';
+    if (canEditMeta) {
+      actions += '<button class="btn-edit" onclick="openEditBuildingModal(\'' + b._id + '\')" style="background:#f39c12;color:white;margin-right:4px;">Sửa</button>';
+    }
+    if (canDelete) {
+      actions += '<button class="btn-logout" onclick="deleteBuilding(\'' + b._id + '\')" style="background:#e74c3c;padding:6px 12px;">Xóa</button>';
+    }
     return '<tr>' +
       tdEllipsis(b.name, '<strong>' + escapeHtml(b.name) + '</strong>' + desc) +
       tdEllipsis(b.address || '-') +
@@ -415,11 +437,7 @@ function renderBuildingsFromCache() {
       '<td><span class="badge">' + escapeHtml(b.status) + '</span></td>' +
       tdEllipsis(getOrgName(b.organization_id)) +
       '<td>' + date + '</td>' +
-      '<td class="actions-cell"><div class="building-actions">' +
-        '<button class="btn-edit" onclick="openEditor(\'' + b._id + '\')" style="margin-right:4px;">Vẽ bản đồ</button>' +
-        '<button class="btn-edit" onclick="openEditBuildingModal(\'' + b._id + '\')" style="background:#f39c12;color:white;margin-right:4px;">Sửa</button>' +
-        '<button class="btn-logout" onclick="deleteBuilding(\'' + b._id + '\')" style="background:#e74c3c;padding:6px 12px;">Xóa</button>' +
-      '</div></td></tr>';
+      '<td class="actions-cell"><div class="building-actions">' + actions + '</div></td></tr>';
   }).join('');
   renderPagination('buildings', list.length, page);
 }
@@ -955,6 +973,10 @@ async function saveNewBuilding() {
 document.getElementById('btnSaveNewBuilding').onclick = saveNewBuilding;
 
 function openEditBuildingModal(id) {
+  if (!canManageBuildingMeta()) {
+    alert('Bạn không có quyền sửa thông tin tòa nhà. Chỉ được mở Map Editor để vẽ bản đồ.');
+    return;
+  }
   const b = allBuildings.find(x => x._id === id);
   if (!b) return;
 
@@ -1004,47 +1026,163 @@ async function saveEditBuilding() {
 }
 
 async function deleteBuilding(id) {
+  if (!canDeleteBuilding()) {
+    alert('Bạn không có quyền xóa tòa nhà. Chỉ Org Admin hoặc Super Admin mới được xóa.');
+    return;
+  }
   if (!confirm('Bạn có chắc muốn xóa tòa nhà này và toàn bộ bản đồ của nó?')) return;
   try {
     const res = await apiFetch('/buildings/' + id, { method: 'DELETE' });
     if (res.ok) { alert('Đã xóa tòa nhà!'); fetchBuildings(); }
-    else alert('Lỗi khi xóa!');
+    else {
+      const d = await res.json().catch(() => ({}));
+      alert('Lỗi khi xóa: ' + (d.message || ('HTTP ' + res.status)));
+    }
   } catch (e) { alert('Lỗi kết nối!'); }
 }
 
 // ============================================================
 // MAP VERSIONS
-function openMapVersionModal(buildingId, buildingName) {
-  document.getElementById('mapVersionTitle').textContent = 'tòa nhà: ' + buildingName;
+window._mapVersionContext = { buildingId: null, buildingName: '', totalFloors: 1 };
+
+function openMapVersionModal(buildingId, totalFloors) {
+  const b = allBuildings.find(function (x) { return x._id === buildingId; });
+  const buildingName = b ? (b.name || buildingId) : buildingId;
+  window._mapVersionContext = {
+    buildingId: buildingId,
+    buildingName: buildingName,
+    totalFloors: Math.max(parseInt(totalFloors, 10) || 1, 1)
+  };
+  document.getElementById('mapVersionTitle').textContent = 'Tòa nhà: ' + (buildingName || buildingId);
+  const floorSelect = document.getElementById('mapVersionFloorSelect');
+  if (floorSelect) {
+    const count = window._mapVersionContext.totalFloors;
+    let opts = '';
+    for (let i = 0; i < count; i++) {
+      const label = i === 0 ? 'Tầng trệt (0)' : ('Tầng ' + i);
+      opts += '<option value="' + i + '">' + label + '</option>';
+    }
+    floorSelect.innerHTML = opts;
+    floorSelect.value = '0';
+  }
   document.getElementById('mapVersionModal').style.display = 'flex';
-  loadMapVersions(buildingId);
+  loadMapVersions();
 }
 
 function closeMapVersionModal() { document.getElementById('mapVersionModal').style.display = 'none'; }
 
-async function loadMapVersions(buildingId) {
-  const tbody = document.getElementById('mapVersionsList');
-  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Đang tải...</td></tr>';
-  try {
-    const res = await apiFetch('/map-versions/' + buildingId + '/1');
-    const data = await res.json();
-    if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;">Chưa có phiên bản nào được publish.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = data.map(v => `<tr>
-<td style="text-align:center;"><strong>v${v.version}</strong></td>
-<td style="text-align:center;">${v.rooms_count}</td>
-<td style="text-align:center;">${v.nodes_count}</td>
-<td style="text-align:center;">${v.edges_count}</td>
-<td>${v.published_by ? v.published_by.email : '-'}</td>
-<td>${new Date(v.published_at).toLocaleString('vi-VN')}</td>
-</tr>`).join('');
-  } catch (e) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:red;">Lỗi tải dữ liệu.</td></tr>'; }
+function onMapVersionFloorChange() {
+  loadMapVersions();
 }
 
-// ============================================================
-// NEW USER MANAGEMENT FUNCTIONS (THEO YÊU CẦU TASK UI FIX ROUND 3)
+async function loadMapVersions() {
+  const ctx = window._mapVersionContext || {};
+  const buildingId = ctx.buildingId;
+  const floor = document.getElementById('mapVersionFloorSelect')?.value || '0';
+  const tbody = document.getElementById('mapVersionsList');
+  if (!buildingId || !tbody) return;
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Đang tải...</td></tr>';
+  try {
+    const res = await apiFetch('/map-versions/' + buildingId + '/' + floor);
+    const payload = await res.json();
+    if (!res.ok) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:red;">' + escapeHtml(payload.message || 'Không tải được phiên bản.') + '</td></tr>';
+      return;
+    }
+    const currentVersion = payload.current_version;
+    const data = Array.isArray(payload) ? payload : (payload.versions || []);
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;">Chưa có phiên bản nào được publish cho tầng này.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(function (v) {
+      const isCurrent = currentVersion != null && v.version === currentVersion;
+      const snapHint = v.has_full_snapshot
+        ? '<span style="color:#27ae60;font-size:10px;"> snapshot đủ</span>'
+        : '<span style="color:#e67e22;font-size:10px;" title="Chỉ khôi phục nodes/edges"> snapshot một phần</span>';
+      const rollbackBtn = isCurrent
+        ? '<span style="color:#888;font-size:12px;">Đang dùng</span>'
+        : (v.has_full_snapshot
+          ? '<button type="button" class="btn-edit" style="background:#e67e22;color:#fff;font-size:12px;padding:4px 8px;" onclick="rollbackMapVersion(' + v.version + ',true)">Khôi phục</button>'
+          : '<button type="button" class="btn-edit" style="background:#95a5a6;color:#fff;font-size:12px;padding:4px 8px;" disabled title="Bản cũ không có snapshot phòng/cửa">Không khôi phục được</button>');
+      return '<tr>' +
+        '<td style="text-align:center;"><strong>v' + v.version + '</strong>' + snapHint + (isCurrent ? ' <span style="color:#27ae60;font-size:11px;">(hiện tại)</span>' : '') + '</td>' +
+        '<td style="text-align:center;">' + (v.rooms_count || 0) + '</td>' +
+        '<td style="text-align:center;">' + (v.nodes_count || 0) + '</td>' +
+        '<td style="text-align:center;">' + (v.edges_count || 0) + '</td>' +
+        '<td>' + (v.published_by ? escapeHtml(v.published_by.email) : '-') + '</td>' +
+        '<td>' + (v.published_at ? new Date(v.published_at).toLocaleString('vi-VN') : '-') + '</td>' +
+        '<td style="text-align:center;">' + rollbackBtn + '</td>' +
+      '</tr>';
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:red;">Lỗi tải dữ liệu.</td></tr>';
+  }
+}
+
+async function rollbackMapVersion(version, hasFullSnapshot) {
+  const ctx = window._mapVersionContext || {};
+  const buildingId = ctx.buildingId;
+  const floor = document.getElementById('mapVersionFloorSelect')?.value || '0';
+  if (!buildingId) return;
+
+  if (hasFullSnapshot === false || hasFullSnapshot === 'false') {
+    alert('Phiên bản v' + version + ' publish trước khi có snapshot đầy đủ.\n\nKhông thể khôi phục phòng/cửa từ bản này. Hãy chọn phiên bản có nhãn "snapshot đủ" (thường từ v2 trở đi).');
+    return;
+  }
+  let confirmMsg = 'Khôi phục bản đồ tầng ' + floor + ' về nội dung phiên bản v' + version + '?\n\n';
+  confirmMsg += '• Server sẽ tạo phiên bản MỚI (vd. v7) — không thay thế số phiên bản hiện tại.\n';
+  confirmMsg += '• Mở Editor và Ctrl+F5 sau khi xong để xem map.\n';
+  if (!confirm(confirmMsg)) return;
+
+  const statusEl = document.getElementById('mapVersionStatus');
+  if (statusEl) {
+    statusEl.style.display = 'block';
+    statusEl.style.background = '#eef6ff';
+    statusEl.style.color = '#1d4ed8';
+    statusEl.textContent = 'Đang khôi phục phiên bản v' + version + '...';
+  }
+
+  try {
+    const res = await apiFetch('/map-versions/' + buildingId + '/' + floor + '/' + version + '/rollback', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      const newVer = data.map && data.map.version != null ? data.map.version : (data.new_version || '?');
+      let msg = (data.message || 'Đã khôi phục thành công!') +
+        '\n\nPhiên bản hiện tại trên server: v' + newVer + '.';
+      if (data.rollback_mode === 'graph_only') {
+        msg += '\n\n⚠️ Chỉ khôi phục nodes/edges (bản cũ không có snapshot phòng/cửa).';
+      }
+      msg += '\n\nBước tiếp: Dashboard → Vẽ bản đồ → Ctrl+F5.';
+      if (statusEl) {
+        statusEl.style.background = '#ecfdf5';
+        statusEl.style.color = '#047857';
+        statusEl.textContent = 'Đã khôi phục từ v' + version + ' → v' + newVer + (data.rollback_mode === 'graph_only' ? ' (chỉ nodes/edges)' : '') + '. Mở Editor + Ctrl+F5.';
+      }
+      alert(msg);
+      loadMapVersions();
+    } else {
+      if (statusEl) {
+        statusEl.style.background = '#fef2f2';
+        statusEl.style.color = '#b91c1c';
+        statusEl.textContent = 'Lỗi: ' + (data.message || ('HTTP ' + res.status));
+      }
+      alert('Lỗi: ' + (data.message || ('HTTP ' + res.status)));
+    }
+  } catch (e) {
+    if (statusEl) {
+      statusEl.style.background = '#fef2f2';
+      statusEl.style.color = '#b91c1c';
+      statusEl.textContent = 'Lỗi kết nối khi rollback.';
+    }
+    alert('Lỗi kết nối khi rollback!');
+  }
+}
+
+window.rollbackMapVersion = rollbackMapVersion;
+window.openMapVersionModal = openMapVersionModal;
+window.closeMapVersionModal = closeMapVersionModal;
+window.onMapVersionFloorChange = onMapVersionFloorChange;
 
 async function fetchUsers() {
   if (currentUser?.role === 'SUPER_ADMIN' && allOrganizations.length === 0) {
@@ -1314,6 +1452,7 @@ const ACTION_LABELS = {
   CHANGE_PASSWORD: 'Đổi mật khẩu',
   PUBLISH_MAP: 'Xuất bản bản đồ',
   LOAD_MAP: 'Tải bản đồ',
+  ROLLBACK_MAP: 'Khôi phục phiên bản bản đồ',
   CREATE_BUILDING: 'Tạo tòa nhà',
   UPDATE_BUILDING: 'Cập nhật tòa nhà',
   DELETE_BUILDING: 'Xóa tòa nhà',
@@ -1419,6 +1558,7 @@ function getActionFallbackDetail(action, target) {
     DELETE_BUILDING: 'Xóa tòa nhà' + name,
     PUBLISH_MAP: 'Xuất bản bản đồ lên server' + name,
     LOAD_MAP: 'Mở bản đồ trên Editor' + name,
+    ROLLBACK_MAP: 'Khôi phục phiên bản bản đồ cũ' + name,
     BUILDING_ASSIGN: 'Gán quyền quản lý tòa nhà' + name,
     BUILDING_UNASSIGN: 'Thu hồi quyền quản lý tòa nhà' + name,
     CHANGE_PASSWORD: 'Đổi mật khẩu tài khoản',
