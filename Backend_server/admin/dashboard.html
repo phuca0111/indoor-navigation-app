@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
@@ -594,6 +594,16 @@
         <div class="modal-content" style="max-width:600px;">
             <h3>📜 Lịch Sử Phiên Bản Bản Đồ</h3>
             <p id="mapVersionTitle" style="color:#666; margin-bottom:12px;"></p>
+            <div style="margin-bottom:12px;">
+              <label style="font-size:13px; color:#666; margin-right:8px;">Chọn tầng:</label>
+              <select id="mapVersionFloorSelect" onchange="onMapVersionFloorChange()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd;"></select>
+            </div>
+            <p id="mapVersionHint" style="font-size:12px;color:#666;margin:0 0 10px 0;line-height:1.5;">
+              <strong>Lưu ý:</strong> Khôi phục <em>không</em> xóa phiên bản 4 — server tạo <strong>phiên bản mới</strong> (vd. v5) với nội dung bản bạn chọn.
+              Bản v1–v3 publish trước khi có snapshot đầy đủ chỉ khôi phục được <strong>nodes/edges</strong>, phòng/cửa có thể không đổi.
+              Sau khi khôi phục: mở Editor và <strong>Ctrl+F5</strong> để thấy map mới.
+            </p>
+            <p id="mapVersionStatus" style="display:none;font-size:13px;margin:0 0 10px 0;padding:8px 12px;border-radius:6px;"></p>
             <table class="buildings-table">
                 <thead>
                     <tr>
@@ -603,10 +613,11 @@
                         <th>Edge</th>
                         <th>Người publish</th>
                         <th>Thời gian</th>
+                        <th>Thao tác</th>
                     </tr>
                 </thead>
                 <tbody id="mapVersionsList">
-                    <tr><td colspan="6" style="text-align:center;color:#888;">Đang tải...</td></tr>
+                    <tr><td colspan="7" style="text-align:center;color:#888;">Đang tải...</td></tr>
                 </tbody>
             </table>
             <div class="modal-actions" style="margin-top:15px;">
@@ -656,6 +667,6 @@
       </div>
     </div>
 
-    <script src="../js/dashboard.js?v=20260703h"></script>
+    <script src="../js/dashboard.js?v=20260704f"></script>
 </body>
 </html>

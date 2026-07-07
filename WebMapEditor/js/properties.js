@@ -387,12 +387,13 @@ function addManualEdge(fromId) {
 
 // --- THUỘC TÍNH QR CODE ---
 function showQrProps(qr) {
-    // Tạo danh sách dropdown từ tất cả pathNodes hiện có
+    var qrNodeId = qr.node_id != null && qr.node_id !== '' ? Number(qr.node_id) : null;
+    // pathNodes dùng .id (không phải .nodeId)
     var nodeOptions = '<option value="">-- Không gán Node --</option>' +
         (window.pathNodes || []).map(function (n) {
-            var selected = (qr.node_id === n.nodeId) ? ' selected' : '';
-            return '<option value="' + n.nodeId + '"' + selected + '>' +
-                n.nodeId + ' (' + Math.round(n.x) + ',' + Math.round(n.y) + ')' +
+            var selected = (qrNodeId === n.id) ? ' selected' : '';
+            return '<option value="' + n.id + '"' + selected + '>' +
+                n.id + ' (' + Math.round(n.x) + ',' + Math.round(n.y) + ')' +
                 '</option>';
         }).join('');
 
@@ -447,6 +448,10 @@ function showQrProps(qr) {
 function updateQrProp(key, val) {
     if (!selectedObject || selectedObject.type !== 'qr') return;
     saveState();
+    if (key === 'node_id') {
+        val = (val === '' || val == null) ? null : parseInt(val, 10);
+        if (val != null && isNaN(val)) val = null;
+    }
     selectedObject.data[key] = val;
     updateObjectList();
     draw();

@@ -7,6 +7,7 @@
     "test": "jest --coverage",
     "test:watch": "jest --watch",
     "test:api": "node test_api_1a6.js",
+    "test:phase3": "jest test/integration/phase3MapRegression.test.js --verbose",
     "start": "node server.js",
     "migrate:org": "node scripts/migrate-organization-legacy.js",
     "verify:org": "node scripts/verify-org-migration.js"

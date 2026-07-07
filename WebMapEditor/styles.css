@@ -123,6 +123,111 @@ body {
     box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
 }
 
+/* Phase 3.5 — Thanh thông tin tòa nhà + banner 403 */
+.editor-building-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    padding: 8px 24px;
+    background: rgba(30, 41, 59, 0.95);
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    color: #94a3b8;
+}
+
+.editor-building-bar__main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.editor-building-bar__name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #f1f5f9;
+}
+
+.editor-building-bar__meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.editor-building-bar__meta strong {
+    color: #e2e8f0;
+}
+
+.editor-meta-sep {
+    opacity: 0.45;
+}
+
+.editor-publish-hint {
+    color: #64748b;
+    font-size: 12px;
+}
+
+.editor-status-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.editor-status-draft {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.editor-status-published {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.editor-access-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 24px;
+    background: rgba(127, 29, 29, 0.92);
+    border-bottom: 1px solid rgba(248, 113, 113, 0.4);
+    color: #fecaca;
+    font-size: 14px;
+}
+
+.editor-access-banner__text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.editor-access-banner__text strong {
+    color: #fff;
+}
+
+.editor-access-banner__btn {
+    flex-shrink: 0;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    background: #fff;
+    color: #991b1b;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.editor-access-banner__btn:hover {
+    background: #fee2e2;
+}
+
 .header-right {
     display: flex;
     align-items: center;
@@ -179,7 +284,7 @@ button {
 .main-content {
     display: flex;
     flex: 1;
-    height: calc(100vh - var(--header-height));
+    height: calc(100vh - var(--header-height) - 44px);
     overflow: hidden;
     padding: 16px;
     gap: 16px;
