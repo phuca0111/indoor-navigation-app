@@ -11,6 +11,10 @@ function getCurrentFloor() {
 
 // --- LẤY KHÓA LƯU TRỮ RIÊNG CHO TỪNG TÒA NHÀ ---
 function getAutosaveKey() {
+    if (window.EditorCore && EditorCore.ProjectManager) {
+        var pmKey = EditorCore.ProjectManager.getAutosaveKey();
+        if (pmKey) return pmKey;
+    }
     var building = window.buildingId || 'default';
     var floor = getCurrentFloor();
     return 'floorplan_autosave_' + building + '_' + floor;

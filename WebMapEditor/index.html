@@ -71,35 +71,35 @@
             <aside class="toolbar">
                 <div class="tool-section">
                     <h3>Cấu trúc</h3>
-                    <button class="tool-btn active" id="btn-select" onclick="selectTool('select')">
+                    <button class="tool-btn active" id="btn-select" onclick="selectTool('select')" title="Chọn đối tượng (V)">
                         <i data-lucide="mouse-pointer-2"></i> Chọn đối tượng
                     </button>
-                    <button class="tool-btn" id="btn-room" onclick="selectTool('room')">
+                    <button class="tool-btn" id="btn-room" onclick="selectTool('room')" title="Vẽ phòng chữ nhật (R)">
                         <i data-lucide="square"></i> Vẽ Phòng
                     </button>
-                    <button class="tool-btn" id="btn-circle" onclick="selectTool('circle')">
+                    <button class="tool-btn" id="btn-circle" onclick="selectTool('circle')" title="Vẽ phòng hình tròn (C)">
                         <i data-lucide="circle"></i> Vẽ Hình tròn
                     </button>
-                    <button class="tool-btn" id="btn-polygon" onclick="selectTool('polygon')">
+                    <button class="tool-btn" id="btn-polygon" onclick="selectTool('polygon')" title="Vẽ phòng đa giác (G)">
                         <i data-lucide="triangle"></i> Vẽ Đa giác
                     </button>
-                    <button class="tool-btn" id="btn-door" onclick="selectTool('door')">
+                    <button class="tool-btn" id="btn-door" onclick="selectTool('door')" title="Thêm cửa (D)">
                         <i data-lucide="door-open"></i> Thêm Cửa
                     </button>
-                    <button class="tool-btn" id="btn-wall" onclick="selectTool('wall')">
+                    <button class="tool-btn" id="btn-wall" onclick="selectTool('wall')" title="Vẽ tường (W)">
                         <i data-lucide="panel-top"></i> Vẽ Tường
                     </button>
                 </div>
 
                 <div class="tool-section">
                     <h3>Điều hướng</h3>
-                    <button class="tool-btn" id="btn-qr" onclick="selectTool('qr')">
+                    <button class="tool-btn" id="btn-qr" onclick="selectTool('qr')" title="Điểm mốc QR (Q)">
                         <i data-lucide="qr-code"></i> Điểm mốc QR
                     </button>
-                    <button class="tool-btn" id="btn-path" onclick="selectTool('path')">
+                    <button class="tool-btn" id="btn-path" onclick="selectTool('path')" title="Đường đi / Path node (N)">
                         <i data-lucide="route"></i> Đường đi (Path)
                     </button>
-                    <button class="tool-btn" id="btn-poi" onclick="selectTool('poi')">
+                    <button class="tool-btn" id="btn-poi" onclick="selectTool('poi')" title="Điểm POI (P)">
                         <i data-lucide="map-pin"></i> Thêm POI
                     </button>
                 </div>
@@ -120,7 +120,7 @@
                         </div>
                         <div class="prop-row">
                             <label>Tỷ lệ (m/ô):</label>
-                            <input type="number" id="scaleInput" value="1.0" step="0.1" style="width: 60px;">
+                            <input type="number" id="scaleInput" value="0.5" step="0.1" style="width: 60px;" readonly title="Chuẩn dự án: 1 ô 40px = 0.5m">
                         </div>
                         <div class="prop-row">
                             <label>Căn Bắc (°):</label>
@@ -130,10 +130,19 @@
                             <label><input type="checkbox" id="gridCheck" checked> Hiện lưới</label>
                         </div>
                         <div class="prop-row">
-                            <label><input type="checkbox" id="snapCheck" checked> Hút vào lưới</label>
+                            <label><input type="checkbox" id="snapCheck"> Hút vào lưới</label>
+                        </div>
+                        <div class="prop-row">
+                            <label><input type="checkbox" id="edgeSnapCheck"> Hút viền phòng (cửa)</label>
                         </div>
                         <div class="prop-row">
                             <label><input type="checkbox" id="dimCheck" checked> Hiện kích thước</label>
+                        </div>
+                        <div class="prop-row" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+                            <label for="rulerModeSelect">Thước (phím S):</label>
+                            <select id="rulerModeSelect" style="width: 100%;" disabled title="Click điểm A → di chuột → click điểm B. Esc xóa. Giữ Shift = ngang/dọc.">
+                                <option value="measure" selected>Đo — 2 click (không cần kéo giữ chuột)</option>
+                            </select>
                         </div>
                         <div class="prop-row" style="flex-direction: column; align-items: flex-start; gap: 4px;">
                             <label>Độ mờ ảnh nền: <span id="bgOpacityVal">50%</span></label>
@@ -208,34 +217,52 @@
     <!-- EditorCore V4 Phase 0 -->
     <script src="core/event-bus.js?v=20260704"></script>
     <script src="core/document.js?v=20260704"></script>
+    <script src="core/config.js?v=20260708a"></script>
+    <script src="core/tool-registry.js?v=20260707h"></script>
+    <script src="core/tools-bootstrap.js?v=20260707h"></script>
     <script src="core/map-adapter.js?v=20260707"></script>
-    <script src="core/validation-engine.js?v=20260707"></script>
-    <script src="core/legacy-bridge.js?v=20260707"></script>
+    <script src="core/validation-config.js?v=20260708f"></script>
+    <script src="core/validation-engine.js?v=20260708f"></script>
+    <script src="core/rendering/background-renderer.js?v=20260707"></script>
+    <script src="core/rendering/grid-renderer.js?v=20260707b"></script>
+    <script src="core/rendering/room-renderer.js?v=20260707c"></script>
+    <script src="core/rendering/wall-renderer.js?v=20260707d"></script>
+    <script src="core/rendering/door-renderer.js?v=20260707d"></script>
+    <script src="core/rendering/path-renderer.js?v=20260707g"></script>
+    <script src="core/rendering/poi-renderer.js?v=20260707g"></script>
+    <script src="core/rendering/qr-renderer.js?v=20260707g"></script>
+    <script src="core/rendering/rendering-engine.js?v=20260707g"></script>
+    <script src="core/legacy-bridge.js?v=20260708i"></script>
+    <script src="core/project-manager.js?v=20260708g"></script>
+    <script src="core/version-manager.js?v=20260708h"></script>
+    <script src="core/asset-manager.js?v=20260708i"></script>
+    <script src="core/plugin-api.js?v=20260708i"></script>
+    <script src="core/spatial-index.js?v=20260708j"></script>
     <script src="core/command-manager.js?v=20260707"></script>
-    <script src="core/index.js?v=20260707"></script>
+    <script src="core/index.js?v=20260708j"></script>
 
     <!-- Script Scripts -->
-    <script src="js/state.js?v=2"></script>
+    <script src="js/state.js?v=20260708d"></script>
     <script src="js/history.js?v=20260707"></script>
-    <script src="js/utils.js?v=2"></script>
+    <script src="js/utils.js?v=20260708d"></script>
     <script src="js/autodetect.js?v=2"></script>
     <script src="js/rooms.js?v=2"></script>
-    <script src="js/doors.js?v=2"></script>
+    <script src="js/doors.js?v=20260707f"></script>
     <script src="js/walls.js?v=2"></script>
-    <script src="js/pois.js?v=2"></script>
-    <script src="js/paths.js?v=2"></script>
-    <script src="js/tools.js?v=2"></script>
-    <script src="js/canvas.js?v=2"></script>
+    <script src="js/pois.js?v=20260707g"></script>
+    <script src="js/paths.js?v=20260707d"></script>
+    <script src="js/tools.js?v=20260708d"></script>
+    <script src="js/canvas.js?v=20260708d"></script>
     <script src="js/io.js?v=2"></script>
-    <script src="js/api.js?v=20260707"></script>
-    <script src="core/export-pipeline.js?v=20260707"></script>
+    <script src="js/api.js?v=20260708k"></script>
+    <script src="core/export-pipeline.js?v=20260708e"></script>
     <script src="js/secure-lock.js?v=2"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
-    <script src="js/properties.js?v=20260707"></script>
-    <script src="js/qrs.js?v=2"></script>
-    <script src="js/autosave.js?v=2"></script>
-    <script src="js/events.js?v=2"></script>
-    <script src="editor.js?v=20260707"></script>
+    <script src="js/properties.js?v=20260708c"></script>
+    <script src="js/qrs.js?v=20260707g"></script>
+    <script src="js/autosave.js?v=20260708g"></script>
+    <script src="js/events.js?v=20260708d"></script>
+    <script src="editor.js?v=20260708i"></script>
     <script>
         // Khởi tạo Lucide Icons
         lucide.createIcons();

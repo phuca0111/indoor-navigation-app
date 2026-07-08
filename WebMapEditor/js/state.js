@@ -25,9 +25,11 @@ let panX = 0, panY = 0;
 let isPanning = false;
 let panStartX, panStartY;
 
-// Grid & Scale
-const GRID_SIZE = 40;       // Kích thước ô lưới (pixels)
-let metersPerGrid = 0.5;     // 1 ô = bao nhiêu mét (mặc định 1m = 80px)
+// Grid & Scale — chuẩn dự án: 1 ô 40px = 0.5m (scale_ratio 0.5)
+var GRID_SIZE = 40;
+let metersPerGrid = 0.5;
+/** true sau khi load map từ server — không cho đổi tỷ lệ (Phương án A) */
+let scaleLockedFromServer = false;
 
 // Room data
 let rooms = [];
@@ -83,12 +85,19 @@ let pathNodes = [];
 let pathEdges = [];
 let nextNodeId = 1;
 let firstNodeForEdge = null; // node đầu khi đang nối edge
+/** Preview chuỗi path khi Shift + di chuột */
+let pathPreviewEnd = null;
+/** Con trỏ rubber-band khi vẽ polygon */
+let polygonHoverPoint = null;
 
 // --- THƯỚC ĐO (RULER) ---
-let rulerStart = null; // {x, y}
-let rulerEnd = null;   // {x, y}
+let rulerStart = null;
+let rulerEnd = null;
 let isDrawingRuler = false;
-let rulerLine = null; // {x1, y1, x2, y2}
+/** true sau click điểm A — chờ click điểm B (không cần giữ chuột kéo) */
+let rulerAwaitingEnd = false;
+/** 'measure' = chỉ đo | 'calibrate' = căn tỷ lệ (SCALE Reference) */
+let rulerMode = 'measure';
 
 // Background image (ảnh nền)
 window.bgImage = null;       // Image object
@@ -106,7 +115,19 @@ window.bgLastY = 0;          // Vị trí chuột Y cuối cùng khi kéo nền
 // Selected object (đối tượng đang chọn - dùng chung)
 let selectedObject = null;  // {type: 'room'/'door'/'poi'/'node', data: ...}
 
-// Constants
-const HANDLE_SIZE = 8;
-const POI_RADIUS = 12;      // Bán kính vòng tròn POI
-const NODE_RADIUS = 8;      // Bán kính path node
+// Constants — override từ config/editor.json
+var HANDLE_SIZE = 8;
+var POI_RADIUS = 12;
+var NODE_RADIUS = 8;
+
+function syncStateFromEditorConfig() {
+    if (typeof window === 'undefined' || !window.EditorCore || !EditorCore.Config) return;
+    var C = EditorCore.Config;
+    GRID_SIZE = C.get('grid.size', 40);
+    HANDLE_SIZE = C.get('ui.handleSize', 8);
+    POI_RADIUS = C.get('ui.poiRadius', 12);
+    NODE_RADIUS = C.get('ui.nodeRadius', 8);
+    rulerMode = C.get('ruler.defaultMode', 'measure');
+}
+syncStateFromEditorConfig();
+window.syncStateFromEditorConfig = syncStateFromEditorConfig;

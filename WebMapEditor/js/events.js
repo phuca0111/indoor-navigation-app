@@ -54,7 +54,15 @@ canvas.addEventListener('mousemove', function (e) {
     var mouseY = e.clientY - rect.top;
     var world = screenToWorld(mouseX, mouseY);
     if (mousePosSpan) mousePosSpan.textContent = 'X: ' + Math.round(world.x) + ', Y: ' + Math.round(world.y);
-    if (worldPosSpan) worldPosSpan.textContent = pixelsToMeters(world.x).toFixed(1) + 'm, ' + pixelsToMeters(world.y).toFixed(1) + 'm';
+    if (worldPosSpan) {
+        var worldLabel = pixelsToMeters(world.x).toFixed(1) + 'm, ' + pixelsToMeters(world.y).toFixed(1) + 'm';
+        if (currentTool === 'ruler' && rulerAwaitingEnd && rulerStart) {
+            var previewEnd = constrainOrthoPoint(rulerStart, world, e.shiftKey);
+            var previewPx = getRulerSegmentLengthPx(rulerStart, previewEnd);
+            worldLabel += ' · Đo: ' + formatRulerLabel(previewPx, metersPerGrid, GRID_SIZE);
+        }
+        worldPosSpan.textContent = worldLabel;
+    }
 
     if (isPanning) {
         panX = e.clientX - panStartX;
@@ -88,6 +96,7 @@ canvas.addEventListener('dblclick', function (e) {
         }
         polygonPoints = [];
         isDrawingPolygon = false;
+        polygonHoverPoint = null;
         draw();
     }
 });
@@ -100,6 +109,7 @@ canvas.addEventListener('contextmenu', function (e) {
     e.preventDefault();
     if (currentTool === 'path') {
         firstNodeForEdge = null;
+        pathPreviewEnd = null;
         selectedObject = null;
         if (typeof showToast === 'function') showToast('Đã ngắt chuỗi đường đi', 'success');
         draw();
@@ -139,7 +149,11 @@ function handleLeftMouseDown(e) {
     // --- TOOL: VẼ ĐA GIÁC ---
     else if (currentTool === 'polygon') {
         isDrawingPolygon = true;
-        polygonPoints.push({ x: world.x, y: world.y }); // Không dùng snapped để tự do vẽ
+        var polyPt = polygonPoints.length > 0
+            ? resolveLinePoint(polygonPoints[polygonPoints.length - 1], world, e.shiftKey)
+            : { x: world.x, y: world.y };
+        polygonPoints.push(polyPt);
+        polygonHoverPoint = null;
         draw();
     }
 
@@ -156,7 +170,9 @@ function handleLeftMouseDown(e) {
 
     // --- TOOL: VẼ TƯỜNG ---
     else if (currentTool === 'wall') {
-        var p = { x: snappedX, y: snappedY };
+        var p = wallStartPoint
+            ? resolveLinePoint(wallStartPoint, world, e.shiftKey)
+            : { x: snappedX, y: snappedY };
         if (!wallStartPoint) {
             wallStartPoint = p;
             wallPreviewEnd = p;
@@ -213,7 +229,8 @@ function handleLeftMouseDown(e) {
         } else {
             // Click vào chỗ trống: Tạo node mới và tự động nối với node trước đó (nếu có)
             saveState();
-            var newNode = createPathNode(world.x, world.y);
+            var place = resolveLinePoint(firstNodeForEdge, world, e.shiftKey);
+            var newNode = createPathNode(place.x, place.y);
             if (firstNodeForEdge) {
                 connectNodes(firstNodeForEdge, newNode);
             }
@@ -226,12 +243,22 @@ function handleLeftMouseDown(e) {
         draw();
     }
 
-    // --- TOOL: THƯỚC ĐO (RULER) ---
+    // --- TOOL: THƯỚC ĐO (RULER) — click điểm A, click điểm B (không cần giữ chuột kéo) ---
     else if (currentTool === 'ruler') {
-        isDrawingRuler = true;
-        rulerStart = { x: world.x, y: world.y };
-        rulerEnd = { x: world.x, y: world.y };
+        var rulerPt = { x: world.x, y: world.y };
+        if (rulerAwaitingEnd && rulerStart) {
+            rulerEnd = constrainOrthoPoint(rulerStart, rulerPt, e.shiftKey);
+            showRulerMeasurementResult(getRulerSegmentLengthPx(rulerStart, rulerEnd));
+            rulerAwaitingEnd = false;
+            isDrawingRuler = false;
+        } else {
+            rulerStart = rulerPt;
+            rulerEnd = rulerPt;
+            rulerAwaitingEnd = true;
+            isDrawingRuler = true;
+        }
         draw();
+        return;
     }
 
     // --- TOOL: CHỈNH ẢNH NỀN ---
@@ -396,8 +423,10 @@ function handleMouseMove(e, world) {
     // Kéo đối tượng (Phòng hoặc Cửa)
     if (isDragging) {
         if (selectedRoom) {
-            var newX = snapToGrid(world.x - dragOffsetX);
-            var newY = snapToGrid(world.y - dragOffsetY);
+            var rawX = world.x - dragOffsetX;
+            var rawY = world.y - dragOffsetY;
+            var newX = isGridSnapEnabled() ? snapToGrid(rawX) : rawX;
+            var newY = isGridSnapEnabled() ? snapToGrid(rawY) : rawY;
             var dx = newX - selectedRoom.x;
             var dy = newY - selectedRoom.y;
             selectedRoom.x = newX;
@@ -413,8 +442,12 @@ function handleMouseMove(e, world) {
             }
         } else if (selectedObject && selectedObject.type === 'door') {
             var door = selectedObject.data;
-            door.x = snapToGrid(world.x - dragOffsetX);
-            door.y = snapToGrid(world.y - dragOffsetY);
+            var rawX = world.x - dragOffsetX;
+            var rawY = world.y - dragOffsetY;
+            var placed = resolveDoorPosition(rawX, rawY);
+            door.x = placed.x;
+            door.y = placed.y;
+            if (placed.rotation != null) door.rotation = placed.rotation;
         }
         updatePropertiesPanel();
         draw();
@@ -461,16 +494,33 @@ function handleMouseMove(e, world) {
         draw();
     }
 
-    // Thước đo
-    if (isDrawingRuler) {
-        rulerEnd = { x: world.x, y: world.y };
+    // Thước đo — preview khi đã chọn điểm A, chờ điểm B
+    if (currentTool === 'ruler' && rulerAwaitingEnd && rulerStart) {
+        rulerEnd = constrainOrthoPoint(rulerStart, { x: world.x, y: world.y }, e.shiftKey);
+        draw();
+        return;
+    }
+
+    // Preview polygon — rubber-band tới con trỏ (Shift = ngang/dọc)
+    if (currentTool === 'polygon' && isDrawingPolygon && polygonPoints.length > 0) {
+        var polyLast = polygonPoints[polygonPoints.length - 1];
+        polygonHoverPoint = e.shiftKey
+            ? constrainOrthoPoint(polyLast, world, true)
+            : { x: world.x, y: world.y };
+        draw();
+        return;
+    }
+
+    // Preview path — đoạn từ node chờ tới con trỏ
+    if (currentTool === 'path' && firstNodeForEdge) {
+        pathPreviewEnd = resolveLinePoint(firstNodeForEdge, world, e.shiftKey);
         draw();
         return;
     }
 
     // Preview tường đang vẽ
     if (currentTool === 'wall' && wallStartPoint) {
-        wallPreviewEnd = { x: snappedX, y: snappedY };
+        wallPreviewEnd = resolveLinePoint(wallStartPoint, world, e.shiftKey);
         draw();
         return;
     }
@@ -568,31 +618,6 @@ function handleLeftMouseUp(e) {
     isResizing = false;
     isResizingDoor = false;
     isRotatingDoor = false;
-
-    // Kết thúc Thước đo
-    if (isDrawingRuler) {
-        isDrawingRuler = false;
-        var dx = rulerEnd.x - rulerStart.x;
-        var dy = rulerEnd.y - rulerStart.y;
-        var distPx = Math.sqrt(dx * dx + dy * dy);
-
-        if (distPx > 5) {
-            var m = prompt("Đoạn thẳng này dài bao nhiêu mét thực tế?", "10");
-            if (m !== null && !isNaN(parseFloat(m))) {
-                var realMeters = parseFloat(m);
-                if (Number.isFinite(realMeters) && realMeters > 0) {
-                    var nextScale = (realMeters / distPx) * GRID_SIZE;
-                    if (Number.isFinite(nextScale) && nextScale > 0) {
-                        metersPerGrid = nextScale;
-                        if (getEl('scaleInput')) getEl('scaleInput').value = metersPerGrid.toFixed(2);
-                        alert("Đã cập nhật tỷ lệ: 1 ô lưới = " + metersPerGrid.toFixed(2) + " mét.");
-                    }
-                }
-            }
-        }
-        rulerStart = null;
-        rulerEnd = null;
-    }
 
     updateCursor();
     draw();
