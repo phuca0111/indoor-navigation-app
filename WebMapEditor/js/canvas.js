@@ -2,6 +2,16 @@
 // CANVAS.JS - Vẽ canvas: Grid, Room, Preview, Handles, Dimensions
 // ============================================================
 
+function getRenderViewport() {
+    return {
+        panX: panX,
+        panY: panY,
+        zoom: zoom,
+        width: canvas ? canvas.width : 0,
+        height: canvas ? canvas.height : 0
+    };
+}
+
 // Resize canvas theo kích thước wrapper
 function resizeCanvas() {
     var wrapper = document.querySelector('.canvas-wrapper');
@@ -38,9 +48,13 @@ function draw() {
     try {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Nền canvas - Trắng sạch sẽ
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        var viewport = getRenderViewport();
+        if (window.EditorCore && EditorCore.RenderingEngine) {
+            EditorCore.RenderingEngine.renderCanvasClear(ctx, viewport);
+        } else {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
 
         ctx.save();
         ctx.translate(panX, panY);
@@ -48,26 +62,28 @@ function draw() {
 
         // 1. Ảnh nền (nếu có)
         if (window.bgImage) {
-            ctx.save();
-            ctx.globalAlpha = window.bgOpacity;
-            var bw = window.bgImage.width * window.bgScale;
-            var bh = window.bgImage.height * window.bgScale;
-            
-            // Di chuyển đến tâm ảnh, xoay, rồi vẽ ngược lại từ tâm
-            ctx.translate(window.bgX + bw / 2, window.bgY + bh / 2);
-            ctx.rotate((window.bgRotation || 0) * Math.PI / 180);
-            ctx.drawImage(window.bgImage, -bw / 2, -bh / 2, bw, bh);
-            
-            // Nếu đang trong chế độ chỉnh ảnh nền -> Vẽ khung bao để dễ nhận biết
-            if (currentTool === 'bg-adjust') {
-                ctx.setLineDash([5, 5]);
-                ctx.strokeStyle = '#3498db';
-                ctx.lineWidth = 2 / zoom;
-                ctx.strokeRect(-bw / 2, -bh / 2, bw, bh);
-                ctx.setLineDash([]);
+            if (window.EditorCore && EditorCore.RenderingEngine) {
+                EditorCore.RenderingEngine.renderBackground(ctx, viewport, {
+                    highlightAdjust: currentTool === 'bg-adjust'
+                });
+            } else {
+                ctx.save();
+                ctx.globalAlpha = window.bgOpacity;
+                var bw = window.bgImage.width * window.bgScale;
+                var bh = window.bgImage.height * window.bgScale;
+                ctx.translate(window.bgX + bw / 2, window.bgY + bh / 2);
+                ctx.rotate((window.bgRotation || 0) * Math.PI / 180);
+                ctx.drawImage(window.bgImage, -bw / 2, -bh / 2, bw, bh);
+                if (currentTool === 'bg-adjust') {
+                    ctx.setLineDash([5, 5]);
+                    ctx.strokeStyle = '#3498db';
+                    ctx.lineWidth = 2 / zoom;
+                    ctx.strokeRect(-bw / 2, -bh / 2, bw, bh);
+                    ctx.setLineDash([]);
+                }
+                ctx.restore();
+                ctx.globalAlpha = 1.0;
             }
-            ctx.restore();
-            ctx.globalAlpha = 1.0;
         }
 
         // 2. Lưới
@@ -122,13 +138,18 @@ function draw() {
             drawPolygonPreview();
         }
 
+        // 8.05 Preview path nối tiếp
+        if (currentTool === 'path' && firstNodeForEdge && pathPreviewEnd) {
+            drawPathChainPreview();
+        }
+
         // 8.1 Preview tường đang vẽ
         if (currentTool === 'wall' && wallStartPoint && wallPreviewEnd) {
             drawWallPreview();
         }
 
-        // 9. Preview thước đo
-        if (isDrawingRuler && rulerStart && rulerEnd) {
+        // 9. Thước đo (preview hoặc kết quả giữ đến Esc)
+        if (currentTool === 'ruler' && rulerStart && rulerEnd) {
             drawRulerPreview();
         }
 
@@ -140,6 +161,11 @@ function draw() {
 
 // === VẼ LƯỚI ===
 function drawGrid() {
+    if (window.EditorCore && EditorCore.RenderingEngine) {
+        EditorCore.RenderingEngine.renderGrid(ctx, getRenderViewport(), GRID_SIZE);
+        return;
+    }
+
     var gc = document.getElementById('gridCheck');
     if (gc && !gc.checked) return;
     if (!gc) return; // Mặc định không vẽ nếu thiếu
@@ -172,161 +198,47 @@ function drawGrid() {
     ctx.stroke();
 }
 
-// === VẼ PHÒNG (hỗ trợ rect, circle, polygon) ===
+function getRoomRenderHooks() {
+    return {
+        applyDefaultRoomLabelStyle: typeof applyDefaultRoomLabelStyle === 'function' ? applyDefaultRoomLabelStyle : function () {},
+        drawDimensions: drawDimensions,
+        drawResizeHandles: drawResizeHandles,
+        pixelsToMeters: pixelsToMeters,
+        isDimVisible: function () {
+            var dc = document.getElementById('dimCheck');
+            return dc && dc.checked;
+        }
+    };
+}
+
+// === VẼ PHÒNG — delegate RoomRenderer (core/rendering) ===
 function drawRoom(room, isSelected) {
-    applyDefaultRoomLabelStyle(room);
-    if (room.shape === 'circle') {
-        drawCircleRoom(room, isSelected);
-    } else if (room.shape === 'polygon') {
-        drawPolygonRoom(room, isSelected);
-    } else {
-        drawRectRoom(room, isSelected);
+    if (window.EditorCore && EditorCore.RoomRenderer) {
+        EditorCore.RoomRenderer.renderRoom(ctx, getRenderViewport(), room, isSelected, getRoomRenderHooks());
+        return;
+    }
+    if (window.EditorCore && EditorCore.RenderingEngine) {
+        EditorCore.RenderingEngine.renderRoom(ctx, getRenderViewport(), room, isSelected, getRoomRenderHooks());
     }
 }
 
-function splitLabelLines(text) {
-    return String(text || '').replace(/\r\n/g, '\n').split('\n');
-}
-
-function wrapSingleLine(line, maxWidth) {
-    if (!line) return [''];
-    var words = line.trim().split(/\s+/);
-    if (!words.length) return [''];
-
-    var wrapped = [];
-    var current = '';
-    for (var i = 0; i < words.length; i++) {
-        var test = current ? (current + ' ' + words[i]) : words[i];
-        if (ctx.measureText(test).width <= maxWidth) {
-            current = test;
-            continue;
-        }
-
-        if (current) {
-            wrapped.push(current);
-            current = '';
-        }
-
-        if (ctx.measureText(words[i]).width <= maxWidth) {
-            current = words[i];
-            continue;
-        }
-
-        // Cắt từ quá dài theo từng ký tự để không tràn phòng
-        var chunk = '';
-        for (var c = 0; c < words[i].length; c++) {
-            var charTest = chunk + words[i][c];
-            if (ctx.measureText(charTest).width <= maxWidth) {
-                chunk = charTest;
-            } else {
-                if (chunk) wrapped.push(chunk);
-                chunk = words[i][c];
-            }
-        }
-        current = chunk;
-    }
-
-    if (current) wrapped.push(current);
-    return wrapped.length ? wrapped : [''];
-}
-
-function wrapRoomLabelText(text, maxWidth) {
-    var explicitLines = splitLabelLines(text);
-    var finalLines = [];
-    explicitLines.forEach(function (line) {
-        var wrapped = wrapSingleLine(line, maxWidth);
-        wrapped.forEach(function (w) { finalLines.push(w); });
-    });
-    return finalLines.length ? finalLines : [''];
-}
-
-function calcLabelAutoScale(lines, fontSize, lineHeight, maxWidth, maxHeight) {
-    var widest = 0;
-    lines.forEach(function (line) {
-        widest = Math.max(widest, ctx.measureText(line).width);
-    });
-    var totalHeight = lines.length * fontSize * lineHeight;
-    var widthScale = widest > 0 ? (maxWidth / widest) : 1;
-    var heightScale = totalHeight > 0 ? (maxHeight / totalHeight) : 1;
-    return Math.max(0.35, Math.min(3, Math.min(widthScale, heightScale)));
-}
-
-function drawRoomLabel(room, centerX, centerY, maxWidth, maxHeight) {
-    var text = String(room.name || '');
-    if (!text.trim()) return;
-
-    var padding = 12 / zoom;
-    var safeWidth = Math.max(20 / zoom, maxWidth - padding * 2);
-    var safeHeight = Math.max(20 / zoom, maxHeight - padding * 2);
-
-    var baseFont = Math.max(8 / zoom, (room.labelFontSize || 14) / zoom);
-    var lineHeight = Math.max(1, room.labelLineHeight || 1.2);
-
-    ctx.save();
-    ctx.translate(centerX, centerY);
-    ctx.rotate((room.labelRotation || 0) * Math.PI / 180);
-    ctx.fillStyle = '#333';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    var fontSize = baseFont;
-    ctx.font = fontSize + 'px Segoe UI';
-    var lines = wrapRoomLabelText(text, safeWidth);
-
-    if (room.labelAutoScale) {
-        var autoScale = calcLabelAutoScale(lines, fontSize, lineHeight, safeWidth, safeHeight);
-        fontSize = fontSize * autoScale;
-        ctx.font = fontSize + 'px Segoe UI';
-        lines = wrapRoomLabelText(text, safeWidth);
-        var secondPass = calcLabelAutoScale(lines, fontSize, lineHeight, safeWidth, safeHeight);
-        if (secondPass < 1) {
-            fontSize = fontSize * secondPass;
-            ctx.font = fontSize + 'px Segoe UI';
-            lines = wrapRoomLabelText(text, safeWidth);
-        }
-    }
-
-    var totalHeight = lines.length * fontSize * lineHeight;
-    for (var i = 0; i < lines.length; i++) {
-        var y = -totalHeight / 2 + (i + 0.5) * fontSize * lineHeight;
-        ctx.fillText(lines[i], 0, y);
-    }
-
-    ctx.restore();
-}
-
-// --- Vẽ tường ---
+// --- Vẽ tường — delegate WallRenderer ---
 function drawWall(wall, isSelected) {
-    if (!wall || !Array.isArray(wall.points) || wall.points.length < 2) return;
-
-    var thickness = Math.max(1, (wall.thickness || 4) / zoom);
-    var isOuter = !!wall.is_outer;
-
-    // Viền phát sáng nhẹ
-    ctx.strokeStyle = isOuter ? 'rgba(239, 68, 68, 0.25)' : 'rgba(17, 24, 39, 0.2)';
-    ctx.lineWidth = thickness + (isOuter ? 3 / zoom : 2 / zoom);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    ctx.moveTo(wall.points[0].x, wall.points[0].y);
-    for (var i = 1; i < wall.points.length; i++) {
-        ctx.lineTo(wall.points[i].x, wall.points[i].y);
+    if (window.EditorCore && EditorCore.WallRenderer) {
+        EditorCore.WallRenderer.renderWall(ctx, getRenderViewport(), wall, isSelected);
+        return;
     }
-    ctx.stroke();
-
-    // Nét chính
-    ctx.strokeStyle = isSelected ? '#f59e0b' : (isOuter ? '#ef4444' : '#111827');
-    ctx.lineWidth = isSelected ? thickness + 1 / zoom : thickness;
-    ctx.beginPath();
-    ctx.moveTo(wall.points[0].x, wall.points[0].y);
-    for (var j = 1; j < wall.points.length; j++) {
-        ctx.lineTo(wall.points[j].x, wall.points[j].y);
+    if (window.EditorCore && EditorCore.RenderingEngine) {
+        EditorCore.RenderingEngine.renderWall(ctx, getRenderViewport(), wall, isSelected);
     }
-    ctx.stroke();
 }
 
 function drawWallPreview() {
     if (!wallStartPoint || !wallPreviewEnd) return;
+    if (window.EditorCore && EditorCore.WallRenderer) {
+        EditorCore.WallRenderer.renderWallPreview(ctx, getRenderViewport(), wallStartPoint, wallPreviewEnd);
+        return;
+    }
     ctx.save();
     ctx.strokeStyle = '#f59e0b';
     ctx.lineWidth = 2 / zoom;
@@ -337,87 +249,6 @@ function drawWallPreview() {
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
-}
-
-// --- Vẽ phòng chữ nhật ---
-function drawRectRoom(room, isSelected) {
-    ctx.globalAlpha = 0.5; // Thêm độ trong suốt
-    ctx.fillStyle = room.color;
-    ctx.fillRect(room.x, room.y, room.width, room.height);
-    ctx.globalAlpha = 1.0;
-
-    ctx.strokeStyle = isSelected ? '#3498db' : '#555';
-    ctx.lineWidth = isSelected ? 2.5 / zoom : 1.5 / zoom;
-    ctx.strokeRect(room.x, room.y, room.width, room.height);
-
-    drawRoomLabel(room, room.x + room.width / 2, room.y + room.height / 2, room.width, room.height);
-
-    var dc = document.getElementById('dimCheck');
-    if (dc && dc.checked) drawDimensions(room);
-    if (isSelected) drawResizeHandles(room);
-}
-
-// --- Vẽ phòng tròn ---
-function drawCircleRoom(room, isSelected) {
-    ctx.beginPath();
-    ctx.arc(room.cx, room.cy, room.radius, 0, Math.PI * 2);
-    ctx.globalAlpha = 0.5; // Thêm độ trong suốt
-    ctx.fillStyle = room.color;
-    ctx.fill();
-    ctx.globalAlpha = 1.0;
-    ctx.strokeStyle = isSelected ? '#3498db' : '#555';
-    ctx.lineWidth = isSelected ? 2.5 / zoom : 1.5 / zoom;
-    ctx.stroke();
-
-    var diameterInSquare = room.radius * Math.sqrt(2);
-    drawRoomLabel(room, room.cx, room.cy, diameterInSquare, diameterInSquare);
-
-    // Kích thước (bán kính)
-    var dc = document.getElementById('dimCheck');
-    if (dc && dc.checked) {
-        var dimFontSize = Math.max(8, 10 / zoom);
-        ctx.fillStyle = '#e74c3c';
-        ctx.font = 'bold ' + dimFontSize + 'px Consolas';
-        ctx.textBaseline = 'top';
-        ctx.fillText('r=' + pixelsToMeters(room.radius).toFixed(1) + 'm', room.cx, room.cy + room.radius + 3 / zoom);
-    }
-
-    if (isSelected) drawResizeHandles(room);
-}
-
-// --- Vẽ phòng đa giác ---
-function drawPolygonRoom(room, isSelected) {
-    var pts = room.points || room.vertices; // Chấp nhận cả 2 cách gọi
-    if (!pts || pts.length < 3) return;
-
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (var i = 1; i < pts.length; i++) {
-        ctx.lineTo(pts[i].x, pts[i].y);
-    }
-    ctx.closePath();
-
-    ctx.globalAlpha = 0.5; // Thêm độ trong suốt
-    ctx.fillStyle = room.color;
-    ctx.fill();
-    ctx.globalAlpha = 1.0;
-    ctx.strokeStyle = isSelected ? '#3498db' : '#555';
-    ctx.lineWidth = isSelected ? 2.5 / zoom : 1.5 / zoom;
-    ctx.stroke();
-
-    // Tên (ở tâm bounding box)
-    var cx = room.x + room.width / 2;
-    var cy = room.y + room.height / 2;
-    drawRoomLabel(room, cx, cy, room.width, room.height);
-
-    // Vẽ các đỉnh nếu đang chọn
-    if (isSelected) {
-        var size = 5 / zoom;
-        for (var i = 0; i < room.points.length; i++) {
-            ctx.fillStyle = '#3498db';
-            ctx.fillRect(room.points[i].x - size / 2, room.points[i].y - size / 2, size, size);
-        }
-    }
 }
 
 // === PREVIEW KHI ĐANG VẼ ===
@@ -503,6 +334,30 @@ function drawPolygonPreview() {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
     ctx.fillText(polygonPoints.length + ' đỉnh (double-click kết thúc)', polygonPoints[0].x + 8 / zoom, polygonPoints[0].y - 4 / zoom);
+
+    if (polygonHoverPoint) {
+        var lastPt = polygonPoints[polygonPoints.length - 1];
+        ctx.beginPath();
+        ctx.moveTo(lastPt.x, lastPt.y);
+        ctx.lineTo(polygonHoverPoint.x, polygonHoverPoint.y);
+        ctx.strokeStyle = '#95a5a6';
+        ctx.lineWidth = 1.5 / zoom;
+        ctx.setLineDash([4 / zoom, 4 / zoom]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+}
+
+function drawPathChainPreview() {
+    if (!firstNodeForEdge || !pathPreviewEnd) return;
+    ctx.beginPath();
+    ctx.moveTo(firstNodeForEdge.x, firstNodeForEdge.y);
+    ctx.lineTo(pathPreviewEnd.x, pathPreviewEnd.y);
+    ctx.strokeStyle = '#00bcd4';
+    ctx.lineWidth = 2 / zoom;
+    ctx.setLineDash([6 / zoom, 4 / zoom]);
+    ctx.stroke();
+    ctx.setLineDash([]);
 }
 
 // === ĐƯỜNG KÍCH THƯỚC (cho rect) ===
@@ -529,29 +384,33 @@ function drawDimensions(room) {
 
 // === PREVIEW THƯỚC ĐO ===
 function drawRulerPreview() {
+    var distPx = getRulerSegmentLengthPx(rulerStart, rulerEnd);
+    var isCalibrate = getRulerMode() === 'calibrate';
+    var lineColor = isCalibrate ? '#f39c12' : '#3498db';
+    var labelColor = isCalibrate ? '#d35400' : '#2980b9';
+
     ctx.beginPath();
     ctx.moveTo(rulerStart.x, rulerStart.y);
     ctx.lineTo(rulerEnd.x, rulerEnd.y);
-    ctx.strokeStyle = '#f39c12';
+    ctx.strokeStyle = lineColor;
     ctx.lineWidth = 3 / zoom;
     ctx.stroke();
 
-    // Vẽ 2 đầu mút
     var size = 6 / zoom;
-    ctx.fillStyle = '#f39c12';
+    ctx.fillStyle = lineColor;
     ctx.fillRect(rulerStart.x - size / 2, rulerStart.y - size / 2, size, size);
     ctx.fillRect(rulerEnd.x - size / 2, rulerEnd.y - size / 2, size, size);
 
-    // Chữ số pixel
-    var dx = rulerEnd.x - rulerStart.x;
-    var dy = rulerEnd.y - rulerStart.y;
-    var distPx = Math.sqrt(dx * dx + dy * dy);
-
     var fontSize = Math.max(12, 16 / zoom);
     ctx.font = 'bold ' + fontSize + 'px Arial';
-    ctx.fillStyle = '#d35400';
+    ctx.fillStyle = labelColor;
     ctx.textAlign = 'center';
-    ctx.fillText(Math.round(distPx) + ' px', (rulerStart.x + rulerEnd.x) / 2, (rulerStart.y + rulerEnd.y) / 2 - 10 / zoom);
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(
+        formatRulerLabel(distPx, metersPerGrid, GRID_SIZE),
+        (rulerStart.x + rulerEnd.x) / 2,
+        (rulerStart.y + rulerEnd.y) / 2 - 10 / zoom
+    );
 }
 
 // === RESIZE HANDLES ===

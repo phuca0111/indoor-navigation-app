@@ -1,15 +1,24 @@
 // ============================================================
-// TOOLS.JS - Chọn công cụ & Phím tắt
+// TOOLS.JS - Chọn công cụ & Phím tắt (delegate Tool Registry)
 // ============================================================
 
-var toolNames = {
-    'select': 'Chọn', 'room': 'Phòng', 'circle': 'Tròn',
-    'polygon': 'Đa giác', 'door': 'Cửa', 'wall': 'Tường', 'poi': 'POI', 'qr': 'QR Code', 'path': 'Đường đi'
-};
+function getToolDef(toolId) {
+    if (window.EditorCore && EditorCore.ToolRegistry) {
+        return EditorCore.ToolRegistry.get(toolId);
+    }
+    return null;
+}
+
+function getToolDisplayName(toolId) {
+    var def = getToolDef(toolId);
+    return def ? def.name : toolId;
+}
 
 // Cập nhật cursor
 function updateCursor() {
-    wrapper.style.cursor = (currentTool === 'select') ? 'default' : 'crosshair';
+    var def = getToolDef(currentTool);
+    var cursor = def ? def.cursor : (currentTool === 'select' ? 'default' : 'crosshair');
+    if (wrapper) wrapper.style.cursor = cursor;
 }
 
 // Chọn tool
@@ -38,17 +47,31 @@ function selectTool(tool) {
         wallPreviewEnd = null;
     }
 
+    pathPreviewEnd = null;
+    polygonHoverPoint = null;
+
+    if (tool !== 'ruler' && typeof clearRulerMeasurement === 'function') {
+        clearRulerMeasurement();
+    }
+
+    var prevTool = currentTool;
     currentTool = tool;
-    
+
+    if (window.EditorCore && EditorCore.ToolRegistry) {
+        EditorCore.ToolRegistry.activate(tool, { previousToolId: prevTool });
+    }
+
     // Cập nhật class active cho nút bấm
     document.querySelectorAll('.tool-btn').forEach(function (b) {
         b.classList.remove('active');
     });
-    var activeBtn = document.getElementById('btn-' + tool);
+    var def = getToolDef(tool);
+    var btnId = def && def.buttonId ? def.buttonId : ('btn-' + tool);
+    var activeBtn = document.getElementById(btnId);
     if (activeBtn) activeBtn.classList.add('active');
 
-    if (currentToolStatus) {
-        currentToolStatus.textContent = toolNames[tool] || tool;
+    if (currentToolSpan) {
+        currentToolSpan.textContent = getToolDisplayName(tool);
     }
     updateCursor();
     if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
@@ -64,10 +87,6 @@ document.querySelectorAll('.tool-btn[data-tool]').forEach(function (btn) {
 });
 
 // Phím tắt
-// WHY: Phải loại TEXTAREA và contenteditable khỏi bộ lọc — nếu không, các
-// phím như Backspace/Delete/V/R/C/D/W/P/Q/N/S/G/Escape/Ctrl+Z sẽ kích hoạt
-// shortcut canvas (ví dụ xóa đối tượng) ngay khi người dùng đang gõ tên phòng
-// trong <textarea> ở panel thuộc tính.
 document.addEventListener('keydown', function (e) {
     if ((typeof isEditorLocked === 'function') && isEditorLocked()) return;
     var t  = e.target;
@@ -78,7 +97,6 @@ document.addEventListener('keydown', function (e) {
     if (e.ctrlKey && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         e.preventDefault();
 
-        // Nếu đang vẽ dở đa giác -> Xóa điểm cuối thay vì Undo toàn bộ
         if (isDrawingPolygon && polygonPoints.length > 0) {
             polygonPoints.pop();
             if (polygonPoints.length === 0) {
@@ -99,27 +117,30 @@ document.addEventListener('keydown', function (e) {
         return;
     }
 
+    if (window.EditorCore && EditorCore.ToolRegistry) {
+        var byShortcut = EditorCore.ToolRegistry.getByShortcut(e.key);
+        if (byShortcut && !e.ctrlKey && !e.altKey) {
+            selectTool(byShortcut.id);
+            return;
+        }
+    }
+
     switch (e.key.toLowerCase()) {
-        case 'v': selectTool('select'); break;
-        case 'r': selectTool('room'); break;
-        case 'c': selectTool('circle'); break;
-        case 'g': selectTool('polygon'); break;
-        case 'd': selectTool('door'); break;
-        case 'w': selectTool('wall'); break;
-        case 'p': selectTool('poi'); break;
-        case 'q': selectTool('qr'); break;
-        case 'n': selectTool('path'); break;
-        case 's': selectTool('ruler'); break;
         case 'delete':
         case 'backspace':
-            saveState(); // Lưu trạng thái TRƯỚC khi xóa
+            saveState();
             deleteSelected();
             break;
         case 'escape':
-            // Hủy polygon đang vẽ
+            if ((rulerAwaitingEnd || rulerStart) && typeof clearRulerMeasurement === 'function') {
+                clearRulerMeasurement();
+                draw();
+                break;
+            }
             if (isDrawingPolygon) {
                 polygonPoints = [];
                 isDrawingPolygon = false;
+                polygonHoverPoint = null;
                 draw();
                 break;
             }

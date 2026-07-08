@@ -8,15 +8,22 @@ window.onerror = function(msg, url, line) {
 // EDITOR.JS - Entry Point (Khởi tạo)
 // ============================================================
 
-// === CÀI ĐẶT TỶ LỆ ===
+// === CÀI ĐẶT TỶ LỆ (Phương án A: khóa khi config / load server) ===
 var scaleInp = document.getElementById('scaleInput');
 if (scaleInp) {
     scaleInp.addEventListener('change', function (e) {
+        if (typeof isScaleEditingLocked === 'function' && isScaleEditingLocked()) {
+            e.target.value = metersPerGrid.toFixed(2);
+            if (typeof showToast === 'function') {
+                showToast('Tỷ lệ đã khóa (chuẩn dự án 0.5 m/ô). Dùng thước S chỉ để đo.', 'error');
+            }
+            return;
+        }
         if (!e.target) return;
         var parsed = parseFloat(e.target.value);
         if (!Number.isFinite(parsed) || parsed <= 0) {
-            parsed = 0.5;
-            alert('Tỷ lệ không hợp lệ. Hệ thống đã đặt về mặc định: 1m = 80px (0.50m/ô).');
+            parsed = getProjectScaleRatio();
+            alert('Tỷ lệ không hợp lệ. Đã đặt về ' + parsed + ' m/ô.');
         }
         metersPerGrid = parsed;
         e.target.value = metersPerGrid.toFixed(2);
@@ -25,6 +32,8 @@ if (scaleInp) {
     });
 }
 
+if (typeof applyScalePolicy === 'function') applyScalePolicy();
+
 var mapBearingInp = document.getElementById('mapBearingInput');
 if (mapBearingInp) {
     mapBearingInp.addEventListener('change', function (e) {
@@ -32,6 +41,20 @@ if (mapBearingInp) {
         var parsed = parseFloat(e.target.value);
         window.mapBearingOffset = Number.isFinite(parsed) ? parsed : 0;
         e.target.value = window.mapBearingOffset;
+    });
+}
+
+// === CHẾ ĐỘ THƯỚC (S) — chỉ Đo khi tỷ lệ khóa ===
+var rulerModeSel = document.getElementById('rulerModeSelect');
+if (rulerModeSel) {
+    rulerModeSel.addEventListener('change', function (e) {
+        if (typeof isScaleEditingLocked === 'function' && isScaleEditingLocked()) {
+            setRulerMode('measure');
+            return;
+        }
+        if (typeof setRulerMode === 'function') setRulerMode(e.target.value);
+        else rulerMode = e.target.value;
+        if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
     });
 }
 
@@ -56,10 +79,16 @@ if (bInp) {
 
         var reader = new FileReader();
         reader.onload = function (event) {
-            window.bgImageBase64 = event.target.result;
+            if (window.EditorCore && EditorCore.AssetManager) {
+                EditorCore.AssetManager.setBackgroundFromDataUrl(event.target.result);
+            } else {
+                window.bgImageBase64 = event.target.result;
+            }
             var img = new Image();
             img.onload = function () {
-                window.bgImage = img;
+                if (!window.EditorCore || !EditorCore.AssetManager) {
+                    window.bgImage = img;
+                }
                 var scaleX = canvas.width / img.width;
                 var scaleY = canvas.height / img.height;
                 zoom = Math.min(scaleX, scaleY) * 0.9;
@@ -91,8 +120,12 @@ var bRem = document.getElementById('btnRemoveBg');
 if (bRem) {
     bRem.addEventListener('click', function () {
         saveState();
-        window.bgImage = null;
-        window.bgImageBase64 = '';
+        if (window.EditorCore && EditorCore.AssetManager) {
+            EditorCore.AssetManager.clearBackground();
+        } else {
+            window.bgImage = null;
+            window.bgImageBase64 = '';
+        }
         draw();
     });
 }

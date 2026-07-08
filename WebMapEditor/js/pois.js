@@ -42,32 +42,20 @@ function findPoiAt(wx, wy) {
     return null;
 }
 
-// Vẽ 1 POI lên canvas
+// Vẽ 1 POI lên canvas — delegate PoiRenderer
 function drawPoi(poi, isSelected) {
     var typeInfo = poiTypes[poi.typeIndex] || poiTypes[poiTypes.length - 1];
-
-    // Vẽ vòng tròn nền
-    ctx.beginPath();
-    ctx.arc(poi.x, poi.y, POI_RADIUS, 0, Math.PI * 2);
-    ctx.fillStyle = isSelected ? '#f1c40f' : typeInfo.color;
-    ctx.fill();
-    ctx.strokeStyle = isSelected ? '#e74c3c' : '#333';
-    ctx.lineWidth = isSelected ? 2 / zoom : 1 / zoom;
-    ctx.stroke();
-
-    // Vẽ icon ở giữa
-    var fontSize = Math.max(8, 12 / zoom);
-    ctx.font = fontSize + 'px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(typeInfo.icon, poi.x, poi.y);
-
-    // Tên POI (hiện bên dưới)
-    var labelSize = Math.max(7, 9 / zoom);
-    ctx.font = labelSize + 'px Arial';
-    ctx.fillStyle = '#333';
-    ctx.textBaseline = 'top';
-    ctx.fillText(poi.name, poi.x, poi.y + POI_RADIUS + 2 / zoom);
+    var hooks = {
+        poiRadius: typeof POI_RADIUS !== 'undefined' ? POI_RADIUS : 12,
+        typeInfo: typeInfo
+    };
+    if (window.EditorCore && EditorCore.PoiRenderer) {
+        EditorCore.PoiRenderer.renderPoi(ctx, { zoom: zoom }, poi, isSelected, hooks);
+        return;
+    }
+    if (window.EditorCore && EditorCore.RenderingEngine) {
+        EditorCore.RenderingEngine.renderPoi(ctx, { zoom: zoom }, poi, isSelected, hooks);
+    }
 }
 
 // Xóa POI

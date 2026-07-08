@@ -30,43 +30,16 @@ function findQrAt(wx, wy) {
     return null;
 }
 
-// Vẽ mốc QR lên canvas
+// Vẽ mốc QR lên canvas — delegate QrRenderer
 function drawQr(qr, isSelected) {
-    var size = QR_SIZE / zoom;
-    
-    ctx.save();
-    
-    // Vẽ bóng đổ nhẹ
-    ctx.shadowBlur = 4 / zoom;
-    ctx.shadowColor = 'rgba(0,0,0,0.3)';
-
-    // Vẽ hình vuông nền (Màu cam đặc trưng cho QR)
-    ctx.fillStyle = isSelected ? '#f39c12' : '#e67e22';
-    ctx.beginPath();
-    ctx.roundRect(qr.x - size, qr.y - size, size * 2, size * 2, 4 / zoom);
-    ctx.fill();
-    
-    // Vẽ viền
-    ctx.strokeStyle = isSelected ? '#e74c3c' : '#d35400';
-    ctx.lineWidth = isSelected ? 2.5 / zoom : 1.5 / zoom;
-    ctx.stroke();
-
-    // Vẽ biểu tượng QR giả lập (3 ô vuông nhỏ ở góc)
-    ctx.fillStyle = 'white';
-    var dotSize = size * 0.4;
-    ctx.fillRect(qr.x - size + 2/zoom, qr.y - size + 2/zoom, dotSize, dotSize);
-    ctx.fillRect(qr.x + size - dotSize - 2/zoom, qr.y - size + 2/zoom, dotSize, dotSize);
-    ctx.fillRect(qr.x - size + 2/zoom, qr.y + size - dotSize - 2/zoom, dotSize, dotSize);
-    
-    ctx.restore();
-
-    // Vẽ mã Serial bên dưới
-    var labelSize = Math.max(7, 9 / zoom);
-    ctx.font = 'bold ' + labelSize + 'px Arial';
-    ctx.fillStyle = isSelected ? '#e74c3c' : '#555';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText(qr.serial, qr.x, qr.y + size + 2 / zoom);
+    var options = { qrSize: QR_SIZE };
+    if (window.EditorCore && EditorCore.QrRenderer) {
+        EditorCore.QrRenderer.renderQr(ctx, { zoom: zoom }, qr, isSelected, options);
+        return;
+    }
+    if (window.EditorCore && EditorCore.RenderingEngine) {
+        EditorCore.RenderingEngine.renderQr(ctx, { zoom: zoom }, qr, isSelected, options);
+    }
 }
 
 // Xóa QR

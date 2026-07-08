@@ -7,7 +7,12 @@ const BASE_API_URL = '/api';
 
 // 1. Lấy thông tin từ URL và LocalStorage
 const urlParams = new URLSearchParams(window.location.search);
-const buildingId = urlParams.get('buildingId') || urlParams.get('building'); // Chấp nhận cả 2 cách gọi cho chắc chắn
+if (window.EditorCore && EditorCore.ProjectManager) {
+    EditorCore.ProjectManager.parseFromSearchParams(urlParams);
+}
+const buildingId = (window.EditorCore && EditorCore.ProjectManager && EditorCore.ProjectManager.getContext()
+    && EditorCore.ProjectManager.getContext().buildingId)
+    || urlParams.get('buildingId') || urlParams.get('building');
 let token = localStorage.getItem('token');   // WHY: dùng let để có thể cập nhật khi refresh
 window.buildingId = buildingId;
 window.editorBuildingMeta = null;
@@ -31,15 +36,22 @@ function clearEditorAuthStorage() {
 }
 
 async function verifyEditorSession() {
-    const token = localStorage.getItem('token');
-    if (!token) {
+    let currentToken = localStorage.getItem('token');
+    if (!currentToken) {
+        const refreshed = await tryRefreshToken();
+        if (refreshed) currentToken = localStorage.getItem('token');
+    }
+    if (!currentToken) {
         console.warn('🔒 Editor: Không có token - redirect đến login');
-        clearEditorAuthStorage();
-        window.location.replace('/admin/index.html');
+        if (window.location.pathname.indexOf('/admin/index.html') < 0) {
+            clearEditorAuthStorage();
+            window.location.replace('/admin/index.html');
+        }
         return null;
     }
 
     try {
+        token = currentToken;
         const response = await apiFetch(BASE_API_URL + '/users/me', {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
@@ -56,9 +68,7 @@ async function verifyEditorSession() {
         console.log('✅ Editor session verified:', currentUser.email);
         return currentUser;
     } catch (error) {
-        console.error('🔒 Editor: Lỗi verify session:', error);
-        clearEditorAuthStorage();
-        window.location.replace('/admin/index.html');
+        console.error('🔒 Editor: Lỗi verify session (giữ token, thử lại sau):', error);
         return null;
     }
 }
@@ -83,12 +93,35 @@ async function initEditor() {
     }
 
     console.log('📥 Editor: Tự động load map cho tầng:', document.getElementById('floorSelect')?.value);
+    if (window.EditorCore && EditorCore.ProjectManager) {
+        var pctx = EditorCore.ProjectManager.getContext();
+        if (pctx) console.log('📂 Project context:', pctx.documentId, pctx);
+    }
+    if (window.EditorCore && EditorCore.VersionManager) {
+        console.log('📌 Version state:', EditorCore.VersionManager.getState(),
+            '—', EditorCore.VersionManager.getDisplayLabel());
+    }
+    if (window.EditorCore && EditorCore.PluginAPI) {
+        var plugins = EditorCore.PluginAPI.listRegistered();
+        console.log('🔌 Plugin registry:', plugins.tools.length, 'tools,',
+            plugins.exporters.length, 'exporters,',
+            plugins.validators.length, 'validators');
+    }
+    if (window.EditorCore && EditorCore.SpatialIndex) {
+        EditorCore.SpatialIndex.syncFromLegacyWindow();
+        console.log('🗺️ Spatial index:', EditorCore.SpatialIndex.getStats());
+    }
     const loadResult = await loadMapFromServer();
     if (loadResult && loadResult.loaded && loadResult.version != null) {
         updateEditorMapVersion(loadResult.version);
+    } else if (loadResult && loadResult.notFound && window.EditorCore && EditorCore.VersionManager) {
+        updateEditorMapVersion(null);
     }
     if (typeof syncActiveFloor === 'function') syncActiveFloor();
     window.editorMapLoadHandled = true;
+    if (window.EditorCore && EditorCore.SpatialIndex && typeof applyMapData === 'function') {
+        EditorCore.SpatialIndex.syncFromLegacyWindow();
+    }
     if (loadResult && loadResult.notFound && typeof checkAutoSave === 'function') {
         checkAutoSave();
     }
@@ -125,16 +158,30 @@ function updateEditorFloorLabel() {
     const floor = document.getElementById('floorSelect')?.value ?? '1';
     const label = document.getElementById('editorFloorLabel');
     if (label) label.textContent = floor;
+    if (window.EditorCore && EditorCore.ProjectManager) {
+        EditorCore.ProjectManager.updateFloor(floor);
+    }
 }
 
 function updateEditorMapVersion(version) {
     const el = document.getElementById('editorMapVersion');
+    if (window.EditorCore && EditorCore.VersionManager) {
+        if (version === null || version === undefined || version === '') {
+            EditorCore.VersionManager.applyServerLoad(null);
+        } else {
+            EditorCore.VersionManager.applyServerLoad(version);
+        }
+    }
     if (!el) return;
     if (version === null || version === undefined || version === '') {
-        el.textContent = '—';
+        el.textContent = (window.EditorCore && EditorCore.VersionManager)
+            ? EditorCore.VersionManager.getDisplayLabel()
+            : '—';
         return;
     }
-    el.textContent = String(version);
+    el.textContent = (window.EditorCore && EditorCore.VersionManager)
+        ? EditorCore.VersionManager.getDisplayLabel()
+        : String(version);
 }
 
 function renderEditorBuildingContext(building) {
@@ -240,6 +287,8 @@ window.addEventListener('storage', event => {
 });
 
 window.addEventListener('focus', () => {
+    if (document.hidden) return;
+    if (!localStorage.getItem('token') && !localStorage.getItem('refreshToken')) return;
     verifyEditorSession();
 });
 
@@ -431,7 +480,12 @@ async function saveMapToServer() {
             const newVersion = result.map && result.map.version != null ? result.map.version : null;
             showToast('Đã xuất bản bản đồ tầng ' + floor + ' thành công!');
             if (typeof clearAutoSave === 'function') clearAutoSave();
-            if (newVersion != null) updateEditorMapVersion(newVersion);
+            if (newVersion != null) {
+                if (window.EditorCore && EditorCore.VersionManager) {
+                    EditorCore.VersionManager.applyPublishSuccess(newVersion);
+                }
+                updateEditorMapVersion(newVersion);
+            }
             window.editorBuildingMeta = Object.assign({}, window.editorBuildingMeta || {}, { status: 'PUBLISHED' });
             renderEditorBuildingContext(window.editorBuildingMeta);
         } else if (response.status === 401) {
@@ -460,8 +514,12 @@ function clearCanvasData() {
     pathEdges = [];
     walls = [];
     qrs = [];
-    bgImage = null;
-    bgImageBase64 = '';
+    if (window.EditorCore && EditorCore.AssetManager) {
+        EditorCore.AssetManager.clearBackground();
+    } else {
+        bgImage = null;
+        bgImageBase64 = '';
+    }
 
     // Reset các ID tự tăng
     nextRoomId = 1;
@@ -477,6 +535,10 @@ function clearCanvasData() {
 
     // Quan trọng: xóa luôn bản nháp local để tránh restore nhầm bản đồ cũ
     if (typeof clearAutoSave === 'function') clearAutoSave();
+
+    scaleLockedFromServer = false;
+    metersPerGrid = typeof getProjectScaleRatio === 'function' ? getProjectScaleRatio() : 0.5;
+    if (typeof applyScalePolicy === 'function') applyScalePolicy();
 
     // Vẽ lại canvas trống
     if (typeof draw === 'function') draw();
@@ -569,8 +631,20 @@ function applyMapData(data) {
         rawScale = data.metersPerGrid;
     }
     var parsedScale = parseFloat(rawScale);
-    metersPerGrid = (Number.isFinite(parsedScale) && parsedScale > 0) ? parsedScale : 0.5;
-    document.getElementById('scaleInput').value = metersPerGrid.toFixed(2);
+    var loadedScale = (Number.isFinite(parsedScale) && parsedScale > 0) ? parsedScale : getProjectScaleRatio();
+    if (isScaleConfigLocked()) {
+        if (Math.abs(loadedScale - getProjectScaleRatio()) > 0.001) {
+            console.warn('[Scale] Server scale_ratio=' + loadedScale + ' — dùng chuẩn dự án ' + getProjectScaleRatio());
+        }
+        metersPerGrid = getProjectScaleRatio();
+    } else {
+        metersPerGrid = loadedScale;
+    }
+    scaleLockedFromServer = true;
+    if (typeof applyScalePolicy === 'function') applyScalePolicy();
+    else if (document.getElementById('scaleInput')) {
+        document.getElementById('scaleInput').value = metersPerGrid.toFixed(2);
+    }
 
     window.mapBearingOffset = Number(data.map_bearing_offset) || 0;
     var bearingInp = document.getElementById('mapBearingInput');
@@ -578,13 +652,22 @@ function applyMapData(data) {
 
     // 2. Khôi phục Ảnh nền
     if (data.background_image) {
-        bgImageBase64 = data.background_image;
-        var img = new Image();
-        img.onload = function () {
-            bgImage = img;
-            draw();
-        };
-        img.src = bgImageBase64;
+        if (window.EditorCore && EditorCore.AssetManager) {
+            EditorCore.AssetManager.setBackgroundFromDataUrl(data.background_image, { source: 'server' });
+            EditorCore.AssetManager.whenBackgroundReady().then(function () {
+                if (typeof draw === 'function') draw();
+            });
+        } else {
+            bgImageBase64 = data.background_image;
+            var img = new Image();
+            img.onload = function () {
+                bgImage = img;
+                draw();
+            };
+            img.src = bgImageBase64;
+        }
+    } else if (window.EditorCore && EditorCore.AssetManager) {
+        EditorCore.AssetManager.clearBackground();
     } else {
         bgImage = null;
         bgImageBase64 = '';
@@ -689,7 +772,12 @@ function isEditorCorePublishReady() {
 /** Inline publish — không phụ thuộc EditorCore (Phần 17.5) */
 function buildPublishPayloadInline() {
     return {
-        scale_ratio: (Number.isFinite(metersPerGrid) && metersPerGrid > 0) ? metersPerGrid : 0.5,
+        scale_ratio: (function () {
+            if (typeof isScaleConfigLocked === 'function' && isScaleConfigLocked()) {
+                return getProjectScaleRatio();
+            }
+            return (Number.isFinite(metersPerGrid) && metersPerGrid > 0) ? metersPerGrid : 0.5;
+        })(),
         map_bearing_offset: Number.isFinite(window.mapBearingOffset) ? window.mapBearingOffset : 0,
         background_image: bgImageBase64 || '',
 
