@@ -111,6 +111,10 @@ async function initEditor() {
         EditorCore.SpatialIndex.syncFromLegacyWindow();
         console.log('🗺️ Spatial index:', EditorCore.SpatialIndex.getStats());
     }
+    if (window.EditorCore && EditorCore.LayerManager) {
+        console.log('📑 Layers:', EditorCore.LayerManager.getAll().length,
+            '— active:', EditorCore.LayerManager.getActiveLayer().name);
+    }
     const loadResult = await loadMapFromServer();
     if (loadResult && loadResult.loaded && loadResult.version != null) {
         updateEditorMapVersion(loadResult.version);

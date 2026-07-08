@@ -43,7 +43,14 @@
             if (root.EditorCore.SpatialIndex) {
                 root.EditorCore.SpatialIndex.syncFromLegacyWindow();
             }
+            if (root.EditorCore.LayerManager) {
+                root.EditorCore.LayerManager.syncFromDocument();
+            }
         });
+    }
+
+    if (root.EditorCore.LayerManager) {
+        root.EditorCore.LayerManager.syncFromDocument();
     }
 
     if (root.EditorCore.eventBus) {
