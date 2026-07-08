@@ -10,6 +10,7 @@ const MapVersion = require('../models/MapVersion');
 const QrCode     = require('../models/QrCode');
 const ActivityLog = require('../models/ActivityLog');
 const { buildMapSnapshot } = require('../utils/mapSnapshot');
+const { applyRetentionForFloor } = require('../utils/mapVersionRetention');
 
 function logActivity(data) {
     return ActivityLog.create(data).catch(() => {});
@@ -85,7 +86,7 @@ const saveMap = async (req, res) => {
             await Building.findByIdAndUpdate(buildingId, { status: 'PUBLISHED' });
 
             // Lưu snapshot version (không lưu ảnh nền để tiết kiệm dung lượng)
-            MapVersion.create({
+            await MapVersion.create({
                 building_id:    buildingId,
                 floor_number:   floorNum,
                 version:        existingMap.version,
@@ -96,7 +97,12 @@ const saveMap = async (req, res) => {
                 map_snapshot:   buildMapSnapshot(map_data),
                 published_by:   userId,
                 published_at:   new Date()
-            }).catch(() => {});
+            });
+
+            await applyRetentionForFloor(buildingId, floorNum, {
+                userId,
+                ip: req.ip || ''
+            });
 
             // Sync QR codes sang collection riêng
             syncQrCodes(existingMap).catch(() => {});
@@ -128,7 +134,7 @@ const saveMap = async (req, res) => {
 
             await Building.findByIdAndUpdate(buildingId, { status: 'PUBLISHED' });
 
-            MapVersion.create({
+            await MapVersion.create({
                 building_id:    buildingId,
                 floor_number:   floorNum,
                 version:        1,
@@ -139,7 +145,12 @@ const saveMap = async (req, res) => {
                 map_snapshot:   buildMapSnapshot(map_data),
                 published_by:   userId,
                 published_at:   new Date()
-            }).catch(() => {});
+            });
+
+            await applyRetentionForFloor(buildingId, floorNum, {
+                userId,
+                ip: req.ip || ''
+            });
 
             syncQrCodes(newMap).catch(() => {});
 

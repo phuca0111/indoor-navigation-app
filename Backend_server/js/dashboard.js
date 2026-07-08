@@ -7,6 +7,27 @@ const API_URL = '/api';
 const PAGE_SIZE = 15;
 const LOGS_PAGE_SIZE = 20;
 
+const VALID_DASHBOARD_TABS = new Set(['buildings', 'users', 'logs', 'organizations', 'registrations', 'profile']);
+
+function dashboardTabHref(tab) {
+  return '/admin/dashboard.html#' + encodeURIComponent(tab);
+}
+
+function sanitizeTabForRole(tab, role) {
+  if (!role) return tab;
+  if (role === 'BUILDING_ADMIN') {
+    if (tab === 'users' || tab === 'logs' || tab === 'organizations') return 'buildings';
+  }
+  if (role === 'ORG_ADMIN' && tab === 'organizations') return 'buildings';
+  if (role !== 'SUPER_ADMIN' && tab === 'registrations') return 'buildings';
+  return tab;
+}
+
+function resolveDashboardTab(name) {
+  const raw = name && VALID_DASHBOARD_TABS.has(name) ? name : 'buildings';
+  return sanitizeTabForRole(raw, currentUser?.role);
+}
+
 function escapeHtml(str) {
   if (str == null) return '';
   return String(str)
@@ -21,6 +42,42 @@ function tdEllipsis(text, innerHtml) {
   const body = innerHtml != null ? innerHtml : escapeHtml(text || '-');
   if (!safe) return '<td>-</td>';
   return '<td title="' + safe + '"><span class="cell-ellipsis">' + body + '</span></td>';
+}
+
+/** Phase 4.2b — hiển thị nhiều ORG_ADMIN trong bảng tổ chức */
+function getOrgAdminsList(org) {
+  if (Array.isArray(org.org_admins) && org.org_admins.length) return org.org_admins;
+  if (org.org_admin) return [org.org_admin];
+  return [];
+}
+
+function formatOrgAdminsCell(org) {
+  const admins = getOrgAdminsList(org);
+  if (!admins.length) return { plain: '', html: '—' };
+  const plain = admins.map((a) => a.full_name || a.email || '?').join(', ');
+  const html = '<div class="org-admins-cell">' + admins.map((a) => {
+    const label = escapeHtml(a.full_name || a.email || '?');
+    const locked = a.is_active === false ? '<span class="admin-inactive-tag">khóa</span>' : '';
+    const tip = escapeHtml((a.full_name ? a.full_name + ' — ' : '') + (a.email || ''));
+    return '<span class="org-admin-chip" title="' + tip + '">' + label + locked + '</span>';
+  }).join('') + '</div>';
+  return { plain, html };
+}
+
+/** Phase 4.2c — tòa PUBLISHED / DRAFT trong bảng tổ chức */
+function formatBuildingCountCell(org, orgId) {
+  if (org.building_count == null) return '—';
+  const total = Number(org.building_count) || 0;
+  const pub = Number(org.building_published_count) || 0;
+  const draft = Number(org.building_draft_count) || 0;
+  const tip = 'Tổng ' + total + ' · Xuất bản ' + pub + ' · Nháp ' + draft;
+  return '<div class="org-building-counts" title="' + escapeHtml(tip) + '" onclick="jumpToBuildings(\'' + orgId + '\')" style="cursor:pointer;">' +
+    '<div class="obc-total">' + total + '</div>' +
+    '<div class="obc-split">' +
+      '<span class="obc-pub">' + pub + ' XB</span>' +
+      '<span class="obc-sep">·</span>' +
+      '<span class="obc-draft">' + draft + ' nháp</span>' +
+    '</div></div>';
 }
 
 const PAGINATION_CONFIG = {
@@ -167,6 +224,9 @@ function applyCurrentUserToUI(user) {
   const btnAddBuilding = document.getElementById('btnAddBuilding');
   if (btnAddUser) btnAddUser.style.display = (isSuperAdmin || isOrgAdmin) ? '' : 'none';
   if (btnAddBuilding) btnAddBuilding.style.display = (isSuperAdmin || isOrgAdmin) ? '' : 'none';
+  document.querySelectorAll('.building-restore-filter').forEach(el => {
+    el.style.display = (isSuperAdmin || isOrgAdmin) ? '' : 'none';
+  });
 
   const currentTab = document.querySelector('.tab-btn.active');
   if (currentTab && !isSuperAdmin) {
@@ -276,19 +336,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
 
   let initialTab = localStorage.getItem('activeDashboardTab') || 'buildings';
-  if (currentUser.role === 'BUILDING_ADMIN') {
-    if (initialTab === 'users' || initialTab === 'logs' || initialTab === 'organizations') {
-      initialTab = 'buildings';
-    }
-  }
-  if (currentUser.role === 'ORG_ADMIN' && initialTab === 'organizations') {
-    initialTab = 'buildings';
-  }
-  if (currentUser.role !== 'SUPER_ADMIN' && initialTab === 'registrations') {
-    initialTab = 'buildings';
-  }
+  const hashTab = (location.hash || '').replace(/^#/, '');
+  if (hashTab && VALID_DASHBOARD_TABS.has(hashTab)) initialTab = hashTab;
+  initialTab = sanitizeTabForRole(initialTab, currentUser.role);
 
-  await switchTab(initialTab);
+  await switchTab(initialTab, { skipHistory: true });
+  history.replaceState({ dashboardTab: initialTab }, '', dashboardTabHref(initialTab));
+  window._dashboardHistoryReady = true;
+
+  window.addEventListener('popstate', (e) => {
+    const tab = resolveDashboardTab(
+      (e.state && e.state.dashboardTab) || (location.hash || '').replace(/^#/, '') || 'buildings'
+    );
+    if (tab === window._currentDashboardTab) return;
+    switchTab(tab, { fromPopstate: true });
+  });
+
+  initOrgTableSort();
+  initBuildingTableSort();
+  initUserTableSort();
+  updateOrgSortIndicators();
+  fetchPlatformStats();
 });
 // MULTI-TAB SYNC LISTENERS (TEMPORARILY DISABLED)
 // ============================================================
@@ -315,31 +383,54 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ============================================================
 // TAB SWITCHING
-async function switchTab(name) {
+async function switchTab(name, options) {
+  const opts = options || {};
+  const tab = resolveDashboardTab(name);
+  const prevTab = window._currentDashboardTab;
+
   document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-  document.getElementById('tab-' + name).style.display = 'block';
+  document.getElementById('tab-' + tab).style.display = 'block';
   const btns = document.querySelectorAll('.tab-btn');
   for (const btn of btns) {
-    if (btn.getAttribute('onclick').includes("'" + name + "'")) {
+    if (btn.getAttribute('onclick').includes("'" + tab + "'")) {
       btn.classList.add('active');
       break;
     }
   }
-  localStorage.setItem('activeDashboardTab', name);
-  applyDashboardLayout(name);
 
-  if (name === 'buildings') { restoreBuildingFilters(); await fetchBuildings(); }
-  if (name === 'users') { restoreUserFilters(); await fetchUsers(); }
-  if (name === 'logs') await loadLogs();
-  if (name === 'profile') await loadProfile();
-  if (name === 'organizations') {
+  window._currentDashboardTab = tab;
+  localStorage.setItem('activeDashboardTab', tab);
+
+  if (window._dashboardHistoryReady && !opts.skipHistory && !opts.fromPopstate && prevTab !== tab) {
+    history.pushState({ dashboardTab: tab }, '', dashboardTabHref(tab));
+  }
+
+  applyDashboardLayout(tab);
+
+  if (tab === 'buildings') {
+    restoreBuildingFilters();
+    initBuildingTableSort();
+    await fetchBuildings();
+    updateDashSortIndicators('buildingsTable', getBuildingTableSort);
+  }
+  if (tab === 'users') {
+    restoreUserFilters();
+    initUserTableSort();
+    await fetchUsers();
+    updateDashSortIndicators('usersTable', getUserTableSort);
+  }
+  if (tab === 'logs') await loadLogs();
+  if (tab === 'profile') await loadProfile();
+  if (tab === 'organizations') {
     restoreOrganizationFilters();
+    initOrgTableSort();
     await fetchOrganizations();
     if (!allBuildings.length) await fetchBuildings();
     if (!allUsers.length) await fetchUsers();
+    updateOrgSortIndicators();
   }
-  if (name === 'registrations') await fetchRegistrations();
+  if (tab === 'registrations') await fetchRegistrations();
 }
 
 // ============================================================
@@ -390,7 +481,9 @@ async function fetchBuildings() {
     seedOrgCacheFromUser(currentUser);
   }
   try {
-    const res = await apiFetch('/buildings');
+    const includeInactive = document.getElementById('filterBuildingIncludeInactive')?.checked === true;
+    const url = '/buildings' + (includeInactive ? '?include_inactive=true' : '');
+    const res = await apiFetch(url);
     if (!res.ok) {
       tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:red;">Không tải được danh sách tòa nhà (HTTP ' + res.status + '). Thử đăng nhập lại.</td></tr>';
       return;
@@ -409,7 +502,15 @@ function applyBuildingFilters(resetPage) {
   const orgId = document.getElementById('filterBuildingOrg')?.value || '';
   const keyword = (document.getElementById('filterBuildingKeyword')?.value || '').trim().toLowerCase();
   const status = document.getElementById('filterBuildingStatus')?.value || '';
-  localStorage.setItem('buildingsFilters', JSON.stringify({ orgId, keyword, status }));
+  const includeInactive = document.getElementById('filterBuildingIncludeInactive')?.checked === true;
+  localStorage.setItem('buildingsFilters', JSON.stringify({
+    orgId,
+    keyword,
+    status,
+    includeInactive,
+    sortKey: getBuildingTableSort().key,
+    sortDir: getBuildingTableSort().dir
+  }));
   let filtered = allBuildings.slice();
   if (orgId) filtered = filtered.filter(b => String(b.organization_id) === orgId);
   if (keyword) {
@@ -423,11 +524,19 @@ function applyBuildingFilters(resetPage) {
   renderBuildingsFromCache();
 }
 
+async function onBuildingIncludeInactiveChange() {
+  window._buildingsPage = 1;
+  await fetchBuildings();
+}
+
 function clearBuildingFilters() {
   ['filterBuildingOrg', 'filterBuildingKeyword', 'filterBuildingStatus'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
+  const inactiveEl = document.getElementById('filterBuildingIncludeInactive');
+  if (inactiveEl) inactiveEl.checked = false;
   localStorage.removeItem('buildingsFilters');
+  saveBuildingTableSort('name', 'asc');
   window._buildingsPage = 1;
   applyBuildingFilters(false);
 }
@@ -438,7 +547,67 @@ function restoreBuildingFilters() {
     if (saved.orgId != null) { const el = document.getElementById('filterBuildingOrg'); if (el) el.value = saved.orgId; }
     if (saved.keyword != null) { const el = document.getElementById('filterBuildingKeyword'); if (el) el.value = saved.keyword; }
     if (saved.status != null) { const el = document.getElementById('filterBuildingStatus'); if (el) el.value = saved.status; }
+    if (saved.includeInactive != null) {
+      const el = document.getElementById('filterBuildingIncludeInactive');
+      if (el) el.checked = !!saved.includeInactive;
+    }
+    if (saved.sortKey) saveBuildingTableSort(saved.sortKey, saved.sortDir || 'asc');
+    else saveBuildingTableSort('name', 'asc');
   } catch (e) {}
+}
+
+function getBuildingTableSort() {
+  if (!window._buildingTableSort) window._buildingTableSort = { key: 'name', dir: 'asc' };
+  return window._buildingTableSort;
+}
+
+function saveBuildingTableSort(key, dir) {
+  window._buildingTableSort = { key: key || 'name', dir: dir === 'desc' ? 'desc' : 'asc' };
+  try {
+    const saved = JSON.parse(localStorage.getItem('buildingsFilters') || '{}');
+    saved.sortKey = window._buildingTableSort.key;
+    saved.sortDir = window._buildingTableSort.dir;
+    localStorage.setItem('buildingsFilters', JSON.stringify(saved));
+  } catch (e) {}
+}
+
+function sortBuildingList(list, key, dir) {
+  const orgLabel = (id) => getOrgName(id);
+  if (window.DashboardTableSort && typeof window.DashboardTableSort.sortBuildings === 'function') {
+    return window.DashboardTableSort.sortBuildings(list, key, dir, orgLabel);
+  }
+  const mul = dir === 'desc' ? -1 : 1;
+  return list.slice().sort((a, b) =>
+    String(a.name || '').localeCompare(String(b.name || ''), 'vi', { sensitivity: 'base' }) * mul
+  );
+}
+
+function syncBuildingSortBarFromState() {
+  const cur = getBuildingTableSort();
+  const keyEl = document.getElementById('filterBuildingSortKey');
+  const dirEl = document.getElementById('filterBuildingSortDir');
+  if (keyEl && keyEl.value !== cur.key) keyEl.value = cur.key;
+  if (dirEl && dirEl.value !== cur.dir) dirEl.value = cur.dir;
+}
+
+function applyBuildingSortFromBar() {
+  const key = document.getElementById('filterBuildingSortKey')?.value || 'name';
+  const dir = document.getElementById('filterBuildingSortDir')?.value || 'asc';
+  saveBuildingTableSort(key, dir);
+  window._buildingsPage = 1;
+  renderBuildingsFromCache();
+}
+
+function toggleBuildingTableSort(key) {
+  const cur = getBuildingTableSort();
+  if (cur.key === key) saveBuildingTableSort(key, cur.dir === 'asc' ? 'desc' : 'asc');
+  else saveBuildingTableSort(key, 'asc');
+  window._buildingsPage = 1;
+  renderBuildingsFromCache();
+}
+
+function initBuildingTableSort() {
+  initDashTableSort('buildingsTableHead', toggleBuildingTableSort);
 }
 
 function canManageBuildingMeta() {
@@ -453,7 +622,11 @@ function canDeleteBuilding() {
 function renderBuildingsFromCache() {
   const tbody = document.getElementById('buildingsList');
   if (!tbody) return;
-  const list = displayedBuildings.length ? displayedBuildings : allBuildings;
+  let list = displayedBuildings.length ? displayedBuildings.slice() : allBuildings.slice();
+  const sortState = getBuildingTableSort();
+  list = sortBuildingList(list, sortState.key, sortState.dir);
+  updateDashSortIndicators('buildingsTable', getBuildingTableSort);
+  syncBuildingSortBarFromState();
   const canEditMeta = canManageBuildingMeta();
   const canDelete = canDeleteBuilding();
   if (!list.length) {
@@ -470,16 +643,28 @@ function renderBuildingsFromCache() {
   tbody.innerHTML = pageItems.map(b => {
     const date = b.updatedAt ? new Date(b.updatedAt).toLocaleDateString('vi-VN') : '-';
     const desc = b.description ? '<br><small style="color:#888">' + escapeHtml(b.description) + '</small>' : '';
-    let actions = '<button class="btn-edit" onclick="openEditor(\'' + b._id + '\')" style="margin-right:4px;">Vẽ bản đồ</button>' +
-      '<button class="btn-edit" onclick="openMapVersionModal(\'' + b._id + '\', ' + (b.total_floors || 1) + ')" style="background:#8e44ad;color:white;margin-right:4px;">Phiên bản</button>';
-    if (canEditMeta) {
-      actions += '<button class="btn-edit" onclick="openEditBuildingModal(\'' + b._id + '\')" style="background:#f39c12;color:white;margin-right:4px;">Sửa</button>';
+    const inactive = b.is_active === false;
+    const rowStyle = inactive ? ' style="opacity:0.72;background:#fafafa;"' : '';
+    const inactiveBadge = inactive ? ' <span class="badge badge-inactive" style="font-size:10px;">Vô hiệu</span>' : '';
+    let actions = '';
+    if (inactive) {
+      if (canDelete) {
+        actions = '<button type="button" class="btn-create" onclick="restoreBuilding(\'' + b._id + '\')" style="background:#27ae60;padding:6px 12px;">Khôi phục</button>';
+      } else {
+        actions = '<span style="color:#888;font-size:12px;">Đã vô hiệu</span>';
+      }
+    } else {
+      actions = '<button class="btn-edit" onclick="openEditor(\'' + b._id + '\')" style="margin-right:4px;">Vẽ bản đồ</button>' +
+        '<button class="btn-edit" onclick="openMapVersionModal(\'' + b._id + '\', ' + (b.total_floors || 1) + ')" style="background:#8e44ad;color:white;margin-right:4px;">Phiên bản</button>';
+      if (canEditMeta) {
+        actions += '<button class="btn-edit" onclick="openEditBuildingModal(\'' + b._id + '\')" style="background:#f39c12;color:white;margin-right:4px;">Sửa</button>';
+      }
+      if (canDelete) {
+        actions += '<button class="btn-logout" onclick="deleteBuilding(\'' + b._id + '\')" style="background:#e74c3c;padding:6px 12px;">Xóa</button>';
+      }
     }
-    if (canDelete) {
-      actions += '<button class="btn-logout" onclick="deleteBuilding(\'' + b._id + '\')" style="background:#e74c3c;padding:6px 12px;">Xóa</button>';
-    }
-    return '<tr>' +
-      tdEllipsis(b.name, '<strong>' + escapeHtml(b.name) + '</strong>' + desc) +
+    return '<tr' + rowStyle + '>' +
+      tdEllipsis(b.name, '<strong>' + escapeHtml(b.name) + '</strong>' + inactiveBadge + desc) +
       tdEllipsis(b.address || '-') +
       '<td style="text-align:center;">' + (b.total_floors || 1) + '</td>' +
       '<td><span class="badge">' + escapeHtml(b.status) + '</span></td>' +
@@ -558,7 +743,407 @@ function populateOrganizationDropdown() {
 }
 
 
+function renderOrgOverviewCards() {
+  const container = document.getElementById('orgOverviewCards');
+  const block = document.getElementById('orgOverviewBlock');
+  if (!container) return;
+
+  // Super Admin đã có thẻ「Tổng quan nền tảng」phía trên — ẩn bộ trùng trên tab Tổ Chức
+  if (currentUser?.role === 'SUPER_ADMIN' && platformStatsCache?.scope === 'platform') {
+    container.innerHTML = '';
+    if (block) block.style.display = 'none';
+    return;
+  }
+  if (block) block.style.display = '';
+
+  const list = allOrganizations || [];
+  const total = list.length;
+  const active = list.filter((o) => o.is_active !== false).length;
+  const inactive = total - active;
+  const totalBuildings = list.reduce((s, o) => s + (Number(o.building_count) || 0), 0);
+  const totalUsers = list.reduce((s, o) => s + (Number(o.user_count) || 0), 0);
+  const proCount = list.filter((o) => (o.plan || 'FREE') === 'PRO').length;
+  const enterpriseCount = list.filter((o) => (o.plan || 'FREE') === 'ENTERPRISE').length;
+
+  const card = (label, value, sub, accent, clickable, onClick, selected) => {
+    const cls = 'org-overview-card accent-' + accent +
+      (clickable ? ' is-clickable' : '') +
+      (selected ? ' is-selected' : '');
+    const click = clickable && onClick ? ' onclick="' + onClick + '"' : '';
+    return '<div class="' + cls + '"' + click + ' role="button" tabindex="' + (clickable ? '0' : '-1') + '">' +
+      '<div class="ov-label">' + escapeHtml(label) + '</div>' +
+      '<div class="ov-value">' + escapeHtml(String(value)) + '</div>' +
+      (sub ? '<div class="ov-sub">' + escapeHtml(sub) + '</div>' : '') +
+      '</div>';
+  };
+
+  const currentStatus = document.getElementById('filterOrgStatus')?.value || '';
+
+  container.innerHTML =
+    card('Tổng tổ chức', total, 'click xem tất cả', 'purple', true, 'filterOrgByOverviewStatus(\'\')', currentStatus === '') +
+    card('Đang hoạt động', active, 'click để lọc', 'green', true, 'filterOrgByOverviewStatus(\'active\')', currentStatus === 'active') +
+    card('Tạm dừng', inactive, 'click để lọc', 'red', true, 'filterOrgByOverviewStatus(\'inactive\')', currentStatus === 'inactive') +
+    card('Tổng tòa nhà', totalBuildings, 'trên mọi tổ chức', 'blue', false) +
+    card('Tổng tài khoản', totalUsers, 'trên mọi tổ chức', 'orange', false) +
+    card('Gói trả phí', proCount + enterpriseCount, 'PRO: ' + proCount + ' · ENTERPRISE: ' + enterpriseCount, 'gray', false);
+}
+
+// ============================================================
+// Phase 4.6 — Tổng quan platform / tổ chức (dashboard cards)
+let platformStatsCache = null;
+
+function buildOverviewCard(label, value, sub, accent, clickable, onClick, opts) {
+  const o = opts || {};
+  let cls = 'org-overview-card accent-' + accent;
+  if (clickable) cls += ' is-clickable';
+  if (o.alert) cls += ' card-needs-attention';
+  const click = clickable && onClick ? ' onclick="' + onClick + '"' : '';
+  const badge = o.badge
+    ? '<span class="ov-badge">' + escapeHtml(o.badge) + '</span>'
+    : '';
+  let progressHtml = '';
+  if (o.progress && o.progress.max > 0) {
+    const pct = Math.min(100, Math.round((o.progress.value / o.progress.max) * 100));
+    progressHtml =
+      '<div class="ov-progress" title="' + escapeHtml(String(o.progress.value) + '/' + String(o.progress.max)) + '">' +
+      '<div class="ov-progress-bar" style="width:' + pct + '%"></div></div>' +
+      (o.progress.label ? '<div class="ov-progress-label">' + escapeHtml(o.progress.label) + '</div>' : '');
+  }
+  return '<div class="' + cls + '"' + click + ' role="button" tabindex="' + (clickable ? '0' : '-1') + '">' +
+    '<div class="ov-label-row">' +
+    '<div class="ov-label">' + escapeHtml(label) + '</div>' + badge +
+    '</div>' +
+    '<div class="ov-value">' + escapeHtml(String(value)) + '</div>' +
+    (sub ? '<div class="ov-sub">' + escapeHtml(sub) + '</div>' : '') +
+    progressHtml +
+    '</div>';
+}
+
+async function fetchPlatformStats() {
+  try {
+    const res = await apiFetch('/platform/stats');
+    if (!res.ok) return;
+    platformStatsCache = await res.json();
+    renderPlatformOverviewCards();
+  } catch (e) {
+    console.warn('fetchPlatformStats:', e);
+  }
+}
+
+function platformJumpBuildings(status) {
+  switchTab('buildings');
+  const el = document.getElementById('filterBuildingStatus');
+  if (el) el.value = status || '';
+  applyBuildingFilters();
+}
+
+function platformJumpBuildingsInactive() {
+  switchTab('buildings');
+  const inactiveEl = document.getElementById('filterBuildingIncludeInactive');
+  if (inactiveEl) inactiveEl.checked = true;
+  onBuildingIncludeInactiveChange();
+}
+
+function platformJumpOrganizations(status) {
+  switchTab('organizations');
+  const el = document.getElementById('filterOrgStatus');
+  if (el) el.value = status || '';
+  applyOrganizationFilters();
+}
+
+function platformJumpOrgPlan(plan) {
+  switchTab('organizations');
+  const planEl = document.getElementById('filterOrgPlan');
+  const statusEl = document.getElementById('filterOrgStatus');
+  if (planEl) planEl.value = plan || '';
+  if (statusEl) statusEl.value = '';
+  applyOrganizationFilters();
+}
+
+function platformJumpUsers(status, role) {
+  switchTab('users');
+  const statusEl = document.getElementById('filterUserStatus');
+  const roleEl = document.getElementById('filterUserRole');
+  if (statusEl && status != null) statusEl.value = status;
+  if (roleEl && role != null) roleEl.value = role;
+  applyUserFilters();
+}
+
+function platformJumpRegistrationsPending() {
+  switchTab('registrations');
+  const el = document.getElementById('filterRegStatus');
+  if (el) el.value = 'PENDING';
+  renderRegistrationsFromCache();
+}
+
+function renderPlatformOverviewCards() {
+  const section = document.getElementById('platformOverviewSection');
+  const container = document.getElementById('platformOverviewCards');
+  const titleEl = document.getElementById('platformOverviewTitle');
+  if (!section || !container || !platformStatsCache) return;
+
+  const s = platformStatsCache;
+  section.style.display = 'block';
+  let html = '';
+
+  if (s.scope === 'platform') {
+    if (titleEl) titleEl.textContent = '📊 Tổng quan nền tảng';
+    const org = s.organizations || {};
+    const b = s.buildings || {};
+    const u = s.users || {};
+    const reg = s.registrations || {};
+    const pending = reg.pending || 0;
+    const inactiveOrg = org.inactive || 0;
+    const inactiveBuildings = b.inactive || 0;
+    const lockedUsers = u.inactive || 0;
+    const totalActiveBuildings = b.total_active || 0;
+    const published = b.published || 0;
+    const draft = b.draft || 0;
+    const paid = org.paid || 0;
+
+    html =
+      buildOverviewCard(
+        'Tổ chức', org.total || 0,
+        (org.active || 0) + ' HĐ · ' + paid + ' gói trả phí',
+        'purple', true, "platformJumpOrganizations('')"
+      ) +
+      buildOverviewCard(
+        'Đang hoạt động', org.active || 0,
+        'bấm để lọc bảng tổ chức',
+        'green', true, "platformJumpOrganizations('active')"
+      ) +
+      buildOverviewCard(
+        'Tạm dừng', inactiveOrg,
+        inactiveOrg ? 'tổ chức cần xem lại' : 'không có org tạm dừng',
+        'red', true, "platformJumpOrganizations('inactive')",
+        { alert: inactiveOrg > 0, badge: inactiveOrg > 0 ? 'Cần xem' : '' }
+      ) +
+      buildOverviewCard(
+        'Tòa xuất bản', published,
+        draft + ' nháp · ' + totalActiveBuildings + ' đang active',
+        'blue', true, "platformJumpBuildings('PUBLISHED')",
+        {
+          progress: totalActiveBuildings > 0
+            ? { value: published, max: totalActiveBuildings, label: Math.round((published / totalActiveBuildings) * 100) + '% đã publish' }
+            : null
+        }
+      ) +
+      buildOverviewCard(
+        'Tòa nháp', draft,
+        'chưa xuất bản lên app',
+        'orange', true, "platformJumpBuildings('DRAFT')",
+        { alert: draft > 0, badge: draft > 0 ? 'Soạn thảo' : '' }
+      ) +
+      buildOverviewCard(
+        'Tài khoản', u.total || 0,
+        'ORG ' + (u.org_admin || 0) + ' · BA ' + (u.building_admin || 0) +
+          (lockedUsers ? ' · ' + lockedUsers + ' khóa' : ''),
+        'teal', true, "switchTab('users')"
+      ) +
+      buildOverviewCard(
+        'Hồ sơ chờ duyệt', pending,
+        pending ? 'cần Super Admin duyệt' : 'không có hồ sơ chờ',
+        'gray', true, 'platformJumpRegistrationsPending()',
+        { alert: pending > 0, badge: pending > 0 ? 'Cần duyệt' : '' }
+      ) +
+      buildOverviewCard(
+        'Tòa vô hiệu', inactiveBuildings,
+        'soft delete — có thể khôi phục',
+        'red', true, 'platformJumpBuildingsInactive()',
+        { alert: inactiveBuildings > 0, badge: inactiveBuildings > 0 ? 'Khôi phục' : '' }
+      );
+  } else if (s.scope === 'organization') {
+    const orgName = s.organization?.name || 'Tổ chức';
+    if (titleEl) titleEl.textContent = '📊 Tổng quan — ' + orgName;
+    const b = s.buildings || {};
+    const u = s.users || {};
+    const draft = b.draft || 0;
+    const inactiveB = b.inactive || 0;
+    html =
+      buildOverviewCard(
+        'Tòa nhà', b.total_active || 0,
+        'XB ' + (b.published || 0) + ' · nháp ' + draft,
+        'blue', true, "switchTab('buildings')",
+        {
+          progress: (b.total_active || 0) > 0
+            ? { value: b.published || 0, max: b.total_active, label: 'tỷ lệ publish' }
+            : null
+        }
+      ) +
+      buildOverviewCard(
+        'Đã xuất bản', b.published || 0,
+        'app tải được',
+        'green', true, "platformJumpBuildings('PUBLISHED')"
+      ) +
+      buildOverviewCard(
+        'Tài khoản', u.total || 0,
+        'ORG ' + (u.org_admin || 0) + ' · BA ' + (u.building_admin || 0),
+        'orange', true, "switchTab('users')"
+      ) +
+      buildOverviewCard(
+        'Tòa vô hiệu', inactiveB,
+        inactiveB ? 'bấm để xem & khôi phục' : 'không có',
+        'gray', true, 'platformJumpBuildingsInactive()',
+        { alert: inactiveB > 0, badge: inactiveB > 0 ? 'Khôi phục' : '' }
+      );
+  } else if (s.scope === 'assigned') {
+    if (titleEl) titleEl.textContent = '📊 Tổng quan tòa được gán';
+    const b = s.buildings || {};
+    const draft = b.draft || 0;
+    html =
+      buildOverviewCard(
+        'Tòa được gán', b.assigned || 0,
+        'tài khoản của bạn',
+        'purple', true, "switchTab('buildings')"
+      ) +
+      buildOverviewCard(
+        'Đã xuất bản', b.published || 0,
+        'sẵn sàng trên app',
+        'green', true, "platformJumpBuildings('PUBLISHED')"
+      ) +
+      buildOverviewCard(
+        'Đang nháp', draft,
+        draft ? 'cần publish' : 'không có nháp',
+        'orange', true, "platformJumpBuildings('DRAFT')",
+        { alert: draft > 0, badge: draft > 0 ? 'Publish' : '' }
+      );
+  }
+
+  container.innerHTML = html;
+  if (s.scope === 'platform') renderOrgOverviewCards();
+}
+
+function filterOrgByOverviewStatus(status) {
+  const el = document.getElementById('filterOrgStatus');
+  if (el) el.value = status;
+  applyOrganizationFilters();
+}
+
+function getOrgTableSort() {
+  if (!window._orgTableSort) {
+    window._orgTableSort = { key: 'name', dir: 'asc' };
+  }
+  return window._orgTableSort;
+}
+
+function saveOrgTableSort(key, dir) {
+  window._orgTableSort = { key: key || 'name', dir: dir === 'desc' ? 'desc' : 'asc' };
+  try {
+    const saved = JSON.parse(localStorage.getItem('organizationsFilters') || '{}');
+    saved.sortKey = window._orgTableSort.key;
+    saved.sortDir = window._orgTableSort.dir;
+    localStorage.setItem('organizationsFilters', JSON.stringify(saved));
+  } catch (e) {}
+}
+
+/** Sắp xếp danh sách tổ chức — dùng OrgListSort nếu có, fallback nội bộ */
+function sortOrgList(list, key, dir) {
+  if (window.OrgListSort && typeof window.OrgListSort.sortOrganizations === 'function') {
+    return window.OrgListSort.sortOrganizations(list, key, dir);
+  }
+  const sortKey = key || 'name';
+  const mul = dir === 'desc' ? -1 : 1;
+  const planOrder = { FREE: 0, PRO: 1, ENTERPRISE: 2 };
+  return list.slice().sort((a, b) => {
+    let cmp = 0;
+    switch (sortKey) {
+      case 'slug':
+        cmp = String(a.slug || '').localeCompare(String(b.slug || ''), 'vi', { sensitivity: 'base' });
+        break;
+      case 'plan':
+        cmp = (planOrder[a.plan || 'FREE'] ?? 0) - (planOrder[b.plan || 'FREE'] ?? 0);
+        break;
+      case 'status':
+        cmp = (a.is_active === false ? 0 : 1) - (b.is_active === false ? 0 : 1);
+        break;
+      case 'buildings':
+        cmp = (Number(a.building_count) || 0) - (Number(b.building_count) || 0);
+        break;
+      case 'users':
+        cmp = (Number(a.user_count) || 0) - (Number(b.user_count) || 0);
+        break;
+      case 'created': {
+        const ta = new Date(a.createdAt || a.created_at || 0).getTime();
+        const tb = new Date(b.createdAt || b.created_at || 0).getTime();
+        cmp = (Number.isFinite(ta) ? ta : 0) - (Number.isFinite(tb) ? tb : 0);
+        break;
+      }
+      default:
+        cmp = String(a.name || '').localeCompare(String(b.name || ''), 'vi', { sensitivity: 'base' });
+    }
+    return cmp * mul;
+  });
+}
+
+function syncOrgSortBarFromState() {
+  const cur = getOrgTableSort();
+  const keyEl = document.getElementById('filterOrgSortKey');
+  const dirEl = document.getElementById('filterOrgSortDir');
+  if (keyEl && keyEl.value !== cur.key) keyEl.value = cur.key;
+  if (dirEl && dirEl.value !== cur.dir) dirEl.value = cur.dir;
+}
+
+function applyOrgSortFromBar() {
+  const key = document.getElementById('filterOrgSortKey')?.value || 'name';
+  const dir = document.getElementById('filterOrgSortDir')?.value || 'asc';
+  saveOrgTableSort(key, dir);
+  window._organizationsPage = 1;
+  renderOrganizationsFromCache();
+}
+
+function toggleOrgTableSort(key) {
+  const cur = getOrgTableSort();
+  if (cur.key === key) {
+    saveOrgTableSort(key, cur.dir === 'asc' ? 'desc' : 'asc');
+  } else {
+    saveOrgTableSort(key, 'asc');
+  }
+  window._organizationsPage = 1;
+  renderOrganizationsFromCache();
+}
+
+function initOrgTableSort() {
+  initDashTableSort('orgTableHead', toggleOrgTableSort);
+}
+
+function initDashTableSort(headId, toggleFn) {
+  const head = document.getElementById(headId);
+  if (!head || head.dataset.sortBound === '1') return;
+  head.dataset.sortBound = '1';
+  head.addEventListener('click', (e) => {
+    const th = e.target.closest('th.org-sortable');
+    if (!th) return;
+    const sortKey = th.getAttribute('data-sort-key');
+    if (sortKey) toggleFn(sortKey);
+  });
+}
+
+function updateDashSortIndicators(tableId, getSortState) {
+  const cur = getSortState();
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  table.querySelectorAll('.org-sort-indicator').forEach((el) => {
+    const k = el.getAttribute('data-for');
+    if (k === cur.key) {
+      el.textContent = cur.dir === 'desc' ? '▼' : '▲';
+      el.style.opacity = '1';
+    } else {
+      el.textContent = '⇅';
+      el.style.opacity = '0.55';
+    }
+  });
+  table.querySelectorAll('th.org-sortable').forEach((th) => {
+    th.classList.toggle('org-sort-active', th.getAttribute('data-sort-key') === cur.key);
+  });
+}
+
+function updateOrgSortIndicators() {
+  updateDashSortIndicators('orgOrganizationsTable', getOrgTableSort);
+  syncOrgSortBarFromState();
+}
+
 function renderOrganizationsFromCache() {
+  renderOrgOverviewCards();
   const tbody = document.getElementById('organizationsList');
   if (!tbody) return;
   const keyword = (document.getElementById('filterOrgKeyword')?.value || '').trim().toLowerCase();
@@ -569,8 +1154,11 @@ function renderOrganizationsFromCache() {
   if (keyword) list = list.filter(o => (o.name || '').toLowerCase().includes(keyword));
   if (code) list = list.filter(o => (o.slug || '').toLowerCase().includes(code));
   if (plan) list = list.filter(o => (o.plan || 'FREE') === plan);
-  if (status === 'active') list = list.filter(o => o.is_active);
-  if (status === 'inactive') list = list.filter(o => !o.is_active);
+  if (status === 'active') list = list.filter(o => o.is_active !== false);
+  if (status === 'inactive') list = list.filter(o => o.is_active === false);
+  const sortState = getOrgTableSort();
+  list = sortOrgList(list, sortState.key, sortState.dir);
+  updateOrgSortIndicators();
   if (!list.length) {
     tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#888;">Chưa có tổ chức nào.</td></tr>';
     renderPagination('organizations', 0, 1);
@@ -582,13 +1170,13 @@ function renderOrganizationsFromCache() {
   tbody.innerHTML = pageItems.map(org => {
     const date = org.createdAt ? new Date(org.createdAt).toLocaleDateString('vi-VN') : (org.created_at ? new Date(org.created_at).toLocaleDateString('vi-VN') : '-');
     const isActive = org.is_active !== false;
+    const oid = String(org._id);
     const statusBadge = isActive
       ? '<span class="status-badge active">Hoạt động</span>'
       : '<span class="status-badge inactive">Tạm dừng</span>';
-    const bCount = org.building_count != null ? org.building_count : '—';
+    const bCount = formatBuildingCountCell(org, oid);
     const uCount = org.user_count != null ? org.user_count : '—';
-    const admin = org.org_admin ? escapeHtml(org.org_admin.full_name || org.org_admin.email || '') : '—';
-    const oid = String(org._id);
+    const adminsCell = formatOrgAdminsCell(org);
     const currentPlan = org.plan || 'FREE';
     const planSelect = '<select class="org-plan-select" onchange="changeOrganizationPlan(\'' + oid + '\', this)" title="Đổi gói">' +
       ['FREE', 'PRO', 'ENTERPRISE'].map((p) =>
@@ -608,9 +1196,9 @@ function renderOrganizationsFromCache() {
       tdEllipsis(org.slug) +
       '<td>' + planSelect + '</td>' +
       '<td>' + statusBadge + '</td>' +
-      '<td style="text-align:center;cursor:pointer;" onclick="jumpToBuildings(\'' + oid + '\')" title="Xem tòa nhà">' + bCount + '</td>' +
+      '<td style="text-align:center;">' + bCount + '</td>' +
       '<td style="text-align:center;cursor:pointer;" onclick="jumpToUsers(\'' + oid + '\')" title="Xem tài khoản">' + uCount + '</td>' +
-      tdEllipsis(org.org_admin ? (org.org_admin.full_name || org.org_admin.email) : '', admin) +
+      tdEllipsis(adminsCell.plain, adminsCell.html) +
       '<td>' + date + '</td>' +
       '<td class="actions-cell"><div class="building-actions">' +
         '<button type="button" class="btn-edit org-detail-btn" onclick="openOrgDetailModal(\'' + oid + '\')">Chi tiết</button>' +
@@ -858,7 +1446,7 @@ function renderOrgDetailBody(data) {
   body.innerHTML =
     '<div class="org-detail-grid">' +
       '<div><span class="org-detail-label">Mã tổ chức</span><div class="org-detail-value org-detail-id" title="Sao chép ID">' + escapeHtml(oid) + '</div></div>' +
-      '<div><span class="org-detail-label">Slug</span><div class="org-detail-value">' + escapeHtml(org.slug || '-') + '</div></div>' +
+      '<div><span class="org-detail-label">Mã định danh</span><div class="org-detail-value">' + escapeHtml(org.slug || '-') + '</div></div>' +
       '<div><span class="org-detail-label">Gói</span><div class="org-detail-value"><span class="badge">' + escapeHtml(org.plan || 'FREE') + '</span></div></div>' +
       '<div><span class="org-detail-label">Trạng thái</span><div class="org-detail-value">' +
         (isActive ? '<span class="status-badge active">Hoạt động</span>' : '<span class="status-badge inactive">Tạm dừng</span>') +
@@ -894,7 +1482,12 @@ function applyOrganizationFilters(resetPage) {
   const code = document.getElementById('filterOrgCode')?.value || '';
   const plan = document.getElementById('filterOrgPlan')?.value || '';
   const status = document.getElementById('filterOrgStatus')?.value || '';
-  localStorage.setItem('organizationsFilters', JSON.stringify({ keyword, code, plan, status }));
+  const sortState = getOrgTableSort();
+  localStorage.setItem('organizationsFilters', JSON.stringify({
+    keyword, code, plan, status,
+    sortKey: sortState.key,
+    sortDir: sortState.dir
+  }));
   renderOrganizationsFromCache();
 }
 
@@ -904,6 +1497,7 @@ function clearOrganizationFilters() {
     if (el) el.value = '';
   });
   localStorage.removeItem('organizationsFilters');
+  saveOrgTableSort('name', 'asc');
   window._organizationsPage = 1;
   renderOrganizationsFromCache();
 }
@@ -915,6 +1509,8 @@ function restoreOrganizationFilters() {
     if (saved.code != null) { const el = document.getElementById('filterOrgCode'); if (el) el.value = saved.code; }
     if (saved.plan != null) { const el = document.getElementById('filterOrgPlan'); if (el) el.value = saved.plan; }
     if (saved.status != null) { const el = document.getElementById('filterOrgStatus'); if (el) el.value = saved.status; }
+    if (saved.sortKey) saveOrgTableSort(saved.sortKey, saved.sortDir || 'asc');
+    else saveOrgTableSort('name', 'asc');
   } catch (e) {}
 }
 
@@ -1436,13 +2032,38 @@ async function deleteBuilding(id) {
     alert('Bạn không có quyền xóa tòa nhà. Chỉ Org Admin hoặc Super Admin mới được xóa.');
     return;
   }
-  if (!confirm('Bạn có chắc muốn xóa tòa nhà này và toàn bộ bản đồ của nó?')) return;
+  if (!confirm('Vô hiệu hóa tòa nhà này? Tòa sẽ ẩn khỏi app và dashboard (có thể khôi phục sau).')) return;
   try {
     const res = await apiFetch('/buildings/' + id, { method: 'DELETE' });
-    if (res.ok) { alert('Đã xóa tòa nhà!'); fetchBuildings(); }
+    if (res.ok) {
+      const inactiveEl = document.getElementById('filterBuildingIncludeInactive');
+      if (inactiveEl) inactiveEl.checked = true;
+      alert('Đã vô hiệu hóa tòa nhà!\n\nDanh sách sẽ hiện cả tòa đã vô hiệu — bấm「Khôi phục」nếu cần bật lại.');
+      fetchBuildings();
+      fetchPlatformStats();
+    }
     else {
       const d = await res.json().catch(() => ({}));
-      alert('Lỗi khi xóa: ' + (d.message || ('HTTP ' + res.status)));
+      alert('Lỗi khi vô hiệu hóa: ' + (d.message || ('HTTP ' + res.status)));
+    }
+  } catch (e) { alert('Lỗi kết nối!'); }
+}
+
+async function restoreBuilding(id) {
+  if (!canDeleteBuilding()) {
+    alert('Bạn không có quyền khôi phục tòa nhà.');
+    return;
+  }
+  if (!confirm('Khôi phục tòa nhà này? Tòa sẽ hiển thị lại trên dashboard và app (nếu đã publish).')) return;
+  try {
+    const res = await apiFetch('/buildings/' + id + '/restore', { method: 'POST' });
+    const d = await res.json().catch(() => ({}));
+    if (res.ok) {
+      alert(d.message || 'Đã khôi phục tòa nhà!');
+      fetchBuildings();
+      fetchPlatformStats();
+    } else {
+      alert('Lỗi: ' + (d.message || ('HTTP ' + res.status)));
     }
   } catch (e) { alert('Lỗi kết nối!'); }
 }
@@ -1496,6 +2117,13 @@ async function loadMapVersions() {
       return;
     }
     const currentVersion = payload.current_version;
+    const retention = payload.retention || {};
+    const retentionEl = document.getElementById('mapVersionRetentionNote');
+    if (retentionEl) {
+      const max = retention.max_per_floor != null ? retention.max_per_floor : '—';
+      const stored = retention.stored_count != null ? retention.stored_count : (payload.versions || []).length;
+      retentionEl.textContent = 'Chính sách lưu: giữ tối đa ' + max + ' phiên bản / tầng · đang lưu ' + stored + ' bản.';
+    }
     const data = Array.isArray(payload) ? payload : (payload.versions || []);
     if (!data.length) {
       tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;">Chưa có phiên bản nào được publish cho tầng này.</td></tr>';
@@ -1589,6 +2217,19 @@ window.rollbackMapVersion = rollbackMapVersion;
 window.openMapVersionModal = openMapVersionModal;
 window.closeMapVersionModal = closeMapVersionModal;
 window.onMapVersionFloorChange = onMapVersionFloorChange;
+window.toggleOrgTableSort = toggleOrgTableSort;
+window.applyOrgSortFromBar = applyOrgSortFromBar;
+window.toggleBuildingTableSort = toggleBuildingTableSort;
+window.applyBuildingSortFromBar = applyBuildingSortFromBar;
+window.toggleUserTableSort = toggleUserTableSort;
+window.applyUserSortFromBar = applyUserSortFromBar;
+window.restoreBuilding = restoreBuilding;
+window.platformJumpBuildings = platformJumpBuildings;
+window.platformJumpBuildingsInactive = platformJumpBuildingsInactive;
+window.platformJumpOrganizations = platformJumpOrganizations;
+window.platformJumpOrgPlan = platformJumpOrgPlan;
+window.platformJumpUsers = platformJumpUsers;
+window.platformJumpRegistrationsPending = platformJumpRegistrationsPending;
 
 async function fetchUsers() {
   if (currentUser?.role === 'SUPER_ADMIN' && allOrganizations.length === 0) {
@@ -1618,7 +2259,14 @@ async function fetchUsers() {
     let users = Array.isArray(data) ? data : (data.users || data.data || []);
     if (orgId) users = users.filter(u => String(u.organization_id) === orgId);
     allUsers = users;
-    localStorage.setItem('usersFilters', JSON.stringify({ orgId, keyword, role, status }));
+    localStorage.setItem('usersFilters', JSON.stringify({
+      orgId,
+      keyword,
+      role,
+      status,
+      sortKey: getUserTableSort().key,
+      sortDir: getUserTableSort().dir
+    }));
     renderUsersFromCache();
   } catch (err) {
     if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:red;">Lỗi khi tải danh sách user: ' + (err.message || err) + '</td></tr>';
@@ -1636,6 +2284,7 @@ function clearUserFilters() {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   localStorage.removeItem('usersFilters');
+  saveUserTableSort('email', 'asc');
   window._usersPage = 1;
   fetchUsers();
 }
@@ -1647,17 +2296,77 @@ function restoreUserFilters() {
     if (saved.keyword != null) { const el = document.getElementById('filterUserKeyword'); if (el) el.value = saved.keyword; }
     if (saved.role != null) { const el = document.getElementById('filterUserRole'); if (el) el.value = saved.role; }
     if (saved.status != null) { const el = document.getElementById('filterUserStatus'); if (el) el.value = saved.status; }
+    if (saved.sortKey) saveUserTableSort(saved.sortKey, saved.sortDir || 'asc');
+    else saveUserTableSort('email', 'asc');
   } catch (e) {}
+}
+
+function getUserTableSort() {
+  if (!window._userTableSort) window._userTableSort = { key: 'email', dir: 'asc' };
+  return window._userTableSort;
+}
+
+function saveUserTableSort(key, dir) {
+  window._userTableSort = { key: key || 'email', dir: dir === 'desc' ? 'desc' : 'asc' };
+  try {
+    const saved = JSON.parse(localStorage.getItem('usersFilters') || '{}');
+    saved.sortKey = window._userTableSort.key;
+    saved.sortDir = window._userTableSort.dir;
+    localStorage.setItem('usersFilters', JSON.stringify(saved));
+  } catch (e) {}
+}
+
+function sortUserList(list, key, dir) {
+  const orgLabel = (id) => getOrgName(id);
+  if (window.DashboardTableSort && typeof window.DashboardTableSort.sortUsers === 'function') {
+    return window.DashboardTableSort.sortUsers(list, key, dir, orgLabel);
+  }
+  const mul = dir === 'desc' ? -1 : 1;
+  return list.slice().sort((a, b) =>
+    String(a.email || '').localeCompare(String(b.email || ''), 'vi', { sensitivity: 'base' }) * mul
+  );
+}
+
+function syncUserSortBarFromState() {
+  const cur = getUserTableSort();
+  const keyEl = document.getElementById('filterUserSortKey');
+  const dirEl = document.getElementById('filterUserSortDir');
+  if (keyEl && keyEl.value !== cur.key) keyEl.value = cur.key;
+  if (dirEl && dirEl.value !== cur.dir) dirEl.value = cur.dir;
+}
+
+function applyUserSortFromBar() {
+  const key = document.getElementById('filterUserSortKey')?.value || 'email';
+  const dir = document.getElementById('filterUserSortDir')?.value || 'asc';
+  saveUserTableSort(key, dir);
+  window._usersPage = 1;
+  renderUsersFromCache();
+}
+
+function toggleUserTableSort(key) {
+  const cur = getUserTableSort();
+  if (cur.key === key) saveUserTableSort(key, cur.dir === 'asc' ? 'desc' : 'asc');
+  else saveUserTableSort(key, 'asc');
+  window._usersPage = 1;
+  renderUsersFromCache();
+}
+
+function initUserTableSort() {
+  initDashTableSort('usersTableHead', toggleUserTableSort);
 }
 
 let allUsers = [];
 
 function renderUsersFromCache() {
+  const sortState = getUserTableSort();
+  const sorted = sortUserList(allUsers.slice(), sortState.key, sortState.dir);
+  updateDashSortIndicators('usersTable', getUserTableSort);
+  syncUserSortBarFromState();
   const page = window._usersPage || 1;
   const start = (page - 1) * PAGE_SIZE;
-  const slice = allUsers.slice(start, start + PAGE_SIZE);
+  const slice = sorted.slice(start, start + PAGE_SIZE);
   renderUsers(slice);
-  renderPagination('users', allUsers.length, page);
+  renderPagination('users', sorted.length, page);
 }
 
 
@@ -1875,10 +2584,12 @@ const ACTION_LABELS = {
   PUBLISH_MAP: 'Xuất bản bản đồ',
   LOAD_MAP: 'Tải bản đồ',
   ROLLBACK_MAP: 'Khôi phục phiên bản bản đồ',
+  MAP_VERSION_RETENTION: 'Dọn phiên bản map cũ',
   CREATE_BUILDING: 'Tạo tòa nhà',
   UPDATE_BUILDING: 'Cập nhật tòa nhà',
   DELETE_BUILDING: 'Xóa tòa nhà',
   DEACTIVATE_BUILDING: 'Vô hiệu hóa tòa nhà',
+  ACTIVATE_BUILDING: 'Khôi phục tòa nhà',
   CREATE_USER: 'Tạo tài khoản',
   ADMIN_UPDATE_USER: 'Admin sửa user',
   ACTIVATE_USER: 'Kích hoạt tài khoản',
@@ -1988,10 +2699,12 @@ function getActionFallbackDetail(action, target) {
     CREATE_BUILDING: 'Tạo tòa nhà mới' + name,
     UPDATE_BUILDING: 'Cập nhật thông tin tòa nhà' + name,
     DEACTIVATE_BUILDING: 'Vô hiệu hóa tòa nhà' + name,
+    ACTIVATE_BUILDING: 'Khôi phục tòa nhà' + name,
     DELETE_BUILDING: 'Xóa tòa nhà' + name,
     PUBLISH_MAP: 'Xuất bản bản đồ lên server' + name,
     LOAD_MAP: 'Mở bản đồ trên Editor' + name,
     ROLLBACK_MAP: 'Khôi phục phiên bản bản đồ cũ' + name,
+    MAP_VERSION_RETENTION: 'Tự động dọn phiên bản map cũ' + name,
     BUILDING_ASSIGN: 'Gán quyền quản lý tòa nhà' + name,
     BUILDING_UNASSIGN: 'Thu hồi quyền quản lý tòa nhà' + name,
     CHANGE_PASSWORD: 'Đổi mật khẩu tài khoản',
@@ -2178,7 +2891,7 @@ async function loadLogs() {
       const actionLabel = formatActionLabel(l.action);
       const actionBadgeColor =
         l.action.startsWith('DELETE') || l.action === 'DEACTIVATE_BUILDING' || l.action === 'DEACTIVATE_USER' || l.action === 'DEACTIVATE_ORGANIZATION' ? '#e74c3c' :
-        l.action.startsWith('CREATE') || l.action === 'ACTIVATE_ORGANIZATION' ? '#27ae60' :
+        l.action.startsWith('CREATE') || l.action === 'ACTIVATE_ORGANIZATION' || l.action === 'ACTIVATE_BUILDING' ? '#27ae60' :
         l.action === 'LOGIN' ? '#3498db' :
         l.action === 'LOGOUT' ? '#e67e22' :
         l.action === 'UPDATE_ORGANIZATION' || l.action === 'ADMIN_RESET_PASSWORD' ? '#8e44ad' :

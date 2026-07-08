@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Quản Lý Tòa Nhà</title>
-    <link rel="stylesheet" href="css/admin.css?v=20260707h">
+    <link rel="stylesheet" href="css/admin.css?v=20260708s">
 </head>
 <body>
     <nav class="navbar">
@@ -24,6 +24,13 @@
             </p>
             <h3>Xin chào, <span id="userName">Admin</span>!</h3>
             <p>Vai trò: <span id="userRole" class="badge">BUILDING_ADMIN</span></p>
+        </div>
+
+        <!-- Phase 4.6 — Thẻ tổng quan platform / tổ chức -->
+        <div id="platformOverviewSection" class="platform-overview-section" style="display:none;">
+            <h4 id="platformOverviewTitle" class="platform-overview-title">📊 Tổng quan</h4>
+            <p class="platform-overview-hint">Bấm thẻ để mở tab tương ứng và lọc dữ liệu</p>
+            <div id="platformOverviewCards" class="org-overview-grid" aria-label="Thống kê tổng quan"></div>
         </div>
 
         <!-- Tab navigation (chỉ Super Admin thấy đầy đủ) -->
@@ -62,19 +69,44 @@
                       <option value="PUBLISHED">Đã xuất bản</option>
                     </select>
                   </div>
+                  <div>
+                    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Sắp xếp theo</label>
+                    <select id="filterBuildingSortKey" onchange="applyBuildingSortFromBar()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:130px;">
+                      <option value="name">Tên tòa</option>
+                      <option value="address">Địa chỉ</option>
+                      <option value="floors">Số tầng</option>
+                      <option value="status">Trạng thái</option>
+                      <option value="organization">Tổ chức</option>
+                      <option value="updated">Cập nhật</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Thứ tự</label>
+                    <select id="filterBuildingSortDir" onchange="applyBuildingSortFromBar()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:120px;">
+                      <option value="asc">Tăng dần ▲</option>
+                      <option value="desc">Giảm dần ▼</option>
+                    </select>
+                  </div>
+                  <div class="building-restore-filter" style="display:none;">
+                    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Hiển thị</label>
+                    <label style="display:flex; align-items:center; gap:6px; padding:6px 10px; border-radius:6px; border:1px solid #ddd; background:#fff; cursor:pointer; min-height:34px;">
+                      <input id="filterBuildingIncludeInactive" type="checkbox" onchange="onBuildingIncludeInactiveChange()" style="cursor:pointer;">
+                      <span style="font-size:13px;">Tòa đã vô hiệu</span>
+                    </label>
+                  </div>
                   <button type="button" onclick="applyBuildingFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #3498db; background:#3498db; color:white; cursor:pointer;">Lọc</button>
                   <button type="button" onclick="clearBuildingFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #ddd; background:white; cursor:pointer;">Xóa lọc</button>
                 </div>
                 <div class="table-scroll-wrapper">
-                <table class="buildings-table">
-                    <thead>
+                <table class="buildings-table dash-sort-table" id="buildingsTable">
+                    <thead id="buildingsTableHead">
                         <tr>
-                            <th>Tên Tòa Nhà</th>
-                            <th>Địa Chỉ</th>
-                            <th>Số Tầng</th>
-                            <th>Trạng Thái</th>
-                            <th>Tổ Chức</th>
-                            <th>Cập Nhật</th>
+                            <th class="org-sortable" data-sort-key="name" title="Sắp xếp theo tên">Tên Tòa Nhà <span class="org-sort-indicator" data-for="name" aria-hidden="true"></span></th>
+                            <th class="org-sortable" data-sort-key="address" title="Sắp xếp theo địa chỉ">Địa Chỉ <span class="org-sort-indicator" data-for="address" aria-hidden="true"></span></th>
+                            <th class="org-sortable" data-sort-key="floors" title="Sắp xếp theo số tầng">Số Tầng <span class="org-sort-indicator" data-for="floors" aria-hidden="true"></span></th>
+                            <th class="org-sortable" data-sort-key="status" title="Sắp xếp theo trạng thái">Trạng Thái <span class="org-sort-indicator" data-for="status" aria-hidden="true"></span></th>
+                            <th class="org-sortable" data-sort-key="organization" title="Sắp xếp theo tổ chức">Tổ Chức <span class="org-sort-indicator" data-for="organization" aria-hidden="true"></span></th>
+                            <th class="org-sortable" data-sort-key="updated" title="Sắp xếp theo ngày cập nhật">Cập Nhật <span class="org-sort-indicator" data-for="updated" aria-hidden="true"></span></th>
                             <th>Thao Tác</th>
                         </tr>
                     </thead>
@@ -127,21 +159,40 @@
       <option value="inactive">Đã khóa</option>
     </select>
   </div>
+  <div>
+    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Sắp xếp theo</label>
+    <select id="filterUserSortKey" onchange="applyUserSortFromBar()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:130px;">
+      <option value="email">Email</option>
+      <option value="name">Họ tên</option>
+      <option value="phone">Số điện thoại</option>
+      <option value="role">Vai trò</option>
+      <option value="status">Trạng thái</option>
+      <option value="organization">Tổ chức</option>
+      <option value="created">Ngày tạo</option>
+    </select>
+  </div>
+  <div>
+    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Thứ tự</label>
+    <select id="filterUserSortDir" onchange="applyUserSortFromBar()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:120px;">
+      <option value="asc">Tăng dần ▲</option>
+      <option value="desc">Giảm dần ▼</option>
+    </select>
+  </div>
   <button onclick="applyUserFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #3498db; background:#3498db; color:white; cursor:pointer;">Lọc</button>
   <button onclick="clearUserFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #ddd; background:white; cursor:pointer;">Xóa lọc</button>
 </div>
 <div class="users-table-wrapper" style="overflow-x:auto;">
-                    <table class="users-table" style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
-                        <thead style="background:#34495e; color:white;">
+                    <table class="users-table dash-sort-table" id="usersTable" style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+                        <thead id="usersTableHead" style="background:#34495e; color:white;">
                             <tr>
-                                <th style="padding:12px; text-align:left;">Email</th>
-                                <th style="padding:12px; text-align:left;">Họ Tên</th>
-                                <th style="padding:12px; text-align:left;">Số Điện Thoại</th>
-                                <th style="padding:12px; text-align:left;">Vai Trò</th>
-                                <th style="padding:12px; text-align:left;">Trạng Thái</th>
-                                <th style="padding:12px; text-align:left;">Tổ Chức</th>
+                                <th class="org-sortable" data-sort-key="email" title="Sắp xếp theo email" style="padding:12px; text-align:left;">Email <span class="org-sort-indicator" data-for="email" aria-hidden="true"></span></th>
+                                <th class="org-sortable" data-sort-key="name" title="Sắp xếp theo họ tên" style="padding:12px; text-align:left;">Họ Tên <span class="org-sort-indicator" data-for="name" aria-hidden="true"></span></th>
+                                <th class="org-sortable" data-sort-key="phone" title="Sắp xếp theo SĐT" style="padding:12px; text-align:left;">Số Điện Thoại <span class="org-sort-indicator" data-for="phone" aria-hidden="true"></span></th>
+                                <th class="org-sortable" data-sort-key="role" title="Sắp xếp theo vai trò" style="padding:12px; text-align:left;">Vai Trò <span class="org-sort-indicator" data-for="role" aria-hidden="true"></span></th>
+                                <th class="org-sortable" data-sort-key="status" title="Sắp xếp theo trạng thái" style="padding:12px; text-align:left;">Trạng Thái <span class="org-sort-indicator" data-for="status" aria-hidden="true"></span></th>
+                                <th class="org-sortable" data-sort-key="organization" title="Sắp xếp theo tổ chức" style="padding:12px; text-align:left;">Tổ Chức <span class="org-sort-indicator" data-for="organization" aria-hidden="true"></span></th>
                                 <th style="padding:12px; text-align:left;">Tòa Nhà Quản Lý</th>
-                                <th style="padding:12px; text-align:left;">Ngày Tạo</th>
+                                <th class="org-sortable" data-sort-key="created" title="Sắp xếp theo ngày tạo" style="padding:12px; text-align:left;">Ngày Tạo <span class="org-sort-indicator" data-for="created" aria-hidden="true"></span></th>
                                 <th style="padding:12px; text-align:left;">Thao Tác</th>
                             </tr>
                         </thead>
@@ -202,8 +253,11 @@
 <div id="tab-organizations" class="tab-content" style="display:none;">
   <div class="admin-section">
     <div class="section-header">
-      <h3>🏛️ Danh Sách Tổ Chức</h3>
+      <h3>🏛️ Quản lý tổ chức</h3>
       <button id="btnAddOrg" class="btn-add super-admin-only" onclick="openAddOrgModal()" style="background:#8e44ad; color:white;">+ Thêm Tổ Chức</button>
+    </div>
+    <div id="orgOverviewBlock">
+    <div id="orgOverviewCards" class="org-overview-grid" aria-label="Tổng quan tổ chức"></div>
     </div>
     <div class="filter-bar org-filter-bar" style="display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin-bottom:10px;">
       <div>
@@ -211,7 +265,7 @@
         <input id="filterOrgKeyword" type="text" placeholder="Tìm theo tên..." oninput="applyOrganizationFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:160px;">
       </div>
       <div>
-        <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Slug / mã</label>
+        <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Mã định danh</label>
         <input id="filterOrgCode" type="text" placeholder="aeon-tan-phu" oninput="applyOrganizationFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:140px;">
       </div>
       <div>
@@ -231,21 +285,41 @@
           <option value="inactive">Tạm dừng</option>
         </select>
       </div>
+      <div>
+        <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Sắp xếp theo</label>
+        <select id="filterOrgSortKey" onchange="applyOrgSortFromBar()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:130px;">
+          <option value="name">Tên</option>
+          <option value="slug">Mã định danh</option>
+          <option value="plan">Gói</option>
+          <option value="status">Trạng thái</option>
+          <option value="buildings">Tòa nhà</option>
+          <option value="users">Số user</option>
+          <option value="created">Ngày tạo</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Thứ tự</label>
+        <select id="filterOrgSortDir" onchange="applyOrgSortFromBar()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:120px;">
+          <option value="asc">Tăng dần ▲</option>
+          <option value="desc">Giảm dần ▼</option>
+        </select>
+      </div>
       <button type="button" onclick="applyOrganizationFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #3498db; background:#3498db; color:white; cursor:pointer;">Lọc</button>
       <button type="button" onclick="clearOrganizationFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #ddd; background:white; cursor:pointer;">Xóa lọc</button>
     </div>
+    <p class="org-sort-hint">Bấm tiêu đề cột (Tên, Tòa nhà…) hoặc dùng ô <strong>Sắp xếp theo</strong> phía trên để đổi thứ tự — mũi tên ▲/▼ hiện ở cột đang sắp xếp.</p>
     <div class="table-scroll-wrapper">
-      <table class="buildings-table">
-        <thead>
+      <table class="buildings-table dash-sort-table" id="orgOrganizationsTable">
+        <thead id="orgTableHead">
           <tr>
-            <th>Tên</th>
-            <th>Slug</th>
-            <th>Gói</th>
-            <th>Trạng thái</th>
-            <th>Số tòa</th>
-            <th>Số user</th>
+            <th class="org-sortable" data-sort-key="name" title="Sắp xếp theo tên">Tên <span class="org-sort-indicator" data-for="name" aria-hidden="true"></span></th>
+            <th class="org-sortable" data-sort-key="slug" title="Sắp xếp theo mã">Mã định danh <span class="org-sort-indicator" data-for="slug" aria-hidden="true"></span></th>
+            <th class="org-sortable" data-sort-key="plan" title="Sắp xếp theo gói">Gói <span class="org-sort-indicator" data-for="plan" aria-hidden="true"></span></th>
+            <th class="org-sortable" data-sort-key="status" title="Sắp xếp theo trạng thái">Trạng thái <span class="org-sort-indicator" data-for="status" aria-hidden="true"></span></th>
+            <th class="org-sortable" data-sort-key="buildings" title="Sắp xếp theo số tòa">Tòa nhà <span class="org-sort-indicator" data-for="buildings" aria-hidden="true"></span></th>
+            <th class="org-sortable" data-sort-key="users" title="Sắp xếp theo số user">Số user <span class="org-sort-indicator" data-for="users" aria-hidden="true"></span></th>
             <th>Quản trị viên</th>
-            <th>Ngày tạo</th>
+            <th class="org-sortable" data-sort-key="created" title="Sắp xếp theo ngày tạo">Ngày tạo <span class="org-sort-indicator" data-for="created" aria-hidden="true"></span></th>
             <th>Thao tác</th>
           </tr>
         </thead>
@@ -620,10 +694,12 @@
               <label style="font-size:13px; color:#666; margin-right:8px;">Chọn tầng:</label>
               <select id="mapVersionFloorSelect" onchange="onMapVersionFloorChange()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd;"></select>
             </div>
+            <p id="mapVersionRetentionNote" style="font-size:12px;color:#555;margin:0 0 8px 0;"></p>
             <p id="mapVersionHint" style="font-size:12px;color:#666;margin:0 0 10px 0;line-height:1.5;">
               <strong>Lưu ý:</strong> Khôi phục <em>không</em> xóa phiên bản 4 — server tạo <strong>phiên bản mới</strong> (vd. v5) với nội dung bản bạn chọn.
               Bản v1–v3 publish trước khi có snapshot đầy đủ chỉ khôi phục được <strong>nodes/edges</strong>, phòng/cửa có thể không đổi.
               Sau khi khôi phục: mở Editor và <strong>Ctrl+F5</strong> để thấy map mới.
+              Khi vượt ngưỡng, hệ thống <strong>tự xóa bản cũ nhất</strong> (mặc định 50 bản/tầng).
             </p>
             <p id="mapVersionStatus" style="display:none;font-size:13px;margin:0 0 10px 0;padding:8px 12px;border-radius:6px;"></p>
             <table class="buildings-table">
@@ -658,8 +734,8 @@
           <input type="text" id="addOrgName" placeholder="Ví dụ: AEON Tân Phú..." onblur="prefillSlug()">
         </div>
         <div class="form-group">
-          <label>Slug <span style="color:#e74c3c;">*</span>:</label>
-          <input type="text" id="addOrgSlug" placeholder="aeon-tan-phu (tự sinh khi nhập tên)" oninput="this.dataset.manual='1'">
+          <label>Mã định danh <span style="color:#e74c3c;">*</span>:</label>
+          <input type="text" id="addOrgSlug" placeholder="aeon-tan-phu — mã không dấu, tự sinh khi nhập tên" oninput="this.dataset.manual='1'">
         </div>
         <div class="form-group">
           <label>Gói:</label>
@@ -703,6 +779,8 @@
       </div>
     </div>
 
-    <script src="../js/dashboard.js?v=20260707h"></script>
+    <script src="../js/orgListSort.js?v=20260708l"></script>
+    <script src="../js/dashboardTableSort.js?v=20260708l"></script>
+    <script src="../js/dashboard.js?v=20260708s"></script>
 </body>
 </html>

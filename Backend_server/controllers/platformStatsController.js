@@ -1,0 +1,118 @@
+/**
+ * Phase 4.6 — Thống kê platform / tổ chức cho dashboard
+ */
+
+const Organization = require('../models/Organization');
+const Building = require('../models/Building');
+const User = require('../models/User');
+const OrganizationRegistration = require('../models/OrganizationRegistration');
+
+async function getBuildingStats(orgFilter) {
+  const base = orgFilter || {};
+  const activeQ = { ...base, is_active: { $ne: false } };
+  const [totalActive, published, draft, inactive] = await Promise.all([
+    Building.countDocuments(activeQ),
+    Building.countDocuments({ ...activeQ, status: 'PUBLISHED' }),
+    Building.countDocuments({ ...activeQ, status: 'DRAFT' }),
+    Building.countDocuments({ ...base, is_active: false })
+  ]);
+  return { total_active: totalActive, published, draft, inactive };
+}
+
+async function getUserStats(orgFilter) {
+  const base = { ...(orgFilter || {}), is_active: { $ne: false } };
+  const [total, orgAdmin, buildingAdmin, inactive] = await Promise.all([
+    User.countDocuments({ ...base, role: { $ne: 'SUPER_ADMIN' } }),
+    User.countDocuments({ ...base, role: 'ORG_ADMIN' }),
+    User.countDocuments({ ...base, role: 'BUILDING_ADMIN' }),
+    User.countDocuments({ ...(orgFilter || {}), is_active: false, role: { $ne: 'SUPER_ADMIN' } })
+  ]);
+  return { total, org_admin: orgAdmin, building_admin: buildingAdmin, inactive };
+}
+
+const getPlatformStats = async (req, res) => {
+  try {
+    const role = req.user?.role;
+
+    if (role === 'SUPER_ADMIN') {
+      const [orgTotal, orgActive, orgInactive, pendingRegs, pro, enterprise] = await Promise.all([
+        Organization.countDocuments({}),
+        Organization.countDocuments({ is_active: { $ne: false } }),
+        Organization.countDocuments({ is_active: false }),
+        OrganizationRegistration.countDocuments({ status: 'PENDING' }),
+        Organization.countDocuments({ plan: 'PRO', is_active: { $ne: false } }),
+        Organization.countDocuments({ plan: 'ENTERPRISE', is_active: { $ne: false } })
+      ]);
+
+      const [buildings, users] = await Promise.all([
+        getBuildingStats({}),
+        getUserStats({})
+      ]);
+
+      return res.status(200).json({
+        scope: 'platform',
+        organizations: {
+          total: orgTotal,
+          active: orgActive,
+          inactive: orgInactive,
+          paid: pro + enterprise,
+          pro,
+          enterprise
+        },
+        buildings,
+        users,
+        registrations: { pending: pendingRegs }
+      });
+    }
+
+    if (role === 'ORG_ADMIN') {
+      const orgId = req.user.organization_id;
+      if (!orgId) {
+        return res.status(403).json({ message: 'Tài khoản ORG_ADMIN chưa được gán tổ chức.' });
+      }
+
+      const org = await Organization.findById(orgId).select('name slug plan is_active').lean();
+      const orgFilter = { organization_id: orgId };
+
+      const [buildings, users] = await Promise.all([
+        getBuildingStats(orgFilter),
+        getUserStats(orgFilter)
+      ]);
+
+      return res.status(200).json({
+        scope: 'organization',
+        organization: org
+          ? { id: String(org._id), name: org.name, slug: org.slug, plan: org.plan || 'FREE', is_active: org.is_active !== false }
+          : { id: String(orgId) },
+        buildings,
+        users
+      });
+    }
+
+    if (role === 'BUILDING_ADMIN') {
+      const user = await User.findById(req.user.userId)
+        .select('assigned_buildings organization_id')
+        .lean();
+      const assignedIds = (user?.assigned_buildings || []).map(String);
+      const orgFilter = assignedIds.length
+        ? { _id: { $in: assignedIds }, organization_id: user.organization_id }
+        : { _id: null };
+
+      const buildings = await getBuildingStats(orgFilter);
+
+      return res.status(200).json({
+        scope: 'assigned',
+        buildings: {
+          ...buildings,
+          assigned: assignedIds.length
+        }
+      });
+    }
+
+    return res.status(403).json({ message: 'Không có quyền xem thống kê.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+  }
+};
+
+module.exports = { getPlatformStats, getBuildingStats, getUserStats };

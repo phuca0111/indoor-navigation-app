@@ -32,34 +32,58 @@ async function listOrganizations(req, res) {
     if (with_counts === 'true' && orgs.length) {
       const orgIds = orgs.map(o => o._id);
 
-      const [buildingCounts, userCounts, orgAdmins] = await Promise.all([
+      const [buildingCounts, buildingStatusCounts, userCounts, orgAdmins] = await Promise.all([
         Building.aggregate([
           { $match: { organization_id: { $in: orgIds } } },
           { $group: { _id: '$organization_id', count: { $sum: 1 } } }
+        ]),
+        Building.aggregate([
+          { $match: { organization_id: { $in: orgIds } } },
+          { $group: { _id: { org: '$organization_id', status: '$status' }, count: { $sum: 1 } } }
         ]),
         User.aggregate([
           { $match: { organization_id: { $in: orgIds } } },
           { $group: { _id: '$organization_id', count: { $sum: 1 } } }
         ]),
         User.find({ organization_id: { $in: orgIds }, role: 'ORG_ADMIN' })
-          .select('organization_id email full_name')
+          .select('organization_id email full_name is_active createdAt')
+          .sort({ createdAt: 1 })
           .lean()
       ]);
 
       const bMap = Object.fromEntries(buildingCounts.map(b => [String(b._id), b.count]));
+      const pubMap = {};
+      const draftMap = {};
+      buildingStatusCounts.forEach((row) => {
+        const orgKey = String(row._id.org);
+        if (row._id.status === 'PUBLISHED') pubMap[orgKey] = row.count;
+        else if (row._id.status === 'DRAFT') draftMap[orgKey] = row.count;
+      });
       const uMap = Object.fromEntries(userCounts.map(u => [String(u._id), u.count]));
       const adminMap = {};
-      orgAdmins.forEach(a => {
+      orgAdmins.forEach((a) => {
         const key = String(a.organization_id);
-        if (!adminMap[key]) adminMap[key] = a;
+        if (!adminMap[key]) adminMap[key] = [];
+        adminMap[key].push({
+          _id: a._id,
+          email: a.email,
+          full_name: a.full_name,
+          is_active: a.is_active
+        });
       });
 
-      orgs = orgs.map(org => ({
-        ...org,
-        building_count: bMap[String(org._id)] || 0,
-        user_count: uMap[String(org._id)] || 0,
-        org_admin: adminMap[String(org._id)] || null
-      }));
+      orgs = orgs.map((org) => {
+        const admins = adminMap[String(org._id)] || [];
+        return {
+          ...org,
+          building_count: bMap[String(org._id)] || 0,
+          building_published_count: pubMap[String(org._id)] || 0,
+          building_draft_count: draftMap[String(org._id)] || 0,
+          user_count: uMap[String(org._id)] || 0,
+          org_admins: admins,
+          org_admin: admins[0] || null
+        };
+      });
     }
 
     res.status(200).json(orgs);
