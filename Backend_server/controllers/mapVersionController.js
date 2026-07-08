@@ -4,6 +4,7 @@ const MapVersion = require('../models/MapVersion');
 const ActivityLog = require('../models/ActivityLog');
 const { syncQrCodes } = require('./mapController');
 const { buildMapSnapshot } = require('../utils/mapSnapshot');
+const { applyRetentionForFloor, getRetentionMax } = require('../utils/mapVersionRetention');
 
 function logActivity(data) {
     ActivityLog.create(data).catch(() => {});
@@ -51,6 +52,10 @@ const getVersions = async (req, res) => {
 
         res.status(200).json({
             current_version: floorDoc ? floorDoc.version : null,
+            retention: {
+                max_per_floor: getRetentionMax(),
+                stored_count: versionsRaw.length
+            },
             versions
         });
     } catch (error) {
@@ -147,7 +152,7 @@ const rollbackVersion = async (req, res) => {
         await Building.findByIdAndUpdate(buildingId, { status: 'PUBLISHED' });
 
         const mapSnapshot = buildMapSnapshot(restoredMapData);
-        MapVersion.create({
+        await MapVersion.create({
             building_id: buildingId,
             floor_number: floorNum,
             version: floorDoc.version,
@@ -158,7 +163,12 @@ const rollbackVersion = async (req, res) => {
             map_snapshot: mapSnapshot,
             published_by: userId,
             published_at: new Date()
-        }).catch(() => {});
+        });
+
+        await applyRetentionForFloor(buildingId, floorNum, {
+            userId,
+            ip: req.ip || ''
+        });
 
         syncQrCodes(floorDoc).catch(() => {});
 

@@ -317,6 +317,77 @@ const deleteBuilding = async (req, res) => {
     }
 };
 
+// ==========================================
+// HÀM 6: KHÔI PHỤC TÒA NHÀ (RESTORE SOFT DELETE) — Phase 4.4
+// ==========================================
+const restoreBuilding = async (req, res) => {
+    try {
+        if (req.user.role === 'BUILDING_ADMIN') {
+            return res.status(403).json({
+                message: 'Building Admin không được khôi phục tòa nhà. Liên hệ Org Admin hoặc Super Admin.'
+            });
+        }
+
+        const { id } = req.params;
+        const building = await Building.findById(id);
+        if (!building) {
+            return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
+        }
+
+        if (building.is_active !== false) {
+            return res.status(400).json({ message: 'Tòa nhà đang hoạt động, không cần khôi phục.' });
+        }
+
+        if (req.user.role === 'ORG_ADMIN') {
+            const me = await User.findById(req.user.userId).select('organization_id').lean();
+            if (!me?.organization_id) {
+                return res.status(403).json({ message: 'Tài khoản ORG_ADMIN chưa được gán tổ chức.' });
+            }
+            if (String(building.organization_id) !== String(me.organization_id)) {
+                return res.status(403).json({ message: 'Bạn chỉ được khôi phục tòa nhà trong tổ chức của mình.' });
+            }
+        }
+
+        if (building.organization_id) {
+            const org = await Organization.findById(building.organization_id).select('is_active name').lean();
+            if (!org) {
+                return res.status(400).json({ message: 'Tổ chức của tòa nhà không tồn tại.' });
+            }
+            if (!org.is_active) {
+                return res.status(400).json({
+                    message: 'Không thể khôi phục tòa nhà khi tổ chức "' + org.name + '" đang tạm dừng.'
+                });
+            }
+        }
+
+        const updated = await Building.findByIdAndUpdate(id, { is_active: true }, { new: true });
+        if (!updated) {
+            return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
+        }
+
+        logActivity({
+            user_id: req.user ? req.user.userId : null,
+            action: 'ACTIVATE_BUILDING',
+            target_type: 'building',
+            target_id: String(id),
+            target: building.name,
+            details: {
+                message: 'Khôi phục tòa nhà (restore soft delete)',
+                changes: { is_active: { from: false, to: true } }
+            },
+            ip_address: req.ip || '',
+            organization_id: building.organization_id
+        });
+
+        res.status(200).json({
+            message: 'Đã khôi phục tòa nhà thành công!',
+            building: updated
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+    }
+};
+
 // GET /api/buildings/:id — chi tiết tòa nhà (editor / dashboard)
 const getBuildingById = async (req, res) => {
     try {
@@ -331,5 +402,5 @@ const getBuildingById = async (req, res) => {
     }
 };
 
-module.exports = { getBuildings, getBuildingById, createBuilding, updateBuilding, deleteBuilding, checkLocation };
+module.exports = { getBuildings, getBuildingById, createBuilding, updateBuilding, deleteBuilding, restoreBuilding, checkLocation };
 

@@ -74,6 +74,7 @@ app.use('/admin', noCacheHTML, express.static(path.join(__dirname, 'admin'), {
     }
 }));
 app.use('/js', express.static(path.join(__dirname, 'js')));        // CSS/JS có thể cache
+app.use('/utils', express.static(path.join(__dirname, 'utils')));  // shared helpers (dashboard)
 app.use('/editor', express.static(path.join(__dirname, '../WebMapEditor')));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -89,6 +90,7 @@ const activityLogRoutes = require('./routes/activityLogRoutes');
 const mapVersionRoutes  = require('./routes/mapVersionRoutes');
 const organizationRoutes = require('./routes/organizationRoutes');
 const orgRegistrationRoutes = require('./routes/orgRegistrationRoutes');
+const platformStatsRoutes = require('./routes/platformStatsRoutes');
 
 app.use('/api/auth',          authRoutes);
 app.use('/api/buildings',     buildingRoutes);
@@ -99,6 +101,7 @@ app.use('/api/activity-logs', activityLogRoutes);
 app.use('/api/map-versions',  mapVersionRoutes);
 app.use('/api/organizations', organizationRoutes);
 app.use('/api/org-registrations', orgRegistrationRoutes);
+app.use('/api/platform', platformStatsRoutes);
 
 // Export app cho testing
 module.exports = app;

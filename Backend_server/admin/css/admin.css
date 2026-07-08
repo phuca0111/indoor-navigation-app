@@ -1346,3 +1346,259 @@ body {
   }
 }
 
+/* Phase 4.2a — Thẻ tổng quan tổ chức */
+.org-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.org-overview-card {
+  background: linear-gradient(135deg, #f8f9fc 0%, #fff 100%);
+  border: 1px solid #e8ecf1;
+  border-radius: 10px;
+  padding: 14px 16px;
+  cursor: default;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.org-overview-card.is-clickable {
+  cursor: pointer;
+}
+
+.org-overview-card.is-clickable:hover {
+  border-color: #3498db;
+  box-shadow: 0 2px 8px rgba(52, 152, 219, 0.12);
+}
+
+.org-overview-card.is-selected {
+  border-color: #3498db;
+  background: linear-gradient(135deg, #eef6fc 0%, #fff 100%);
+  box-shadow: 0 2px 8px rgba(52, 152, 219, 0.15);
+}
+
+.org-overview-card.is-selected .ov-value {
+  color: #2980b9;
+}
+
+.org-overview-card .ov-label {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.org-overview-card .ov-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1f2937;
+  line-height: 1.2;
+}
+
+.org-overview-card .ov-sub {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 4px;
+}
+
+.org-overview-card.accent-purple { border-left: 4px solid #8e44ad; }
+.org-overview-card.accent-green { border-left: 4px solid #27ae60; }
+.org-overview-card.accent-orange { border-left: 4px solid #e67e22; }
+.org-overview-card.accent-blue { border-left: 4px solid #3498db; }
+.org-overview-card.accent-gray { border-left: 4px solid #95a5a6; }
+.org-overview-card.accent-red { border-left: 4px solid #e74c3c; }
+.org-overview-card.accent-teal { border-left: 4px solid #16a085; }
+
+.org-overview-card.card-needs-attention {
+  border-color: #e67e22;
+  box-shadow: 0 0 0 1px rgba(230, 126, 34, 0.25);
+}
+
+.org-overview-card .ov-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.ov-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #fef3c7;
+  color: #b45309;
+  white-space: nowrap;
+}
+
+.card-needs-attention .ov-badge {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.ov-progress {
+  height: 5px;
+  background: #ecf0f1;
+  border-radius: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.ov-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3498db, #2ecc71);
+  border-radius: 3px;
+}
+
+.ov-progress-label {
+  font-size: 10px;
+  color: #7f8c8d;
+  margin-top: 4px;
+}
+
+.platform-overview-hint {
+  font-size: 12px;
+  color: #7f8c8d;
+  margin: 0 0 10px 0;
+}
+
+.platform-overview-section {
+  margin-bottom: 20px;
+}
+
+.platform-overview-title {
+  margin: 0 0 10px 0;
+  font-size: 15px;
+  color: #2c3e50;
+  font-weight: 600;
+}
+
+/* Phase 4.2b — nhiều ORG_ADMIN trong bảng */
+.org-admins-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 220px;
+}
+
+.org-admin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  background: #ede7fe;
+  color: #5b21b6;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.org-admin-chip .admin-inactive-tag {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.buildings-table td .org-admins-cell {
+  white-space: normal;
+}
+
+/* Phase 4.2c — tòa XB / nháp */
+.org-building-counts {
+  line-height: 1.25;
+  min-width: 72px;
+}
+
+.org-building-counts .obc-total {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.org-building-counts .obc-split {
+  font-size: 10px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+.org-building-counts .obc-pub {
+  color: #15803d;
+  font-weight: 600;
+}
+
+.org-building-counts .obc-draft {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.org-building-counts .obc-sep {
+  margin: 0 2px;
+  color: #d1d5db;
+}
+
+/* Phase 4.2d / 4.5 — sắp xếp bảng dashboard */
+.org-sort-hint {
+  font-size: 12px;
+  color: #7f8c8d;
+  margin: 0 0 8px 0;
+}
+
+.dash-sort-table th.org-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  position: relative;
+  padding-right: 22px;
+}
+
+.dash-sort-table th.org-sortable:hover {
+  background: #eef6fc;
+  color: #2980b9;
+}
+
+.dash-sort-table th.org-sort-active {
+  background: #e8f4fc;
+  color: #2980b9;
+  font-weight: 600;
+}
+
+.dash-sort-table .org-sort-indicator {
+  display: inline-block;
+  min-width: 14px;
+  margin-left: 4px;
+  font-size: 11px;
+  line-height: 1;
+  color: #3498db;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.dash-sort-table th.org-sortable:not(.org-sort-active) .org-sort-indicator {
+  color: #bdc3c7;
+}
+
+.users-table.dash-sort-table thead th.org-sortable:hover {
+  background: #3d566e;
+  color: #fff;
+}
+
+.users-table.dash-sort-table thead th.org-sort-active {
+  background: #3d566e;
+  color: #aed6f1;
+}
+
+.users-table.dash-sort-table .org-sort-indicator {
+  color: #85c1e9;
+}
+
+.users-table.dash-sort-table th.org-sortable:not(.org-sort-active) .org-sort-indicator {
+  color: #7f8c8d;
+}
+
