@@ -4,12 +4,22 @@
 
 // === LẤY DỮ LIỆU HIỆN TẠI (SNAPSHOT) ===
 function getMapSnapshot() {
-    var mapName = document.getElementById('mapName').value || 'Bản đồ mới';
+    var mapNameEl = document.getElementById('mapName');
+    var mapName = (mapNameEl && mapNameEl.value) ? mapNameEl.value : 'Bản đồ mới';
+    function withLayer(obj, base) {
+        base.layerId = (obj && obj.layerId != null) ? obj.layerId : 'default';
+        return base;
+    }
+    var activeLayerId = (typeof legacyGetActiveLayerId === 'function')
+        ? legacyGetActiveLayerId()
+        : 'default';
     return {
         mapName: mapName,
         metersPerGrid: metersPerGrid,
+        layers: (typeof getLayersSnapshot === 'function') ? getLayersSnapshot() : [],
+        activeLayerId: activeLayerId,
         rooms: rooms.map(function (r) {
-            var item = {
+            var item = withLayer(r, {
                 id: r.id, name: r.name, shape: r.shape || 'rect',
                 type: r.type || 'Văn phòng', color: r.color,
                 labelRotation: Number.isFinite(r.labelRotation) ? r.labelRotation : 0,
@@ -20,23 +30,34 @@ function getMapSnapshot() {
                 width: Math.round(r.width), height: Math.round(r.height),
                 widthMeters: parseFloat(pixelsToMeters(r.width).toFixed(1)),
                 heightMeters: parseFloat(pixelsToMeters(r.height).toFixed(1))
-            };
+            });
             if (r.shape === 'polygon' && r.points) item.points = r.points.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }));
             else if (r.shape === 'circle') { item.cx = Math.round(r.cx); item.cy = Math.round(r.cy); item.radius = Math.round(r.radius); }
             return item;
         }),
-        doors: doors.map(d => ({ id: d.id, name: d.name, x: Math.round(d.x), y: Math.round(d.y), width: d.width, type: d.type, rotation: d.rotation })),
-        pois: pois.map(p => ({ id: p.id, name: p.name, x: Math.round(p.x), y: Math.round(p.y), type: p.type, typeIndex: p.typeIndex })),
-        pathNodes: pathNodes.map(n => ({ id: n.id, nodeType: n.nodeType || 'normal', x: Math.round(n.x), y: Math.round(n.y), neighbors: n.neighbors })),
+        doors: doors.map(d => withLayer(d, { id: d.id, name: d.name, x: Math.round(d.x), y: Math.round(d.y), width: d.width, type: d.type, rotation: d.rotation })),
+        pois: pois.map(p => withLayer(p, { id: p.id, name: p.name, x: Math.round(p.x), y: Math.round(p.y), type: p.type, typeIndex: p.typeIndex })),
+        pathNodes: pathNodes.map(n => withLayer(n, { id: n.id, nodeType: n.nodeType || 'normal', x: Math.round(n.x), y: Math.round(n.y), neighbors: n.neighbors })),
         pathEdges: pathEdges,
-        walls: walls.map(w => ({
+        walls: walls.map(w => withLayer(w, {
             id: w.id,
             type: w.type || 'segment',
             thickness: w.thickness || 4,
             is_outer: !!w.is_outer,
             points: Array.isArray(w.points) ? w.points.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })) : []
         })),
-        qrs: qrs.map(q => ({ id: q.id, name: q.name, serial: q.serial, x: Math.round(q.x), y: Math.round(q.y) })),
+        lines: (lines || []).map(function (ln) {
+            return withLayer(ln, {
+                id: ln.id,
+                type: ln.type || 'segment',
+                color: ln.color || '#3b82f6',
+                lineWeight: ln.lineWeight || 2,
+                points: Array.isArray(ln.points) ? ln.points.map(function (p) {
+                    return { x: Math.round(p.x), y: Math.round(p.y) };
+                }) : []
+            });
+        }),
+        qrs: qrs.map(q => withLayer(q, { id: q.id, name: q.name, serial: q.serial, x: Math.round(q.x), y: Math.round(q.y), node_id: q.node_id != null ? q.node_id : null })),
         // Ảnh nền
         bgX: window.bgX || 0,
         bgY: window.bgY || 0,
@@ -73,8 +94,15 @@ function applyMapSnapshot(data) {
     walls = data.walls || [];
     nextWallId = 1; walls.forEach(w => { if (w.id && w.id >= nextWallId) nextWallId = w.id + 1; });
 
+    lines = data.lines || [];
+    nextLineId = 1; lines.forEach(function (ln) { if (ln.id && ln.id >= nextLineId) nextLineId = ln.id + 1; });
+
     qrs = data.qrs || [];
     nextQrId = 1; qrs.forEach(q => { if (q.id >= nextQrId) nextQrId = q.id + 1; });
+
+    if (typeof applyLayersSnapshot === 'function') {
+        applyLayersSnapshot(data.layers, data.activeLayerId);
+    }
 
     // Load ảnh nền
     window.bgX = data.bgX || 0;
@@ -293,9 +321,7 @@ function importJSON(file) {
                 window.bgImage = null;
             }
 
-            // Reset selection
-            selectedRoom = null;
-            selectedObject = null;
+            clearEditorSelection({ skipUi: true });
 
             // Redraw
             roomCountSpan.textContent = 'Phòng: ' + rooms.length;

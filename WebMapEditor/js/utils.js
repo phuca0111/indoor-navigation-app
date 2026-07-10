@@ -28,17 +28,66 @@ function metersToPixels(m) {
     return (m / metersPerGrid) * GRID_SIZE;
 }
 
-// Snap giá trị vào lưới (Chỉ hút nếu gần đường lưới trong khoảng 10px)
+// Snap 1 trục (legacy) — grid checkbox; ưu tiên dùng snapWorldPoint cho vẽ 2D
 function snapToGrid(val) {
+    if (typeof EditorCore !== 'undefined' && EditorCore.SnapBridge) {
+        return EditorCore.SnapBridge.legacySnapAxis(val);
+    }
     var sc = document.getElementById('snapCheck');
     if (sc && !sc.checked) return val;
-    
+
     var snapped = Math.round(val / GRID_SIZE) * GRID_SIZE;
     var dist = Math.abs(val - snapped);
-    
-    // Nếu khoảng cách đến lưới < 10px thì mới hút, còn không thì giữ nguyên
     if (dist < 10) return snapped;
     return val;
+}
+
+// Snap 2D — OSNAP (endpoint/midpoint/grid) khi SnapEngine sẵn sàng
+function snapWorldPoint(x, y, opts) {
+    if (typeof EditorCore !== 'undefined' && EditorCore.SnapBridge) {
+        return EditorCore.SnapBridge.snapWorldPoint(x, y, opts);
+    }
+    return { x: snapToGrid(x), y: snapToGrid(y), kind: 'grid', source: 'legacy' };
+}
+
+/** Giữ Shift = tắt toàn bộ snap (endpoint/midpoint + lưới + polar) — đặt điểm đúng vị trí chuột. */
+function getSnapOpts(e) {
+    if (e && e.shiftKey) return { objectSnap: false, gridSnap: false, polar: false };
+    return undefined;
+}
+
+/**
+ * Bổ sung opts.anchor cho PER snap khi đang vẽ Wall/Line (điểm neo = đỉnh trước).
+ * @param {object} [snapOpts]
+ * @param {string} [tool] — currentTool
+ */
+function enrichSnapOpts(snapOpts, tool) {
+    var opts = snapOpts ? Object.assign({}, snapOpts) : {};
+    if (typeof EditorCore === 'undefined' || !EditorCore) return opts;
+
+    if (tool === 'wall' && EditorCore.PolylineTool && EditorCore.PolylineTool.getState() === 'drawing') {
+        var pts = EditorCore.PolylineTool.getPoints();
+        if (pts.length) {
+            var last = pts[pts.length - 1];
+            opts.anchor = { x: last.x, y: last.y };
+        }
+    }
+    if (tool === 'line' && EditorCore.LineTool && EditorCore.LineTool.getState() === 'drawing') {
+        var sp = EditorCore.LineTool.getStartPoint();
+        if (sp) opts.anchor = { x: sp.x, y: sp.y };
+    }
+    return opts;
+}
+
+function isObjectSnapSuppressed(e) {
+    return !!(e && e.shiftKey);
+}
+
+function syncSpatialIndexFromLegacy() {
+    if (typeof EditorCore !== 'undefined' && EditorCore.SnapBridge) {
+        return EditorCore.SnapBridge.syncSpatialIndexFromLegacy();
+    }
+    return null;
 }
 
 // Chuyển màu CSS sang hex cho input[type=color]

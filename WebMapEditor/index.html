@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web Map Editor | Indoor Navigation System</title>
-    <link rel="stylesheet" href="styles.css?v=20260704">
+    <title>Soạn bản đồ trong nhà | WebMapEditor</title>
+    <link rel="stylesheet" href="styles.css?v=20260710k">
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -21,14 +21,14 @@
         <header class="header">
             <div class="header-left">
                 <i data-lucide="map" style="color: var(--primary)"></i>
-                <h1>Editor V4</h1>
+                <h1>Soạn bản đồ V4</h1>
                 <span id="editorCurrentUser" style="margin-left:12px; color:#666; font-size:14px; align-self:center;">Đang chỉnh sửa bởi: <strong>...</strong></span>
-                <button onclick="if(confirm('Bạn có muốn xóa sạch bản đồ hiện tại?')) clearCanvasData()"
+                <button onclick="if(confirm('Bạn có muốn xóa sạch bản đồ hiện tại?')) clearCanvasData({ clearAutosave: true })"
                     class="btn-new-map">Bản đồ mới</button>
                 <input type="hidden" id="mapName" value="Bản đồ mới">
             </div>
             <div class="header-right">
-                <button id="btnLockEditor" class="btn-lock" title="Khóa editor (Ctrl+L)">
+                <button id="btnLockEditor" class="btn-lock" title="Khóa trình soạn (Ctrl+L)">
                     <i data-lucide="lock"></i> Khóa
                 </button>
                 <button onclick="exportJSON()"><i data-lucide="download"></i> Lưu File</button>
@@ -38,17 +38,17 @@
 
                 <div style="width: 1px; height: 24px; background: var(--border); margin: 0 8px;"></div>
 
-                <button class="btn-primary" onclick="saveMapToServer()" title="Lưu và xuất bản bản đồ — tòa nhà sẽ chuyển PUBLISHED"><i data-lucide="cloud-upload"></i> Xuất bản
-                    Server</button>
+                <button class="btn-primary" onclick="saveMapToServer()" title="Lưu và xuất bản — tòa nhà chuyển trạng thái Đã xuất bản"><i data-lucide="cloud-upload"></i> Xuất bản
+                    máy chủ</button>
             </div>
         </header>
 
         <div id="editorAccessBanner" class="editor-access-banner" style="display:none;" role="alert">
             <div class="editor-access-banner__text">
                 <strong>Không có quyền truy cập tòa nhà này.</strong>
-                <span id="editorAccessBannerMsg">Bạn không được phép mở Map Editor cho tòa nhà này.</span>
+                <span id="editorAccessBannerMsg">Bạn không được phép mở trình soạn bản đồ cho tòa nhà này.</span>
             </div>
-            <button type="button" class="editor-access-banner__btn" onclick="window.location.href='/admin/dashboard.html'">Về Dashboard</button>
+            <button type="button" class="editor-access-banner__btn" onclick="window.location.href='/admin/dashboard.html'">Về bảng điều khiển</button>
         </div>
 
         <div id="editorBuildingBar" class="editor-building-bar">
@@ -61,7 +61,7 @@
                 <span class="editor-meta-sep">·</span>
                 <span>Phiên bản map: <strong id="editorMapVersion">—</strong></span>
                 <span class="editor-meta-sep">·</span>
-                <span id="editorPublishHint" class="editor-publish-hint">Lưu lên Server = xuất bản (PUBLISHED)</span>
+                <span id="editorPublishHint" class="editor-publish-hint">Lưu lên máy chủ = xuất bản bản đồ</span>
             </div>
         </div>
 
@@ -80,14 +80,29 @@
                     <button class="tool-btn" id="btn-circle" onclick="selectTool('circle')">
                         <i data-lucide="circle"></i> Vẽ Hình tròn
                     </button>
-                    <button class="tool-btn" id="btn-polygon" onclick="selectTool('polygon')">
-                        <i data-lucide="triangle"></i> Vẽ Đa giác
-                    </button>
                     <button class="tool-btn" id="btn-door" onclick="selectTool('door')">
                         <i data-lucide="door-open"></i> Thêm Cửa
                     </button>
-                    <button class="tool-btn" id="btn-wall" onclick="selectTool('wall')">
-                        <i data-lucide="panel-top"></i> Vẽ Tường
+                </div>
+
+                <div class="tool-section">
+                    <h3>Vẽ hình học</h3>
+                    <button class="tool-btn" id="btn-polygon" onclick="selectTool('polygon')" title="Phím G">
+                        <i data-lucide="triangle"></i> Đa giác <span class="tool-kbd">G</span>
+                    </button>
+                    <button class="tool-btn" id="btn-wall" onclick="selectTool('wall')" title="Phím W">
+                        <i data-lucide="panel-top"></i> Tường <span class="tool-kbd">W</span>
+                    </button>
+                    <button class="tool-btn" id="btn-line" onclick="selectTool('line')" title="Phím L">
+                        <i data-lucide="slash"></i> Đoạn thẳng <span class="tool-kbd">L</span>
+                    </button>
+                </div>
+
+                <div class="tool-section">
+                    <h3>Lớp vẽ</h3>
+                    <div id="layersPanel" class="layers-panel"></div>
+                    <button class="btn-layer-add tool-btn" type="button" onclick="addLayerUI()">
+                        <i data-lucide="plus"></i> Thêm lớp
                     </button>
                 </div>
 
@@ -97,10 +112,10 @@
                         <i data-lucide="qr-code"></i> Điểm mốc QR
                     </button>
                     <button class="tool-btn" id="btn-path" onclick="selectTool('path')">
-                        <i data-lucide="route"></i> Đường đi (Path)
+                        <i data-lucide="route"></i> Đường đi
                     </button>
                     <button class="tool-btn" id="btn-poi" onclick="selectTool('poi')">
-                        <i data-lucide="map-pin"></i> Thêm POI
+                        <i data-lucide="map-pin"></i> Điểm POI
                     </button>
                 </div>
 
@@ -110,7 +125,7 @@
                         <div class="prop-row">
                             <label>Tầng:</label>
                             <select id="floorSelect" style="width: 80px;">
-                                <option value="0">Tầng trệt GF</option>
+                                <option value="0">Tầng trệt</option>
                                 <option value="1">Tầng 1</option>
                                 <option value="2">Tầng 2</option>
                                 <option value="3">Tầng 3</option>
@@ -131,6 +146,9 @@
                         </div>
                         <div class="prop-row">
                             <label><input type="checkbox" id="snapCheck" checked> Hút vào lưới</label>
+                        </div>
+                        <div class="prop-row">
+                            <label><input type="checkbox" id="polarAngleLabelCheck" checked> Hiện nhãn góc bám tia</label>
                         </div>
                         <div class="prop-row">
                             <label><input type="checkbox" id="dimCheck" checked> Hiện kích thước</label>
@@ -158,6 +176,18 @@
                     <canvas id="mapCanvas"></canvas>
                 </div>
                 <div class="status-bar">
+                    <div id="commandBarWrap" class="command-bar-wrap">
+                        <label for="commandInput" class="command-bar-label">Lệnh</label>
+                        <input id="commandInput" type="text" class="command-bar-field"
+                            placeholder="W tường · L đoạn · G đa giác · V chọn" autocomplete="off" spellcheck="false" />
+                        <span id="commandHint" class="command-bar-hint"></span>
+                    </div>
+                    <div id="dynamicInputWrap" class="dynamic-input-wrap" style="display:none;">
+                        <label for="dynamicInput" class="dynamic-input-label">Nhập</label>
+                        <input id="dynamicInput" type="text" class="dynamic-input-field"
+                            placeholder="100 | @100&lt;45 | @50,30" autocomplete="off" spellcheck="false" />
+                        <span id="dynamicInputHint" class="dynamic-input-hint"></span>
+                    </div>
                     <span id="zoomLevel"><i data-lucide="zoom-in" style="width:12px"></i> 100%</span>
                     <span id="mousePos">X: 0, Y: 0</span>
                     <span id="worldPos">0.0m, 0.0m</span>
@@ -189,9 +219,9 @@
     <div id="secureLockOverlay" class="secure-lock-overlay" aria-hidden="true">
         <div class="secure-lock-modal" role="dialog" aria-modal="true" aria-labelledby="secureLockTitle">
             <div class="secure-lock-avatar">
-                <i data-lucide="shield-lock"></i>
+                <i data-lucide="shield-check"></i>
             </div>
-            <h2 id="secureLockTitle">Session Locked</h2>
+            <h2 id="secureLockTitle">Phiên đã khóa</h2>
             <p id="secureLockSubtitle" class="secure-lock-subtitle">Nhập mật khẩu để tiếp tục chỉnh sửa bản đồ.</p>
 
             <label class="secure-lock-label" for="unlockPassword">Mật khẩu</label>
@@ -206,36 +236,77 @@
     </div>
 
     <!-- EditorCore V4 Phase 0 -->
-    <script src="core/event-bus.js?v=20260704"></script>
-    <script src="core/document.js?v=20260704"></script>
-    <script src="core/map-adapter.js?v=20260707"></script>
-    <script src="core/validation-engine.js?v=20260707"></script>
-    <script src="core/legacy-bridge.js?v=20260707"></script>
-    <script src="core/command-manager.js?v=20260707"></script>
-    <script src="core/index.js?v=20260707"></script>
+    <script src="core/event-bus.js?v=20260709f"></script>
+    <script src="core/document.js?v=20260709f"></script>
+    <script src="core/models.js?v=20260709f"></script>
+    <script src="core/config.js?v=20260709f"></script>
+    <script src="core/geometry/geometry-engine.js?v=20260709f"></script>
+    <script src="core/selection-manager.js?v=20260709f"></script>
+    <script src="core/selection-bridge.js?v=20260710d"></script>
+    <script src="core/property-schemas.js?v=20260710e"></script>
+    <script src="core/property-inspector.js?v=20260710d"></script>
+    <script src="core/crash-recovery.js?v=20260710g"></script>
+    <script src="core/perf-monitor.js?v=20260709f"></script>
+    <script src="core/project-manager.js?v=20260710n"></script>
+    <script src="core/version-manager.js?v=20260709f"></script>
+    <script src="core/asset-manager.js?v=20260709f"></script>
+    <script src="core/plugin-api.js?v=20260709f"></script>
+    <script src="core/map-adapter.js?v=20260709f"></script>
+    <script src="core/validation-engine.js?v=20260709f"></script>
+    <script src="core/legacy-bridge.js?v=20260709f"></script>
+    <script src="core/spatial-index.js?v=20260709f"></script>
+    <script src="core/snap-engine.js?v=20260709f"></script>
+    <script src="core/snap-bridge.js?v=20260709f"></script>
+    <script src="core/snap-overlay.js?v=20260710b"></script>
+    <script src="core/polar-tracking.js?v=20260709f"></script>
+    <script src="core/dynamic-input.js?v=20260709f"></script>
+    <script src="core/layer-manager.js?v=20260710b"></script>
+    <script src="core/command-manager.js?v=20260709f"></script>
+    <script src="core/tool-command-manager.js?v=20260710a"></script>
+    <script src="core/tool-registry.js?v=20260709f"></script>
+    <script src="core/tools/polyline-tool.js?v=20260709f"></script>
+    <script src="core/tools/line-tool.js?v=20260709f"></script>
+    <script src="core/tools-bootstrap.js?v=20260710a"></script>
+    <script src="core/rendering/background-renderer.js?v=20260710e"></script>
+    <script src="core/rendering/grid-renderer.js?v=20260710e"></script>
+    <script src="core/rendering/room-renderer.js?v=20260710e"></script>
+    <script src="core/rendering/wall-renderer.js?v=20260710e"></script>
+    <script src="core/rendering/door-renderer.js?v=20260710e"></script>
+    <script src="core/rendering/path-renderer.js?v=20260710e"></script>
+    <script src="core/rendering/poi-renderer.js?v=20260710e"></script>
+    <script src="core/rendering/qr-renderer.js?v=20260710e"></script>
+    <script src="core/rendering/rendering-engine.js?v=20260710e"></script>
+    <script src="core/index.js?v=20260709f"></script>
 
     <!-- Script Scripts -->
-    <script src="js/state.js?v=2"></script>
-    <script src="js/history.js?v=20260707"></script>
-    <script src="js/utils.js?v=2"></script>
+    <script src="js/state.js?v=20260709i"></script>
+    <script src="js/selection-bridge-ui.js?v=20260710d"></script>
+    <script src="js/history.js?v=20260710f"></script>
+    <script src="js/utils.js?v=20260709d"></script>
+    <script src="js/layers.js?v=20260710e"></script>
     <script src="js/autodetect.js?v=2"></script>
-    <script src="js/rooms.js?v=2"></script>
+    <script src="js/rooms.js?v=20260710j"></script>
     <script src="js/doors.js?v=2"></script>
-    <script src="js/walls.js?v=2"></script>
-    <script src="js/pois.js?v=2"></script>
+    <script src="js/walls.js?v=20260708q"></script>
+    <script src="js/lines.js?v=20260709i"></script>
+    <script src="js/pois.js?v=20260710b"></script>
     <script src="js/paths.js?v=2"></script>
-    <script src="js/tools.js?v=2"></script>
-    <script src="js/canvas.js?v=2"></script>
-    <script src="js/io.js?v=2"></script>
-    <script src="js/api.js?v=20260707"></script>
+    <script src="js/tools.js?v=20260710i"></script>
+    <script src="js/canvas.js?v=20260710k"></script>
+    <script src="js/io.js?v=20260710f"></script>
+    <script src="js/api.js?v=20260710p"></script>
     <script src="core/export-pipeline.js?v=20260707"></script>
-    <script src="js/secure-lock.js?v=2"></script>
+    <script src="js/secure-lock.js?v=20260710b"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
-    <script src="js/properties.js?v=20260707"></script>
+    <script src="js/property-inspector-ui.js?v=20260710e"></script>
+    <script src="js/properties.js?v=20260710k"></script>
     <script src="js/qrs.js?v=2"></script>
-    <script src="js/autosave.js?v=2"></script>
-    <script src="js/events.js?v=2"></script>
-    <script src="editor.js?v=20260707"></script>
+    <script src="js/autosave.js?v=20260710o"></script>
+    <script src="js/events.js?v=20260710j"></script>
+    <script src="js/dynamic-input-ui.js?v=20260709e"></script>
+    <script src="js/command-bar-ui.js?v=20260710b"></script>
+    <script src="js/layers-ui.js?v=20260710e"></script>
+    <script src="editor.js?v=20260710o"></script>
     <script>
         // Khởi tạo Lucide Icons
         lucide.createIcons();

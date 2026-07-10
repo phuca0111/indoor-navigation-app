@@ -78,7 +78,7 @@
                 if (payload && payload.unlockUser && subtitle) {
                     subtitle.textContent = 'Đã mở khóa cho: ' + payload.unlockUser.email;
                 }
-                if (typeof showToast === 'function') showToast('Đã mở khóa editor.', 'success');
+                if (typeof showToast === 'function') showToast('Đã mở khóa trình soạn.', 'success');
                 return;
             }
 
@@ -121,7 +121,7 @@
         window.secureLockStore.lockTimestamp = Date.now();
         window.secureLockStore.failedAttempts = 0;
         applyLockUi();
-        if (typeof showToast === 'function') showToast('Editor đã được khóa.', 'success');
+        if (typeof showToast === 'function') showToast('Trình soạn đã được khóa.', 'success');
     }
 
     window.secureLockStore = window.secureLockStore || {

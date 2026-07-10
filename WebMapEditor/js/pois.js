@@ -4,11 +4,11 @@
 
 // Danh sách loại POI và icon
 const poiTypes = [
-    { name: 'WC', icon: '🚻', color: '#3498db' },
+    { name: 'Nhà vệ sinh', icon: '🚻', color: '#3498db' },
     { name: 'Thang máy', icon: '🛗', color: '#9b59b6' },
     { name: 'Thang cuốn', icon: '↗️', color: '#9b59b6' },
     { name: 'Cầu thang', icon: '🪜', color: '#9b59b6' },
-    { name: 'ATM', icon: '🏧', color: '#27ae60' },
+    { name: 'Máy ATM', icon: '🏧', color: '#27ae60' },
     { name: 'Quầy lễ tân', icon: '💁', color: '#e67e22' },
     { name: 'Lối ra', icon: '🚪', color: '#e74c3c' },
     { name: 'Khác', icon: '📍', color: '#95a5a6' }
@@ -16,15 +16,18 @@ const poiTypes = [
 
 // Tạo POI mới
 function createPoi(x, y) {
+    var sp = snapWorldPoint(x, y);
     var poi = {
         id: nextPoiId++,
-        name: 'POI ' + pois.length,
-        x: snapToGrid(x),
-        y: snapToGrid(y),
+        name: 'Điểm POI ' + pois.length,
+        layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default',
+        x: sp.x,
+        y: sp.y,
         typeIndex: 0,       // Index trong mảng poiTypes
         type: poiTypes[0].name
     };
     pois.push(poi);
+    if (typeof syncSpatialIndexFromLegacy === 'function') syncSpatialIndexFromLegacy();
     return poi;
 }
 
@@ -32,6 +35,7 @@ function createPoi(x, y) {
 function findPoiAt(wx, wy) {
     for (var i = pois.length - 1; i >= 0; i--) {
         var p = pois[i];
+        if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(p)) continue;
         var dx = wx - p.x;
         var dy = wy - p.y;
         // Kiểm tra trong vòng tròn

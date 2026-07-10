@@ -97,14 +97,49 @@
         return this.objects.length;
     };
 
+    Document.prototype.toJSON = function () {
+        return {
+            version: this.version,
+            metadata: Object.assign({}, this.metadata),
+            layers: (this.layers || []).map(function (l) { return Object.assign({}, l); }),
+            objects: (this.objects || []).map(function (o) {
+                return Object.assign({}, o, {
+                    data: o.data ? Object.assign({}, o.data) : o.data
+                });
+            })
+        };
+    };
+
+    Document.prototype.fromJSON = function (json) {
+        if (!json || typeof json !== 'object') return this;
+        this.version = json.version || 1;
+        this.metadata = Object.assign({}, json.metadata || {});
+        this.layers = (json.layers || []).map(function (l) { return Object.assign({}, l); });
+        this.objects = (json.objects || []).map(function (o) { return Object.assign({}, o); });
+        return this;
+    };
+
     function createDocument() {
         return new Document();
+    }
+
+    var singleton = createDocument();
+
+    function toJSON() {
+        return singleton.toJSON();
+    }
+
+    function fromJSON(json) {
+        singleton.fromJSON(json);
+        return singleton;
     }
 
     return {
         Document: Document,
         createDocument: createDocument,
         OBJECT_TYPES: OBJECT_TYPES,
-        document: createDocument()
+        document: singleton,
+        toJSON: toJSON,
+        fromJSON: fromJSON
     };
 });

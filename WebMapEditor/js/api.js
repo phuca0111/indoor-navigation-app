@@ -13,6 +13,18 @@ window.buildingId = buildingId;
 window.editorBuildingMeta = null;
 window.editorAccessBlocked = false;
 
+// Đồng bộ tầng từ URL (?floor=0) — value "0" hợp lệ
+(function syncFloorFromUrl() {
+    var floorParam = urlParams.get('floor');
+    if (floorParam == null || floorParam === '') return;
+    var sel = document.getElementById('floorSelect');
+    if (!sel) return;
+    var exists = Array.prototype.some.call(sel.options, function (o) {
+        return String(o.value) === String(floorParam);
+    });
+    if (exists) sel.value = String(floorParam);
+})();
+
 // 2. Kiểm tra quyền truy cập (chỉ warning, không chặn)
 if (!token && buildingId) {
     // alert('Vui lòng đăng nhập để sử dụng tính năng lưu trữ đám mây!');
@@ -28,6 +40,23 @@ function clearEditorAuthStorage() {
     localStorage.removeItem('userRole');
     localStorage.removeItem('userId');
     localStorage.removeItem('activeDashboardTab');
+}
+
+function isNetworkFetchError(error) {
+    if (!error) return false;
+    if (error instanceof TypeError) return true;
+    var msg = String(error.message || error);
+    return /failed to fetch|network|connection refused|load failed/i.test(msg);
+}
+
+function getOfflineEditorUser() {
+    const email = localStorage.getItem('userEmail');
+    if (!email) return null;
+    return {
+        email: email,
+        role: localStorage.getItem('userRole') || 'BUILDING_ADMIN',
+        _offline: true
+    };
 }
 
 async function verifyEditorSession() {
@@ -46,16 +75,44 @@ async function verifyEditorSession() {
         });
 
         if (!response.ok) {
-            console.warn('🔒 Editor: Token không hợp lệ - redirect đến login');
-            clearEditorAuthStorage();
-            window.location.replace('/admin/index.html');
+            if (response.status === 401 || response.status === 403) {
+                console.warn('🔒 Editor: Token không hợp lệ - redirect đến login');
+                clearEditorAuthStorage();
+                window.location.replace('/admin/index.html');
+                return null;
+            }
+            console.warn('🔒 Editor: verify session HTTP', response.status);
+            const offlineUser = getOfflineEditorUser();
+            if (offlineUser) {
+                if (typeof showToast === 'function') {
+                    showToast('Máy chủ lỗi tạm thời — chỉnh sửa ngoại tuyến (chưa đồng bộ đám mây)', 'warning');
+                }
+                return offlineUser;
+            }
             return null;
         }
 
         const currentUser = await response.json();
         console.log('✅ Editor session verified:', currentUser.email);
+        var uid = currentUser._id || currentUser.id || null;
+        if (uid) {
+            try { localStorage.setItem('userId', String(uid)); } catch (e) { /* ignore */ }
+            if (window.EditorCore && EditorCore.ProjectManager && EditorCore.ProjectManager.setUserId) {
+                EditorCore.ProjectManager.setUserId(uid);
+            }
+        }
         return currentUser;
     } catch (error) {
+        if (isNetworkFetchError(error)) {
+            console.warn('⚠️ Editor: Không kết nối được server — chế độ offline', error.message || error);
+            const offlineUser = getOfflineEditorUser();
+            if (offlineUser) {
+                if (typeof showToast === 'function') {
+                    showToast('Không kết nối máy chủ — vẫn chỉnh sửa cục bộ. Hãy khởi động lại backend.', 'warning');
+                }
+                return offlineUser;
+            }
+        }
         console.error('🔒 Editor: Lỗi verify session:', error);
         clearEditorAuthStorage();
         window.location.replace('/admin/index.html');
@@ -66,11 +123,22 @@ async function verifyEditorSession() {
 async function initEditor() {
     window.editorMapLoadStarted = true;
     console.log('🚀 Editor: Khởi tạo...');
+    if (typeof pauseAutoSave === 'function') pauseAutoSave('initEditor');
+
     const currentUser = await verifyEditorSession();
     if (!currentUser) {
         console.log('🛑 Editor: Dừng init - không có session hợp lệ');
         return;
     }
+
+    // Đồng bộ userId sớm — key autosave phải khớp trước khi đọc nháp
+    try {
+        if (currentUser.id != null) localStorage.setItem('userId', String(currentUser.id));
+        else if (currentUser._id != null) localStorage.setItem('userId', String(currentUser._id));
+        if (window.EditorCore && EditorCore.ProjectManager && EditorCore.ProjectManager.setUserId) {
+            EditorCore.ProjectManager.setUserId(localStorage.getItem('userId'));
+        }
+    } catch (e) { /* ignore */ }
 
     renderEditorUser(currentUser);
     updateEditorFloorLabel();
@@ -78,21 +146,39 @@ async function initEditor() {
     const building = await loadBuildingContext();
     if (window.editorAccessBlocked) {
         window.editorMapLoadHandled = true;
-        console.warn('🛑 Editor: Không có quyền tòa nhà — dừng load map');
-        return;
+        console.warn('🛑 Editor: Không có quyền tòa nhà — chỉ chỉnh local, vẫn bật auto-save');
+        if (typeof checkAutoSave === 'function') checkAutoSave({ serverLoaded: false });
+    } else {
+        console.log('📥 Editor: Tự động load map cho tầng:', document.getElementById('floorSelect')?.value);
+        if (window.EditorCore && EditorCore.SpatialIndex) {
+            EditorCore.SpatialIndex.syncFromLegacyWindow();
+            console.log('🗺️ Spatial index:', EditorCore.SpatialIndex.getStats());
+        }
+        if (window.EditorCore && EditorCore.SnapEngine) {
+            console.log('🧲 OSNAP:', EditorCore.SnapEngine.getSettings());
+        }
+        if (window.EditorCore && EditorCore.LayerManager) {
+            console.log('📑 Layers:', EditorCore.LayerManager.getAll().length,
+                '— active:', EditorCore.LayerManager.getActiveLayer().name);
+        }
+        const loadResult = await loadMapFromServer();
+        if (window.EditorCore && EditorCore.SpatialIndex) {
+            console.log('🗺️ Spatial index (sau load map):', EditorCore.SpatialIndex.getStats());
+        }
+        if (loadResult && loadResult.loaded && loadResult.version != null) {
+            updateEditorMapVersion(loadResult.version);
+        }
+        if (typeof syncActiveFloor === 'function') syncActiveFloor();
+        window.editorMapLoadHandled = true;
+        // Tự khôi phục nháp nếu khác bản server (không hỏi confirm — F5 không mất việc)
+        if (typeof checkAutoSave === 'function') {
+            checkAutoSave({ serverLoaded: !!(loadResult && loadResult.loaded) });
+        }
     }
 
-    console.log('📥 Editor: Tự động load map cho tầng:', document.getElementById('floorSelect')?.value);
-    const loadResult = await loadMapFromServer();
-    if (loadResult && loadResult.loaded && loadResult.version != null) {
-        updateEditorMapVersion(loadResult.version);
-    }
-    if (typeof syncActiveFloor === 'function') syncActiveFloor();
-    window.editorMapLoadHandled = true;
-    if (loadResult && loadResult.notFound && typeof checkAutoSave === 'function') {
-        checkAutoSave();
-    }
-    if (typeof startAutoSave === 'function') startAutoSave();
+    if (typeof resumeAutoSave === 'function') resumeAutoSave({ clean: true });
+    // cleanStart: không ghi đè nháp bằng bản vừa load cho đến khi user sửa
+    if (typeof startAutoSave === 'function') startAutoSave(true, { cleanStart: true });
 }
 
 // ==========================================
@@ -117,7 +203,7 @@ function renderEditorUser(currentUser) {
 }
 
 const BUILDING_STATUS_LABELS = {
-    DRAFT: 'Nháp (DRAFT)',
+    DRAFT: 'Nháp',
     PUBLISHED: 'Đã xuất bản'
 };
 
@@ -369,7 +455,7 @@ function confirmPublishWarnings(warnings) {
 
 async function saveMapToServer() {
     if (!buildingId) {
-        alert('Lỗi: Không tìm thấy ID tòa nhà! Vui lòng mở từ Dashboard.');
+        alert('Lỗi: Không tìm thấy mã tòa nhà! Vui lòng mở từ Bảng điều khiển.');
         return;
     }
 
@@ -413,7 +499,7 @@ async function saveMapToServer() {
         nodes: mapData.nodes.length
     });
 
-    showLoading('Đang lưu bản đồ lên Server...');
+    showLoading('Đang lưu bản đồ lên máy chủ...');
 
     try {
         const response = await apiFetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/publish`, {
@@ -444,14 +530,21 @@ async function saveMapToServer() {
     } catch (error) {
         hideLoading();
         console.error('API Error:', error);
-        showToast('Lỗi kết nối tới Server', 'error');
+        showToast('Lỗi kết nối máy chủ', 'error');
     }
 }
 
 // ==========================================
 // HÀM: TẢI BẢN ĐỒ TỪ SERVER VỀ
 // ==========================================
-function clearCanvasData() {
+/**
+ * Xóa dữ liệu trên canvas.
+ * @param {{clearAutosave?: boolean}} [opts]
+ *   clearAutosave=true chỉ khi user bấm «Xóa sạch» / tạo mới.
+ *   loadMapFromServer KHÔNG được xóa nháp — nếu không F5 sẽ mất vòng tròn vừa vẽ.
+ */
+function clearCanvasData(opts) {
+    opts = opts || {};
     // Xóa sạch các mảng dữ liệu
     rooms = [];
     doors = [];
@@ -459,6 +552,7 @@ function clearCanvasData() {
     pathNodes = [];
     pathEdges = [];
     walls = [];
+    lines = [];
     qrs = [];
     bgImage = null;
     bgImageBase64 = '';
@@ -470,25 +564,31 @@ function clearCanvasData() {
     nextQrId = 1;
     nextNodeId = 1;
     nextWallId = 1;
+    nextLineId = 1;
 
     // Reset tên bản đồ về mặc định khi tạo mới
     var mapNameInput = document.getElementById('mapName');
     if (mapNameInput) mapNameInput.value = 'Bản đồ mới';
 
-    // Quan trọng: xóa luôn bản nháp local để tránh restore nhầm bản đồ cũ
-    if (typeof clearAutoSave === 'function') clearAutoSave();
+    // Chỉ xóa nháp khi user cố ý (nút Xóa sạch). loadMapFromServer truyền clearAutosave:false.
+    if (opts.clearAutosave) {
+        if (typeof clearAutoSave === 'function') clearAutoSave();
+    }
 
     // Vẽ lại canvas trống
     if (typeof draw === 'function') draw();
 
-    console.log('🧹 Đã xóa sạch dữ liệu trên Canvas.');
+    console.log('🧹 Đã xóa sạch dữ liệu trên Canvas.' +
+        (opts.clearAutosave ? ' (đã xóa nháp local)' : ' (giữ nháp local)'));
 }
 
 async function loadMapFromServer() {
     if (!buildingId) return { loaded: false, skipped: true };
 
-    // QUAN TRỌNG: Xóa dữ liệu cũ trước khi nạp cái mới hoặc khi sang ID mới
-    clearCanvasData();
+    if (typeof pauseAutoSave === 'function') pauseAutoSave('loadMapFromServer');
+
+    // QUAN TRỌNG: Xóa dữ liệu cũ trước khi nạp — nhưng GIỮ nháp local để checkAutoSave khôi phục
+    clearCanvasData({ clearAutosave: false });
 
     const floor = document.getElementById('floorSelect').value;
     showLoading('Đang tải dữ liệu tầng ' + floor + '...');
@@ -552,7 +652,7 @@ async function loadMapFromServer() {
     } catch (error) {
         hideLoading();
         console.error('Load Error:', error);
-        showToast('Lỗi kết nối Server: ' + error.message, 'error');
+        showToast('Lỗi kết nối máy chủ: ' + error.message, 'error');
         return { loaded: false, error: true };
     }
 }
@@ -667,6 +767,38 @@ function applyMapData(data) {
     });
     nextWallId = maxWallId + 1;
 
+    // 6b. Khôi phục Lines (hỗ trợ vẽ — chỉ editor, không publish)
+    lines = (data.lines || []).map(function (ln) {
+        return {
+            id: ln.id || Math.floor(Math.random() * 100000),
+            type: ln.type || 'segment',
+            color: ln.color || '#3b82f6',
+            lineWeight: ln.lineWeight || 2,
+            points: Array.isArray(ln.points) ? ln.points.map(function (p) { return { x: p.x, y: p.y }; }) : []
+        };
+    });
+    var maxLineId = 0;
+    lines.forEach(function (ln) {
+        if (ln.id > maxLineId) maxLineId = ln.id;
+    });
+    nextLineId = maxLineId + 1;
+
+    // Phase 1b Layer system: gán layerId mặc định cho dữ liệu legacy
+    // (map hiện tại chưa chắc có layerId trong payload publish)
+    var defaultLayerId = 'default';
+    try {
+        if (window.EditorCore && EditorCore.LayerManager && EditorCore.LayerManager.DEFAULT_LAYER_ID) {
+            defaultLayerId = EditorCore.LayerManager.DEFAULT_LAYER_ID;
+        }
+    } catch (_) { }
+    [rooms, doors, pois, pathNodes, walls, qrs].forEach(function (arr) {
+        if (!Array.isArray(arr)) return;
+        arr.forEach(function (o) {
+            if (!o || typeof o !== 'object') return;
+            if (o.layerId == null) o.layerId = defaultLayerId;
+        });
+    });
+
     // Vẽ lại toàn bộ
     updateObjectList();
     if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
@@ -674,6 +806,9 @@ function applyMapData(data) {
 
     if (window.EditorCore && EditorCore.LegacyBridge) {
         EditorCore.LegacyBridge.syncDocumentFromLegacy();
+    }
+    if (window.EditorCore && EditorCore.SpatialIndex) {
+        EditorCore.SpatialIndex.syncFromLegacyWindow();
     }
 }
 

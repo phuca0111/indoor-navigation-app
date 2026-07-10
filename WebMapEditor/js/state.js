@@ -40,6 +40,15 @@ let nextWallId = 1;
 let wallStartPoint = null;
 let wallPreviewEnd = null;
 
+// Line data (đoạn thẳng hỗ trợ — không phải tường)
+let lines = [];
+let nextLineId = 1;
+
+// Vị trí chuột world (dynamic input + reference hướng)
+if (typeof window !== 'undefined') {
+    window.lastMouseWorld = { x: 0, y: 0 };
+}
+
 // Drawing state (vẽ phòng mới)
 let isDrawing = false;
 let drawStartX, drawStartY;
@@ -110,3 +119,31 @@ let selectedObject = null;  // {type: 'room'/'door'/'poi'/'node', data: ...}
 const HANDLE_SIZE = 8;
 const POI_RADIUS = 12;      // Bán kính vòng tròn POI
 const NODE_RADIUS = 8;      // Bán kính path node
+
+// Expose legacy arrays cho core modules (snap-engine, spatial-index) qua globalThis.
+// Top-level `let` không gán lên window; IIFE core chỉ đọc được globalThis.*.
+(function exposeLegacyArraysOnWindow() {
+    if (typeof window === 'undefined') return;
+    var getters = {
+        walls: function () { return walls; },
+        lines: function () { return lines; },
+        rooms: function () { return rooms; },
+        doors: function () { return doors; },
+        pois: function () { return pois; },
+        pathNodes: function () { return pathNodes; },
+        pathEdges: function () { return pathEdges; },
+        qrs: function () { return qrs; }
+    };
+    Object.keys(getters).forEach(function (key) {
+        try {
+            Object.defineProperty(window, key, {
+                enumerable: true,
+                configurable: true,
+                get: getters[key]
+            });
+        } catch (e) { /* ignore */ }
+    });
+    if (typeof globalThis !== 'undefined' && globalThis.EditorCore && globalThis.EditorCore.SpatialIndex) {
+        globalThis.EditorCore.SpatialIndex.syncFromLegacyWindow();
+    }
+})();

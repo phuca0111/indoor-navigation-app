@@ -2,6 +2,16 @@
 // CANVAS.JS - Vẽ canvas: Grid, Room, Preview, Handles, Dimensions
 // ============================================================
 
+function getRenderViewport() {
+    return {
+        panX: panX,
+        panY: panY,
+        zoom: zoom,
+        width: canvas ? canvas.width : 0,
+        height: canvas ? canvas.height : 0
+    };
+}
+
 // Resize canvas theo kích thước wrapper
 function resizeCanvas() {
     var wrapper = document.querySelector('.canvas-wrapper');
@@ -31,6 +41,7 @@ function draw() {
         if (Array.isArray(window.qrs)) window.qrs = window.qrs.filter(i => i && typeof i === 'object');
         if (Array.isArray(window.doors)) window.doors = window.doors.filter(i => i && typeof i === 'object');
         if (Array.isArray(window.walls)) window.walls = window.walls.filter(i => i && typeof i === 'object');
+        if (Array.isArray(window.lines)) window.lines = window.lines.filter(i => i && typeof i === 'object');
     } catch (e) { console.error("Cleanup error:", e); }
 
     if (!ctx) return;
@@ -38,9 +49,13 @@ function draw() {
     try {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Nền canvas - Trắng sạch sẽ
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        var viewport = getRenderViewport();
+        if (window.EditorCore && EditorCore.RenderingEngine) {
+            EditorCore.RenderingEngine.renderCanvasClear(ctx, viewport);
+        } else {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
 
         ctx.save();
         ctx.translate(panX, panY);
@@ -48,33 +63,44 @@ function draw() {
 
         // 1. Ảnh nền (nếu có)
         if (window.bgImage) {
-            ctx.save();
-            ctx.globalAlpha = window.bgOpacity;
-            var bw = window.bgImage.width * window.bgScale;
-            var bh = window.bgImage.height * window.bgScale;
-            
-            // Di chuyển đến tâm ảnh, xoay, rồi vẽ ngược lại từ tâm
-            ctx.translate(window.bgX + bw / 2, window.bgY + bh / 2);
-            ctx.rotate((window.bgRotation || 0) * Math.PI / 180);
-            ctx.drawImage(window.bgImage, -bw / 2, -bh / 2, bw, bh);
-            
-            // Nếu đang trong chế độ chỉnh ảnh nền -> Vẽ khung bao để dễ nhận biết
-            if (currentTool === 'bg-adjust') {
-                ctx.setLineDash([5, 5]);
-                ctx.strokeStyle = '#3498db';
-                ctx.lineWidth = 2 / zoom;
-                ctx.strokeRect(-bw / 2, -bh / 2, bw, bh);
-                ctx.setLineDash([]);
+            if (window.EditorCore && EditorCore.RenderingEngine) {
+                EditorCore.RenderingEngine.renderBackground(ctx, viewport, {
+                    highlightAdjust: currentTool === 'bg-adjust'
+                });
+            } else {
+                ctx.save();
+                ctx.globalAlpha = window.bgOpacity;
+                var bw = window.bgImage.width * window.bgScale;
+                var bh = window.bgImage.height * window.bgScale;
+                
+                // Di chuyển đến tâm ảnh, xoay, rồi vẽ ngược lại từ tâm
+                ctx.translate(window.bgX + bw / 2, window.bgY + bh / 2);
+                ctx.rotate((window.bgRotation || 0) * Math.PI / 180);
+                ctx.drawImage(window.bgImage, -bw / 2, -bh / 2, bw, bh);
+                
+                // Nếu đang trong chế độ chỉnh ảnh nền -> Vẽ khung bao để dễ nhận biết
+                if (currentTool === 'bg-adjust') {
+                    ctx.setLineDash([5, 5]);
+                    ctx.strokeStyle = '#3498db';
+                    ctx.lineWidth = 2 / zoom;
+                    ctx.strokeRect(-bw / 2, -bh / 2, bw, bh);
+                    ctx.setLineDash([]);
+                }
+                ctx.restore();
+                ctx.globalAlpha = 1.0;
             }
-            ctx.restore();
-            ctx.globalAlpha = 1.0;
         }
 
         // 2. Lưới
-        drawGrid();
+        if (window.EditorCore && EditorCore.RenderingEngine) {
+            EditorCore.RenderingEngine.renderGrid(ctx, viewport, typeof GRID_SIZE !== 'undefined' ? GRID_SIZE : 40);
+        } else {
+            drawGrid();
+        }
 
         // 3. Phòng
         rooms.forEach(function (room) {
+            if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(room)) return;
             var sel = (selectedObject && selectedObject.type === 'room' && selectedObject.data === room);
             drawRoom(room, sel || room === selectedRoom);
         });
@@ -82,25 +108,38 @@ function draw() {
         // 3.1 Tường (nếu có)
         if (Array.isArray(walls)) {
             walls.forEach(function (wall) {
+                if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(wall)) return;
                 var sel = (selectedObject && selectedObject.type === 'wall' && selectedObject.data === wall);
                 drawWall(wall, sel);
             });
         }
 
+        // 3.2 Đoạn thẳng hỗ trợ (không phải tường)
+        if (Array.isArray(lines)) {
+            lines.forEach(function (line) {
+                if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(line)) return;
+                var sel = (selectedObject && selectedObject.type === 'line' && selectedObject.data === line);
+                drawLineSegment(line, sel);
+            });
+        }
+
         // 4. Cửa
         doors.forEach(function (door) {
+            if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(door)) return;
             var sel = (selectedObject && selectedObject.type === 'door' && selectedObject.data === door);
             drawDoor(door, sel);
         });
 
         // 5. POI
         pois.forEach(function (poi) {
+            if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(poi)) return;
             var sel = (selectedObject && selectedObject.type === 'poi' && selectedObject.data === poi);
             drawPoi(poi, sel);
         });
 
         // 6. QR Code
         qrs.forEach(function (qr) {
+            if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(qr)) return;
             var sel = (selectedObject && selectedObject.type === 'qr' && selectedObject.data === qr);
             drawQr(qr, sel);
         });
@@ -108,6 +147,7 @@ function draw() {
         // 7. Đường đi (edges trước, nodes sau)
         drawPathEdges();
         pathNodes.forEach(function (node) {
+            if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(node)) return;
             var sel = (selectedObject && selectedObject.type === 'node' && selectedObject.data === node);
             drawPathNode(node, sel);
         });
@@ -122,9 +162,14 @@ function draw() {
             drawPolygonPreview();
         }
 
-        // 8.1 Preview tường đang vẽ
-        if (currentTool === 'wall' && wallStartPoint && wallPreviewEnd) {
-            drawWallPreview();
+        // 8.1 Preview tường (PolylineTool V4)
+        if (currentTool === 'wall' && window.EditorCore && EditorCore.PolylineTool) {
+            drawWallToolPreview();
+        }
+
+        // 8.2 Preview đoạn thẳng (LineTool V4)
+        if (currentTool === 'line' && window.EditorCore && EditorCore.LineTool) {
+            drawLineToolPreview();
         }
 
         // 9. Preview thước đo
@@ -132,7 +177,12 @@ function draw() {
             drawRulerPreview();
         }
 
+        // 10. OSNAP marker (endpoint / midpoint / grid)
         ctx.restore();
+
+        if (typeof drawSnapMarker === 'function') {
+            drawSnapMarker();
+        }
     } catch (err) {
         console.error("Lỗi trong hàm draw():", err);
     }
@@ -339,6 +389,145 @@ function drawWallPreview() {
     ctx.restore();
 }
 
+/** Preview tool Tường qua PolylineTool (nét đứt + chấm đỉnh chờ). */
+function drawWallToolPreview() {
+    if (!EditorCore.PolylineTool || EditorCore.PolylineTool.getState() !== 'drawing') {
+        // Fallback legacy vars nếu còn
+        if (wallStartPoint && wallPreviewEnd) drawWallPreview();
+        return;
+    }
+    var pts = EditorCore.PolylineTool.getPoints();
+    var preview = EditorCore.PolylineTool.getPreview();
+    if (!pts.length) return;
+
+    ctx.save();
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2 / zoom;
+    ctx.setLineDash([6 / zoom, 4 / zoom]);
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (var i = 1; i < pts.length; i++) {
+        ctx.lineTo(pts[i].x, pts[i].y);
+    }
+    if (preview) {
+        ctx.lineTo(preview.x, preview.y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = '#f59e0b';
+    for (var j = 0; j < pts.length; j++) {
+        ctx.beginPath();
+        ctx.arc(pts[j].x, pts[j].y, 4 / zoom, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
+
+    if (preview) {
+        drawPolarGuide(pts[pts.length - 1], preview, { color: '#06b6d4', badge: 'TƯỜNG' });
+    }
+}
+
+/** Vẽ đoạn thẳng hỗ trợ (mảnh, xanh — khác tường). */
+function drawLineSegment(line, isSelected) {
+    if (!line || !line.points || line.points.length < 2) return;
+    var a = line.points[0];
+    var b = line.points[1];
+    var color = line.color || '#3b82f6';
+    var weight = (line.lineWeight || 2) / zoom;
+
+    ctx.save();
+    ctx.strokeStyle = isSelected ? '#f59e0b' : color;
+    ctx.lineWidth = isSelected ? weight + 1 / zoom : weight;
+    ctx.setLineDash(isSelected ? [6 / zoom, 3 / zoom] : []);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+}
+
+/** Đường gióng + nhãn góc khi vẽ. */
+function drawPolarGuide(anchor, preview, style) {
+    if (!anchor || !preview) return;
+    if (typeof document !== 'undefined') {
+        var pc = document.getElementById('polarAngleLabelCheck');
+        if (pc && !pc.checked) return;
+    }
+    style = style || {};
+    var guideColor = style.color || '#06b6d4';
+    var badge = style.badge || '';
+    var dx = preview.x - anchor.x;
+    var dy = preview.y - anchor.y;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 1e-6) return;
+    var ext = 120 / zoom; // kéo dài đường gióng qua khỏi con trỏ
+    var ux = dx / dist;
+    var uy = dy / dist;
+
+    ctx.save();
+    ctx.strokeStyle = guideColor;
+    ctx.lineWidth = 1 / zoom;
+    ctx.setLineDash([4 / zoom, 4 / zoom]);
+    ctx.beginPath();
+    ctx.moveTo(anchor.x, anchor.y);
+    ctx.lineTo(preview.x + ux * ext, preview.y + uy * ext);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Góc liên tục theo hướng anchor -> preview (0..360, y dương hướng xuống canvas).
+    var angDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+    if (angDeg < 0) angDeg += 360;
+    var label = Math.round(angDeg) + '\u00B0';
+    if (badge) label = badge + ' ' + label;
+    var fontPx = 12 / zoom;
+    ctx.font = 'bold ' + fontPx + 'px sans-serif';
+    var tx = preview.x + 14 / zoom;
+    var ty = preview.y - 14 / zoom;
+    var w = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    ctx.fillRect(tx - 3 / zoom, ty - fontPx, w + 6 / zoom, fontPx + 6 / zoom);
+    ctx.fillStyle = guideColor;
+    ctx.fillText(label, tx, ty);
+    ctx.restore();
+}
+
+/** Preview tool Đoạn thẳng (LineTool): nét đứt từ điểm đầu tới con trỏ. */
+function drawLineToolPreview() {
+    if (!EditorCore.LineTool || EditorCore.LineTool.getState() !== 'drawing') return;
+    var start = EditorCore.LineTool.getStartPoint();
+    if (!start) return;
+    var preview = EditorCore.LineTool.getPreview();
+
+    ctx.save();
+    ctx.strokeStyle = '#3b82f6';
+    ctx.lineWidth = 1.5 / zoom;
+    ctx.setLineDash([5 / zoom, 4 / zoom]);
+    if (preview) {
+        ctx.beginPath();
+        ctx.moveTo(start.x, start.y);
+        ctx.lineTo(preview.x, preview.y);
+        ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = '#3b82f6';
+    ctx.beginPath();
+    ctx.arc(start.x, start.y, 3 / zoom, 0, Math.PI * 2);
+    ctx.fill();
+    if (preview) {
+        ctx.beginPath();
+        ctx.arc(preview.x, preview.y, 2.5 / zoom, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
+
+    if (preview) {
+        drawPolarGuide(start, preview, { color: '#8b5cf6', badge: 'ĐOẠN' });
+    }
+}
+
 // --- Vẽ phòng chữ nhật ---
 function drawRectRoom(room, isSelected) {
     ctx.globalAlpha = 0.5; // Thêm độ trong suốt
@@ -410,6 +599,8 @@ function drawPolygonRoom(room, isSelected) {
     var cy = room.y + room.height / 2;
     drawRoomLabel(room, cx, cy, room.width, room.height);
 
+    drawPolygonMeasures(room.points, { showArea: true });
+
     // Vẽ các đỉnh nếu đang chọn
     if (isSelected) {
         var size = 5 / zoom;
@@ -475,34 +666,129 @@ function drawRoomPreview() {
 }
 
 // === PREVIEW POLYGON ĐANG VẼ ===
+function drawPolygonMeasures(points, opts) {
+    if (!points || points.length < 2) return;
+    if (typeof getPolygonMetrics !== 'function') return;
+
+    opts = opts || {};
+    var metrics = getPolygonMetrics(points, {
+        previewPoint: opts.previewPoint,
+        includeClosingEdge: opts.includeClosingEdge !== false
+    });
+
+    var dimFontSize = Math.max(8, 10 / zoom);
+    ctx.save();
+    ctx.font = 'bold ' + dimFontSize + 'px Consolas';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // 1) Chiều dài từng cạnh — nền tối + chữ sáng (canvas nền trắng, không dùng pill trắng)
+    var minLabelM = typeof getMinPolygonEdgeMeters === 'function' ? getMinPolygonEdgeMeters() : 0.0011;
+    metrics.edges.forEach(function (edge) {
+        if (!(edge.lengthM >= minLabelM * 0.5)) return;
+        var label = edge.lengthM.toFixed(1) + 'm';
+        var len = Math.sqrt((edge.dx || 0) * (edge.dx || 0) + (edge.dy || 0) * (edge.dy || 0)) || 1;
+        var nx = -(edge.dy || 0) / len;
+        var ny = (edge.dx || 0) / len;
+        var offset = Math.max(10, 14 / zoom);
+        var lx = edge.midX + nx * offset;
+        var ly = edge.midY + ny * offset;
+        var tw = ctx.measureText(label).width;
+        var padX = 5 / zoom;
+        var padY = 3 / zoom;
+        var boxW = tw + padX * 2;
+        var boxH = dimFontSize + padY * 2;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+        ctx.fillRect(lx - boxW / 2, ly - boxH / 2, boxW, boxH);
+        ctx.strokeStyle = edge.isClosing ? 'rgba(56, 189, 248, 0.7)' : 'rgba(248, 113, 113, 0.7)';
+        ctx.lineWidth = 1.25 / zoom;
+        ctx.strokeRect(lx - boxW / 2, ly - boxH / 2, boxW, boxH);
+        ctx.fillStyle = edge.isClosing ? '#7dd3fc' : '#fecaca';
+        ctx.fillText(label, lx, ly);
+    });
+
+    // 2) Chu vi + diện tích ở tâm
+    if (metrics.areaM2 > 0 || metrics.perimeterM > 0) {
+        var c = metrics.centroid;
+        var lines = [];
+        if (metrics.perimeterM > 0) lines.push('CV: ' + metrics.perimeterM.toFixed(1) + 'm');
+        if (metrics.areaM2 > 0) lines.push('DT: ' + metrics.areaM2.toFixed(1) + 'm\u00B2');
+        var label = lines.join(' · ');
+        var pad = 4 / zoom;
+        var lineH = dimFontSize + 2 / zoom;
+        var boxW = ctx.measureText(label).width + pad * 2;
+        var boxH = lineH + pad * 2;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.82)';
+        ctx.fillRect(c.x - boxW / 2, c.y - boxH / 2, boxW, boxH);
+        ctx.fillStyle = '#bbf7d0';
+        ctx.fillText(label, c.x, c.y);
+    }
+    ctx.restore();
+}
+
 function drawPolygonPreview() {
     if (polygonPoints.length < 1) return;
+
+    var previewPt = null;
+    if (currentTool === 'polygon' && window.lastMouseWorld) {
+        previewPt = { x: window.lastMouseWorld.x, y: window.lastMouseWorld.y };
+    }
 
     ctx.beginPath();
     ctx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
     for (var i = 1; i < polygonPoints.length; i++) {
         ctx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
     }
-    ctx.strokeStyle = '#e74c3c';
+    if (previewPt) {
+        ctx.lineTo(previewPt.x, previewPt.y);
+    }
+    ctx.strokeStyle = '#22c55e';
     ctx.lineWidth = 2 / zoom;
     ctx.setLineDash([5 / zoom, 5 / zoom]);
     ctx.stroke();
     ctx.setLineDash([]);
 
+    // Vùng fill nhẹ (đóng tạm qua chuột)
+    if (polygonPoints.length >= 2 && previewPt) {
+        ctx.beginPath();
+        ctx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
+        for (var j = 1; j < polygonPoints.length; j++) {
+            ctx.lineTo(polygonPoints[j].x, polygonPoints[j].y);
+        }
+        ctx.lineTo(previewPt.x, previewPt.y);
+        if (polygonPoints.length >= 2) {
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(34, 197, 94, 0.12)';
+            ctx.fill();
+        }
+    } else if (polygonPoints.length >= 3) {
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.12)';
+        ctx.fill();
+    }
+
+    // Thông số: cạnh → chu vi → diện tích
+    if (polygonPoints.length >= 2) {
+        drawPolygonMeasures(polygonPoints, {
+            previewPoint: previewPt,
+            includeClosingEdge: polygonPoints.length >= 2 && !!previewPt
+        });
+    }
+
     // Vẽ các đỉnh
     var size = 6 / zoom;
-    for (var i = 0; i < polygonPoints.length; i++) {
-        ctx.fillStyle = i === 0 ? '#e74c3c' : '#3498db';
-        ctx.fillRect(polygonPoints[i].x - size / 2, polygonPoints[i].y - size / 2, size, size);
+    for (var k = 0; k < polygonPoints.length; k++) {
+        ctx.fillStyle = k === 0 ? '#16a34a' : '#22c55e';
+        ctx.fillRect(polygonPoints[k].x - size / 2, polygonPoints[k].y - size / 2, size, size);
     }
 
     // Chữ hướng dẫn
     var fontSize = Math.max(8, 11 / zoom);
-    ctx.fillStyle = '#e74c3c';
-    ctx.font = fontSize + 'px Arial';
+    ctx.fillStyle = '#16a34a';
+    ctx.font = 'bold ' + fontSize + 'px Arial';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
-    ctx.fillText(polygonPoints.length + ' đỉnh (double-click kết thúc)', polygonPoints[0].x + 8 / zoom, polygonPoints[0].y - 4 / zoom);
+    ctx.fillText('Đa giác · ' + polygonPoints.length + ' đỉnh (nháy đúp để kết thúc)', polygonPoints[0].x + 8 / zoom, polygonPoints[0].y - 4 / zoom);
 }
 
 // === ĐƯỜNG KÍCH THƯỚC (cho rect) ===

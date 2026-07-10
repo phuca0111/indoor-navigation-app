@@ -10,6 +10,7 @@ function snapshotPayload() {
     return {
         rooms: rooms,
         walls: walls,
+        lines: lines,
         doors: doors,
         pois: pois,
         pathNodes: pathNodes,
@@ -22,6 +23,7 @@ function cloneSnapshotPayload(src) {
     return {
         rooms: JSON.parse(JSON.stringify(src.rooms)),
         walls: JSON.parse(JSON.stringify(src.walls || [])),
+        lines: JSON.parse(JSON.stringify(src.lines || [])),
         doors: JSON.parse(JSON.stringify(src.doors)),
         pois: JSON.parse(JSON.stringify(src.pois)),
         pathNodes: JSON.parse(JSON.stringify(src.pathNodes)),
@@ -29,6 +31,7 @@ function cloneSnapshotPayload(src) {
         qrs: JSON.parse(JSON.stringify(src.qrs || [])),
         nextRoomId: src.nextRoomId,
         nextWallId: src.nextWallId,
+        nextLineId: src.nextLineId,
         nextDoorId: src.nextDoorId,
         nextPoiId: src.nextPoiId,
         nextNodeId: src.nextNodeId,
@@ -38,6 +41,8 @@ function cloneSnapshotPayload(src) {
 
 // === LƯU TRẠNG THÁI HIỆN TẠI ===
 function saveState() {
+    if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
+
     var newStateStr = JSON.stringify(snapshotPayload());
 
     // So sánh với state cuối cùng trong undoStack
@@ -46,6 +51,7 @@ function saveState() {
         var lastStateStr = JSON.stringify({
             rooms: lastState.rooms,
             walls: lastState.walls,
+            lines: lastState.lines || [],
             doors: lastState.doors,
             pois: lastState.pois,
             pathNodes: lastState.pathNodes,
@@ -58,6 +64,7 @@ function saveState() {
     var state = cloneSnapshotPayload({
         rooms: rooms,
         walls: walls,
+        lines: lines,
         doors: doors,
         pois: pois,
         pathNodes: pathNodes,
@@ -65,6 +72,7 @@ function saveState() {
         qrs: qrs,
         nextRoomId: nextRoomId,
         nextWallId: nextWallId,
+        nextLineId: nextLineId,
         nextDoorId: nextDoorId,
         nextPoiId: nextPoiId,
         nextNodeId: nextNodeId,
@@ -85,6 +93,7 @@ function undo() {
     redoStack.push(cloneSnapshotPayload({
         rooms: rooms,
         walls: walls,
+        lines: lines,
         doors: doors,
         pois: pois,
         pathNodes: pathNodes,
@@ -92,6 +101,7 @@ function undo() {
         qrs: qrs,
         nextRoomId: nextRoomId,
         nextWallId: nextWallId,
+        nextLineId: nextLineId,
         nextDoorId: nextDoorId,
         nextPoiId: nextPoiId,
         nextNodeId: nextNodeId,
@@ -113,6 +123,7 @@ function redo() {
     undoStack.push(cloneSnapshotPayload({
         rooms: rooms,
         walls: walls,
+        lines: lines,
         doors: doors,
         pois: pois,
         pathNodes: pathNodes,
@@ -120,6 +131,7 @@ function redo() {
         qrs: qrs,
         nextRoomId: nextRoomId,
         nextWallId: nextWallId,
+        nextLineId: nextLineId,
         nextDoorId: nextDoorId,
         nextPoiId: nextPoiId,
         nextNodeId: nextNodeId,
@@ -135,6 +147,7 @@ function redo() {
 function restoreState(state) {
     rooms = state.rooms;
     walls = state.walls || [];
+    lines = state.lines || [];
     doors = state.doors;
     pois = state.pois;
     pathNodes = state.pathNodes;
@@ -142,13 +155,13 @@ function restoreState(state) {
     qrs = state.qrs || [];
     nextRoomId = state.nextRoomId;
     nextWallId = state.nextWallId || 1;
+    nextLineId = state.nextLineId || 1;
     nextDoorId = state.nextDoorId;
     nextPoiId = state.nextPoiId;
     nextNodeId = state.nextNodeId;
     nextQrId = state.nextQrId != null ? state.nextQrId : 1;
 
-    selectedRoom = null;
-    selectedObject = null;
+    clearEditorSelection({ skipUi: true });
     roomCountSpan.textContent = 'Phòng: ' + rooms.length;
     updatePropertiesPanel();
     updateObjectList();

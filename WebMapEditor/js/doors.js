@@ -7,16 +7,19 @@ const doorTypes = ['Cửa chính', 'Cửa phụ', 'Cửa thoát hiểm'];
 
 // Tạo cửa mới tại vị trí click
 function createDoor(x, y) {
+    var sp = snapWorldPoint(x, y);
     var door = {
         id: nextDoorId++,
         name: 'Cửa ' + doors.length,
-        x: snapToGrid(x),
-        y: snapToGrid(y),
+        layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default',
+        x: sp.x,
+        y: sp.y,
         width: GRID_SIZE,    // Chiều rộng cửa = 1 ô
         type: doorTypes[0],
         rotation: 0          // 0 = ngang, 90 = dọc
     };
     doors.push(door);
+    if (typeof syncSpatialIndexFromLegacy === 'function') syncSpatialIndexFromLegacy();
     return door;
 }
 
@@ -24,6 +27,7 @@ function createDoor(x, y) {
 function findDoorAt(wx, wy) {
     for (var i = doors.length - 1; i >= 0; i--) {
         var d = doors[i];
+        if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(d)) continue;
         var halfW = d.width / 2;
         var halfH = 6; // Chiều dày cửa
         if (wx >= d.x - halfW && wx <= d.x + halfW &&

@@ -1,0 +1,9 @@
+{
+  "rules": {
+    "duplicateId": { "enabled": true, "severity": "error" },
+    "isolatedNode": { "enabled": true, "severity": "error" },
+    "qrMissingNode": { "enabled": true, "severity": "warning" },
+    "scaleUnset": { "enabled": true, "severity": "error" },
+    "roomNotClosed": { "enabled": true, "severity": "error" }
+  }
+}

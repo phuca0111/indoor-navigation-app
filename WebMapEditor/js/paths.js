@@ -4,14 +4,17 @@
 
 // Tạo path node mới
 function createPathNode(x, y) {
+    var sp = snapWorldPoint(x, y);
     var node = {
         id: nextNodeId++,
-        x: snapToGrid(x),
-        y: snapToGrid(y),
+        x: sp.x,
+        y: sp.y,
+        layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default',
         nodeType: 'normal', // 'normal', 'elevator', 'stairs'
         neighbors: []  // Danh sách id các node kề
     };
     pathNodes.push(node);
+    if (typeof syncSpatialIndexFromLegacy === 'function') syncSpatialIndexFromLegacy();
     return node;
 }
 
@@ -19,6 +22,7 @@ function createPathNode(x, y) {
 function findNodeAt(wx, wy) {
     for (var i = pathNodes.length - 1; i >= 0; i--) {
         var n = pathNodes[i];
+        if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(n)) continue;
         var dx = wx - n.x;
         var dy = wy - n.y;
         if (dx * dx + dy * dy <= NODE_RADIUS * NODE_RADIUS) {
@@ -80,6 +84,10 @@ function drawPathEdges() {
         var nodeA = findNodeById(edge.from);
         var nodeB = findNodeById(edge.to);
         if (nodeA && nodeB) {
+            if (typeof legacyIsObjectVisible === 'function' &&
+                (!legacyIsObjectVisible(nodeA) || !legacyIsObjectVisible(nodeB))) {
+                continue;
+            }
             ctx.beginPath();
             ctx.moveTo(nodeA.x, nodeA.y);
             ctx.lineTo(nodeB.x, nodeB.y);
@@ -97,6 +105,10 @@ function drawPathEdges() {
         var nodeA = findNodeById(edge.from);
         var nodeB = findNodeById(edge.to);
         if (nodeA && nodeB) {
+            if (typeof legacyIsObjectVisible === 'function' &&
+                (!legacyIsObjectVisible(nodeA) || !legacyIsObjectVisible(nodeB))) {
+                continue;
+            }
             ctx.beginPath();
             ctx.moveTo(nodeA.x, nodeA.y);
             ctx.lineTo(nodeB.x, nodeB.y);

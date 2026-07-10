@@ -11,6 +11,7 @@ function createQr(x, y) {
         id: nextQrId++,
         name: 'Mốc QR ' + (qrs.length + 1),
         serial: serial, // Mã định danh để in ra giấy
+        layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default',
         x: x,           // QR thường không snap để đặt chính xác vị trí dán
         y: y
     };
@@ -23,6 +24,7 @@ function findQrAt(wx, wy) {
     var threshold = QR_SIZE / zoom;
     for (var i = qrs.length - 1; i >= 0; i--) {
         var q = qrs[i];
+        if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(q)) continue;
         if (Math.abs(wx - q.x) <= threshold && Math.abs(wy - q.y) <= threshold) {
             return q;
         }
