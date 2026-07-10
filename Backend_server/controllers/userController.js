@@ -1,4 +1,4 @@
-﻿// ============================================
+// ============================================
 // FILE: userController.js
 // Má»¤C ÄÃCH: Xá»­ lÃ½ API quáº£n lÃ½ user cho Super Admin
 // QUYá»€N: Chá»‰ SUPER_ADMIN má»›i Ä‘Æ°á»£c dÃ¹ng cÃ¡c API nÃ y
@@ -19,6 +19,9 @@ const User = require('../models/User');
 const Organization = require('../models/Organization');
 const Building = require('../models/Building');
 const ActivityLog = require('../models/ActivityLog');
+const { annotateUsersQuotaLockForList, annotateUsersQuotaLock } = require('../utils/overQuotaLock');
+const { validatePasswordStrength } = require('../utils/passwordPolicy');
+const { validateFullName, normalizeFullName } = require('../utils/fullNamePolicy');
 
 function logActivity(data) {
   return ActivityLog.create(data).catch(() => {});
@@ -60,7 +63,7 @@ const getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId)
       .select('-password')
-      .populate('organization_id', 'name slug is_active plan')
+      .populate('organization_id', 'name slug is_active plan billing_status grace_ends_at')
       .lean();
 
     if (!user) {
@@ -89,10 +92,11 @@ const updateMe = async (req, res) => {
 
     const allowedUpdates = {};
     if (full_name !== undefined) {
-      if (!full_name || full_name.trim() === '') {
-        return res.status(400).json({ message: 'Họ tên không được để trống.' });
+      const nameErrors = validateFullName(full_name);
+      if (nameErrors.length) {
+        return res.status(400).json({ message: 'Họ tên không hợp lệ.', errors: nameErrors });
       }
-      allowedUpdates.full_name = full_name.trim();
+      allowedUpdates.full_name = normalizeFullName(full_name);
     }
     if (phone !== undefined) {
       if (typeof phone !== 'string') {
@@ -155,8 +159,12 @@ const changePassword = async (req, res) => {
     if (!currentPassword || !newPassword || !confirmPassword) {
       return res.status(400).json({ message: 'Tất cả các trường đều bắt buộc.' });
     }
-    if (newPassword.length < 8) {
-      return res.status(400).json({ message: 'Mật khẩu mới phải có ít nhất 8 ký tự.' });
+    const passwordErrors = validatePasswordStrength(newPassword);
+    if (passwordErrors.length) {
+      return res.status(400).json({
+        message: 'Mật khẩu mới không đủ mạnh.',
+        errors: passwordErrors
+      });
     }
     if (newPassword !== confirmPassword) {
       return res.status(400).json({ message: 'Xác nhận mật khẩu không khớp.' });
@@ -232,13 +240,15 @@ const listUsers = async (req, res) => {
       }
     }
 
-    const users = await User.find({
+    let users = await User.find({
       ...query,
       _id: { $ne: req.user.userId }
     })
       .populate('assigned_buildings', 'name address')
       .select('-password')
       .lean();
+
+    users = await annotateUsersQuotaLockForList(users);
 
     res.status(200).json(users);
   } catch (error) {
@@ -267,7 +277,16 @@ const getUserById = async (req, res) => {
     const allowed = await assertUserInOrgScope(req, res, user);
     if (!allowed) return;
 
-    res.status(200).json(user);
+    const org = user.organization_id
+      ? await Organization.findById(user.organization_id)
+      : null;
+    let result = user;
+    if (org) {
+      const [annotated] = await annotateUsersQuotaLock(org, [user]);
+      result = annotated;
+    }
+
+    res.status(200).json(result);
   } catch (error) {
     console.error('GetUserById error:', error);
     res.status(500).json({ message: 'Lá»—i mÃ¡y chá»§: ' + error.message });
@@ -316,10 +335,11 @@ const updateUser = async (req, res) => {
     const updateData = {};
 
     if (full_name !== undefined) {
-      if (!full_name || full_name.trim() === '') {
-        return res.status(400).json({ message: 'Họ tên không được để trống.' });
+      const nameErrors = validateFullName(full_name);
+      if (nameErrors.length) {
+        return res.status(400).json({ message: 'Họ tên không hợp lệ.', errors: nameErrors });
       }
-      updateData.full_name = full_name.trim();
+      updateData.full_name = normalizeFullName(full_name);
     }
     if (phone !== undefined) {
       if (typeof phone !== 'string') {

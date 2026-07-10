@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Quản Lý Tòa Nhà</title>
-    <link rel="stylesheet" href="css/admin.css?v=20260708s">
+    <link rel="stylesheet" href="css/admin.css?v=20260708p58a">
 </head>
 <body>
     <nav class="navbar">
@@ -23,7 +23,10 @@
                 🏛️ Tổ chức: <strong id="userOrgName">—</strong>
             </p>
             <h3>Xin chào, <span id="userName">Admin</span>!</h3>
-            <p>Vai trò: <span id="userRole" class="badge">BUILDING_ADMIN</span></p>
+            <p>Vai trò: <span id="userRole" class="badge">BUILDING_ADMIN</span>
+                <span id="userPlanBadge" class="badge plan-badge" style="display:none;margin-left:8px;">FREE</span>
+            </p>
+            <p id="quotaAlertLine" class="quota-alert-line" style="display:none;"></p>
         </div>
 
         <!-- Phase 4.6 — Thẻ tổng quan platform / tổ chức -->
@@ -37,6 +40,7 @@
         <div id="tabNav" class="tab-nav" style="display:none; margin-bottom: 20px;">
             <button class="tab-btn active" onclick="switchTab('buildings')">🏢 Tòa Nhà</button>
             <button class="tab-btn super-admin-only" onclick="switchTab('organizations')">🏛️ Tổ Chức</button>
+            <button class="tab-btn billing-tab-btn" onclick="switchTab('billing')">💳 Gói & Thanh toán</button>
             <button class="tab-btn super-admin-only" onclick="switchTab('registrations')">📝 Hồ Sơ ĐK</button>
             <button class="tab-btn" onclick="switchTab('users')">👑 Tài Khoản</button>
             <button class="tab-btn" onclick="switchTab('logs')">📋 Lịch Sử Thao Tác</button>
@@ -329,6 +333,28 @@
       </table>
     </div>
     <div id="organizationsPagination" class="table-pagination"></div>
+  </div>
+</div>
+
+<!-- ===== TAB: BILLING / SUBSCRIPTION (chỉ Super Admin) ===== -->
+<div id="tab-billing" class="tab-content" style="display:none;">
+  <div class="admin-section billing-tab-section">
+    <div class="section-header">
+      <h3>💳 Gói & Thanh toán</h3>
+      <p class="billing-tab-intro">Quản lý subscription, hóa đơn và chu kỳ gói. Hệ thống tự theo dõi hạn qua scheduler + webhook.</p>
+    </div>
+    <div class="billing-tab-toolbar">
+      <div>
+        <label class="billing-field-label">Chọn tổ chức</label>
+        <select id="billingOrgSelect" onchange="loadBillingTab(this.value)" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd; min-width:280px;">
+          <option value="">— Chọn tổ chức —</option>
+        </select>
+      </div>
+      <button type="button" class="btn-edit" onclick="loadBillingTab()">Làm mới</button>
+    </div>
+    <div id="billingTabBody" class="billing-tab-body">
+      <p class="billing-tab-empty">Chọn một tổ chức để xem và quản lý gói đăng ký.</p>
+    </div>
   </div>
 </div>
 
@@ -772,6 +798,7 @@
         <div id="orgDetailBody" class="org-detail-body"></div>
         <div class="modal-actions">
           <button type="button" id="orgDetailAddAdmin" class="btn-create" style="background:#8e44ad;">+ Thêm quản trị viên</button>
+          <button type="button" id="orgDetailOpenBilling" class="btn-create" style="background:#2563eb;">Quản lý gói & thanh toán</button>
           <button type="button" id="orgDetailJumpBuildings" class="btn-edit">Xem tòa nhà</button>
           <button type="button" id="orgDetailJumpUsers" class="btn-edit" style="background:#f39c12;color:#fff;">Xem tài khoản</button>
           <button type="button" onclick="closeOrgDetailModal()" class="btn-logout" style="background:#95a5a6;">Đóng</button>
@@ -781,6 +808,6 @@
 
     <script src="../js/orgListSort.js?v=20260708l"></script>
     <script src="../js/dashboardTableSort.js?v=20260708l"></script>
-    <script src="../js/dashboard.js?v=20260708s"></script>
+    <script src="../js/dashboard.js?v=20260709p57"></script>
 </body>
 </html>

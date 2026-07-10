@@ -31,6 +31,29 @@ const organizationSchema = new mongoose.Schema({
         default: 'FREE'
     },
 
+    // Phase 5.3 — trạng thái thanh toán / hết hạn gói
+    billing_status: {
+        type: String,
+        enum: ['ACTIVE', 'GRACE_PERIOD', 'EXPIRED'],
+        default: 'ACTIVE'
+    },
+
+    // Hết hạn grace period (sau hạ gói PRO→FREE khi vượt quota)
+    grace_ends_at: {
+        type: Date,
+        default: null
+    },
+
+    // Phase 5.4 — thời hạn gói trả phí (Super Admin / thanh toán sau này)
+    plan_started_at: {
+        type: Date,
+        default: null
+    },
+    plan_expires_at: {
+        type: Date,
+        default: null
+    },
+
     // Trạng thái organization
     is_active: {
         type: Boolean,
