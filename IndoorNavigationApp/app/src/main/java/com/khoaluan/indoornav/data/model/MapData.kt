@@ -116,6 +116,7 @@ data class Poi(
     val x: Int,
     val y: Int,
     val type: String? = null,
+    @SerializedName("poi_type") val poiType: String? = null,
     val typeIndex: Int? = null
 )
 
