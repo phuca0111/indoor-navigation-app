@@ -1,10 +1,12 @@
 const Floor = require('../models/Floor');
 const Building = require('../models/Building');
+const Organization = require('../models/Organization');
 const MapVersion = require('../models/MapVersion');
 const ActivityLog = require('../models/ActivityLog');
 const { syncQrCodes } = require('./mapController');
 const { buildMapSnapshot } = require('../utils/mapSnapshot');
 const { applyRetentionForFloor, getRetentionMax } = require('../utils/mapVersionRetention');
+const { assertBuildingWritable } = require('../utils/overQuotaLock');
 
 function logActivity(data) {
     ActivityLog.create(data).catch(() => {});
@@ -88,6 +90,20 @@ const rollbackVersion = async (req, res) => {
 
         if (!Number.isFinite(floorNum) || !Number.isFinite(targetVersion)) {
             return res.status(400).json({ message: 'Tầng hoặc phiên bản không hợp lệ.' });
+        }
+
+        if (req.user?.role !== 'SUPER_ADMIN') {
+            const building = await Building.findById(buildingId).select('organization_id').lean();
+            if (building?.organization_id) {
+                const org = await Organization.findById(building.organization_id);
+                const writable = await assertBuildingWritable(buildingId, org);
+                if (!writable.ok) {
+                    return res.status(403).json({
+                        message: writable.message,
+                        code: writable.code
+                    });
+                }
+            }
         }
 
         const snapshot = await MapVersion.findOne({

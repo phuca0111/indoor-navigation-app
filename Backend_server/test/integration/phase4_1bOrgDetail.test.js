@@ -64,12 +64,30 @@ describe('Phase 4.1b — GET organization detail', () => {
     expect(res.body.organization._id).toBe(testOrgId);
     expect(typeof res.body.building_count).toBe('number');
     expect(typeof res.body.user_count).toBe('number');
+    expect(typeof res.body.active_building_count).toBe('number');
+    expect(typeof res.body.active_user_count).toBe('number');
+    expect(res.body.quota).toBeDefined();
+    expect(res.body.quota.plan).toBeDefined();
+    expect(res.body.lifecycle_stats).toBeDefined();
+    expect(typeof res.body.lifecycle_stats.plan_changes_total).toBe('number');
+    expect(res.body.lifecycle_stats.plan_distribution).toBeDefined();
+    expect(res.body.lifecycle_stats.billing_status_counts).toBeDefined();
+    expect(res.body.lifecycle_stats.activity_counts).toBeDefined();
+    expect(Array.isArray(res.body.billing_events)).toBe(true);
+    expect(res.body.current_subscription === null || typeof res.body.current_subscription === 'object').toBe(true);
+    expect(Array.isArray(res.body.invoices)).toBe(true);
     expect(Array.isArray(res.body.org_admins)).toBe(true);
     expect(Array.isArray(res.body.recent_buildings)).toBe(true);
     expect(Array.isArray(res.body.recent_users)).toBe(true);
     expect(Array.isArray(res.body.recent_logs)).toBe(true);
     expect(res.body.role_counts).toBeDefined();
     expect(res.body.building_status_counts).toBeDefined();
+    if (res.body.recent_buildings.length) {
+      expect(typeof res.body.recent_buildings[0].quota_locked).toBe('boolean');
+    }
+    if (res.body.recent_users.length) {
+      expect(typeof res.body.recent_users[0].quota_locked).toBe('boolean');
+    }
   });
 
   test('TC-4.1b-03 GET org không tồn tại → 404', async () => {

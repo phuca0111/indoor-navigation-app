@@ -37,6 +37,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!fullName) {
             errors.push('Họ tên là bắt buộc.');
+        } else if (/[0-9]/.test(fullName)) {
+            errors.push('Họ tên không được chứa chữ số.');
+        } else if (!/^[\p{L}\s'.-]+$/u.test(fullName.trim())) {
+            errors.push('Họ tên chỉ được chứa chữ cái, khoảng trắng, dấu gạch ngang hoặc dấu nháy.');
+        } else {
+            const letters = fullName.trim().match(/\p{L}/gu);
+            if (!letters || letters.length < 2) {
+                errors.push('Họ tên phải có ít nhất 2 chữ cái.');
+            }
         }
 
         if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {

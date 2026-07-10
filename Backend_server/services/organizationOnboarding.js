@@ -8,6 +8,7 @@ const Organization = require('../models/Organization');
 const User = require('../models/User');
 const ActivityLog = require('../models/ActivityLog');
 const bcrypt = require('bcryptjs');
+const { validateFullName, normalizeFullName } = require('../utils/fullNamePolicy');
 
 function logActivity(data) {
   ActivityLog.create(data).catch(() => {});
@@ -37,8 +38,9 @@ async function createOrganizationWithAdmin({
   if (!slug || !slug.trim()) {
     throw new Error('Mã định danh không được để trống.');
   }
-  if (!adminName || !adminName.trim()) {
-    throw new Error('Họ tên quản trị viên không được để trống.');
+  const nameErrors = validateFullName(adminName);
+  if (nameErrors.length) {
+    throw new Error(nameErrors[0]);
   }
   if (!adminEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
     throw new Error('Email quản trị viên không hợp lệ.');
@@ -87,7 +89,7 @@ async function createOrganizationWithAdmin({
       email: adminEmail.trim(),
       password: hashedPassword,
       role: 'ORG_ADMIN',
-      full_name: adminName.trim(),
+      full_name: normalizeFullName(adminName),
       organization_id: org._id,
       is_active: true,
       assigned_buildings: [],

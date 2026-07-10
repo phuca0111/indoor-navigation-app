@@ -83,6 +83,14 @@ function updatePropertiesPanel() {
                     ${edgeLines}
                     ${statLine}
                 </div>`;
+        } else if (currentTool === 'ruler') {
+            propertiesDiv.innerHTML =
+                '<div class="tool-guide">' +
+                '<p>💡 <b>Thước (S) — chế độ Đo</b></p>' +
+                '<p>Kéo 2 điểm → xem <b>m + px</b> theo tỷ lệ cố định <b>0.5 m/ô</b>.</p>' +
+                '<p><b>Không đổi</b> tỷ lệ (chuẩn indoor nav / Android).</p>' +
+                '<p>Căn ảnh nền: dùng <b>Nền</b> / kéo ảnh — không dùng thước.</p>' +
+                '</div>';
         } else {
             var bgHtml = '';
             if (window.bgImage) {
@@ -463,9 +471,9 @@ function addManualEdge(fromId) {
 function showQrProps(qr) {
     var desc = getInspectorDescriptor();
     var qrNodeId = qr.node_id != null && qr.node_id !== '' ? Number(qr.node_id) : null;
-    // pathNodes dùng .id (không phải .nodeId)
+    var nodesForQr = (typeof pathNodes !== 'undefined' && Array.isArray(pathNodes)) ? pathNodes : [];
     var nodeOptions = '<option value="">-- Không gán Node --</option>' +
-        (window.pathNodes || []).map(function (n) {
+        nodesForQr.map(function (n) {
             var selected = (qrNodeId === n.id) ? ' selected' : '';
             return '<option value="' + n.id + '"' + selected + '>' +
                 n.id + ' (' + Math.round(n.x) + ',' + Math.round(n.y) + ')' +

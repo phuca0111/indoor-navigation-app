@@ -9,6 +9,9 @@
         if (root.EditorCore && root.EditorCore.PHASE0_STABLE === true &&
             root.EditorCore.LegacyBridge &&
             typeof root.EditorCore.LegacyBridge.buildPublishPayloadFromEditor === 'function') {
+            if (typeof console !== 'undefined' && console.debug) {
+                console.debug('[ExportPipeline] build via Map Adapter (PHASE0_STABLE)');
+            }
             return root.EditorCore.LegacyBridge.buildPublishPayloadFromEditor();
         }
         if (typeof buildPublishPayloadInline === 'function') {

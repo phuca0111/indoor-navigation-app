@@ -7,6 +7,11 @@ const Building = require('../models/Building');
 const Organization = require('../models/Organization');
 const User = require('../models/User');
 const ActivityLog = require('../models/ActivityLog');
+const { assertCanCreateBuilding } = require('../utils/planQuota');
+const {
+  annotateBuildingsQuotaLock,
+  assertBuildingWritable
+} = require('../utils/overQuotaLock');
 
 function logActivity(data) {
     ActivityLog.create(data).catch(() => {});
@@ -25,11 +30,13 @@ const getBuildings = async (req, res) => {
         // KIỂM TRA: Nếu không có req.user (truy cập công khai từ Mobile)
         if (!req.user) {
             // App Di động → Chỉ thấy các tòa nhà đã được PUBLISHED và còn active
-            buildings = await Building.find({ ...activeOnlyFilter, status: 'PUBLISHED' });
+            buildings = await Building.find({ ...activeOnlyFilter, status: 'PUBLISHED' }).lean();
+            buildings = await filterPublicBuildingsOverQuota(buildings);
         } else if (req.user.role === 'SUPER_ADMIN') {
             // Super Admin → tòa nhà active; ?include_inactive=true để xem cả đã vô hiệu hóa
             const filter = req.query.include_inactive === 'true' ? {} : activeOnlyFilter;
-            buildings = await Building.find(filter);
+            buildings = await Building.find(filter).lean();
+            buildings = await annotateBuildingsForSuperAdmin(buildings);
         } else if (req.user.role === 'ORG_ADMIN') {
             const User = require('../models/User');
             const user = await User.findById(req.user.userId).select('organization_id').lean();
@@ -37,7 +44,13 @@ const getBuildings = async (req, res) => {
             const filter = req.query.include_inactive === 'true'
                 ? orgFilter
                 : { ...orgFilter, ...activeOnlyFilter };
-            buildings = await Building.find(filter);
+            buildings = await Building.find(filter).lean();
+            if (user?.organization_id) {
+                const org = await Organization.findById(user.organization_id);
+                if (org) {
+                    buildings = await annotateBuildingsQuotaLock(org, buildings);
+                }
+            }
         } else {
             // Building Admin → Chỉ thấy tòa nhà được gán, thuộc organization của mình, và còn active
             const User = require('../models/User');
@@ -46,7 +59,13 @@ const getBuildings = async (req, res) => {
                 _id: { $in: user.assigned_buildings },
                 organization_id: user.organization_id,
                 ...activeOnlyFilter
-            });
+            }).lean();
+            if (user?.organization_id) {
+                const org = await Organization.findById(user.organization_id);
+                if (org) {
+                    buildings = await annotateBuildingsQuotaLock(org, buildings);
+                }
+            }
         }
 
         res.status(200).json(buildings);
@@ -54,6 +73,38 @@ const getBuildings = async (req, res) => {
         res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
     }
 };
+
+async function annotateBuildingsForSuperAdmin(buildings) {
+    if (!buildings.length) return buildings;
+    const orgIds = [...new Set(buildings.map((b) => String(b.organization_id)).filter(Boolean))];
+    const orgs = await Organization.find({ _id: { $in: orgIds } });
+    const orgMap = Object.fromEntries(orgs.map((o) => [String(o._id), o]));
+    const byOrg = {};
+    buildings.forEach((b) => {
+        const key = String(b.organization_id || '');
+        if (!byOrg[key]) byOrg[key] = [];
+        byOrg[key].push(b);
+    });
+    const result = [];
+    for (const [orgKey, list] of Object.entries(byOrg)) {
+        const org = orgMap[orgKey];
+        if (org) {
+            result.push(...(await annotateBuildingsQuotaLock(org, list)));
+        } else {
+            result.push(...list.map((b) => ({ ...b, quota_locked: false })));
+        }
+    }
+    return result;
+}
+
+async function filterPublicBuildingsOverQuota(buildings) {
+    if (!buildings.length) return buildings;
+    const orgIds = [...new Set(buildings.map((b) => String(b.organization_id)).filter(Boolean))];
+    const orgs = await Organization.find({ _id: { $in: orgIds } });
+    const orgMap = Object.fromEntries(orgs.map((o) => [String(o._id), o]));
+    const annotated = await annotateBuildingsForSuperAdmin(buildings);
+    return annotated.filter((b) => !b.quota_locked);
+}
 
 // ==========================================
 // HÀM 2: TẠO TÒA NHÀ MỚI
@@ -91,6 +142,16 @@ const createBuilding = async (req, res) => {
         }
         if (!org.is_active) {
             return res.status(400).json({ message: 'Organization đã bị vô hiệu hóa.' });
+        }
+
+        // Phase 5.1 — chặn tạo tòa khi vượt hạn mức gói
+        const quota = await assertCanCreateBuilding(org);
+        if (!quota.ok) {
+            return res.status(403).json({
+                message: quota.message,
+                code: quota.code,
+                usage: quota.usage
+            });
         }
 
         const building = await Building.create({
@@ -136,10 +197,11 @@ const checkLocation = async (req, res) => {
         const { lat, lng } = req.query;   // Lấy tọa độ từ URL: ?lat=10.7&lng=106.6
 
         // Lấy tất cả tòa nhà đã Publish và còn active
-        const buildings = await Building.find({ status: 'PUBLISHED', is_active: { $ne: false } });
+        const buildings = await Building.find({ status: 'PUBLISHED', is_active: { $ne: false } }).lean();
+        const visibleBuildings = await filterPublicBuildingsOverQuota(buildings);
 
         // Chạy thuật toán Haversine tìm tòa nhà trong bán kính
-        const nearbyBuildings = buildings.filter(function (b) {
+        const nearbyBuildings = visibleBuildings.filter(function (b) {
             const distance = haversine(lat, lng, b.gps_location.lat, b.gps_location.lng);
             return distance <= b.activation_radius;  // Nằm trong vòng bán kính kích hoạt
         });
@@ -203,6 +265,19 @@ const updateBuilding = async (req, res) => {
 
         const oldBuilding = await Building.findById(id);
         if (!oldBuilding) return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
+
+        if (oldBuilding.organization_id && req.user.role !== 'SUPER_ADMIN') {
+            const org = await Organization.findById(oldBuilding.organization_id);
+            if (org) {
+                const writable = await assertBuildingWritable(id, org);
+                if (!writable.ok) {
+                    return res.status(403).json({
+                        message: writable.message,
+                        code: writable.code
+                    });
+                }
+            }
+        }
 
 if (organization_id !== undefined && organization_id !== '') {
   if (req.user.role !== 'SUPER_ADMIN') {
@@ -349,13 +424,22 @@ const restoreBuilding = async (req, res) => {
         }
 
         if (building.organization_id) {
-            const org = await Organization.findById(building.organization_id).select('is_active name').lean();
+            const org = await Organization.findById(building.organization_id);
             if (!org) {
                 return res.status(400).json({ message: 'Tổ chức của tòa nhà không tồn tại.' });
             }
             if (!org.is_active) {
                 return res.status(400).json({
                     message: 'Không thể khôi phục tòa nhà khi tổ chức "' + org.name + '" đang tạm dừng.'
+                });
+            }
+            // Phase 5.1 — restore cũng tính vào hạn mức tòa active
+            const quota = await assertCanCreateBuilding(org);
+            if (!quota.ok) {
+                return res.status(403).json({
+                    message: quota.message,
+                    code: quota.code,
+                    usage: quota.usage
                 });
             }
         }
@@ -396,7 +480,14 @@ const getBuildingById = async (req, res) => {
         if (!building) {
             return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
         }
-        res.status(200).json(building);
+        if (building.organization_id) {
+            const org = await Organization.findById(building.organization_id);
+            if (org) {
+                const [annotated] = await annotateBuildingsQuotaLock(org, [building]);
+                return res.status(200).json(annotated);
+            }
+        }
+        res.status(200).json({ ...building, quota_locked: false });
     } catch (error) {
         res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
     }

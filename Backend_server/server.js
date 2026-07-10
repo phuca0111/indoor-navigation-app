@@ -91,6 +91,10 @@ const mapVersionRoutes  = require('./routes/mapVersionRoutes');
 const organizationRoutes = require('./routes/organizationRoutes');
 const orgRegistrationRoutes = require('./routes/orgRegistrationRoutes');
 const platformStatsRoutes = require('./routes/platformStatsRoutes');
+const billingRoutes = require('./routes/billingRoutes');
+const webhookRoutes = require('./routes/webhookRoutes');
+const tptpPayRoutes = require('./routes/tptpPayRoutes');
+const tptpBankRoutes = require('./routes/tptpBankRoutes');
 
 app.use('/api/auth',          authRoutes);
 app.use('/api/buildings',     buildingRoutes);
@@ -102,6 +106,11 @@ app.use('/api/map-versions',  mapVersionRoutes);
 app.use('/api/organizations', organizationRoutes);
 app.use('/api/org-registrations', orgRegistrationRoutes);
 app.use('/api/platform', platformStatsRoutes);
+app.use('/api/billing', billingRoutes);
+app.use('/api/webhooks', webhookRoutes);
+app.use('/api/tptp-pay', tptpPayRoutes);
+app.use('/api/tptp-bank', tptpBankRoutes);
+app.use('/tptp-pay', tptpPayRoutes);
 
 // Export app cho testing
 module.exports = app;
@@ -115,10 +124,20 @@ if (require.main === module) {
 
   // Gọi hàm cắm ống nước Database TRƯỚC, cắm xong mới bật Server
   connectDB().then(() => {
-    const server = app.listen(PORT, () => {
+    const { startBillingScheduler } = require('./services/billingScheduler');
+    startBillingScheduler();
+
+    const HOST = process.env.HOST || '0.0.0.0';
+    const server = app.listen(PORT, HOST, () => {
+      const os = require('os');
+      const lanIps = Object.values(os.networkInterfaces())
+        .flat()
+        .filter((n) => n && n.family === 'IPv4' && !n.internal)
+        .map((n) => n.address);
       console.log(`===============================================`);
       console.log(`🚀 BÁO CÁO: ĐỘNG CƠ MÁY CHỦ ĐÃ KHỞI CHẠY THÀNH CÔNG!`);
-      console.log(`🌐 Đang mở cổng lắng nghe tại: http://localhost:${PORT}`);
+      console.log(`🌐 Local:   http://localhost:${PORT}`);
+      lanIps.forEach((ip) => console.log(`📱 Điện thoại (WiFi): http://${ip}:${PORT}`));
       console.log(`===============================================`);
     });
 

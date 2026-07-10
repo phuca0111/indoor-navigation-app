@@ -10,11 +10,19 @@
 
         return {
             mapName: mapName,
-            scaleRatio: typeof metersPerGrid !== 'undefined' && Number.isFinite(metersPerGrid) && metersPerGrid > 0
-                ? metersPerGrid
-                : 0.5,
+            scaleRatio: (function () {
+                if (typeof isScaleEditingLocked === 'function' && isScaleEditingLocked()) {
+                    return typeof getProjectScaleRatio === 'function' ? getProjectScaleRatio() : 0.5;
+                }
+                if (typeof metersPerGrid !== 'undefined' && Number.isFinite(metersPerGrid) && metersPerGrid > 0) {
+                    return metersPerGrid;
+                }
+                return 0.5;
+            })(),
             mapBearingOffset: Number.isFinite(root.mapBearingOffset) ? root.mapBearingOffset : 0,
-            backgroundImage: root.bgImageBase64 || '',
+            backgroundImage: (root.EditorCore && root.EditorCore.AssetManager
+                ? root.EditorCore.AssetManager.getBackgroundDataUrl()
+                : root.bgImageBase64) || '',
             rooms: typeof rooms !== 'undefined' ? rooms.slice() : [],
             doors: typeof doors !== 'undefined' ? doors.slice() : [],
             pois: typeof pois !== 'undefined' ? pois.slice() : [],

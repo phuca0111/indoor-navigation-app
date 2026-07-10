@@ -13,6 +13,10 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { assertUserOrgActive } = require('../utils/orgAccess');
+const { assertCanCreateUser } = require('../utils/planQuota');
+const { isUserQuotaLocked } = require('../utils/overQuotaLock');
+const { validatePasswordStrength, validatePasswordMinLength } = require('../utils/passwordPolicy');
+const { validateFullName, normalizeFullName } = require('../utils/fullNamePolicy');
 
 // WHY: Tránh bị buộc đăng nhập lại sau mỗi 15 phút.
 // Có thể override bằng ENV JWT_ACCESS_EXPIRES_IN (ví dụ: 12h, 7d).
@@ -26,6 +30,8 @@ function validateRegisterInput(fullName, email, password, confirmPassword) {
     const errors = [];
     if (!fullName || fullName.trim() === '') {
         errors.push('Họ tên là bắt buộc.');
+    } else {
+        errors.push(...validateFullName(fullName));
     }
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         errors.push('Email không hợp lệ.');
@@ -74,7 +80,7 @@ const registerPublic = async (req, res) => {
             email,
             password: hashedPassword,
             role: 'BUILDING_ADMIN',
-            full_name: fullName.trim(),
+            full_name: normalizeFullName(fullName),
             is_active: false,
             assigned_buildings: [],
             created_by: null
@@ -116,11 +122,21 @@ const register = async (req, res) => {
         if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
             return res.status(400).json({ message: 'Email không hợp lệ.' });
         }
-        if (!password || password.length < 8) {
-            return res.status(400).json({ message: 'Mật khẩu phải có ít nhất 8 ký tự.' });
+        const passwordErrors = callerRole === 'SUPER_ADMIN'
+            ? validatePasswordMinLength(password)
+            : validatePasswordStrength(password);
+        if (passwordErrors.length) {
+            return res.status(400).json({
+                message: 'Mật khẩu không hợp lệ.',
+                errors: passwordErrors
+            });
         }
-        if (!full_name || full_name.trim() === '') {
-            return res.status(400).json({ message: 'Họ tên không được để trống.' });
+        const fullNameErrors = validateFullName(full_name);
+        if (fullNameErrors.length) {
+            return res.status(400).json({
+                message: 'Họ tên không hợp lệ.',
+                errors: fullNameErrors
+            });
         }
         if (phone !== undefined && phone !== null && phone !== '' && typeof phone !== 'string') {
             return res.status(400).json({ message: 'Số điện thoại phải là chuỗi.' });
@@ -168,12 +184,23 @@ const register = async (req, res) => {
         }
 
         if (targetOrgId) {
-            const org = await Organization.findById(targetOrgId).select('is_active name').lean();
+            const org = await Organization.findById(targetOrgId).select('is_active name plan').lean();
             if (!org) {
                 return res.status(400).json({ message: 'Organization không tồn tại.' });
             }
             if (!org.is_active) {
                 return res.status(400).json({ message: 'Organization đã bị vô hiệu hóa.' });
+            }
+            // Phase 5.1 — chặn tạo ORG_ADMIN / BUILDING_ADMIN khi vượt hạn mức user
+            if (targetRole === 'ORG_ADMIN' || targetRole === 'BUILDING_ADMIN') {
+                const quota = await assertCanCreateUser(org);
+                if (!quota.ok) {
+                    return res.status(403).json({
+                        message: quota.message,
+                        code: quota.code,
+                        usage: quota.usage
+                    });
+                }
             }
         }
 
@@ -194,7 +221,7 @@ const register = async (req, res) => {
             email: email.trim(),
             password: matKhauDaNghien,
             role: targetRole,
-            full_name: full_name.trim(),
+            full_name: normalizeFullName(full_name),
             phone: phone ? String(phone).trim() : '',
             organization_id: targetOrgId,
             assigned_buildings: targetRole === 'BUILDING_ADMIN' ? targetBuildings : [],
@@ -257,6 +284,16 @@ const login = async (req, res) => {
         const orgCheck = await assertUserOrgActive(user);
         if (!orgCheck.ok) {
             return res.status(403).json({ message: orgCheck.message, code: orgCheck.code });
+        }
+
+        if (user.organization_id && ['ORG_ADMIN', 'BUILDING_ADMIN'].includes(user.role)) {
+            const org = await Organization.findById(user.organization_id);
+            if (org && await isUserQuotaLocked(user._id, org)) {
+                return res.status(403).json({
+                    message: 'Tài khoản bị khóa do vượt hạn mức gói. Liên hệ ORG Admin hoặc nâng cấp PRO.',
+                    code: 'OVER_QUOTA_USER_LOCKED'
+                });
+            }
         }
 
         // BƯỚC 4: So sánh mật khẩu
