@@ -6,21 +6,33 @@
 
 const Floor      = require('../models/Floor');
 const Building   = require('../models/Building');
+const Organization = require('../models/Organization');
 const MapVersion = require('../models/MapVersion');
 const QrCode     = require('../models/QrCode');
 const ActivityLog = require('../models/ActivityLog');
 const { buildMapSnapshot } = require('../utils/mapSnapshot');
 const { applyRetentionForFloor } = require('../utils/mapVersionRetention');
+const { assertBuildingWritable, isBuildingQuotaLocked } = require('../utils/overQuotaLock');
 
 function logActivity(data) {
     return ActivityLog.create(data).catch(() => {});
 }
 
 async function assertPublicBuildingAccess(buildingId, res) {
-    const building = await Building.findById(buildingId).select('status is_active').lean();
+    const building = await Building.findById(buildingId).select('status is_active organization_id').lean();
     if (!building || building.is_active === false || building.status !== 'PUBLISHED') {
         res.status(404).json({ message: 'Không tìm thấy bản đồ hoặc tòa nhà chưa được xuất bản.' });
         return false;
+    }
+    if (building.organization_id) {
+        const org = await Organization.findById(building.organization_id);
+        if (org && await isBuildingQuotaLocked(buildingId, org)) {
+            res.status(403).json({
+                message: 'Bản đồ tòa nhà tạm khóa do vượt hạn mức gói. Liên hệ quản trị tổ chức.',
+                code: 'OVER_QUOTA_LOCKED'
+            });
+            return false;
+        }
     }
     return true;
 }
@@ -66,6 +78,21 @@ const saveMap = async (req, res) => {
         if (!Number.isFinite(floorNum)) {
             return res.status(400).json({ message: 'Số tầng không hợp lệ.' });
         }
+
+        if (req.user?.role !== 'SUPER_ADMIN') {
+            const building = await Building.findById(buildingId).select('organization_id').lean();
+            if (building?.organization_id) {
+                const org = await Organization.findById(building.organization_id);
+                const writable = await assertBuildingWritable(buildingId, org);
+                if (!writable.ok) {
+                    return res.status(403).json({
+                        message: writable.message,
+                        code: writable.code
+                    });
+                }
+            }
+        }
+
         const { map_data } = req.body;              // Lấy cục JSON bản đồ từ body
 
         // Tìm xem bản đồ tầng này đã tồn tại chưa

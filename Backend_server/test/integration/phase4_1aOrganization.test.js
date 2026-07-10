@@ -10,6 +10,7 @@ const jwt = require('jsonwebtoken');
 const app = require('../../server');
 const User = require('../../models/User');
 const Organization = require('../../models/Organization');
+const OrganizationBillingEvent = require('../../models/OrganizationBillingEvent');
 
 const API = '/api/organizations';
 
@@ -116,5 +117,45 @@ describe('Phase 4.1a — PATCH organization', () => {
       .set('Authorization', `Bearer ${superToken}`)
       .send({ is_active: false });
     expect(res.status).toBe(400);
+  });
+
+  test('TC-4.1a-06 SUPER_ADMIN cập nhật hạn gói → 200', async () => {
+    const expireAt = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString();
+    const res = await request(app)
+      .patch(`${API}/${testOrgId}`)
+      .set('Authorization', `Bearer ${superToken}`)
+      .send({ plan_expires_at: expireAt });
+    expect(res.status).toBe(200);
+    expect(res.body.organization.plan_expires_at).toBeTruthy();
+  });
+
+  test('TC-4.1a-07 SUPER_ADMIN tạo billing event PAID → 201', async () => {
+    const startAt = new Date();
+    const endAt = new Date(startAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const key = `test-paid-${Date.now()}`;
+    const res = await request(app)
+      .post(`${API}/${testOrgId}/billing-events`)
+      .set('Authorization', `Bearer ${superToken}`)
+      .send({
+        event_type: 'SUBSCRIPTION_RENEWED',
+        payment_status: 'PAID',
+        plan: 'PRO',
+        amount: 990000,
+        currency: 'VND',
+        period_start_at: startAt.toISOString(),
+        period_end_at: endAt.toISOString(),
+        idempotency_key: key,
+        note: 'Integration test paid event'
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.billing_event).toBeDefined();
+    expect(res.body.billing_event.payment_status).toBe('PAID');
+    expect(res.body.organization).toBeDefined();
+    expect(res.body.organization.plan).toBe('PRO');
+
+    await OrganizationBillingEvent.deleteOne({
+      organization_id: testOrgId,
+      idempotency_key: key
+    });
   });
 });
