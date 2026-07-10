@@ -1,160 +1,42 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-
 import { createRequire } from 'node:module';
 
-
-
 const require = createRequire(import.meta.url);
+const VersionManager = require('../core/version-manager.js');
 
-const VM = require('../core/version-manager.js');
-
-const PM = require('../core/project-manager.js');
-
-globalThis.EditorCore = globalThis.EditorCore || {};
-globalThis.EditorCore.ProjectManager = PM;
-
-describe('VersionManager — Phase 0.5 skeleton', function () {
-
+describe('VersionManager', function () {
     beforeEach(function () {
-
-        VM.reset();
-
-        PM.setContext(null);
-
+        VersionManager.init({ state: 'draft', revision: 0 });
     });
 
-
-
-    it('mặc định là Draft, chưa có serverVersion', function () {
-
-        var s = VM.getState();
-
-        expect(s.status).toBe('draft');
-
-        expect(s.serverVersion).toBeNull();
-
-        expect(s.isDirty).toBe(false);
-
-        expect(VM.getDisplayLabel()).toBe('Draft');
-
+    it('getState mặc định draft', function () {
+        var s = VersionManager.getState();
+        expect(s.state).toBe('draft');
+        expect(s.revision).toBe(0);
     });
 
-
-
-    it('applyServerLoad(version) → Published', function () {
-
-        VM.applyServerLoad(4);
-
-        var s = VM.getState();
-
-        expect(s.status).toBe('published');
-
-        expect(s.serverVersion).toBe(4);
-
-        expect(VM.getDisplayLabel()).toBe('v4 (Published)');
-
-        expect(VM.isEditingDraft()).toBe(false);
-
+    it('draft → published tăng revision + publishedAt', function () {
+        var r = VersionManager.transition('published');
+        expect(r.ok).toBe(true);
+        expect(VersionManager.getState().revision).toBe(1);
+        expect(VersionManager.getState().publishedAt).toBeTruthy();
     });
 
-
-
-    it('applyServerLoad(null) → Draft tầng trống', function () {
-
-        VM.applyServerLoad(null);
-
-        expect(VM.getState().status).toBe('draft');
-
-        expect(VM.getState().serverVersion).toBeNull();
-
+    it('canTransition từ chối archived → bất kỳ', function () {
+        VersionManager.transition('published');
+        VersionManager.transition('archived');
+        expect(VersionManager.canTransition('draft')).toBe(false);
+        expect(VersionManager.transition('draft').ok).toBe(false);
     });
 
-
-
-    it('applyPublishSuccess cập nhật version và ProjectManager', function () {
-
-        PM.resolveContext({ buildingId: 'b1', floor: 0, version: 'draft' });
-
-        VM.applyPublishSuccess(7);
-
-        var s = VM.getState();
-
-        expect(s.status).toBe('published');
-
-        expect(s.serverVersion).toBe(7);
-
-        expect(PM.getContext().version).toBe('7');
-
+    it('published → draft qua markDirty', function () {
+        VersionManager.transition('published');
+        VersionManager.markDirty();
+        expect(VersionManager.getState().state).toBe('draft');
     });
 
-
-
-    it('beginDraftFork từ published', function () {
-
-        VM.applyServerLoad(3);
-
-        VM.beginDraftFork();
-
-        var s = VM.getState();
-
-        expect(s.status).toBe('draft');
-
-        expect(s.forkedFromVersion).toBe(3);
-
-        expect(s.isDirty).toBe(true);
-
-        expect(VM.getDisplayLabel()).toContain('fork từ v3');
-
+    it('draft → archived hợp lệ', function () {
+        expect(VersionManager.canTransition('archived')).toBe(true);
+        expect(VersionManager.transition('archived').ok).toBe(true);
     });
-
-
-
-    it('markDirty chuyển published → draft fork', function () {
-
-        VM.applyServerLoad(2);
-
-        VM.markDirty();
-
-        expect(VM.getState().status).toBe('draft');
-
-        expect(VM.getState().forkedFromVersion).toBe(2);
-
-    });
-
-
-
-    it('getVersionsListUrl và getRollbackUrl', function () {
-
-        PM.resolveContext({ buildingId: 'abc', floor: 1, version: 'draft' });
-
-        expect(VM.getVersionsListUrl()).toBe('/api/map-versions/abc/1');
-
-        expect(VM.getRollbackUrl(null, null, 5)).toBe('/api/map-versions/abc/1/5/rollback');
-
-    });
-
-
-
-    it('syncFromProjectManager đọc version draft vs số', function () {
-
-        PM.resolveContext({ buildingId: 'b1', floor: 0, version: 'draft' });
-
-        VM.syncFromProjectManager();
-
-        expect(VM.getState().status).toBe('draft');
-
-
-
-        PM.updateVersion('9');
-
-        VM.syncFromProjectManager();
-
-        expect(VM.getState().status).toBe('published');
-
-        expect(VM.getState().serverVersion).toBe(9);
-
-    });
-
 });
-
-

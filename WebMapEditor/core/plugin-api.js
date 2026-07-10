@@ -1,151 +1,95 @@
-// ============================================================
-// PLUGIN-API.JS — Registry mở rộng (Phase 0.5 skeleton)
-// Spec: webedit_nangcap.md §5.13 — Tool / Exporter / Importer / Validator / Panel
-// ============================================================
-(function (root, factory) {
-    if (typeof module === 'object' && module.exports) {
-        module.exports = factory();
-    } else {
-        root.EditorCore = root.EditorCore || {};
-        root.EditorCore.PluginAPI = factory();
-    }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
-    'use strict';
-
-    var rootRef = typeof globalThis !== 'undefined' ? globalThis : this;
-
-    var exporters = Object.create(null);
-    var importers = Object.create(null);
-    var validators = Object.create(null);
-    var panels = Object.create(null);
-
-    function emitRegistered(kind, id) {
-        if (rootRef.EditorCore && rootRef.EditorCore.eventBus) {
-            rootRef.EditorCore.eventBus.emit('PLUGIN_REGISTERED', { kind: kind, id: id });
-        }
-    }
-
-    function registerTool(def) {
-        if (!rootRef.EditorCore || !rootRef.EditorCore.ToolRegistry) {
-            throw new Error('PluginAPI.registerTool: ToolRegistry chưa load');
-        }
-        var entry = rootRef.EditorCore.ToolRegistry.registerTool(def);
-        emitRegistered('tool', entry.id);
-        return entry;
-    }
-
-    function registerExporter(format, handler) {
-        if (!format || typeof handler !== 'function') {
-            throw new Error('PluginAPI.registerExporter: cần format và handler');
-        }
-        var key = String(format).toLowerCase();
-        exporters[key] = handler;
-        emitRegistered('exporter', key);
-        return key;
-    }
-
-    function registerImporter(format, handler) {
-        if (!format || typeof handler !== 'function') {
-            throw new Error('PluginAPI.registerImporter: cần format và handler');
-        }
-        var key = String(format).toLowerCase();
-        importers[key] = handler;
-        emitRegistered('importer', key);
-        return key;
-    }
-
-    function registerValidator(ruleId, handler) {
-        if (!ruleId || typeof handler !== 'function') {
-            throw new Error('PluginAPI.registerValidator: cần ruleId và handler');
-        }
-        var key = String(ruleId);
-        validators[key] = handler;
-        emitRegistered('validator', key);
-        return key;
-    }
-
-    function registerPanel(panelId, component) {
-        if (!panelId) throw new Error('PluginAPI.registerPanel: thiếu panelId');
-        var key = String(panelId);
-        panels[key] = component;
-        emitRegistered('panel', key);
-        return key;
-    }
-
-    function getExporter(format) {
-        return exporters[String(format).toLowerCase()] || null;
-    }
-
-    function getImporter(format) {
-        return importers[String(format).toLowerCase()] || null;
-    }
-
-    function getValidator(ruleId) {
-        return validators[String(ruleId)] || null;
-    }
-
-    function getPanel(panelId) {
-        return panels[String(panelId)] || null;
-    }
-
-    /**
-     * Chạy mọi custom validator đã đăng ký.
-     * @param {object} ctx — { document, mapData, ... }
-     * @returns {{ ok: boolean, findings: Array }}
-     */
-    function runCustomValidators(ctx) {
-        var findings = [];
-        Object.keys(validators).forEach(function (ruleId) {
-            try {
-                var result = validators[ruleId](ctx || {});
-                if (!result) return;
-                if (Array.isArray(result)) findings = findings.concat(result);
-                else if (result.message) findings.push(result);
-            } catch (err) {
-                findings.push({
-                    ruleId: ruleId,
-                    severity: 'error',
-                    message: 'Validator lỗi: ' + (err && err.message ? err.message : String(err))
-                });
-            }
-        });
-        var errors = findings.filter(function (f) { return f.severity === 'error'; });
-        return { ok: errors.length === 0, findings: findings };
-    }
-
-    function listRegistered() {
-        var toolIds = rootRef.EditorCore && rootRef.EditorCore.ToolRegistry
-            ? rootRef.EditorCore.ToolRegistry.getAll().map(function (t) { return t.id; })
-            : [];
-        return {
-            tools: toolIds,
-            exporters: Object.keys(exporters),
-            importers: Object.keys(importers),
-            validators: Object.keys(validators),
-            panels: Object.keys(panels)
-        };
-    }
-
-    function reset() {
-        exporters = Object.create(null);
-        importers = Object.create(null);
-        validators = Object.create(null);
-        panels = Object.create(null);
-    }
-
-    return {
-        registerTool: registerTool,
-        registerExporter: registerExporter,
-        registerImporter: registerImporter,
-        registerValidator: registerValidator,
-        registerPanel: registerPanel,
-        getExporter: getExporter,
-        getImporter: getImporter,
-        getValidator: getValidator,
-        getPanel: getPanel,
-        runCustomValidators: runCustomValidators,
-        listRegistered: listRegistered,
-        reset: reset
-    };
-});
-
+// ============================================================
+// PLUGIN-API.JS — Đăng ký tool / validator / exporter (Phase 0.5 — §5.9)
+// ============================================================
+(function (root, factory) {
+    var deps = function () {
+        return {
+            ToolRegistry: root.EditorCore && root.EditorCore.ToolRegistry,
+            ValidationEngine: root.EditorCore && root.EditorCore.ValidationEngine,
+            ExportPipeline: root.EditorCore && root.EditorCore.ExportPipeline
+        };
+    };
+
+    if (typeof module === 'object' && module.exports) {
+        module.exports = factory(deps);
+    } else {
+        root.EditorCore = root.EditorCore || {};
+        root.EditorCore.PluginAPI = factory(deps);
+    }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (getDeps) {
+    'use strict';
+
+    var _plugins = {};
+    var _validators = [];
+    var _exporters = [];
+
+    function registerPlugin(id, manifest) {
+        if (!id || !manifest) return { ok: false, error: 'invalid_args' };
+        _plugins[id] = Object.assign({ id: id, version: '1.0.0' }, manifest);
+        return { ok: true, id: id };
+    }
+
+    function getPlugin(id) {
+        return _plugins[id] ? Object.assign({}, _plugins[id]) : null;
+    }
+
+    function listPlugins() {
+        return Object.keys(_plugins).map(function (id) { return getPlugin(id); });
+    }
+
+    function registerTool(name, toolDef) {
+        var d = getDeps();
+        if (!d.ToolRegistry || typeof d.ToolRegistry.register !== 'function') {
+            return { ok: false, error: 'no_tool_registry' };
+        }
+        d.ToolRegistry.register(name, toolDef);
+        return { ok: true, name: name };
+    }
+
+    function registerValidator(fn, opts) {
+        if (typeof fn !== 'function') return { ok: false, error: 'not_function' };
+        _validators.push({ fn: fn, priority: (opts && opts.priority) || 0 });
+        _validators.sort(function (a, b) { return b.priority - a.priority; });
+        return { ok: true, count: _validators.length };
+    }
+
+    function runValidators(mapData) {
+        var issues = [];
+        _validators.forEach(function (v) {
+            try {
+                var res = v.fn(mapData);
+                if (Array.isArray(res)) issues = issues.concat(res);
+            } catch (e) {
+                issues.push({ level: 'error', code: 'plugin_validator_error', message: e.message });
+            }
+        });
+        return issues;
+    }
+
+    function registerExporter(format, fn) {
+        if (!format || typeof fn !== 'function') return { ok: false, error: 'invalid_args' };
+        _exporters.push({ format: format, fn: fn });
+        return { ok: true, format: format };
+    }
+
+    function exportAs(format, doc) {
+        var match = _exporters.filter(function (e) { return e.format === format; });
+        if (!match.length) return { ok: false, error: 'unknown_format' };
+        try {
+            return { ok: true, data: match[0].fn(doc) };
+        } catch (e) {
+            return { ok: false, error: e.message };
+        }
+    }
+
+    return {
+        registerPlugin: registerPlugin,
+        getPlugin: getPlugin,
+        listPlugins: listPlugins,
+        registerTool: registerTool,
+        registerValidator: registerValidator,
+        runValidators: runValidators,
+        registerExporter: registerExporter,
+        exportAs: exportAs
+    };
+});

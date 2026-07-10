@@ -161,7 +161,7 @@ if (bSli) {
         var targetFloor = this.value;
         if (targetFloor === activeFloor) return;
 
-        if (!confirm('⚠️ CẢNH BÁO: Chuyển tầng sẽ xóa các thay đổi chưa lưu trên Canvas hiện tại. Bạn có muốn tiếp tục?')) {
+        if (!confirm('⚠️ CẢNH BÁO: Chuyển tầng sẽ xóa các thay đổi chưa lưu trên bản vẽ hiện tại. Bạn có muốn tiếp tục?')) {
             this.value = activeFloor;
             return;
         }
@@ -172,6 +172,11 @@ if (bSli) {
             if (typeof updateEditorMapVersion === 'function') {
                 updateEditorMapVersion(result && result.version != null ? result.version : null);
             }
+            if (typeof checkAutoSave === 'function') {
+                checkAutoSave({ serverLoaded: !!(result && result.loaded) });
+            }
+            if (typeof resumeAutoSave === 'function') resumeAutoSave({ clean: true });
+            if (typeof startAutoSave === 'function') startAutoSave(true, { cleanStart: true });
         });
     });
 
@@ -197,10 +202,7 @@ window.addEventListener('load', function() {
 
         draw();
 
-        // initEditor (api.js) là nguồn load map duy nhất — không gọi loadMapFromServer ở đây
-        if (!window.editorMapLoadHandled) {
-            if (typeof checkAutoSave === 'function') checkAutoSave();
-            if (typeof startAutoSave === 'function') startAutoSave();
-        }
+        // Autosave chỉ do initEditor() bật sau load map — không pause ở đây
+        // (pause sau resume sẽ khóa vĩnh viễn → không bao giờ ghi nháp).
     }, 200);
 });

@@ -14,19 +14,33 @@ function createWallSegment(start, end, options) {
         type: 'segment',
         thickness: (options && options.thickness) || 4,
         is_outer: !!(options && options.is_outer),
+        layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default',
         points: [
             { x: start.x, y: start.y },
             { x: end.x, y: end.y }
         ]
     };
     walls.push(wall);
+    if (typeof syncSpatialIndexFromLegacy === 'function') syncSpatialIndexFromLegacy();
     return wall;
+}
+
+/** Polyline V4 → chuỗi segment tường (legacy). Bỏ đoạn quá ngắn. */
+function createWallsFromPolyline(points, options) {
+    if (!points || points.length < 2) return [];
+    var created = [];
+    for (var i = 0; i < points.length - 1; i++) {
+        var w = createWallSegment(points[i], points[i + 1], options);
+        if (w) created.push(w);
+    }
+    return created;
 }
 
 function findWallAt(wx, wy) {
     var threshold = 8 / zoom;
     for (var i = walls.length - 1; i >= 0; i--) {
         var w = walls[i];
+        if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(w)) continue;
         if (!w.points || w.points.length < 2) continue;
         for (var j = 0; j < w.points.length - 1; j++) {
             var a = w.points[j];

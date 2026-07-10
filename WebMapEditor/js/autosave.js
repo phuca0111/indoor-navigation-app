@@ -1,87 +1,556 @@
 // ============================================================
-// AUTOSAVE.JS - Tự động lưu nháp vào LocalStorage
+// AUTOSAVE.JS - Tự động lưu nháp vào LocalStorage (KHÔNG lên server)
+// - Lần đầu sau 3s, sau đó mỗi 30s
+// - Chỉ ghi khi có thay đổi (dirty) → không spam / không đốt quota
+// - Không tạo MapVersion trên server (không đụng giới hạn 50 phiên bản)
 // ============================================================
 
-const AUTOSAVE_INTERVAL = 30000; // 30 giây
+var AUTOSAVE_INTERVAL = 30000;
+var AUTOSAVE_FIRST_DELAY = 3000;
+var AUTOSAVE_DIRTY_DELAY = 2000; // sau khi sửa → lưu nháp sau 2s
+var _autosaveTimerId = null;
+var _autosaveFirstTimeoutId = null;
+var _autosaveDirtyTimeoutId = null;
+var _autosaveStarted = false;
+var _autosaveKeyStarted = null;
+var _autosaveDirty = true;
+var _autosaveLastOkAt = null;
+var _autosaveLastError = null;
+/** true khi đang load map — chặn ghi đè nháp bằng canvas trống */
+var _autosavePaused = false;
+var _autosavePauseReason = '';
+
+function getAutosaveIntervalMs() {
+    if (window.EditorCore && EditorCore.Config) {
+        return EditorCore.Config.get('autosave.intervalMs', AUTOSAVE_INTERVAL);
+    }
+    return AUTOSAVE_INTERVAL;
+}
 
 function getCurrentFloor() {
     var floorSelect = document.getElementById('floorSelect');
-    return floorSelect ? (floorSelect.value || '1') : '1';
-}
-
-// --- LẤY KHÓA LƯU TRỮ RIÊNG CHO TỪNG TÒA NHÀ ---
-function getAutosaveKey() {
+    // Lưu ý: value "0" (tầng trệt) là falsy — không dùng if (value)
+    if (floorSelect && floorSelect.value != null && String(floorSelect.value) !== '') {
+        return String(floorSelect.value);
+    }
     if (window.EditorCore && EditorCore.ProjectManager) {
-        var pmKey = EditorCore.ProjectManager.getAutosaveKey();
-        if (pmKey) return pmKey;
+        var ctx = EditorCore.ProjectManager.getContext();
+        if (ctx && ctx.floor != null && String(ctx.floor) !== '') {
+            return String(ctx.floor);
+        }
     }
-    var building = window.buildingId || 'default';
-    var floor = getCurrentFloor();
-    return 'floorplan_autosave_' + building + '_' + floor;
+    return '1';
 }
 
-// --- KHỞI CHẠY TỰ ĐỘNG LƯU ---
-function startAutoSave() {
+/** Đọc userId đang đăng nhập (localStorage). */
+function getCurrentUserId() {
+    try {
+        if (typeof localStorage !== 'undefined') {
+            var id = localStorage.getItem('userId');
+            if (id) return String(id);
+        }
+    } catch (e) { /* ignore */ }
+    if (window.EditorCore && EditorCore.ProjectManager) {
+        var ctx = EditorCore.ProjectManager.getContext();
+        if (ctx && ctx.userId) return String(ctx.userId);
+    }
+    return 'anon';
+}
+
+/** Đồng bộ ProjectManager với user / building / floor thực tế trên trang. */
+function syncAutosaveProjectContext() {
+    if (!window.EditorCore || !EditorCore.ProjectManager) return;
+    var pm = EditorCore.ProjectManager;
+    if (typeof pm.setUserId === 'function') {
+        pm.setUserId(getCurrentUserId());
+    }
+    if (typeof pm.setBuildingId === 'function' && window.buildingId) {
+        pm.setBuildingId(window.buildingId);
+    }
+    if (typeof pm.setFloor === 'function') {
+        pm.setFloor(getCurrentFloor());
+    }
+}
+
+function getAutosaveKey() {
+    syncAutosaveProjectContext();
+    if (window.EditorCore && EditorCore.ProjectManager && EditorCore.ProjectManager.storageNamespace) {
+        return 'floorplan_autosave_' + EditorCore.ProjectManager.storageNamespace();
+    }
+    return 'floorplan_autosave_' + getCurrentUserId() + '_' +
+        (window.buildingId || 'default') + '_' + getCurrentFloor();
+}
+
+function setAutosaveStatus(text, isError) {
+    var statusEl = document.getElementById('autosaveStatus');
+    if (!statusEl) return;
+    statusEl.textContent = text || '';
+    statusEl.style.color = isError ? '#f87171' : '';
+    statusEl.style.opacity = text ? '1' : '0.7';
+}
+
+function markAutosaveDirty() {
+    _autosaveDirty = true;
+    // Nếu map đã load xong mà vẫn bị pause nhầm → tự mở lại
+    if (_autosavePaused && window.editorMapLoadHandled) {
+        console.warn('[Autosave] dirty khi vẫn pause (' + _autosavePauseReason + ') — tự resume');
+        _autosavePaused = false;
+        _autosavePauseReason = '';
+    }
+    scheduleDirtyAutosave();
+    if (typeof console !== 'undefined' && console.debug) {
+        console.debug('[Autosave] dirty=true', {
+            paused: _autosavePaused,
+            key: (typeof getAutosaveKey === 'function') ? getAutosaveKey() : '?'
+        });
+    }
+}
+window.markAutosaveDirty = markAutosaveDirty;
+
+/** Lưu nháp sớm sau khi user sửa (không đợi đủ 30s). */
+function scheduleDirtyAutosave() {
+    if (_autosaveDirtyTimeoutId != null) {
+        clearTimeout(_autosaveDirtyTimeoutId);
+        _autosaveDirtyTimeoutId = null;
+    }
+    if (!_autosaveStarted || _autosavePaused) return;
+    _autosaveDirtyTimeoutId = setTimeout(function () {
+        _autosaveDirtyTimeoutId = null;
+        console.log('[Autosave] Tick sớm sau chỉnh sửa');
+        runAutoSaveTick();
+    }, AUTOSAVE_DIRTY_DELAY);
+    setAutosaveStatus('Có thay đổi — sẽ lưu nháp sau ' + (AUTOSAVE_DIRTY_DELAY / 1000) + 's...', false);
+}
+
+function buildAutosaveSnapshot() {
+    if (typeof getMapSnapshot !== 'function') {
+        throw new Error('getMapSnapshot chưa sẵn sàng');
+    }
+    var snapshot = getMapSnapshot();
+    snapshot.autosaveAt = new Date().toISOString();
+    snapshot.userId = getCurrentUserId();
+    snapshot.buildingId = window.buildingId || 'default';
+    snapshot.floor = getCurrentFloor();
+    return snapshot;
+}
+
+function writeAutosaveSnapshot(snapshot) {
+    var key = getAutosaveKey();
+    var json = JSON.stringify(snapshot);
+    try {
+        localStorage.setItem(key, json);
+        return { ok: true, bytes: json.length };
+    } catch (e) {
+        if (e && (e.name === 'QuotaExceededError' || /quota/i.test(String(e.message)))) {
+            var lite = Object.assign({}, snapshot, {
+                bgImageBase64: '',
+                autosaveBgStripped: true
+            });
+            try {
+                var liteJson = JSON.stringify(lite);
+                localStorage.setItem(key, liteJson);
+                return { ok: true, strippedBg: true, bytes: liteJson.length };
+            } catch (e2) {
+                return { ok: false, error: e2 };
+            }
+        }
+        return { ok: false, error: e };
+    }
+}
+
+function tryCrashRecoverySave(snapshot) {
+    if (!window.EditorCore || !window.EditorCore.CrashRecovery) return;
+    try {
+        var uid = snapshot.userId || getCurrentUserId();
+        var liteLegacy = Object.assign({}, snapshot, { bgImageBase64: '' });
+        var packed = window.EditorCore.CrashRecovery.buildSnapshot(liteLegacy, {
+            buildingId: snapshot.buildingId,
+            floor: snapshot.floor,
+            userId: uid
+        });
+        packed.userId = uid;
+        window.EditorCore.CrashRecovery.saveSession(
+            snapshot.buildingId,
+            snapshot.floor,
+            packed,
+            uid
+        );
+    } catch (e) {
+        console.warn('[Autosave] CrashRecovery bỏ qua:', e && e.message ? e.message : e);
+    }
+}
+
+function formatTime(d) {
+    return d.getHours().toString().padStart(2, '0') + ':' +
+        d.getMinutes().toString().padStart(2, '0') + ':' +
+        d.getSeconds().toString().padStart(2, '0');
+}
+
+function runAutoSaveTick() {
+    try {
+        if (_autosavePaused) {
+            console.log('[Autosave] Tạm dừng (' + (_autosavePauseReason || '?') + ') — bỏ qua tick');
+            return;
+        }
+        // Không có thay đổi → không ghi lại (tránh spam localStorage)
+        if (!_autosaveDirty) {
+            if (_autosaveLastOkAt) {
+                setAutosaveStatus('Nháp ổn định · lần lưu ' + formatTime(_autosaveLastOkAt), false);
+            }
+            return;
+        }
+
+        var snapshot = buildAutosaveSnapshot();
+        tryCrashRecoverySave(snapshot);
+
+        var result = writeAutosaveSnapshot(snapshot);
+        if (!result.ok) {
+            throw result.error || new Error('Không ghi được localStorage');
+        }
+
+        _autosaveDirty = false;
+        _autosaveLastOkAt = new Date();
+        _autosaveLastError = null;
+
+        var msg = 'Đã lưu nháp: ' + formatTime(_autosaveLastOkAt);
+        if (result.strippedBg) msg += ' (bỏ ảnh nền — quá lớn)';
+        setAutosaveStatus(msg, false);
+        console.log('[Autosave] OK', getAutosaveKey(), result.bytes != null ? (result.bytes + ' bytes') : '');
+    } catch (e) {
+        _autosaveLastError = e;
+        console.error('[Autosave] Lỗi:', e);
+        setAutosaveStatus('Lỗi lưu nháp: ' + (e.message || e), true);
+    }
+}
+
+function pauseAutoSave(reason) {
+    _autosavePaused = true;
+    _autosavePauseReason = reason || '';
+    if (_autosaveDirtyTimeoutId != null) {
+        clearTimeout(_autosaveDirtyTimeoutId);
+        _autosaveDirtyTimeoutId = null;
+    }
+    console.log('[Autosave] Pause', _autosavePauseReason);
+}
+
+function resumeAutoSave(opts) {
+    opts = opts || {};
+    _autosavePaused = false;
+    _autosavePauseReason = '';
+    if (opts.clean) _autosaveDirty = false;
+    console.log('[Autosave] Resume', opts.clean ? '(clean — chờ user sửa)' : '');
+}
+
+function stopAutoSave() {
+    if (_autosaveFirstTimeoutId != null) {
+        clearTimeout(_autosaveFirstTimeoutId);
+        _autosaveFirstTimeoutId = null;
+    }
+    if (_autosaveTimerId != null) {
+        clearInterval(_autosaveTimerId);
+        _autosaveTimerId = null;
+    }
+    if (_autosaveDirtyTimeoutId != null) {
+        clearTimeout(_autosaveDirtyTimeoutId);
+        _autosaveDirtyTimeoutId = null;
+    }
+    _autosaveStarted = false;
+    _autosaveKeyStarted = null;
+}
+
+/**
+ * @param {boolean} [forceRestart]
+ * @param {{cleanStart?: boolean}} [options]
+ *   cleanStart: không đánh dirty — tránh ghi đè nháp bằng bản server ngay sau F5
+ */
+function startAutoSave(forceRestart, options) {
+    options = options || {};
+    syncAutosaveProjectContext();
+    var key = getAutosaveKey();
+
+    // Đã chạy đúng key → giữ timer, không restart (tránh race editor.js ↔ initEditor)
+    if (_autosaveStarted && !forceRestart && _autosaveKeyStarted === key) {
+        console.log('[Autosave] Đã chạy — giữ timer. Key:', key);
+        if (options.cleanStart) _autosaveDirty = false;
+        // Quan trọng: start = không còn pause
+        _autosavePaused = false;
+        _autosavePauseReason = '';
+        return;
+    }
+
+    stopAutoSave();
+    _autosaveStarted = true;
+    _autosaveKeyStarted = key;
+    _autosavePaused = false;
+    _autosavePauseReason = '';
+    // Mặc định clean khi vừa load xong; chỉ dirty khi user sửa (saveState → markAutosaveDirty)
+    _autosaveDirty = !options.cleanStart;
+
     if (!window.buildingId) {
-        console.warn('⚠️ Không tìm thấy buildingId, Auto-save sẽ dùng khóa mặc định.');
+        console.warn('[Autosave] Chưa có buildingId — dùng khóa mặc định.');
     }
-    console.log('⏱️ Hệ thống Auto-save đã kích hoạt (30s). Key:', getAutosaveKey());
 
-    setInterval(function () {
-        try {
-            var snapshot = getMapSnapshot();
-            snapshot.autosaveAt = new Date().toISOString();
-            snapshot.buildingId = window.buildingId || 'default';
-            snapshot.floor = getCurrentFloor();
-            localStorage.setItem(getAutosaveKey(), JSON.stringify(snapshot));
+    var intervalMs = getAutosaveIntervalMs();
+    console.log('[Autosave] Bật — lần đầu sau ' + (AUTOSAVE_FIRST_DELAY / 1000) +
+        's, sau đó mỗi ' + (intervalMs / 1000) + 's (chỉ khi có thay đổi). Key:', key,
+        options.cleanStart ? '[cleanStart]' : '',
+        'paused=', _autosavePaused);
 
-            // Cập nhật nhãn trạng thái
-            var now = new Date();
-            var timeStr = now.getHours().toString().padStart(2, '0') + ':' +
-                now.getMinutes().toString().padStart(2, '0') + ':' +
-                now.getSeconds().toString().padStart(2, '0');
+    setAutosaveStatus(options.cleanStart
+        ? 'Tự lưu nháp: sẵn sàng (chờ chỉnh sửa)'
+        : 'Tự lưu nháp: chờ lần đầu...', false);
 
-            var statusEl = document.getElementById('autosaveStatus');
-            if (statusEl) {
-                statusEl.textContent = 'Đã lưu nháp: ' + timeStr;
-                statusEl.style.opacity = '1';
-                setTimeout(() => { statusEl.style.opacity = '0.7'; }, 2000);
-            }
-        } catch (e) {
-            console.error('Lỗi Auto-save:', e);
-        }
-    }, AUTOSAVE_INTERVAL);
+    _autosaveFirstTimeoutId = setTimeout(function () {
+        _autosaveFirstTimeoutId = null;
+        runAutoSaveTick();
+        _autosaveTimerId = setInterval(runAutoSaveTick, intervalMs);
+    }, AUTOSAVE_FIRST_DELAY);
 }
 
-// --- KIỂM TRA BẢN NHÁP CŨ ---
-function checkAutoSave() {
-    var savedData = localStorage.getItem(getAutosaveKey());
-    if (savedData) {
-        try {
-            var data = JSON.parse(savedData);
-            var mapName = data.mapName || 'không tên';
-            var savedAt = data.autosaveAt
-                ? new Date(data.autosaveAt).toLocaleString()
-                : 'không rõ thời gian';
+function contentFingerprint(data) {
+    if (!data) return '';
+    try {
+        return JSON.stringify({
+            rooms: data.rooms || [],
+            walls: data.walls || [],
+            lines: data.lines || [],
+            doors: data.doors || [],
+            pois: data.pois || [],
+            pathNodes: data.pathNodes || [],
+            pathEdges: data.pathEdges || [],
+            qrs: data.qrs || []
+        });
+    } catch (e) {
+        return '';
+    }
+}
 
-            // Hỏi người dùng có muốn khôi phục không
-            var confirmRestore = confirm(
-                '💾 Tìm thấy bản vẽ nháp của tòa nhà này ("' + mapName + '", tầng ' + getCurrentFloor() + ').\n' +
-                'Lưu lúc: ' + savedAt + '\n\n' +
-                'Bạn có muốn khôi phục không?'
+function getCanvasContentFingerprint() {
+    return contentFingerprint({
+        rooms: typeof rooms !== 'undefined' ? rooms : [],
+        walls: typeof walls !== 'undefined' ? walls : [],
+        lines: typeof lines !== 'undefined' ? lines : [],
+        doors: typeof doors !== 'undefined' ? doors : [],
+        pois: typeof pois !== 'undefined' ? pois : [],
+        pathNodes: typeof pathNodes !== 'undefined' ? pathNodes : [],
+        pathEdges: typeof pathEdges !== 'undefined' ? pathEdges : [],
+        qrs: typeof qrs !== 'undefined' ? qrs : []
+    });
+}
+
+function readAutosaveRaw() {
+    syncAutosaveProjectContext();
+    var uid = getCurrentUserId();
+    var primaryKey = getAutosaveKey();
+    var savedData = null;
+    var foundKey = null;
+
+    try {
+        savedData = localStorage.getItem(primaryKey);
+        if (savedData) foundKey = primaryKey;
+    } catch (e) { /* ignore */ }
+
+    // Legacy: tầng 0 từng bị lưu nhầm thành _1 (vì "0" falsy)
+    if (!savedData) {
+        var floor = getCurrentFloor();
+        var bid = window.buildingId || 'default';
+        var candidates = [];
+        if (floor === '0') {
+            candidates.push('floorplan_autosave_' + uid + '_' + bid + '_1');
+            candidates.push('floorplan_autosave_anon_' + bid + '_0');
+            candidates.push('floorplan_autosave_anon_' + bid + '_1');
+        }
+        if (floor === '1') {
+            candidates.push('floorplan_autosave_' + uid + '_' + bid + '_0');
+        }
+        // Quét mọi key cùng user+building
+        try {
+            var prefix = 'floorplan_autosave_' + uid + '_' + bid + '_';
+            var prefixAnon = 'floorplan_autosave_anon_' + bid + '_';
+            for (var i = 0; i < localStorage.length; i++) {
+                var k = localStorage.key(i);
+                if (!k) continue;
+                if (k.indexOf(prefix) === 0 || k.indexOf(prefixAnon) === 0) {
+                    if (candidates.indexOf(k) < 0) candidates.push(k);
+                }
+            }
+        } catch (e2) { /* ignore */ }
+
+        for (var c = 0; c < candidates.length; c++) {
+            try {
+                var raw = localStorage.getItem(candidates[c]);
+                if (raw) {
+                    savedData = raw;
+                    foundKey = candidates[c];
+                    console.warn('[Autosave] Tìm thấy nháp ở key cũ:', foundKey, '→ sẽ dùng / migrate sang', primaryKey);
+                    break;
+                }
+            } catch (e3) { /* ignore */ }
+        }
+    }
+
+    if (!savedData) {
+        if (window.EditorCore && EditorCore.CrashRecovery && EditorCore.CrashRecovery.loadSession) {
+            var crashRes = EditorCore.CrashRecovery.loadSession(
+                window.buildingId || 'default',
+                getCurrentFloor(),
+                uid
             );
-
-            if (confirmRestore) {
-                applyMapSnapshot(data);
-                console.log('✅ Đã khôi phục bản nháp của ' + (window.buildingId || 'default'));
+            if (crashRes && crashRes.ok && crashRes.data && crashRes.data.legacy) {
+                var crashUser = crashRes.data.userId || (crashRes.data.legacy && crashRes.data.legacy.userId);
+                if (!crashUser || String(crashUser) === String(uid)) {
+                    savedData = JSON.stringify(Object.assign({}, crashRes.data.legacy, {
+                        autosaveAt: crashRes.data.savedAt || null,
+                        userId: uid,
+                        buildingId: crashRes.data.buildingId,
+                        floor: crashRes.data.floor
+                    }));
+                    foundKey = 'CrashRecovery';
+                }
             }
-        } catch (e) {
-            console.error('Lỗi đọc bản nháp:', e);
         }
+    }
+
+    // Migrate key cũ → key đúng
+    if (savedData && foundKey && foundKey !== primaryKey && foundKey !== 'CrashRecovery') {
+        try {
+            localStorage.setItem(primaryKey, savedData);
+            console.log('[Autosave] Đã migrate nháp', foundKey, '→', primaryKey);
+        } catch (e4) {
+            console.warn('[Autosave] Migrate thất bại:', e4);
+        }
+    }
+
+    return savedData;
+}
+
+/**
+ * Khôi phục nháp local sau F5 / load server.
+ * Mặc định tự restore khi nháp khác canvas (không hỏi confirm — tránh mất việc).
+ * @param {{serverLoaded?: boolean, askConfirm?: boolean}} [opts]
+ * @returns {boolean} true nếu đã apply nháp
+ */
+function checkAutoSave(opts) {
+    opts = opts || {};
+    var uid = getCurrentUserId();
+    var savedData = readAutosaveRaw();
+    if (!savedData) {
+        console.log('[Autosave] Không có nháp local cho key', getAutosaveKey());
+        return false;
+    }
+
+    try {
+        var data = JSON.parse(savedData);
+        if (data.userId && String(data.userId) !== String(uid) && uid !== 'anon') {
+            console.warn('[Autosave] Bỏ qua nháp của user khác:', data.userId);
+            return false;
+        }
+
+        var draftFp = contentFingerprint(data);
+        var canvasFp = getCanvasContentFingerprint();
+        if (draftFp && draftFp === canvasFp) {
+            console.log('[Autosave] Nháp trùng bản đang mở — không cần khôi phục');
+            return false;
+        }
+
+        var mapName = data.mapName || 'không tên';
+        var savedAt = data.autosaveAt
+            ? new Date(data.autosaveAt).toLocaleString()
+            : 'không rõ thời gian';
+
+        var shouldRestore = true;
+        if (opts.askConfirm) {
+            var msg = opts.serverLoaded
+                ? ('💾 Có bản nháp trên máy ("' + mapName + '", tầng ' + getCurrentFloor() + ').\n' +
+                    'Lưu lúc: ' + savedAt + '\n\nKhôi phục nháp (chưa xuất bản)?')
+                : ('💾 Tìm thấy nháp "' + mapName + '" (' + savedAt + '). Khôi phục?');
+            shouldRestore = confirm(msg);
+        }
+
+        if (!shouldRestore) {
+            console.log('[Autosave] User giữ bản server — giữ nguyên nháp local (không ghi đè)');
+            return false;
+        }
+
+        if (typeof applyMapSnapshot !== 'function') {
+            console.error('[Autosave] applyMapSnapshot không có');
+            return false;
+        }
+
+        applyMapSnapshot(data);
+        _autosaveDirty = false;
+        console.log('[Autosave] Đã tự khôi phục nháp', uid, getAutosaveKey(), savedAt);
+        setAutosaveStatus('Đã khôi phục nháp: ' + savedAt, false);
+        if (typeof showToast === 'function') {
+            showToast('Đã khôi phục nháp lúc ' + savedAt + ' (chưa xuất bản lên server)', 'success');
+        }
+        return true;
+    } catch (e) {
+        console.error('[Autosave] Lỗi đọc nháp:', e);
+        return false;
     }
 }
 
-// --- XÓA BẢN NHÁP (khi Publish thành công hoặc Export) ---
 function clearAutoSave() {
+    syncAutosaveProjectContext();
+    var uid = getCurrentUserId();
     localStorage.removeItem(getAutosaveKey());
+    if (window.EditorCore && window.EditorCore.CrashRecovery) {
+        window.EditorCore.CrashRecovery.clearSession(
+            window.buildingId || 'default',
+            getCurrentFloor(),
+            uid
+        );
+    }
+    _autosaveDirty = false;
+    setAutosaveStatus('', false);
 }
+
+window.startAutoSave = startAutoSave;
+window.stopAutoSave = stopAutoSave;
+window.pauseAutoSave = pauseAutoSave;
+window.resumeAutoSave = resumeAutoSave;
+window.checkAutoSave = checkAutoSave;
+window.clearAutoSave = clearAutoSave;
+window.runAutoSaveTick = runAutoSaveTick;
+window.getAutosaveKey = getAutosaveKey;
+window.markAutosaveDirty = markAutosaveDirty;
+
+/** Gõ trong Console: debugAutosave() — xem trạng thái + mọi key nháp. */
+function debugAutosave() {
+    syncAutosaveProjectContext();
+    var key = getAutosaveKey();
+    var keys = [];
+    var totalBytes = 0;
+    try {
+        for (var i = 0; i < localStorage.length; i++) {
+            var k = localStorage.key(i);
+            if (k && k.indexOf('floorplan_autosave_') === 0) {
+                var v = localStorage.getItem(k) || '';
+                keys.push({ key: k, bytes: v.length, isCurrent: k === key });
+                totalBytes += v.length;
+            }
+        }
+    } catch (e) {
+        keys.push({ error: String(e) });
+    }
+    var report = {
+        key: key,
+        started: _autosaveStarted,
+        paused: _autosavePaused,
+        pauseReason: _autosavePauseReason,
+        dirty: _autosaveDirty,
+        lastOkAt: _autosaveLastOkAt,
+        lastError: _autosaveLastError && (_autosaveLastError.message || String(_autosaveLastError)),
+        floor: getCurrentFloor(),
+        userId: getCurrentUserId(),
+        buildingId: window.buildingId || null,
+        editorMapLoadHandled: !!window.editorMapLoadHandled,
+        draftKeys: keys,
+        totalDraftBytes: totalBytes,
+        currentDraftExists: !!localStorage.getItem(key)
+    };
+    console.log('[Autosave] debugAutosave()', report);
+    return report;
+}
+window.debugAutosave = debugAutosave;

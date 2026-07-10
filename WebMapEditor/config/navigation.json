@@ -1,0 +1,5 @@
+{
+  "node": { "defaultRadius": 8 },
+  "qr": { "defaultSize": 40 },
+  "path": { "defaultEdgeWeight": 1 }
+}

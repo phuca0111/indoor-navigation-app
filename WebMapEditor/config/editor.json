@@ -1,37 +1,16 @@
 {
-  "grid": {
-    "size": 40,
-    "visible": true
-  },
+  "grid": { "size": 40, "visible": true },
   "snap": {
-    "gridEnabled": false,
-    "edgeEnabled": false,
-    "gridTolerancePx": 10,
-    "roomEdgeThresholdPx": 24
+    "tolerancePx": 12,
+    "modes": {
+      "grid": true,
+      "endpoint": true,
+      "midpoint": true,
+      "intersection": true,
+      "perpendicular": true
+    }
   },
-  "zoom": {
-    "min": 0.1,
-    "max": 5
-  },
-  "autosave": {
-    "intervalMs": 30000
-  },
-  "ui": {
-    "handleSize": 8,
-    "poiRadius": 12,
-    "nodeRadius": 8,
-    "qrSize": 14,
-    "dimVisible": true
-  },
-  "ruler": {
-    "defaultMode": "measure"
-  },
-  "scale": {
-    "ratio": 0.5,
-    "locked": true,
-    "hint": "1 ô lưới (40px) = 0.5m — chuẩn dự án indoor nav"
-  },
-  "performance": {
-    "spatialIndexThreshold": 200
-  }
+  "zoom": { "min": 0.1, "max": 5, "step": 0.1 },
+  "autosave": { "intervalMs": 30000 },
+  "units": { "display": "meters", "metersPerGrid": 0.5 }
 }

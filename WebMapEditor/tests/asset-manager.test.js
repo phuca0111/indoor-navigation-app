@@ -1,56 +1,40 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
-const AM = require('../core/asset-manager.js');
-
-describe('AssetManager — Phase 0.5 skeleton', function () {
-    beforeEach(function () {
-        AM.reset();
-        globalThis.bgImageBase64 = '';
-        globalThis.bgImage = null;
-    });
-
-    it('setBackgroundFromDataUrl lưu asset và sync legacy', function () {
-        var dataUrl = 'data:image/png;base64,abc';
-        var id = AM.setBackgroundFromDataUrl(dataUrl, { name: 'floor-plan' });
-        expect(id).toBeTruthy();
-        expect(AM.getBackgroundDataUrl()).toBe(dataUrl);
-        expect(globalThis.bgImageBase64).toBe(dataUrl);
-        var asset = AM.getBackgroundAsset();
-        expect(asset.type).toBe('images');
-        expect(asset.meta.role).toBe('background');
-    });
-
-    it('clearBackground xóa asset và legacy', function () {
-        AM.setBackgroundFromDataUrl('data:image/png;base64,xyz');
-        AM.clearBackground();
-        expect(AM.getBackgroundId()).toBeNull();
-        expect(AM.getBackgroundDataUrl()).toBe('');
-        expect(globalThis.bgImageBase64).toBe('');
-        expect(globalThis.bgImage).toBeNull();
-    });
-
-    it('listByType chỉ trả assets đúng loại', function () {
-        AM.register('symbols', { dataUrl: '', meta: { id: 'door-block' } });
-        AM.setBackgroundFromDataUrl('data:image/png;base64,bg');
-        var images = AM.listByType('images');
-        var symbols = AM.listByType('symbols');
-        expect(images.length).toBe(1);
-        expect(symbols.length).toBe(1);
-    });
-
-    it('syncFromLegacyWindow đọc bgImageBase64', function () {
-        globalThis.bgImageBase64 = 'data:image/png;base64,legacy';
-        var id = AM.syncFromLegacyWindow();
-        expect(id).toBeTruthy();
-        expect(AM.getBackgroundDataUrl()).toBe('data:image/png;base64,legacy');
-    });
-
-    it('unregister xóa asset khỏi store', function () {
-        var entry = AM.register('symbols', { dataUrl: 'x' });
-        expect(AM.unregister(entry.id)).toBe(true);
-        expect(AM.get(entry.id)).toBeNull();
-    });
-});
-
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const AssetManager = require('../core/asset-manager.js');
+
+describe('AssetManager', function () {
+    beforeEach(function () {
+        AssetManager.clear();
+    });
+
+    it('register + get', function () {
+        expect(AssetManager.register('icon-wc', { url: '/icons/wc.svg', type: 'image' })).toBe(true);
+        var a = AssetManager.get('icon-wc');
+        expect(a.url).toContain('wc');
+        expect(a.type).toBe('image');
+    });
+
+    it('list trả tất cả asset', function () {
+        AssetManager.register('a', { url: '/a' });
+        AssetManager.register('b', { url: '/b' });
+        expect(AssetManager.list()).toHaveLength(2);
+    });
+
+    it('unregister xóa asset', function () {
+        AssetManager.register('tmp', { url: '/tmp' });
+        AssetManager.unregister('tmp');
+        expect(AssetManager.get('tmp')).toBeNull();
+    });
+
+    it('register id rỗng thất bại', function () {
+        expect(AssetManager.register('', { url: '/x' })).toBe(false);
+    });
+
+    it('clear xóa hết', function () {
+        AssetManager.register('x', { url: '/x' });
+        AssetManager.clear();
+        expect(AssetManager.list()).toHaveLength(0);
+    });
+});

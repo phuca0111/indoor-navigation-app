@@ -2,53 +2,73 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const PM = require('../core/project-manager.js');
+const ProjectManager = require('../core/project-manager.js');
 
-describe('ProjectManager — Phase 0.5 skeleton', function () {
+describe('ProjectManager', function () {
     beforeEach(function () {
-        PM.setContext(null);
-    });
-
-    it('parse URL buildingId + floor + version', function () {
-        var ctx = PM.parseFromSearchParams('?buildingId=abc123&floor=2&version=draft');
-        expect(ctx.buildingId).toBe('abc123');
-        expect(ctx.floor).toBe('2');
-        expect(ctx.version).toBe('draft');
-        expect(ctx.documentId).toBe('bld:abc123/floor:2/ver:draft');
-    });
-
-    it('mặc định floor=0 version=draft khi URL rỗng', function () {
-        var ctx = PM.resolveContext({});
-        expect(ctx.floor).toBe('0');
-        expect(ctx.version).toBe('draft');
-    });
-
-    it('documentId gồm org và project khi có', function () {
-        var ctx = PM.resolveContext({
-            orgId: 'org1',
-            projectId: 'p1',
-            buildingId: 'b1',
-            floor: 1,
-            version: 'published'
+        ProjectManager.resolveContext({
+            userId: 'u1',
+            buildingId: 'default',
+            floor: '1',
+            projectId: null,
+            mapName: '',
+            role: 'editor',
+            search: ''
         });
-        expect(ctx.documentId).toBe('org:org1/proj:p1/bld:b1/floor:1/ver:published');
     });
 
-    it('getAutosaveKey theo building + floor', function () {
-        PM.resolveContext({ buildingId: 'b99', floor: 0, version: 'draft' });
-        expect(PM.getAutosaveKey()).toBe('floorplan_autosave_b99_0');
+    it('parseQuery đọc buildingId và floor', function () {
+        var q = ProjectManager.parseQuery('?buildingId=towerA&floor=3');
+        expect(q.buildingId).toBe('towerA');
+        expect(q.floor).toBe('3');
     });
 
-    it('getMapApiPath', function () {
-        PM.resolveContext({ buildingId: 'b1', floor: 3, version: 'draft' });
-        expect(PM.getMapApiPath('/api')).toBe('/api/maps/b1/3');
+    it('resolveContext từ opts.search', function () {
+        var ctx = ProjectManager.resolveContext({
+            userId: 'u9',
+            search: '?buildingId=b1&floor=2&mapName=Lobby'
+        });
+        expect(ctx.buildingId).toBe('b1');
+        expect(ctx.floor).toBe('2');
+        expect(ctx.mapName).toBe('Lobby');
+        expect(ctx.userId).toBe('u9');
     });
 
-    it('updateFloor cập nhật documentId', function () {
-        PM.resolveContext({ buildingId: 'b1', floor: 0, version: 'draft' });
-        PM.updateFloor(5);
-        var ctx = PM.getContext();
+    it('setFloor cập nhật context', function () {
+        ProjectManager.resolveContext({ userId: 'u1', buildingId: 'x', floor: '1', search: '' });
+        var ctx = ProjectManager.setFloor(5);
         expect(ctx.floor).toBe('5');
-        expect(ctx.documentId).toContain('floor:5');
+        expect(ProjectManager.getContext().floor).toBe('5');
+    });
+
+    it('storageNamespace = userId_buildingId_floor', function () {
+        ProjectManager.resolveContext({ userId: 'alice', buildingId: 'mall', floor: 'B1', search: '' });
+        expect(ProjectManager.storageNamespace()).toBe('alice_mall_B1');
+    });
+
+    it('setUserId / setBuildingId tách nháp theo tài khoản', function () {
+        ProjectManager.resolveContext({ userId: 'a', buildingId: 'b1', floor: '1', search: '' });
+        expect(ProjectManager.storageNamespace()).toBe('a_b1_1');
+        ProjectManager.setUserId('b');
+        expect(ProjectManager.storageNamespace()).toBe('b_b1_1');
+        ProjectManager.setBuildingId('b2');
+        expect(ProjectManager.storageNamespace()).toBe('b_b2_1');
+    });
+
+    it('storageNamespace giữ floor 0 (tầng trệt) — không bị || thành 1', function () {
+        ProjectManager.resolveContext({ userId: 'u', buildingId: 'b', floor: '0', search: '' });
+        expect(ProjectManager.getContext().floor).toBe('0');
+        expect(ProjectManager.storageNamespace()).toBe('u_b_0');
+        ProjectManager.setFloor(0);
+        expect(ProjectManager.storageNamespace()).toBe('u_b_0');
+    });
+
+    it('resolveContext đọc floor=0 từ query', function () {
+        var ctx = ProjectManager.resolveContext({
+            userId: 'u',
+            search: '?buildingId=b&floor=0'
+        });
+        expect(ctx.floor).toBe('0');
+        expect(ProjectManager.storageNamespace()).toBe('u_b_0');
     });
 });

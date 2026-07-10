@@ -7,17 +7,19 @@ const doorTypes = ['Cửa chính', 'Cửa phụ', 'Cửa thoát hiểm'];
 
 // Tạo cửa mới tại vị trí click
 function createDoor(x, y) {
-    var placed = resolveDoorPosition(x, y);
+    var sp = snapWorldPoint(x, y);
     var door = {
         id: nextDoorId++,
         name: 'Cửa ' + doors.length,
-        x: placed.x,
-        y: placed.y,
+        layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default',
+        x: sp.x,
+        y: sp.y,
         width: GRID_SIZE,    // Chiều rộng cửa = 1 ô
         type: doorTypes[0],
-        rotation: placed.rotation != null ? placed.rotation : 0
+        rotation: 0          // 0 = ngang, 90 = dọc
     };
     doors.push(door);
+    if (typeof syncSpatialIndexFromLegacy === 'function') syncSpatialIndexFromLegacy();
     return door;
 }
 
@@ -25,6 +27,7 @@ function createDoor(x, y) {
 function findDoorAt(wx, wy) {
     for (var i = doors.length - 1; i >= 0; i--) {
         var d = doors[i];
+        if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(d)) continue;
         var halfW = d.width / 2;
         var halfH = 6; // Chiều dày cửa
         if (wx >= d.x - halfW && wx <= d.x + halfW &&
@@ -35,17 +38,64 @@ function findDoorAt(wx, wy) {
     return null;
 }
 
-// Vẽ 1 cửa lên canvas — delegate DoorRenderer
+// Vẽ 1 cửa lên canvas
 function drawDoor(door, isSelected) {
-    var hooks = {
-        handleSize: typeof HANDLE_SIZE !== 'undefined' ? HANDLE_SIZE : 8
-    };
-    if (window.EditorCore && EditorCore.DoorRenderer) {
-        EditorCore.DoorRenderer.renderDoor(ctx, { zoom: zoom }, door, isSelected, hooks);
-        return;
+    var halfW = door.width / 2;
+    var thickness = 6;
+
+    ctx.save();
+    ctx.translate(door.x, door.y);
+    ctx.rotate(door.rotation * Math.PI / 180);
+
+    // Vẽ hình chữ nhật (cửa)
+    ctx.fillStyle = isSelected ? '#f39c12' : '#e67e22';
+    ctx.fillRect(-halfW, -thickness / 2, door.width, thickness);
+
+    // Viền
+    ctx.strokeStyle = isSelected ? '#e74c3c' : '#d35400';
+    ctx.lineWidth = 1.5 / zoom;
+    ctx.strokeRect(-halfW, -thickness / 2, door.width, thickness);
+
+    // Vẽ Handles khi được chọn
+    if (isSelected) {
+        var handleSize = (typeof HANDLE_SIZE !== 'undefined' ? HANDLE_SIZE : 8) / zoom;
+        ctx.fillStyle = 'white';
+        ctx.strokeStyle = '#3498db';
+        ctx.lineWidth = 1 / zoom;
+
+        // Điểm nắm trái
+        ctx.fillRect(-halfW - handleSize/2, -handleSize/2, handleSize, handleSize);
+        ctx.strokeRect(-halfW - handleSize/2, -handleSize/2, handleSize, handleSize);
+
+        // Điểm nắm phải
+        ctx.fillRect(halfW - handleSize/2, -handleSize/2, handleSize, handleSize);
+        ctx.strokeRect(halfW - handleSize/2, -handleSize/2, handleSize, handleSize);
+
+        // Điểm xoay (Rotation Handle)
+        var rotDist = 25 / zoom;
+        ctx.beginPath();
+        ctx.moveTo(0, -thickness/2);
+        ctx.lineTo(0, -rotDist);
+        ctx.strokeStyle = '#3498db';
+        ctx.stroke();
+
+        ctx.fillStyle = '#3498db';
+        ctx.beginPath();
+        ctx.arc(0, -rotDist, handleSize / 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
     }
-    if (window.EditorCore && EditorCore.RenderingEngine) {
-        EditorCore.RenderingEngine.renderDoor(ctx, { zoom: zoom }, door, isSelected, hooks);
+
+    ctx.restore();
+
+    // Tên cửa
+    if (isSelected) {
+        var fontSize = Math.max(8, 10 / zoom);
+        ctx.fillStyle = '#e74c3c';
+        ctx.font = 'bold ' + fontSize + 'px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(door.name, door.x, door.y - 35 / zoom);
     }
 }
 

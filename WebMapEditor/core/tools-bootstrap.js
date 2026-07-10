@@ -1,5 +1,5 @@
 // ============================================================
-// TOOLS-BOOTSTRAP.JS — Đăng ký tool hiện có vào Tool Registry
+// TOOLS-BOOTSTRAP.JS — Đăng ký tool; Polyline = engine cho Wall
 // ============================================================
 (function (root) {
     'use strict';
@@ -26,4 +26,32 @@
     defs.forEach(function (d) {
         R.registerTool(d);
     });
+
+    // LineTool (LN) — skeleton: 2 click → 1 đoạn rồi về idle (chưa gắn UI)
+    if (root.EditorCore.LineTool) {
+        R.registerTool(root.EditorCore.LineTool.toToolDefinition());
+    }
+
+    // Alias: Polyline (PL) → cùng Wall; engine PolylineTool chạy khi chọn wall
+    if (root.EditorCore.PolylineTool) {
+        var pl = root.EditorCore.PolylineTool.toToolDefinition();
+        R.registerTool({
+            id: 'polyline',
+            name: 'Tường (Polyline engine)',
+            shortcut: 'pl',
+            category: 'draw',
+            icon: 'wall',
+            buttonId: 'btn-wall',
+            cursor: 'crosshair',
+            onActivate: function (ctx) {
+                if (typeof selectTool === 'function') selectTool('wall');
+                else if (pl.onActivate) pl.onActivate(ctx);
+            },
+            onDeactivate: pl.onDeactivate,
+            onPointerDown: pl.onPointerDown,
+            onPointerMove: pl.onPointerMove,
+            onPointerUp: pl.onPointerUp,
+            onKeyDown: pl.onKeyDown
+        });
+    }
 })(typeof globalThis !== 'undefined' ? globalThis : this);

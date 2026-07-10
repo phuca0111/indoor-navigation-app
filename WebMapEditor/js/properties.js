@@ -22,18 +22,66 @@ function updatePropertiesPanel() {
         if (currentTool === 'path') {
             propertiesDiv.innerHTML = `
                 <div class="tool-guide">
-                    <p>💡 <b>Vẽ Đường đi (Path):</b></p>
-                    <p>- Click vào Node để bắt đầu nối.</p>
-                    <p>- Click tiếp vào Node khác để tạo đường.</p>
-                    <p>- Click <b>Chuột phải</b> để ngắt chuỗi.</p>
+                    <p>💡 <b>Vẽ đường đi:</b></p>
+                    <p>- Click vào <b>nút</b> để bắt đầu nối.</p>
+                    <p>- Click tiếp nút khác để tạo đoạn đường.</p>
+                    <p>- Click <b>chuột phải</b> để ngắt chuỗi.</p>
                 </div>`;
         } else if (currentTool === 'wall') {
+            var waitPts = (window.EditorCore && EditorCore.PolylineTool)
+                ? EditorCore.PolylineTool.getPoints().length
+                : 0;
             propertiesDiv.innerHTML = `
                 <div class="tool-guide">
-                    <p>💡 <b>Vẽ Tường (Wall):</b></p>
-                    <p>- Click điểm đầu để bắt đầu.</p>
-                    <p>- Click tiếp để tạo các đoạn nối tiếp.</p>
-                    <p>- Nhấn phím <b>ESC</b> để ngắt chuỗi.</p>
+                    <p>🧱 <b>Vẽ Tường (W):</b></p>
+                    <p>- Click điểm đầu → click tiếp tạo đoạn (hút đỉnh/lưới).</p>
+                    <p>- Tiếp tục click để nối chuỗi; mỗi đoạn là <b>tường</b> (dày, ảnh hưởng bản đồ).</p>
+                    <p>- <b>ESC</b> / <b>Enter</b> / nháy đúp: ngắt chuỗi (giữ tường đã vẽ).</p>
+                    <p>- <b>Shift+B</b>: ép ngang/dọc. <b>Backspace</b>: xóa đỉnh chờ.</p>
+                    <p>- Điểm chờ: <b>${waitPts}</b></p>
+                </div>`;
+        } else if (currentTool === 'line') {
+            var lineState = (window.EditorCore && EditorCore.LineTool)
+                ? EditorCore.LineTool.getState()
+                : 'idle';
+            var lineStateVi = (lineState === 'drawing') ? 'đang vẽ' : 'chờ';
+            propertiesDiv.innerHTML = `
+                <div class="tool-guide">
+                    <p>📏 <b>Vẽ Đoạn thẳng (L):</b></p>
+                    <p>- Click điểm 1 → click điểm 2: tạo <b>1 đoạn hỗ trợ</b> (mảnh, xanh).</p>
+                    <p>- <b>Không</b> nối chuỗi như tường; mỗi cặp click là 1 đoạn mới.</p>
+                    <p>- Dùng để căn chỉnh/khung tham chiếu, <b>không</b> thay thế tường.</p>
+                    <p>- <b>ESC</b>: hủy đoạn đang vẽ. Trạng thái: <b>${lineStateVi}</b></p>
+                </div>`;
+        } else if (currentTool === 'polygon') {
+            var polyMetrics = (typeof getPolygonMetrics === 'function' && polygonPoints.length >= 2)
+                ? getPolygonMetrics(polygonPoints, {
+                    previewPoint: window.lastMouseWorld || null,
+                    includeClosingEdge: polygonPoints.length >= 2 && !!window.lastMouseWorld
+                })
+                : null;
+            var edgeLines = '';
+            if (polyMetrics && polyMetrics.edges.length) {
+                edgeLines = '<p>Cạnh: ' + polyMetrics.edges.map(function (e, idx) {
+                    return (idx + 1) + '=' + e.lengthM.toFixed(1) + 'm';
+                }).join(' · ') + '</p>';
+            }
+            var statLine = '';
+            if (polyMetrics) {
+                var bits = [];
+                if (polyMetrics.perimeterM > 0) bits.push('CV: ' + polyMetrics.perimeterM.toFixed(1) + 'm');
+                if (polyMetrics.areaM2 > 0) bits.push('DT: ' + polyMetrics.areaM2.toFixed(1) + 'm²');
+                if (bits.length) statLine = '<p><b>' + bits.join(' · ') + '</b></p>';
+            }
+            propertiesDiv.innerHTML = `
+                <div class="tool-guide">
+                    <p>🔺 <b>Vẽ Đa giác (G):</b></p>
+                    <p>- Click từng đỉnh để tạo vùng kín (phòng đa giác).</p>
+                    <p>- Cần tối thiểu <b>3 đỉnh</b>; nháy đúp hoặc đổi công cụ để kết thúc.</p>
+                    <p>- <b>Ctrl+Z</b> khi đang vẽ: xóa đỉnh vừa đặt.</p>
+                    <p>- Đỉnh hiện tại: <b>${polygonPoints.length}</b></p>
+                    ${edgeLines}
+                    ${statLine}
                 </div>`;
         } else if (currentTool === 'ruler') {
             propertiesDiv.innerHTML =
@@ -84,7 +132,7 @@ function updatePropertiesPanel() {
                         <label>Độ mờ:</label>
                         <input type="range" min="0" max="1" step="0.1" value="${window.bgOpacity}" oninput="updateBgProp('bgOpacity', Number(this.value))">
                     </div>
-                    <p class="hint-text">💡 Bật "Kéo thả" để di chuyển ảnh trực tiếp trên Canvas.</p>
+                    <p class="hint-text">💡 Bật "Kéo thả" để di chuyển ảnh trực tiếp trên vùng vẽ.</p>
                 </div>`;
             }
             propertiesDiv.innerHTML = bgHtml + '<p class="hint-text">Chọn một đối tượng để xem thuộc tính hoặc chọn công cụ để bắt đầu vẽ</p>';
@@ -101,26 +149,34 @@ function updatePropertiesPanel() {
     if (obj.type === 'room') showRoomProps(obj.data);
     else if (obj.type === 'door') showDoorProps(obj.data);
     else if (obj.type === 'wall') showWallProps(obj.data);
+    else if (obj.type === 'line') showLineProps(obj.data);
     else if (obj.type === 'poi') showPoiProps(obj.data);
     else if (obj.type === 'qr') showQrProps(obj.data);
     else if (obj.type === 'node') showNodeProps(obj.data);
 }
 
-// --- TƯỜNG ---
-function showWallProps(w) {
+// --- ĐOẠN THẲNG (hỗ trợ) — schema-driven ---
+function showLineProps(ln) {
+    var desc = getInspectorDescriptor();
     propertiesDiv.innerHTML =
+        renderSchemaPropGroup(desc, { title: '📏 Đoạn thẳng #' + ln.id }) +
+        '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
+}
+
+function updateLineProp(prop, value) {
+    if (!selectedObject || selectedObject.type !== 'line') return;
+    saveState();
+    selectedObject.data[prop] = value;
+    draw();
+}
+
+// --- TƯỜNG — schema + phần mở rộng legacy ---
+function showWallProps(w) {
+    var desc = getInspectorDescriptor();
+    propertiesDiv.innerHTML =
+        renderSchemaPropGroup(desc, { title: '🧱 Tường #' + w.id }) +
         '<div class="prop-group">' +
-        '<div class="prop-group-title">🧱 Tường #' + w.id + '</div>' +
-        '<div class="prop-row"><label>Độ dày:</label>' +
-        '<input type="number" min="1" max="20" value="' + (w.thickness || 4) + '" onchange="updateWallProp(\'thickness\', Number(this.value))"><span class="unit">px</span></div>' +
-        '<div class="prop-row"><label>Tường bao:</label>' +
-        '<select onchange="updateWallProp(\'is_outer\', this.value === \'true\')">' +
-        '<option value="false"' + (!w.is_outer ? ' selected' : '') + '>Không</option>' +
-        '<option value="true"' + (w.is_outer ? ' selected' : '') + '>Có</option>' +
-        '</select></div>' +
         '<div class="prop-row"><label>Số điểm:</label><div class="prop-val">' + ((w.points || []).length) + '</div></div>' +
-        '</div>' +
-        '<div class="prop-group">' +
         '<div class="prop-group-title">Kích thước</div>' +
         '<div class="prop-row"><label>Chiều dài:</label>' +
         '<input type="number" step="0.01" value="' + calcWallLength(w) + '" onchange="updateWallLength(Number(this.value))"><span class="unit">m</span></div>' +
@@ -130,7 +186,7 @@ function showWallProps(w) {
         '<div class="prop-row">' +
         '<label>Tới ID:</label>' +
         '<div style="display:flex;gap:4px;flex:1;">' +
-        '<input type="number" id="manualWallTarget" placeholder="ID..." style="width:50px;flex:1;">' +
+        '<input type="number" id="manualWallTarget" placeholder="Mã..." style="width:50px;flex:1;">' +
         '<button class="btn btn-sm btn-primary" onclick="addManualWallEdge(' + w.id + ')">+ Nối</button>' +
         '</div>' +
         '</div>' +
@@ -221,61 +277,87 @@ function updateWallProp(prop, value) {
     draw();
 }
 
-// --- PHÒNG ---
+// --- PHÒNG — schema + kích thước computed ---
 function showRoomProps(r) {
     applyDefaultRoomLabelStyle(r);
-    var wm = pixelsToMeters(r.width).toFixed(1);
-    var hm = pixelsToMeters(r.height).toFixed(1);
-    var area = (pixelsToMeters(r.width) * pixelsToMeters(r.height)).toFixed(1);
+    var desc = getInspectorDescriptor();
     var safeName = escapeHtmlValue(r.name);
 
-    var typeOptions = '';
-    roomTypes.forEach(function (t) {
-        var sel = (r.type === t) ? ' selected' : '';
-        typeOptions += '<option' + sel + '>' + t + '</option>';
-    });
+    var sizeHtml = '';
+    if (r.shape === 'polygon' && r.points && typeof getPolygonMetrics === 'function') {
+        var pm = getPolygonMetrics(r.points, { includeClosingEdge: true });
+        var minEdgeM = typeof getMinPolygonEdgeMeters === 'function' ? getMinPolygonEdgeMeters() : 0.0011;
+        var minEdgeLabel = typeof formatMinPolygonEdgeLabel === 'function'
+            ? formatMinPolygonEdgeLabel()
+            : '1.1mm';
+        var geomWarn = '';
+        if (typeof validatePolygonGeometry === 'function') {
+            var gv = validatePolygonGeometry(r.points);
+            if (!gv.ok) {
+                geomWarn = '<div class="prop-hint" style="font-size:11px;color:#b91c1c;margin:0 0 6px;line-height:1.35">' +
+                    '⚠ ' + escapeHtmlValue(gv.reason) + ' — sửa cạnh hoặc kéo đỉnh.</div>';
+            }
+        }
+        var edgeList = pm.edges.map(function (e, idx) {
+            return '<div class="prop-row"><label>Cạnh ' + (idx + 1) + ':</label>' +
+                '<input type="number" step="0.001" min="' + minEdgeM + '" value="' + e.lengthM.toFixed(3) + '" ' +
+                'onchange="updatePolygonEdgeLength(' + idx + ', parseFloat(this.value))" ' +
+                'onkeydown="if(event.key===\'Enter\'){this.blur();}">' +
+                '<span class="unit">m</span></div>';
+        }).join('');
+        sizeHtml =
+            '<div class="prop-group">' +
+            '<div class="prop-group-title">Kích thước đa giác</div>' +
+            geomWarn +
+            '<div class="prop-hint" style="font-size:11px;color:#64748b;margin:0 0 6px;line-height:1.35">' +
+            'Sửa cạnh → kéo đỉnh kế tiếp theo hướng cạnh. Tối thiểu ' + minEdgeLabel + '/cạnh.</div>' +
+            edgeList +
+            '<div class="prop-row"><label>Chu vi:</label>' +
+            '<input type="text" value="' + pm.perimeterM.toFixed(1) + '" disabled><span class="unit">m</span></div>' +
+            '<div class="prop-row"><label>Diện tích:</label>' +
+            '<input type="text" value="' + pm.areaM2.toFixed(1) + '" disabled><span class="unit">m²</span></div>' +
+            '<div class="prop-row"><label>Số đỉnh:</label><div class="prop-val">' + r.points.length + '</div></div>' +
+            '</div>';
+    } else {
+        var wm = pixelsToMeters(r.width).toFixed(1);
+        var hm = pixelsToMeters(r.height).toFixed(1);
+        var area = (pixelsToMeters(r.width) * pixelsToMeters(r.height)).toFixed(1);
+        sizeHtml =
+            '<div class="prop-group">' +
+            '<div class="prop-group-title">Kích thước</div>' +
+            '<div class="prop-row"><label>Ngang:</label>' +
+            '<input type="number" value="' + wm + '" step="0.1" onchange="updateRoomProp(\'width\', metersToPixels(Number(this.value)))"><span class="unit">m</span></div>' +
+            '<div class="prop-row"><label>Dọc:</label>' +
+            '<input type="number" value="' + hm + '" step="0.1" onchange="updateRoomProp(\'height\', metersToPixels(Number(this.value)))"><span class="unit">m</span></div>' +
+            '<div class="prop-row"><label>S:</label><input type="text" value="' + area + '" disabled><span class="unit">m²</span></div>' +
+            '</div>';
+    }
+
+    // Schema: type/color/x/y/label* — giữ textarea tên (nhiều dòng) + bỏ shape (read-only qua metrics)
+    var schemaHtml = typeof renderSchemaPropGroup === 'function'
+        ? renderSchemaPropGroup(desc, {
+            title: 'Phòng #' + r.id,
+            skipKeys: ['name', 'shape']
+        })
+        : '';
 
     propertiesDiv.innerHTML =
         '<div class="prop-group">' +
-        '<div class="prop-group-title">Phòng #' + r.id + '</div>' +
+        '<div class="prop-group-title">Tên phòng</div>' +
         '<div class="prop-row"><label>Tên:</label>' +
         '<div style="flex:1;display:flex;flex-direction:column;gap:4px;">' +
         '<textarea id="roomNameInput" rows="3" style="resize:vertical;min-height:56px;width:100%;" oninput="updateRoomProp(\'name\', this.value)">' + safeName + '</textarea>' +
         '<button class="btn btn-sm btn-primary" style="align-self:flex-end;padding:2px 10px;" onclick="updatePropertiesPanel()">Lưu tên</button></div></div>' +
-        '<div class="prop-row"><label>Loại:</label>' +
-        '<select onchange="updateRoomProp(\'type\', this.value)">' + typeOptions + '</select></div>' +
-        '<div class="prop-row"><label>Màu:</label>' +
-        '<input type="color" value="' + rgbToHex(r.color) + '" onchange="updateRoomProp(\'color\', this.value)"></div>' +
-        '<div class="prop-row"><label>Vị trí X:</label>' +
-        '<input type="number" value="' + Math.round(r.x) + '" onchange="updateRoomProp(\'x\', Number(this.value))"><span class="unit">px</span></div>' +
-        '<div class="prop-row"><label>Vị trí Y:</label>' +
-        '<input type="number" value="' + Math.round(r.y) + '" onchange="updateRoomProp(\'y\', Number(this.value))"><span class="unit">px</span></div>' +
+        '<p class="hint-text">Hình dạng: <b>' + escapeHtmlValue(r.shape || 'rect') + '</b> · Enter để xuống dòng trong tên.</p>' +
         '</div>' +
-        '<div class="prop-group">' +
-        '<div class="prop-group-title">Kích thước</div>' +
-        '<div class="prop-row"><label>Ngang:</label>' +
-        '<input type="number" value="' + wm + '" step="0.1" onchange="updateRoomProp(\'width\', metersToPixels(Number(this.value)))"><span class="unit">m</span></div>' +
-        '<div class="prop-row"><label>Dọc:</label>' +
-        '<input type="number" value="' + hm + '" step="0.1" onchange="updateRoomProp(\'height\', metersToPixels(Number(this.value)))"><span class="unit">m</span></div>' +
-        '<div class="prop-row"><label>S:</label><input type="text" value="' + area + '" disabled style="background:#f0f0e0"><span class="unit">m²</span></div>' +
-        '</div>' +
-        '<div class="prop-group">' +
-        '<div class="prop-group-title">Hiển thị chữ</div>' +
-        '<div class="prop-row"><label>Xoay chữ:</label>' +
-        '<input type="number" min="-180" max="180" step="1" value="' + Math.round(r.labelRotation) + '" onchange="updateRoomProp(\'labelRotation\', Number(this.value))"><span class="unit">°</span></div>' +
-        '<div class="prop-row"><label>Cỡ chữ:</label>' +
-        '<input type="number" min="8" max="96" step="1" value="' + Math.round(r.labelFontSize) + '" onchange="updateRoomProp(\'labelFontSize\', Number(this.value))"><span class="unit">px</span></div>' +
-        '<div class="prop-row"><label>Giãn dòng:</label>' +
-        '<input type="number" min="1" max="2.5" step="0.1" value="' + Number(r.labelLineHeight).toFixed(1) + '" onchange="updateRoomProp(\'labelLineHeight\', Number(this.value))"><span class="unit">x</span></div>' +
-        '<div class="prop-row"><label>Tự co giãn:</label>' +
-        '<input type="checkbox" ' + (r.labelAutoScale ? 'checked' : '') + ' onchange="updateRoomProp(\'labelAutoScale\', this.checked)"></div>' +
-        '<p class="hint-text">Mẹo: nhập nhiều dòng bằng Enter trong ô Tên.</p>' +
-        '</div>' +
+        schemaHtml +
+        sizeHtml +
         '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
 }
 
 // --- CỬA ---
 function showDoorProps(d) {
+    var desc = getInspectorDescriptor();
     var typeOptions = '';
     for (var i = 0; i < doorTypes.length; i++) {
         var sel = (d.type === doorTypes[i]) ? ' selected' : '';
@@ -283,16 +365,10 @@ function showDoorProps(d) {
     }
 
     propertiesDiv.innerHTML =
+        renderSchemaPropGroup(desc, { title: '🚪 Cửa #' + d.id }) +
         '<div class="prop-group">' +
-        '<div class="prop-group-title">🚪 Cửa #' + d.id + '</div>' +
-        '<div class="prop-row"><label>Tên:</label>' +
-        '<div style="flex:1;display:flex;flex-direction:column;gap:4px;">' +
-        '<input type="text" value="' + d.name + '" oninput="updateObjProp(\'name\', this.value)" style="width:100%;">' +
-        '<button class="btn btn-sm btn-primary" style="align-self:flex-end;padding:2px 10px;" onclick="updatePropertiesPanel()">Lưu tên</button></div></div>' +
         '<div class="prop-row"><label>Loại:</label>' +
         '<select onchange="updateObjProp(\'type\', this.value)">' + typeOptions + '</select></div>' +
-        '<div class="prop-row"><label>Ngang:</label>' +
-        '<input type="number" value="' + d.width + '" onchange="updateObjProp(\'width\', Number(this.value))"><span class="unit">px</span></div>' +
         '<div class="prop-row"><label>Xoay:</label>' +
         '<input type="number" min="0" max="360" step="1" value="' + (d.rotation || 0) + '" onchange="updateObjProp(\'rotation\', Number(this.value))"><span class="unit">°</span></div>' +
         '</div>' +
@@ -301,6 +377,7 @@ function showDoorProps(d) {
 
 // --- POI ---
 function showPoiProps(p) {
+    var desc = getInspectorDescriptor();
     var typeOptions = '';
     for (var i = 0; i < poiTypes.length; i++) {
         var sel = (p.typeIndex === i) ? ' selected' : '';
@@ -308,12 +385,8 @@ function showPoiProps(p) {
     }
 
     propertiesDiv.innerHTML =
+        renderSchemaPropGroup(desc, { title: '📍 Điểm POI #' + p.id, skipKeys: ['category'] }) +
         '<div class="prop-group">' +
-        '<div class="prop-group-title">📍 POI #' + p.id + '</div>' +
-        '<div class="prop-row"><label>Tên:</label>' +
-        '<div style="flex:1;display:flex;flex-direction:column;gap:4px;">' +
-        '<input type="text" value="' + p.name + '" oninput="updateObjProp(\'name\', this.value)" style="width:100%;">' +
-        '<button class="btn btn-sm btn-primary" style="align-self:flex-end;padding:2px 10px;" onclick="updatePropertiesPanel()">Lưu tên</button></div></div>' +
         '<div class="prop-row"><label>Loại:</label>' +
         '<select onchange="changePoiType(Number(this.value))">' + typeOptions + '</select></div>' +
         '<div class="prop-row"><label>Tọa độ X:</label>' +
@@ -326,6 +399,7 @@ function showPoiProps(p) {
 
 // --- PATH NODE ---
 function showNodeProps(n) {
+    var desc = getInspectorDescriptor();
     var neighborsList = '';
     for (var i = 0; i < n.neighbors.length; i++) {
         var neighborId = n.neighbors[i];
@@ -340,19 +414,19 @@ function showNodeProps(n) {
         '<option value="stairs"' + (n.nodeType === 'stairs' ? ' selected' : '') + '>🟣 Cầu thang</option>';
 
     propertiesDiv.innerHTML =
+        renderSchemaPropGroup(desc, { title: '🔵 Nút #' + n.id, skipKeys: ['radius'] }) +
         '<div class="prop-group">' +
-        '<div class="prop-group-title">🔵 Node #' + n.id + '</div>' +
-        '<div class="prop-row"><label>Loại Node:</label>' +
+        '<div class="prop-row"><label>Loại nút:</label>' +
         '<select onchange="updateNodeProp(\'nodeType\', this.value)">' + typeOptions + '</select></div>' +
         '<div class="prop-row"><label>Tọa độ Y:</label>' +
         '<input type="number" value="' + Math.round(n.y) + '" onchange="updateNodeProp(\'y\', Number(this.value))"><span class="unit">px</span></div>' +
         '<div class="prop-row" style="margin-top:10px;"><label>Nối tới ID:</label>' +
-        '<div style="display:flex;gap:4px;flex:1;"><input type="number" id="manualEdgeTarget" placeholder="ID..." style="width:60px;min-width:0;">' +
+        '<div style="display:flex;gap:4px;flex:1;"><input type="number" id="manualEdgeTarget" placeholder="Mã..." style="width:60px;min-width:0;">' +
         '<button onclick="addManualEdge(' + n.id + ')" style="padding:2px 8px;background:var(--accent-primary);color:white;border:none;border-radius:4px;cursor:pointer;font-size:0.8rem;">+ Nối</button></div></div>' +
         '<div class="prop-row"><label>Danh sách kề:</label>' +
         '<div class="prop-val" style="background:rgba(255,255,255,0.05);padding:4px 8px;border-radius:4px;font-size:0.85rem;color:var(--text-dim);min-height:24px;">' + neighborsList + '</div></div>' +
         '</div>' +
-        '<p class="hint-text">💡 Dùng tool Path, click 2 node liên tiếp để nối đường. Click chuột phải để ngắt chuỗi.</p>' +
+        '<p class="hint-text">💡 Dùng công cụ Đường đi: click 2 nút liên tiếp để nối. Chuột phải để ngắt chuỗi.</p>' +
         '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa đối tượng</button>';
 }
 
@@ -389,12 +463,13 @@ function addManualEdge(fromId) {
         draw();
         if (typeof showToast === 'function') showToast('Đã nối #' + fromId + ' ↔ #' + targetId, 'success');
     } else {
-        if (typeof showToast === 'function') showToast('Không tìm thấy Node #' + targetId, 'error');
+        if (typeof showToast === 'function') showToast('Không tìm thấy Nút #' + targetId, 'error');
     }
 }
 
 // --- THUỘC TÍNH QR CODE ---
 function showQrProps(qr) {
+    var desc = getInspectorDescriptor();
     var qrNodeId = qr.node_id != null && qr.node_id !== '' ? Number(qr.node_id) : null;
     var nodesForQr = (typeof pathNodes !== 'undefined' && Array.isArray(pathNodes)) ? pathNodes : [];
     var nodeOptions = '<option value="">-- Không gán Node --</option>' +
@@ -406,12 +481,8 @@ function showQrProps(qr) {
         }).join('');
 
     propertiesDiv.innerHTML =
+        renderSchemaPropGroup(desc, { title: '🔳 Mốc QR #' + qr.id }) +
         '<div class="prop-group">' +
-        '<div class="prop-group-title">🔳 Mốc QR #' + qr.id + '</div>' +
-        '<div class="prop-row"><label>Tên:</label>' +
-        '<input type="text" value="' + qr.name + '" onchange="updateQrProp(\'name\', this.value)"></div>' +
-        '<div class="prop-row"><label>Mã Serial:</label>' +
-        '<input type="text" value="' + qr.serial + '" onchange="updateQrProp(\'serial\', this.value)"></div>' +
         '<div class="prop-row"><label>🔗 Gán Node:</label>' +
         '<select onchange="updateQrProp(\'node_id\', this.value || null)" ' +
         'style="width:100%;padding:4px;background:#2a2a3e;color:white;border:1px solid #4a4a6a;border-radius:4px;font-size:12px;">' +
@@ -484,6 +555,36 @@ function updateRoomProp(prop, value) {
     draw();
 }
 
+/** Chỉnh chiều dài 1 cạnh đa giác (mét) — giữ đỉnh đầu, kéo đỉnh cuối. */
+function updatePolygonEdgeLength(edgeIndex, lengthM) {
+    if (!selectedRoom || selectedRoom.shape !== 'polygon') return;
+    var minM = typeof getMinPolygonEdgeMeters === 'function' ? getMinPolygonEdgeMeters() : 0.0011;
+    if (!Number.isFinite(lengthM) || lengthM < minM) {
+        var minLabel = typeof formatMinPolygonEdgeLabel === 'function'
+            ? formatMinPolygonEdgeLabel()
+            : '1.1mm';
+        if (typeof showToast === 'function') {
+            showToast('Cạnh tối thiểu ' + minLabel, 'error');
+        }
+        updatePropertiesPanel();
+        return;
+    }
+    if (typeof setPolygonEdgeLengthMeters !== 'function') return;
+    saveState();
+    if (!setPolygonEdgeLengthMeters(selectedRoom, edgeIndex, lengthM)) {
+        if (typeof showToast === 'function') {
+            showToast('Không đặt được cạnh ' + (edgeIndex + 1), 'error');
+        }
+        updatePropertiesPanel();
+        return;
+    }
+    if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
+    updatePropertiesPanel();
+    updateObjectList();
+    draw();
+}
+window.updatePolygonEdgeLength = updatePolygonEdgeLength;
+
 function updateObjProp(prop, value) {
     if (!selectedObject) return;
     saveState();
@@ -505,6 +606,11 @@ function changePoiType(index) {
 function deleteSelected() {
     if (!selectedObject && !selectedRoom) return;
 
+    var target = selectedObject ? selectedObject.data : selectedRoom;
+    if (typeof blockIfObjectLayerLocked === 'function' && blockIfObjectLayerLocked(target, 'xóa')) {
+        return;
+    }
+
     if (!confirm('Bạn có chắc chắn muốn xóa đối tượng này không?')) {
         return;
     }
@@ -516,11 +622,12 @@ function deleteSelected() {
 
         if (type === 'room') {
             rooms = rooms.filter(function (r) { return r.id !== data.id; });
-            selectedRoom = null;
         } else if (type === 'door') {
             deleteDoor(data);
         } else if (type === 'wall') {
             deleteWall(data);
+        } else if (type === 'line') {
+            deleteLine(data);
         } else if (type === 'poi') {
             deletePoi(data);
         } else if (type === 'qr') {
@@ -529,11 +636,11 @@ function deleteSelected() {
             deleteNode(data);
         }
 
-        selectedObject = null;
+        clearEditorSelection({ skipUi: true });
     } else if (selectedRoom) {
         saveState();
         rooms = rooms.filter(function (r) { return r.id !== selectedRoom.id; });
-        selectedRoom = null;
+        clearEditorSelection({ skipUi: true });
     }
 
     if (roomCountSpan) roomCountSpan.textContent = rooms.length + ' Phòng';
@@ -547,7 +654,8 @@ function updateObjectList() {
     if (!objectListDiv) return;
     objectListDiv.innerHTML = '';
 
-    var totalItems = rooms.length + doors.length + pois.length + pathNodes.length + (walls ? walls.length : 0);
+    var totalItems = rooms.length + doors.length + pois.length + pathNodes.length
+        + (walls ? walls.length : 0) + (lines ? lines.length : 0);
     if (totalItems === 0) {
         objectListDiv.innerHTML = '<p class="hint-text">Chưa có đối tượng</p>';
         return;
@@ -557,11 +665,7 @@ function updateObjectList() {
     rooms.forEach(function (room) {
         var isActive = (selectedObject && selectedObject.type === 'room' && selectedObject.data === room) || (selectedRoom === room);
         addListItem('⬛', room.name, pixelsToMeters(room.width).toFixed(1) + '×' + pixelsToMeters(room.height).toFixed(1) + 'm', room.color, isActive, function () {
-            selectedRoom = room;
-            selectedObject = { type: 'room', data: room };
-            updatePropertiesPanel();
-            updateObjectList();
-            draw();
+            setEditorSelection('room', room);
         });
     });
 
@@ -569,11 +673,7 @@ function updateObjectList() {
     doors.forEach(function (door) {
         var isActive = (selectedObject && selectedObject.type === 'door' && selectedObject.data === door);
         addListItem('🚪', door.name, door.type, '#e67e22', isActive, function () {
-            selectedRoom = null;
-            selectedObject = { type: 'door', data: door };
-            updatePropertiesPanel();
-            updateObjectList();
-            draw();
+            setEditorSelection('door', door);
         });
     });
 
@@ -581,24 +681,26 @@ function updateObjectList() {
     walls.forEach(function (wall) {
         var isActive = (selectedObject && selectedObject.type === 'wall' && selectedObject.data === wall);
         addListItem('🧱', 'Tường #' + wall.id, (wall.is_outer ? 'Tường bao' : 'Tường thường'), '#111827', isActive, function () {
-            selectedRoom = null;
-            selectedObject = { type: 'wall', data: wall };
-            updatePropertiesPanel();
-            updateObjectList();
-            draw();
+            setEditorSelection('wall', wall);
         });
     });
+
+    // Đoạn thẳng hỗ trợ
+    if (lines && lines.forEach) {
+        lines.forEach(function (line) {
+            var isActive = (selectedObject && selectedObject.type === 'line' && selectedObject.data === line);
+            addListItem('📏', 'Đoạn #' + line.id, 'Hỗ trợ', line.color || '#3b82f6', isActive, function () {
+                setEditorSelection('line', line);
+            });
+        });
+    }
 
     pois.forEach(function (poi) {
         // Dữ liệu POI cũ có thể thiếu/sai typeIndex, nên fallback để không crash UI.
         var typeInfo = poiTypes[poi.typeIndex] || poiTypes[0];
         var isActive = (selectedObject && selectedObject.type === 'poi' && selectedObject.data === poi);
         addListItem(typeInfo.icon, poi.name, typeInfo.name, typeInfo.color, isActive, function () {
-            selectedRoom = null;
-            selectedObject = { type: 'poi', data: poi };
-            updatePropertiesPanel();
-            updateObjectList();
-            draw();
+            setEditorSelection('poi', poi);
         });
     });
 
@@ -606,23 +708,15 @@ function updateObjectList() {
     qrs.forEach(function (qr) {
         var isActive = (selectedObject && selectedObject.type === 'qr' && selectedObject.data === qr);
         addListItem('🔳', qr.name, qr.serial, '#e67e22', isActive, function () {
-            selectedRoom = null;
-            selectedObject = { type: 'qr', data: qr };
-            updatePropertiesPanel();
-            updateObjectList();
-            draw();
+            setEditorSelection('qr', qr);
         });
     });
 
     // Nodes
     pathNodes.forEach(function (node) {
         var isActive = (selectedObject && selectedObject.type === 'node' && selectedObject.data === node);
-        addListItem('🔵', 'Node #' + node.id, node.neighbors.length + ' nối', '#3498db', isActive, function () {
-            selectedRoom = null;
-            selectedObject = { type: 'node', data: node };
-            updatePropertiesPanel();
-            updateObjectList();
-            draw();
+        addListItem('🔵', 'Nút #' + node.id, node.neighbors.length + ' nối', '#3498db', isActive, function () {
+            setEditorSelection('node', node);
         });
     });
 }

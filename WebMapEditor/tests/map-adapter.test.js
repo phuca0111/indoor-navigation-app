@@ -2,96 +2,51 @@ import { describe, it, expect } from 'vitest';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const {
-    buildPublishPayload,
-    buildPublishPayloadFromDocument,
-    assertPublishSchema,
-    PUBLISH_SCHEMA_KEYS
-} = require('../core/map-adapter.js');
+const MapAdapter = require('../core/map-adapter.js');
 
-describe('Map Adapter — schema Phần 17.1', function () {
-    it('export đủ key bắt buộc', function () {
-        const payload = buildPublishPayload({
+describe('Map Adapter', function () {
+    it('buildPublishPayload đủ schema keys Phần 17.1', function () {
+        var payload = MapAdapter.buildPublishPayload({
             scaleRatio: 0.5,
             mapBearingOffset: 15,
             backgroundImage: 'data:image/png;base64,abc',
-            rooms: [],
+            rooms: [{ id: 1, name: 'A', shape: 'rect', x: 0, y: 0, width: 100, height: 80 }],
             doors: [],
             pois: [],
             pathNodes: [],
             pathEdges: [],
-            walls: [],
-            qrs: []
+            walls: [{ id: 10, points: [{ x: 1.2, y: 2.7 }, { x: 50.4, y: 60.1 }] }],
+            qrs: [{ id: 1, serial: 'QR1', x: 10, y: 20, node_id: 5 }]
         });
-        expect(assertPublishSchema(payload)).toBe(true);
-        PUBLISH_SCHEMA_KEYS.forEach(function (key) {
-            expect(payload).toHaveProperty(key);
-        });
+        MapAdapter.assertPublishSchema(payload);
+        expect(payload.scale_ratio).toBe(0.5);
+        expect(payload.map_bearing_offset).toBe(15);
+        expect(payload.rooms).toHaveLength(1);
+        expect(payload.walls[0].points[0]).toEqual({ x: 1, y: 3 });
+        expect(payload.qr_anchors[0].qr_id).toBe('QR1');
+        expect(payload.qr_anchors[0].node_id).toBe(5);
     });
 
-    it('transform room / node / edge / qr đúng format Backend', function () {
-        const payload = buildPublishPayload({
-            scaleRatio: 0.5,
-            mapBearingOffset: 0,
-            backgroundImage: '',
-            rooms: [{
-                id: 1, name: 'A101', shape: 'rect', color: '#ccc',
-                x: 10.4, y: 20.6, width: 100.2, height: 80.7, points: []
-            }],
-            doors: [{ id: 1, name: 'Cửa', x: 5, y: 5, width: 40, type: 'Đơn', rotation: 90 }],
-            pois: [{ id: 1, name: 'WC', x: 1, y: 2, type: 'WC', typeIndex: 0 }],
-            pathNodes: [{ id: 10, x: 100, y: 200, neighbors: [11], nodeType: 'elevator' }],
-            pathEdges: [{ from: 10, to: 11, distance: 5.5 }],
-            walls: [{ id: 1, type: 'segment', thickness: 4, is_outer: true, points: [{ x: 0, y: 0 }] }],
-            qrs: [{ id: 3, serial: 'QR-001', name: 'Lobby', x: 50, y: 60, node_id: 10 }]
+    it('buildPublishPayload mặc định scale khi thiếu', function () {
+        var payload = MapAdapter.buildPublishPayload({
+            rooms: [], doors: [], pois: [], pathNodes: [], pathEdges: [], walls: [], qrs: []
         });
-
         expect(payload.scale_ratio).toBe(0.5);
         expect(payload.map_bearing_offset).toBe(0);
-        expect(payload.rooms[0].x).toBe(10);
-        expect(payload.rooms[0].y).toBe(21);
-        expect(payload.nodes[0].is_elevator).toBe(true);
-        expect(payload.nodes[0].is_stairs).toBe(false);
-        expect(payload.edges[0]).toEqual({ source: '10', target: '11', distance: 5.5 });
-        expect(payload.qr_anchors[0]).toEqual({
-            qr_id: 'QR-001',
-            x: 50,
-            y: 60,
-            room_name: 'Lobby',
-            node_id: 10
-        });
     });
 
-    it('Document → publish payload qua buildPublishPayloadFromDocument', function () {
-        const { Document } = require('../core/document.js');
-        const doc = new Document();
-        doc.fromLegacyState({
-            mapName: 'Test',
-            scaleRatio: 0.25,
-            mapBearingOffset: 90,
-            backgroundImage: '',
-            rooms: [{ id: 1, name: 'R1', x: 0, y: 0, width: 10, height: 10 }],
-            doors: [],
-            pois: [],
-            pathNodes: [],
-            pathEdges: [],
-            walls: [],
-            qrs: []
-        });
-
-        const payload = buildPublishPayloadFromDocument(doc);
-        expect(payload.scale_ratio).toBe(0.25);
-        expect(payload.map_bearing_offset).toBe(90);
-        expect(payload.rooms).toHaveLength(1);
-        expect(doc.getObjectCount()).toBe(1);
+    it('assertPublishSchema throw khi thiếu key', function () {
+        expect(function () {
+            MapAdapter.assertPublishSchema({ rooms: [] });
+        }).toThrow(/thiếu key schema/);
     });
 
-    it('scale_ratio mặc định 0.5 khi invalid', function () {
-        const payload = buildPublishPayload({
-            scaleRatio: -1,
-            rooms: [], doors: [], pois: [],
-            pathNodes: [], pathEdges: [], walls: [], qrs: []
+    it('PUBLISH_SCHEMA_KEYS khớp assert', function () {
+        var payload = MapAdapter.buildPublishPayload({
+            rooms: [], doors: [], pois: [], pathNodes: [], pathEdges: [], walls: [], qrs: []
         });
-        expect(payload.scale_ratio).toBe(0.5);
+        MapAdapter.PUBLISH_SCHEMA_KEYS.forEach(function (k) {
+            expect(k in payload).toBe(true);
+        });
     });
 });

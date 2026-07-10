@@ -266,6 +266,7 @@ function createRoomsFromRegions(regions, imgW, imgH) {
             id: nextRoomId++,
             name: 'Phòng ' + (rooms.length + 1),
             shape: 'polygon',
+            layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default',
             points: r.points,
             x: r.minX, y: r.minY, width: r.width, height: r.height,
             color: roomColor

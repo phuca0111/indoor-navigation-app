@@ -25,11 +25,9 @@ let panX = 0, panY = 0;
 let isPanning = false;
 let panStartX, panStartY;
 
-// Grid & Scale — chuẩn dự án: 1 ô 40px = 0.5m (scale_ratio 0.5)
-var GRID_SIZE = 40;
-let metersPerGrid = 0.5;
-/** true sau khi load map từ server — không cho đổi tỷ lệ (Phương án A) */
-let scaleLockedFromServer = false;
+// Grid & Scale
+const GRID_SIZE = 40;       // Kích thước ô lưới (pixels)
+let metersPerGrid = 0.5;     // 1 ô = bao nhiêu mét (mặc định 1m = 80px)
 
 // Room data
 let rooms = [];
@@ -41,6 +39,15 @@ let walls = [];
 let nextWallId = 1;
 let wallStartPoint = null;
 let wallPreviewEnd = null;
+
+// Line data (đoạn thẳng hỗ trợ — không phải tường)
+let lines = [];
+let nextLineId = 1;
+
+// Vị trí chuột world (dynamic input + reference hướng)
+if (typeof window !== 'undefined') {
+    window.lastMouseWorld = { x: 0, y: 0 };
+}
 
 // Drawing state (vẽ phòng mới)
 let isDrawing = false;
@@ -85,19 +92,12 @@ let pathNodes = [];
 let pathEdges = [];
 let nextNodeId = 1;
 let firstNodeForEdge = null; // node đầu khi đang nối edge
-/** Preview chuỗi path khi Shift + di chuột */
-let pathPreviewEnd = null;
-/** Con trỏ rubber-band khi vẽ polygon */
-let polygonHoverPoint = null;
 
 // --- THƯỚC ĐO (RULER) ---
-let rulerStart = null;
-let rulerEnd = null;
+let rulerStart = null; // {x, y}
+let rulerEnd = null;   // {x, y}
 let isDrawingRuler = false;
-/** true sau click điểm A — chờ click điểm B (không cần giữ chuột kéo) */
-let rulerAwaitingEnd = false;
-/** 'measure' = chỉ đo | 'calibrate' = căn tỷ lệ (SCALE Reference) */
-let rulerMode = 'measure';
+let rulerLine = null; // {x1, y1, x2, y2}
 
 // Background image (ảnh nền)
 window.bgImage = null;       // Image object
@@ -115,19 +115,35 @@ window.bgLastY = 0;          // Vị trí chuột Y cuối cùng khi kéo nền
 // Selected object (đối tượng đang chọn - dùng chung)
 let selectedObject = null;  // {type: 'room'/'door'/'poi'/'node', data: ...}
 
-// Constants — override từ config/editor.json
-var HANDLE_SIZE = 8;
-var POI_RADIUS = 12;
-var NODE_RADIUS = 8;
+// Constants
+const HANDLE_SIZE = 8;
+const POI_RADIUS = 12;      // Bán kính vòng tròn POI
+const NODE_RADIUS = 8;      // Bán kính path node
 
-function syncStateFromEditorConfig() {
-    if (typeof window === 'undefined' || !window.EditorCore || !EditorCore.Config) return;
-    var C = EditorCore.Config;
-    GRID_SIZE = C.get('grid.size', 40);
-    HANDLE_SIZE = C.get('ui.handleSize', 8);
-    POI_RADIUS = C.get('ui.poiRadius', 12);
-    NODE_RADIUS = C.get('ui.nodeRadius', 8);
-    rulerMode = C.get('ruler.defaultMode', 'measure');
-}
-syncStateFromEditorConfig();
-window.syncStateFromEditorConfig = syncStateFromEditorConfig;
+// Expose legacy arrays cho core modules (snap-engine, spatial-index) qua globalThis.
+// Top-level `let` không gán lên window; IIFE core chỉ đọc được globalThis.*.
+(function exposeLegacyArraysOnWindow() {
+    if (typeof window === 'undefined') return;
+    var getters = {
+        walls: function () { return walls; },
+        lines: function () { return lines; },
+        rooms: function () { return rooms; },
+        doors: function () { return doors; },
+        pois: function () { return pois; },
+        pathNodes: function () { return pathNodes; },
+        pathEdges: function () { return pathEdges; },
+        qrs: function () { return qrs; }
+    };
+    Object.keys(getters).forEach(function (key) {
+        try {
+            Object.defineProperty(window, key, {
+                enumerable: true,
+                configurable: true,
+                get: getters[key]
+            });
+        } catch (e) { /* ignore */ }
+    });
+    if (typeof globalThis !== 'undefined' && globalThis.EditorCore && globalThis.EditorCore.SpatialIndex) {
+        globalThis.EditorCore.SpatialIndex.syncFromLegacyWindow();
+    }
+})();
