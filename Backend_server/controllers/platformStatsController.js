@@ -6,6 +6,7 @@ const Organization = require('../models/Organization');
 const Building = require('../models/Building');
 const User = require('../models/User');
 const OrganizationRegistration = require('../models/OrganizationRegistration');
+const { getOrgQuotaSnapshot } = require('../utils/overQuotaLock');
 
 async function getBuildingStats(orgFilter) {
   const base = orgFilter || {};
@@ -71,21 +72,32 @@ const getPlatformStats = async (req, res) => {
         return res.status(403).json({ message: 'Tài khoản ORG_ADMIN chưa được gán tổ chức.' });
       }
 
-      const org = await Organization.findById(orgId).select('name slug plan is_active').lean();
+      const orgDoc = await Organization.findById(orgId);
       const orgFilter = { organization_id: orgId };
 
-      const [buildings, users] = await Promise.all([
+      const [buildings, users, quota] = await Promise.all([
         getBuildingStats(orgFilter),
-        getUserStats(orgFilter)
+        getUserStats(orgFilter),
+        getOrgQuotaSnapshot(orgDoc)
       ]);
+      const org = orgDoc ? orgDoc.toObject() : null;
 
       return res.status(200).json({
         scope: 'organization',
         organization: org
-          ? { id: String(org._id), name: org.name, slug: org.slug, plan: org.plan || 'FREE', is_active: org.is_active !== false }
+          ? {
+            id: String(org._id),
+            name: org.name,
+            slug: org.slug,
+            plan: org.plan || 'FREE',
+            is_active: org.is_active !== false,
+            billing_status: org.billing_status || 'ACTIVE',
+            grace_ends_at: org.grace_ends_at || null
+          }
           : { id: String(orgId) },
         buildings,
-        users
+        users,
+        quota
       });
     }
 
@@ -98,14 +110,31 @@ const getPlatformStats = async (req, res) => {
         ? { _id: { $in: assignedIds }, organization_id: user.organization_id }
         : { _id: null };
 
-      const buildings = await getBuildingStats(orgFilter);
+      const orgDoc = user?.organization_id
+        ? await Organization.findById(user.organization_id)
+        : null;
+
+      const [buildings, quota] = await Promise.all([
+        getBuildingStats(orgFilter),
+        orgDoc ? getOrgQuotaSnapshot(orgDoc) : null
+      ]);
+      const org = orgDoc ? orgDoc.toObject() : null;
 
       return res.status(200).json({
         scope: 'assigned',
+        organization: org
+          ? {
+            id: String(org._id),
+            name: org.name,
+            plan: org.plan || 'FREE',
+            billing_status: org.billing_status || 'ACTIVE'
+          }
+          : null,
         buildings: {
           ...buildings,
           assigned: assignedIds.length
-        }
+        },
+        quota
       });
     }
 

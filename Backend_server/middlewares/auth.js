@@ -6,7 +6,9 @@
 
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Organization = require('../models/Organization');
 const { assertUserOrgActive } = require('../utils/orgAccess');
+const { isUserQuotaLocked } = require('../utils/overQuotaLock');
 
 // Hàm bảo vệ: Kiểm tra thẻ JWT có hợp lệ không
 const auth = async (req, res, next) => {
@@ -31,6 +33,13 @@ const auth = async (req, res, next) => {
             const orgCheck = await assertUserOrgActive(dbUser);
             if (!orgCheck.ok) {
                 return res.status(403).json({ message: orgCheck.message, code: orgCheck.code });
+            }
+            const org = await Organization.findById(dbUser.organization_id);
+            if (org && await isUserQuotaLocked(dbUser._id, org)) {
+                return res.status(403).json({
+                    message: 'Tài khoản bị khóa do vượt hạn mức gói. Liên hệ ORG Admin hoặc nâng cấp PRO.',
+                    code: 'OVER_QUOTA_USER_LOCKED'
+                });
             }
             req.user.organization_id = String(dbUser.organization_id);
         }

@@ -6,8 +6,43 @@ const API_URL = '/api';
 
 const PAGE_SIZE = 15;
 const LOGS_PAGE_SIZE = 20;
+const PLAN_LIMITS_UI = { FREE: { buildings: 2, users: 5 }, PRO: { buildings: 20, users: 50 } };
 
-const VALID_DASHBOARD_TABS = new Set(['buildings', 'users', 'logs', 'organizations', 'registrations', 'profile']);
+const VALID_DASHBOARD_TABS = new Set(['buildings', 'users', 'logs', 'organizations', 'billing', 'registrations', 'profile']);
+
+function validatePasswordStrengthClient(password) {
+  const errors = [];
+  if (!password || password.length < 8) {
+    errors.push('Mật khẩu phải có ít nhất 8 ký tự.');
+    return errors;
+  }
+  if (!/[a-z]/.test(password)) errors.push('Mật khẩu phải chứa ít nhất 1 chữ thường.');
+  if (!/[A-Z]/.test(password)) errors.push('Mật khẩu phải chứa ít nhất 1 chữ hoa.');
+  if (!/\d/.test(password)) errors.push('Mật khẩu phải chứa ít nhất 1 số.');
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+    errors.push('Mật khẩu phải chứa ít nhất 1 ký tự đặc biệt.');
+  }
+  return errors;
+}
+
+function validateFullNameClient(name) {
+  const errors = [];
+  const value = String(name || '').trim();
+  if (!value) {
+    errors.push('Họ tên là bắt buộc.');
+    return errors;
+  }
+  if (value.length < 2) errors.push('Họ tên phải có ít nhất 2 ký tự.');
+  if (/[0-9]/.test(value)) {
+    errors.push('Họ tên không được chứa chữ số.');
+  }
+  if (!/^[\p{L}\s'.-]+$/u.test(value)) {
+    errors.push('Họ tên chỉ được chứa chữ cái, khoảng trắng, dấu gạch ngang hoặc dấu nháy.');
+  }
+  const letters = value.match(/\p{L}/gu);
+  if (!letters || letters.length < 2) errors.push('Họ tên phải có ít nhất 2 chữ cái.');
+  return errors;
+}
 
 function dashboardTabHref(tab) {
   return '/admin/dashboard.html#' + encodeURIComponent(tab);
@@ -20,6 +55,7 @@ function sanitizeTabForRole(tab, role) {
   }
   if (role === 'ORG_ADMIN' && tab === 'organizations') return 'buildings';
   if (role !== 'SUPER_ADMIN' && tab === 'registrations') return 'buildings';
+  if (role === 'BUILDING_ADMIN' && tab === 'billing') return 'buildings';
   return tab;
 }
 
@@ -65,14 +101,31 @@ function formatOrgAdminsCell(org) {
 }
 
 /** Phase 4.2c — tòa PUBLISHED / DRAFT trong bảng tổ chức */
+function getOrgQuotaOverHint(org) {
+  if (!org) return '';
+  const plan = String(org.plan || 'FREE').toUpperCase();
+  const lim = PLAN_LIMITS_UI[plan] || PLAN_LIMITS_UI.FREE;
+  const billing = String(org.billing_status || 'ACTIVE').toUpperCase();
+  if (billing === 'GRACE_PERIOD') return 'Đang gia hạn';
+  if (billing === 'ACTIVE' && (plan === 'PRO' || plan === 'ENTERPRISE')) return '';
+  const parts = [];
+  const b = Number(org.building_count) || 0;
+  const u = Number(org.user_count) || 0;
+  if (lim.buildings != null && b > lim.buildings) parts.push('tòa ' + b + '/' + lim.buildings);
+  if (lim.users != null && u > lim.users) parts.push('tài khoản ' + u + '/' + lim.users);
+  return parts.length ? 'Vượt hạn mức: ' + parts.join(' · ') : '';
+}
+
 function formatBuildingCountCell(org, orgId) {
   if (org.building_count == null) return '—';
   const total = Number(org.building_count) || 0;
   const pub = Number(org.building_published_count) || 0;
   const draft = Number(org.building_draft_count) || 0;
-  const tip = 'Tổng ' + total + ' · Xuất bản ' + pub + ' · Nháp ' + draft;
-  return '<div class="org-building-counts" title="' + escapeHtml(tip) + '" onclick="jumpToBuildings(\'' + orgId + '\')" style="cursor:pointer;">' +
-    '<div class="obc-total">' + total + '</div>' +
+  const overHint = getOrgQuotaOverHint(org);
+  const tip = 'Tổng ' + total + ' · Xuất bản ' + pub + ' · Nháp ' + draft + (overHint ? ' · ' + overHint : '');
+  const warn = overHint ? ' obc-over' : '';
+  return '<div class="org-building-counts' + warn + '" title="' + escapeHtml(tip) + '" onclick="jumpToBuildings(\'' + orgId + '\')" style="cursor:pointer;">' +
+    '<div class="obc-total">' + total + (overHint ? ' <span class="obc-warn" title="' + escapeHtml(overHint) + '">⚠</span>' : '') + '</div>' +
     '<div class="obc-split">' +
       '<span class="obc-pub">' + pub + ' XB</span>' +
       '<span class="obc-sep">·</span>' +
@@ -134,7 +187,7 @@ function renderPagination(tabKey, totalItems, currentPage) {
   });
 }
 
-const WIDE_LAYOUT_TABS = new Set(['buildings', 'users', 'logs', 'organizations', 'registrations']);
+const WIDE_LAYOUT_TABS = new Set(['buildings', 'users', 'logs', 'organizations', 'billing', 'registrations']);
 
 function applyDashboardLayout(tabName) {
   const root = document.querySelector('.dashboard-content');
@@ -179,6 +232,650 @@ function clearAuthStorage() {
 // APPLY CURRENT USER TO UI
 // WHY: Cập nhật toàn bộ UI header và tab visibility theo currentUser.
 // ============================================================
+function formatOrgBillingBadge(org) {
+  if (!org) return '';
+  const label = escapeHtml(formatPlanLabel(org));
+  return '<span class="badge plan-badge plan-' + String(org.plan || 'FREE').toLowerCase() + '">' + label + '</span>';
+}
+
+function formatDetailUserStatus(u) {
+  if (u.quota_locked) {
+    return '<span class="status-badge inactive badge-quota-locked">Khóa hạn mức</span>';
+  }
+  if (u.is_active === false) {
+    return '<span class="status-badge inactive">Đã khóa</span>';
+  }
+  return '<span class="status-badge active">Hoạt động</span>';
+}
+
+function formatBuildingStatusVi(status) {
+  const s = String(status || '').toUpperCase();
+  if (s === 'PUBLISHED') return 'Đã xuất bản';
+  if (s === 'DRAFT') return 'Bản nháp';
+  return status || '—';
+}
+
+function formatDetailBuildingStatus(b) {
+  const parts = [];
+  if (b.is_active === false) parts.push('<span class="status-badge inactive">Vô hiệu</span>');
+  if (b.quota_locked) parts.push('<span class="badge badge-quota-locked">Khóa hạn mức</span>');
+  if (!parts.length) parts.push('<span class="status-badge active">' + escapeHtml(formatBuildingStatusVi(b.status || 'DRAFT')) + '</span>');
+  else if (b.status) parts.push('<span class="org-detail-hint">' + escapeHtml(formatBuildingStatusVi(b.status)) + '</span>');
+  return parts.join(' ');
+}
+
+function formatDetailQuotaBanner(quota, org) {
+  if (!quota) return '';
+  const parts = [];
+  if (quota.buildings?.limit != null) {
+    parts.push('Tòa đang dùng ' + quota.buildings.used + '/' + quota.buildings.limit);
+  }
+  if (quota.users?.limit != null) {
+    parts.push('Tài khoản đang dùng ' + quota.users.used + '/' + quota.users.limit);
+  }
+  if (quota.buildings?.locked > 0) parts.push(quota.buildings.locked + ' tòa bị khóa');
+  if (quota.users?.locked > 0) parts.push(quota.users.locked + ' tài khoản bị khóa');
+  if (!parts.length) return '';
+
+  let msg = parts.join(' · ');
+  if (quota.billing_status === 'GRACE_PERIOD') {
+    msg = '⏳ Gia hạn ' + (quota.grace_days_left != null ? quota.grace_days_left + ' ngày' : '') +
+      ' — sau đó khóa phần vượt hạn mức. ' + msg;
+  } else if (quota.enforcement_active && (quota.buildings?.locked > 0 || quota.users?.locked > 0)) {
+    msg = '🔒 ' + msg + ' — cần giảm tài nguyên hoặc nâng gói Pro/Doanh nghiệp.';
+  } else if (quota.buildings?.over || quota.users?.over) {
+    msg = '⚠️ ' + msg + ' — đang vượt hạn mức gói ' + escapeHtml(formatPlanNameVi(org?.plan || 'FREE')) + '.';
+  }
+
+  const cls = (quota.enforcement_active && (quota.buildings?.locked > 0 || quota.users?.locked > 0))
+    ? 'org-detail-quota-banner locked'
+    : 'org-detail-quota-banner warn';
+  return '<div class="' + cls + '">' + msg + '</div>';
+}
+
+function formatPlanExpiryLine(org, quota) {
+  const started = org?.plan_started_at || quota?.plan_started_at;
+  const expires = org?.plan_expires_at || quota?.plan_expires_at;
+  if (!started && !expires) return '';
+  let html = '<div class="org-detail-subscription">';
+  if (started) {
+    html += '<span>Gói từ: <strong>' + escapeHtml(formatDateTime(started)) + '</strong></span>';
+  }
+  if (expires) {
+    const end = new Date(expires);
+    const daysLeft = Math.ceil((end.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+    const expired = daysLeft <= 0;
+    html += ' · <span>Hết hạn: <strong>' + escapeHtml(formatDateTime(expires)) + '</strong>';
+    if (!expired && isPaidPlanUi(org?.plan || quota?.plan)) {
+      html += ' (còn ' + daysLeft + ' ngày)';
+    } else if (expired) {
+      html += ' <span class="obc-warn">(đã hết)</span>';
+    }
+    html += '</span>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function isPaidPlanUi(plan) {
+  const p = String(plan || 'FREE').toUpperCase();
+  return p === 'PRO' || p === 'ENTERPRISE';
+}
+
+function getBillingContextOrg(orgId) {
+  if (_billingTabData && String(_billingTabOrgId) === String(orgId)) {
+    return _billingTabData.organization || {};
+  }
+  if (_orgDetailData && String(_orgDetailId) === String(orgId)) {
+    return _orgDetailData.organization || {};
+  }
+  return allOrganizations.find((o) => String(o._id) === String(orgId)) || {};
+}
+
+function resolveOrgBillingUiState(org, subscription, quota) {
+  const billing = String(org?.billing_status || quota?.billing_status || 'ACTIVE').toUpperCase();
+  const plan = String(org?.plan || 'FREE').toUpperCase();
+  const subStatus = String(subscription?.status || '').toUpperCase();
+  if (billing === 'GRACE_PERIOD') return 'GRACE';
+  if (billing === 'EXPIRED' || subStatus === 'PAST_DUE' || subStatus === 'EXPIRED') return 'EXPIRED';
+  if (isPaidPlanUi(plan) && billing === 'ACTIVE') return 'PAID_ACTIVE';
+  return 'FREE';
+}
+
+const BILLING_UI_STATE_LABELS = {
+  FREE: 'Gói Miễn phí',
+  PAID_ACTIVE: 'Gói trả phí đang hoạt động',
+  GRACE: 'Đang trong thời gian gia hạn',
+  EXPIRED: 'Gói hết hạn / quá hạn thanh toán'
+};
+
+function renderOrgBillingActionPanel(oid, org, subscription, quota) {
+  const state = resolveOrgBillingUiState(org, subscription, quota);
+  const plan = String(org?.plan || 'FREE').toUpperCase();
+  let actions = '';
+
+  if (state === 'FREE' || state === 'EXPIRED') {
+    actions += '<div class="org-sub-group">' +
+      '<div class="org-sub-group-title">Kích hoạt gói trả phí</div>' +
+      '<div class="org-plan-actions">' +
+        '<button type="button" class="btn-create" onclick="activateOrgSubscriptionUi(\'' + oid + '\', \'PRO\')">Kích hoạt Pro</button>' +
+        '<button type="button" class="btn-edit" onclick="activateOrgSubscriptionUi(\'' + oid + '\', \'ENTERPRISE\')">Kích hoạt Doanh nghiệp</button>' +
+      '</div></div>';
+  }
+
+  if (state === 'PAID_ACTIVE' || state === 'GRACE') {
+    actions += '<div class="org-sub-group">' +
+      '<div class="org-sub-group-title">Chu kỳ gói</div>' +
+      '<div class="org-plan-actions">' +
+        '<button type="button" class="btn-create" onclick="extendOrganizationPlan(\'' + oid + '\', 30)">Gia hạn +30 ngày</button>' +
+        '<button type="button" class="btn-edit" onclick="setOrganizationPlanExpiry(\'' + oid + '\')">Đặt ngày hết hạn</button>' +
+        '<button type="button" class="btn-logout" onclick="clearOrganizationPlanExpiry(\'' + oid + '\')">Xóa hạn</button>' +
+      '</div></div>';
+  }
+
+  if (state === 'PAID_ACTIVE') {
+    const upgradeBtn = plan === 'PRO'
+      ? '<button type="button" class="btn-edit" onclick="activateOrgSubscriptionUi(\'' + oid + '\', \'ENTERPRISE\')">Nâng lên Doanh nghiệp</button>'
+      : '';
+    actions += '<div class="org-sub-group">' +
+      '<div class="org-sub-group-title">Xử lý gói đang dùng</div>' +
+      '<div class="org-plan-actions">' +
+        upgradeBtn +
+        '<button type="button" class="btn-edit" style="background:#f39c12;color:#fff;" onclick="markOrganizationPaymentFailed(\'' + oid + '\')">Thanh toán thất bại</button>' +
+        '<button type="button" class="btn-logout" onclick="markOrganizationSubscriptionExpired(\'' + oid + '\')">Hết hạn gói</button>' +
+        '<button type="button" class="btn-logout" onclick="cancelOrgSubscriptionUi(\'' + oid + '\')">Hủy gói đăng ký</button>' +
+      '</div></div>';
+  }
+
+  if (state === 'GRACE') {
+    actions += '<div class="org-sub-group">' +
+      '<div class="org-sub-group-title">Kết thúc gia hạn</div>' +
+      '<div class="org-plan-actions">' +
+        '<button type="button" class="btn-logout" onclick="forceExpireOrgQuota(\'' + oid + '\')">Khóa hạn mức ngay</button>' +
+        '<button type="button" class="btn-edit" style="background:#f39c12;color:#fff;" onclick="markOrganizationPaymentFailed(\'' + oid + '\')">Thanh toán thất bại</button>' +
+      '</div></div>';
+  }
+
+  return '<div class="org-subscription-manage billing-action-panel">' +
+    '<div class="billing-state-badge billing-state-' + state.toLowerCase() + '">' +
+      escapeHtml(BILLING_UI_STATE_LABELS[state] || state) +
+    '</div>' +
+    '<div class="org-sub-manage-hint">Chỉ hiển thị thao tác phù hợp trạng thái hiện tại. Hệ thống tự đồng bộ subscription → gói tổ chức.</div>' +
+    actions +
+    '<div class="billing-future-note">' +
+      '<strong>Super Admin:</strong> xử lý ngoại lệ (gia hạn thủ công, hủy gói). ORG_ADMIN tự thanh toán qua tab này.' +
+    '</div>' +
+  '</div>';
+}
+
+function renderOrgBillingSnapshot(oid, org, quota, subscription) {
+  const graceNote = String(org?.billing_status || '').toUpperCase() === 'GRACE_PERIOD' && org?.grace_ends_at
+    ? ' <span class="org-detail-hint">(gia hạn đến ' + formatDateTime(org.grace_ends_at) + ')</span>'
+    : '';
+  const subHint = subscription
+    ? '<div class="org-billing-snapshot-line">Gói đăng ký: <strong>' + escapeHtml(formatSubscriptionStatusVi(subscription.status)) + '</strong></div>'
+    : '';
+  return '<div class="org-billing-snapshot">' +
+    '<div class="org-billing-snapshot-head"><h4>Gói & thanh toán</h4></div>' +
+    '<div class="org-billing-snapshot-body">' +
+      '<div class="org-billing-snapshot-line">' + formatOrgBillingBadge(org) + graceNote + '</div>' +
+      formatPlanExpiryLine(org, quota) +
+      subHint +
+      '<p class="org-billing-snapshot-hint">Kích hoạt, gia hạn, hóa đơn và sự kiện thanh toán nằm ở tab <strong>Gói & Thanh toán</strong> — không trùng với màn hình này.</p>' +
+      '<button type="button" class="btn-create org-billing-snapshot-btn" onclick="openBillingTabForOrg(\'' + oid + '\')">Mở quản lý gói & thanh toán →</button>' +
+    '</div></div>';
+}
+
+/** @deprecated — dùng renderOrgBillingActionPanel trong tab Gói & Thanh toán */
+function renderOrgSubscriptionManagePanel(oid, org) {
+  return renderOrgBillingActionPanel(oid, org, null, null);
+}
+
+function formatPlanNameVi(plan) {
+  const p = String(plan || '').toUpperCase();
+  if (p === 'FREE') return 'Miễn phí';
+  if (p === 'PRO') return 'Pro';
+  if (p === 'ENTERPRISE') return 'Doanh nghiệp';
+  return plan || '—';
+}
+
+function formatOrgPlanListBadge(org) {
+  if (!org) return '';
+  const plan = String(org.plan || 'FREE').toUpperCase();
+  return '<span class="badge plan-badge plan-' + plan.toLowerCase() + '">' +
+    'Gói ' + escapeHtml(formatPlanNameVi(plan)) + '</span>';
+}
+
+function formatOrgPlanListCell(org) {
+  return '<div class="org-plan-list-cell">' + formatOrgPlanListBadge(org) + '</div>';
+}
+
+function formatBillingStatusVi(status) {
+  const s = String(status || '').toUpperCase();
+  const map = {
+    ACTIVE: 'Đang hoạt động',
+    GRACE_PERIOD: 'Đang gia hạn',
+    EXPIRED: 'Hết hạn',
+    PENDING: 'Chờ xử lý',
+    PAID: 'Đã thanh toán',
+    FAILED: 'Thất bại',
+    REFUNDED: 'Đã hoàn tiền'
+  };
+  return map[s] || status || '—';
+}
+
+function formatSubscriptionStatusVi(status) {
+  const s = String(status || '').toUpperCase();
+  const map = {
+    TRIALING: 'Dùng thử',
+    ACTIVE: 'Đang hiệu lực',
+    PAST_DUE: 'Quá hạn thanh toán',
+    GRACE_PERIOD: 'Đang gia hạn',
+    CANCELED: 'Đã hủy',
+    EXPIRED: 'Hết hạn'
+  };
+  return map[s] || status || '—';
+}
+
+function formatInvoiceStatusVi(status) {
+  const s = String(status || '').toUpperCase();
+  const map = {
+    DRAFT: 'Nháp',
+    OPEN: 'Chờ thanh toán',
+    PAID: 'Đã thanh toán',
+    VOID: 'Đã hủy',
+    UNCOLLECTIBLE: 'Không thu được'
+  };
+  return map[s] || status || '—';
+}
+
+function formatBillingEventTypeVi(type) {
+  const t = String(type || '').toUpperCase();
+  const map = {
+    SUBSCRIPTION_PURCHASED: 'Mua gói',
+    SUBSCRIPTION_RENEWED: 'Gia hạn gói',
+    PAYMENT_FAILED: 'Thanh toán thất bại',
+    SUBSCRIPTION_EXPIRED: 'Hết hạn gói',
+    PAYMENT_REFUNDED: 'Hoàn tiền',
+    MANUAL_ADJUSTMENT: 'Điều chỉnh thủ công'
+  };
+  return map[t] || type || '—';
+}
+
+function formatProviderVi(provider) {
+  const p = String(provider || 'MANUAL').toUpperCase();
+  const map = {
+    MANUAL: 'Thủ công',
+    STRIPE: 'Stripe',
+    VNPAY: 'VNPay',
+    MOMO: 'MoMo',
+    OTHER: 'Khác'
+  };
+  return map[p] || provider || 'Thủ công';
+}
+
+function renderOrgPlanHistory(history) {
+  if (!history || !history.length) {
+    return '<p class="org-detail-empty">Chưa có lịch sử đổi gói.</p>';
+  }
+  return '<table class="org-detail-mini-table"><thead><tr><th>Thời gian</th><th>Gói</th><th>Thanh toán</th><th>Tòa/User</th><th>Ghi chú</th></tr></thead><tbody>' +
+    history.map((h) => {
+      const snap = h.snapshot || {};
+      return '<tr><td>' + escapeHtml(formatDateTime(h.createdAt)) + '</td><td>' +
+        escapeHtml(formatPlanNameVi(h.from_plan) + ' → ' + formatPlanNameVi(h.to_plan)) + '</td><td>' +
+        escapeHtml(formatBillingStatusVi(h.from_billing_status) + ' → ' + formatBillingStatusVi(h.to_billing_status)) + '</td><td>' +
+        (snap.buildings_active != null ? snap.buildings_active : '—') + ' / ' +
+        (snap.users_active != null ? snap.users_active : '—') + '</td><td>' +
+        escapeHtml(h.note || '') + '</td></tr>';
+    }).join('') + '</tbody></table>';
+}
+
+function renderOrgBillingEvents(events) {
+  if (!events || !events.length) {
+    return '<p class="org-detail-empty">Chưa có sự kiện thanh toán.</p>';
+  }
+  return '<table class="org-detail-mini-table"><thead><tr><th>Thời gian</th><th>Loại</th><th>Trạng thái</th><th>Gói</th><th>Chu kỳ</th><th>Số tiền</th><th>Ghi chú</th></tr></thead><tbody>' +
+    events.map((e) => {
+      const plan = formatPlanNameVi(e.plan);
+      const period = (e.period_start_at || e.period_end_at)
+        ? (formatDateTime(e.period_start_at) + ' → ' + formatDateTime(e.period_end_at))
+        : '—';
+      const amount = (Number(e.amount || 0)).toLocaleString('vi-VN') + ' ' + (e.currency || 'VND');
+      return '<tr><td>' + escapeHtml(formatDateTime(e.createdAt)) + '</td><td>' +
+        escapeHtml(formatBillingEventTypeVi(e.event_type)) + '</td><td>' +
+        escapeHtml(formatBillingStatusVi(e.payment_status)) + '</td><td>' +
+        escapeHtml(plan) + '</td><td>' +
+        escapeHtml(period) + '</td><td>' +
+        escapeHtml(amount) + '</td><td>' +
+        escapeHtml(e.note || '') + '</td></tr>';
+    }).join('') + '</tbody></table>';
+}
+
+function renderCurrentSubscription(sub) {
+  if (!sub) {
+    return '<p class="org-detail-empty">Chưa có gói đăng ký hiện hành (đang dùng gói trên tổ chức).</p>';
+  }
+  const period = (sub.current_period_start || sub.current_period_end)
+    ? (formatDateTime(sub.current_period_start) + ' → ' + formatDateTime(sub.current_period_end))
+    : '—';
+  return '<div class="org-life-grid">' +
+    '<div class="org-life-card"><div class="org-life-k">Gói</div><div class="org-life-v">' + escapeHtml(formatPlanNameVi(sub.plan)) + '</div></div>' +
+    '<div class="org-life-card"><div class="org-life-k">Trạng thái</div><div class="org-life-v">' + escapeHtml(formatSubscriptionStatusVi(sub.status)) + '</div></div>' +
+    '<div class="org-life-card"><div class="org-life-k">Chu kỳ</div><div class="org-life-v">' + escapeHtml(period) + '</div></div>' +
+    '<div class="org-life-card"><div class="org-life-k">Nguồn thanh toán</div><div class="org-life-v">' + escapeHtml(formatProviderVi(sub.provider)) +
+      (sub.cancel_at_period_end ? ' · sẽ hủy cuối chu kỳ' : '') + '</div></div>' +
+  '</div>';
+}
+
+function renderOrgInvoices(invoices) {
+  if (!invoices || !invoices.length) {
+    return '<p class="org-detail-empty">Chưa có hóa đơn.</p>';
+  }
+  return '<table class="org-detail-mini-table"><thead><tr><th>Số HĐ</th><th>Trạng thái</th><th>Gói</th><th>Số tiền</th><th>Chu kỳ</th><th>Thanh toán</th></tr></thead><tbody>' +
+    invoices.map((inv) => {
+      const amount = (Number(inv.amount || 0)).toLocaleString('vi-VN') + ' ' + (inv.currency || 'VND');
+      const period = (inv.period_start || inv.period_end)
+        ? (formatDateTime(inv.period_start) + ' → ' + formatDateTime(inv.period_end))
+        : '—';
+      return '<tr><td>' + escapeHtml(inv.invoice_number || '—') + '</td><td>' +
+        escapeHtml(formatInvoiceStatusVi(inv.status)) + '</td><td>' +
+        escapeHtml(formatPlanNameVi(inv.plan)) + '</td><td>' +
+        escapeHtml(amount) + '</td><td>' +
+        escapeHtml(period) + '</td><td>' +
+        escapeHtml(formatDateTime(inv.paid_at)) + '</td></tr>';
+    }).join('') + '</tbody></table>';
+}
+
+function renderLifecycleStats(stats) {
+  if (!stats) return '<p class="org-detail-empty">Chưa có dữ liệu thống kê vòng đời.</p>';
+  const dist = stats.plan_distribution || {};
+  const act = stats.activity_counts || {};
+  const billing = stats.billing_status_counts || {};
+  const started = stats.current_cycle_started_at ? formatDateTime(stats.current_cycle_started_at) : '—';
+  const expires = stats.current_cycle_expires_at ? formatDateTime(stats.current_cycle_expires_at) : '—';
+  const lastActivity = stats.last_activity_at ? formatDateTime(stats.last_activity_at) : '—';
+  return '<div class="org-life-grid">' +
+    '<div class="org-life-card"><div class="org-life-k">Số lần đổi gói</div><div class="org-life-v">' + (stats.plan_changes_total || 0) + '</div></div>' +
+    '<div class="org-life-card"><div class="org-life-k">Đăng ký gói trả phí</div><div class="org-life-v">' + (stats.paid_registrations_total || 0) + '</div></div>' +
+    '<div class="org-life-card"><div class="org-life-k">Miễn phí / Pro / Doanh nghiệp</div><div class="org-life-v">' +
+      (dist.FREE || 0) + ' / ' + (dist.PRO || 0) + ' / ' + (dist.ENTERPRISE || 0) + '</div></div>' +
+    '<div class="org-life-card"><div class="org-life-k">Chu kỳ gói hiện tại</div><div class="org-life-v">' + started + ' → ' + expires + '</div></div>' +
+    '<div class="org-life-card"><div class="org-life-k">Thanh toán (OK / Lỗi / Hết hạn)</div><div class="org-life-v">' +
+      (billing.PAID || 0) + ' / ' + (billing.FAILED || 0) + ' / ' + (billing.EXPIRED || 0) + '</div></div>' +
+    '<div class="org-life-card"><div class="org-life-k">Tạo tòa / xuất bản bản đồ</div><div class="org-life-v">' +
+      (act.create_building || 0) + ' / ' + (act.publish_map || 0) + '</div></div>' +
+    '<div class="org-life-card"><div class="org-life-k">Tạo tài khoản / khóa tài khoản</div><div class="org-life-v">' +
+      (act.create_user || 0) + ' / ' + (act.deactivate_user || 0) + '</div></div>' +
+    '<div class="org-life-card"><div class="org-life-k">Sửa tòa / khôi phục bản đồ</div><div class="org-life-v">' +
+      (act.update_building || 0) + ' / ' + (act.rollback_map || 0) + '</div></div>' +
+    '<div class="org-life-card"><div class="org-life-k">Đăng nhập gần nhất</div><div class="org-life-v">' +
+      lastActivity + ' (tổng đăng nhập: ' + (act.login || 0) + ')</div></div>' +
+  '</div>';
+}
+
+async function forceExpireOrgQuota(orgId) {
+  // Phải hết hạn subscription + plan FREE — chỉ PATCH billing_status không đủ (subscription GRACE sẽ ghi đè).
+  await markOrganizationSubscriptionExpired(orgId);
+}
+
+async function extendOrganizationPlan(orgId, days = 30) {
+  const org = getBillingContextOrg(orgId);
+  const now = Date.now();
+  const currentEnd = org.plan_expires_at ? new Date(org.plan_expires_at).getTime() : 0;
+  const base = currentEnd > now ? currentEnd : now;
+  const next = new Date(base + days * 24 * 60 * 60 * 1000);
+  await patchOrganization(
+    orgId,
+    { plan_expires_at: next.toISOString() },
+    'Gia hạn gói thêm ' + days + ' ngày (đến ' + formatDateTime(next) + ')?'
+  );
+}
+
+async function setOrganizationPlanExpiry(orgId) {
+  const org = getBillingContextOrg(orgId);
+  const suggest = org.plan_expires_at
+    ? new Date(org.plan_expires_at).toISOString().slice(0, 16).replace('T', ' ')
+    : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16).replace('T', ' ');
+  const raw = prompt('Nhập ngày giờ hết hạn (YYYY-MM-DD HH:mm):', suggest);
+  if (!raw) return;
+  const dt = new Date(String(raw).trim().replace(' ', 'T'));
+  if (Number.isNaN(dt.getTime())) {
+    alert('Định dạng ngày giờ không hợp lệ. Ví dụ: 2026-08-10 23:59');
+    return;
+  }
+  await patchOrganization(orgId, { plan_expires_at: dt.toISOString() }, 'Cập nhật hạn gói thành ' + formatDateTime(dt) + '?');
+}
+
+async function clearOrganizationPlanExpiry(orgId) {
+  const org = getBillingContextOrg(orgId);
+  if (!org.plan_expires_at) {
+    alert('Gói hiện không có ngày hết hạn để xóa.');
+    return;
+  }
+  await patchOrganization(orgId, { plan_expires_at: null }, 'Xóa ngày hết hạn của gói hiện tại?');
+}
+
+async function createOrganizationBillingEvent(orgId, payload, confirmMsg) {
+  if (!orgId || !payload) return false;
+  if (confirmMsg && !confirm(confirmMsg)) return false;
+  try {
+    const res = await apiFetch('/organizations/' + orgId + '/billing-events', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('Lỗi: ' + (d.message || 'HTTP ' + res.status));
+      return false;
+    }
+    if (_orgDetailId && String(_orgDetailId) === String(orgId)) {
+      await openOrgDetailModal(orgId);
+    }
+    if (_billingTabOrgId && String(_billingTabOrgId) === String(orgId)) {
+      await loadBillingTab(orgId);
+    }
+    await fetchOrganizations();
+    return true;
+  } catch (e) {
+    console.error('createOrganizationBillingEvent error:', e);
+    alert('Lỗi kết nối khi ghi nhận sự kiện thanh toán.');
+    return false;
+  }
+}
+
+async function markOrganizationSubscriptionPaid(orgId, plan) {
+  const p = String(plan || 'PRO').toUpperCase();
+  const now = new Date();
+  const end = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  await createOrganizationBillingEvent(orgId, {
+    event_type: 'SUBSCRIPTION_RENEWED',
+    payment_status: 'PAID',
+    plan: p,
+    amount: p === 'ENTERPRISE' ? 4990000 : 990000,
+    currency: 'VND',
+    period_start_at: now.toISOString(),
+    period_end_at: end.toISOString(),
+    note: 'Ghi nhận đã thanh toán từ bảng điều khiển'
+  }, 'Xác nhận ghi nhận đã thanh toán cho gói ' + formatPlanNameVi(p) + '?');
+}
+
+async function markOrganizationPaymentFailed(orgId) {
+  await createOrganizationBillingEvent(orgId, {
+    event_type: 'PAYMENT_FAILED',
+    payment_status: 'FAILED',
+    note: 'Thanh toán thất bại (đánh dấu thủ công)'
+  }, 'Xác nhận đánh dấu thanh toán thất bại cho tổ chức này?');
+}
+
+async function markOrganizationSubscriptionExpired(orgId) {
+  await createOrganizationBillingEvent(orgId, {
+    event_type: 'SUBSCRIPTION_EXPIRED',
+    payment_status: 'EXPIRED',
+    plan: 'FREE',
+    note: 'Kết thúc gói trả phí (đánh dấu thủ công)'
+  }, 'Xác nhận kết thúc gói trả phí và chuyển tổ chức về gói Miễn phí?');
+}
+
+async function activateOrgSubscriptionUi(orgId, plan) {
+  const p = String(plan || 'PRO').toUpperCase();
+  if (!confirm('Kích hoạt/gia hạn gói ' + formatPlanNameVi(p) + ' cho tổ chức này?')) return;
+  try {
+    const res = await apiFetch('/organizations/' + orgId + '/subscription/activate', {
+      method: 'POST',
+      body: JSON.stringify({
+        plan: p,
+        amount: p === 'ENTERPRISE' ? 4990000 : 990000,
+        currency: 'VND',
+        note: 'Kích hoạt gói từ bảng điều khiển'
+      })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('Lỗi: ' + (d.message || 'HTTP ' + res.status));
+      return;
+    }
+    await refreshBillingOrgViews(orgId);
+  } catch (e) {
+    console.error('activateOrgSubscriptionUi error:', e);
+    alert('Lỗi kết nối khi kích hoạt gói đăng ký.');
+  }
+}
+
+async function cancelOrgSubscriptionUi(orgId) {
+  if (!confirm('Hủy gói đăng ký hiện hành và chuyển tổ chức về gói Miễn phí ngay?')) return;
+  try {
+    const res = await apiFetch('/organizations/' + orgId + '/subscription/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ immediate: true, note: 'Hủy gói từ bảng điều khiển' })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('Lỗi: ' + (d.message || 'HTTP ' + res.status));
+      return;
+    }
+    await refreshBillingOrgViews(orgId);
+  } catch (e) {
+    console.error('cancelOrgSubscriptionUi error:', e);
+    alert('Lỗi kết nối khi hủy gói đăng ký.');
+  }
+}
+
+function formatPlanLabel(org) {
+  if (!org) return '';
+  const plan = (org.plan || 'FREE').toUpperCase();
+  const billing = (org.billing_status || 'ACTIVE').toUpperCase();
+  if (billing === 'GRACE_PERIOD') {
+    const end = org.grace_ends_at ? new Date(org.grace_ends_at) : null;
+    const days = end ? Math.max(0, Math.ceil((end.getTime() - Date.now()) / (24 * 60 * 60 * 1000))) : null;
+    return 'Gói ' + formatPlanNameVi(plan) + ' · Đang gia hạn ' + (days != null ? days + ' ngày' : 'đang chờ');
+  }
+  if (billing === 'EXPIRED' && plan === 'FREE') {
+    return 'Gói Miễn phí · Gói trả phí đã hết hạn';
+  }
+  return 'Gói ' + formatPlanNameVi(plan);
+}
+
+function quotaFallbackFromStats(stats) {
+  if (!stats || stats.scope !== 'organization') return null;
+  const plan = String(stats.organization?.plan || 'FREE').toUpperCase();
+  const lim = PLAN_LIMITS_UI[plan] || PLAN_LIMITS_UI.FREE;
+  const buildingsUsed = stats.buildings?.total_active || 0;
+  const usersUsed = stats.users?.total || 0;
+  const billing = String(stats.organization?.billing_status || 'ACTIVE').toUpperCase();
+  const buildingsOver = lim.buildings != null && buildingsUsed > lim.buildings;
+  const usersOver = lim.users != null && usersUsed > lim.users;
+  const enforcement =
+    billing !== 'GRACE_PERIOD' &&
+    !(billing === 'ACTIVE' && (plan === 'PRO' || plan === 'ENTERPRISE'));
+  return {
+    plan,
+    billing_status: billing,
+    buildings: {
+      used: buildingsUsed,
+      limit: lim.buildings,
+      over: buildingsOver,
+      locked: enforcement && buildingsOver ? buildingsUsed - lim.buildings : 0
+    },
+    users: {
+      used: usersUsed,
+      limit: lim.users,
+      over: usersOver,
+      locked: enforcement && usersOver ? usersUsed - lim.users : 0
+    },
+    enforcement_active: enforcement && (buildingsOver || usersOver)
+  };
+}
+
+function resolveQuotaFromStats(stats) {
+  return stats?.quota || quotaFallbackFromStats(stats);
+}
+
+function updatePlanQuotaBadge(user, quotaFromStats) {
+  const planBadge = document.getElementById('userPlanBadge');
+  const quotaLine = document.getElementById('quotaAlertLine');
+  const isTenant = user?.role === 'ORG_ADMIN' || user?.role === 'BUILDING_ADMIN';
+  const org = user?.organization;
+
+  if (planBadge) {
+    if (isTenant && org) {
+      planBadge.textContent = formatPlanLabel(org);
+      planBadge.className = 'badge plan-badge plan-' + String(org.plan || 'FREE').toLowerCase();
+      planBadge.style.display = '';
+    } else {
+      planBadge.style.display = 'none';
+    }
+  }
+
+  if (!quotaLine) return;
+  const quota = quotaFromStats || null;
+  if (!isTenant) {
+    quotaLine.style.display = 'none';
+    quotaLine.textContent = '';
+    return;
+  }
+  if (!quota) {
+    quotaLine.style.display = 'none';
+    quotaLine.textContent = '';
+    return;
+  }
+
+  const parts = [];
+  if (quota.buildings?.limit != null) {
+    parts.push('Tòa ' + quota.buildings.used + '/' + quota.buildings.limit);
+  }
+  if (quota.users?.limit != null) {
+    parts.push('Tài khoản ' + quota.users.used + '/' + quota.users.limit);
+  }
+  if (quota.buildings?.locked > 0) {
+    parts.push(quota.buildings.locked + ' tòa bị khóa');
+  }
+  if (quota.users?.locked > 0) {
+    parts.push(quota.users.locked + ' tài khoản bị khóa');
+  }
+
+  let msg = parts.length ? parts.join(' · ') : '';
+  if (quota.billing_status === 'GRACE_PERIOD') {
+    msg = '⚠️ ' + (msg ? msg + ' — ' : '') +
+      'Sau khi hết gia hạn, tài nguyên vượt hạn mức Miễn phí sẽ bị khóa.';
+  } else if (quota.enforcement_active && (quota.buildings?.locked > 0 || quota.users?.locked > 0)) {
+    msg = '🔒 ' + (msg ? msg + ' — ' : '') +
+      'Một số tòa/tài khoản bị khóa do vượt hạn mức. Giảm bớt hoặc nâng cấp gói.';
+  } else if (quota.buildings?.over || quota.users?.over) {
+    msg = '⚠️ ' + (msg ? msg + ' — ' : '') +
+      'Đang vượt hạn mức gói. Tòa vượt hạn mức bị khóa (không vẽ/xuất bản). Vô hiệu hóa bớt hoặc nâng cấp Pro.';
+  }
+
+  if (msg) {
+    quotaLine.textContent = msg;
+    quotaLine.className = 'quota-alert-line' +
+      (quota.enforcement_active && quota.buildings?.locked > 0 ? ' quota-alert-locked' : ' quota-alert-warn');
+    quotaLine.style.display = '';
+  } else {
+    quotaLine.style.display = 'none';
+    quotaLine.textContent = '';
+  }
+}
+
 function applyCurrentUserToUI(user) {
   if (!user) return;
   currentUser = user;
@@ -216,9 +913,11 @@ function applyCurrentUserToUI(user) {
   const usersBtn = document.querySelector('button[onclick*="users"]');
   const logsBtn = document.querySelector('button[onclick*="logs"]');
   const orgTabBtn = document.querySelector('button[onclick*="organizations"]');
+  const billingTabBtn = document.querySelector('button[onclick*="billing"]');
   if (usersBtn) usersBtn.style.display = (isSuperAdmin || isOrgAdmin) ? '' : 'none';
   if (logsBtn) logsBtn.style.display = (isSuperAdmin || isOrgAdmin) ? '' : 'none';
   if (orgTabBtn) orgTabBtn.style.display = isSuperAdmin ? '' : 'none';
+  if (billingTabBtn) billingTabBtn.style.display = (isSuperAdmin || isOrgAdmin) ? '' : 'none';
 
   const btnAddUser = document.getElementById('btnAddUser');
   const btnAddBuilding = document.getElementById('btnAddBuilding');
@@ -244,6 +943,8 @@ function applyCurrentUserToUI(user) {
 
   const tabNav = document.getElementById('tabNav');
   if (tabNav) tabNav.style.display = 'flex';
+
+  updatePlanQuotaBadge(user, resolveQuotaFromStats(platformStatsCache));
 }
 
 // ============================================================
@@ -431,6 +1132,29 @@ async function switchTab(name, options) {
     updateOrgSortIndicators();
   }
   if (tab === 'registrations') await fetchRegistrations();
+  if (tab === 'billing') {
+    const toolbar = document.querySelector('.billing-tab-toolbar');
+    const intro = document.querySelector('.billing-tab-intro');
+    if (currentUser?.role === 'ORG_ADMIN') {
+      if (toolbar) toolbar.style.display = 'none';
+      if (intro) intro.textContent = 'Xem gói hiện tại, hóa đơn và tự nâng cấp/gia hạn qua cổng thanh toán.';
+      await loadMyBillingTab();
+    } else {
+      if (toolbar) toolbar.style.display = '';
+      if (intro) intro.textContent = 'Quản lý subscription, hóa đơn và chu kỳ gói cho từng tổ chức. Hệ thống tự theo dõi hạn qua scheduler.';
+      if (!allOrganizations.length) await fetchOrganizations();
+      populateBillingOrgSelect();
+      const preselect = opts.billingOrgId || _billingTabOrgId || document.getElementById('billingOrgSelect')?.value || '';
+      const sel = document.getElementById('billingOrgSelect');
+      if (sel && preselect) sel.value = preselect;
+      await loadBillingTab(preselect || sel?.value);
+    }
+    const hashPaid = (window.location.hash || '').includes('paid=1');
+    if (hashPaid) {
+      setTimeout(() => alert('Thanh toán thành công! Gói đã được kích hoạt/gia hạn.'), 300);
+      history.replaceState(history.state, '', dashboardTabHref('billing'));
+    }
+  }
 }
 
 // ============================================================
@@ -644,14 +1368,22 @@ function renderBuildingsFromCache() {
     const date = b.updatedAt ? new Date(b.updatedAt).toLocaleDateString('vi-VN') : '-';
     const desc = b.description ? '<br><small style="color:#888">' + escapeHtml(b.description) + '</small>' : '';
     const inactive = b.is_active === false;
-    const rowStyle = inactive ? ' style="opacity:0.72;background:#fafafa;"' : '';
+    const rowStyle = inactive
+      ? ' style="opacity:0.72;background:#fafafa;"'
+      : (b.quota_locked ? ' style="background:#fff5f5;"' : '');
     const inactiveBadge = inactive ? ' <span class="badge badge-inactive" style="font-size:10px;">Vô hiệu</span>' : '';
+    const lockedBadge = b.quota_locked ? ' <span class="badge badge-quota-locked" style="font-size:10px;">Khóa quota</span>' : '';
     let actions = '';
     if (inactive) {
       if (canDelete) {
         actions = '<button type="button" class="btn-create" onclick="restoreBuilding(\'' + b._id + '\')" style="background:#27ae60;padding:6px 12px;">Khôi phục</button>';
       } else {
         actions = '<span style="color:#888;font-size:12px;">Đã vô hiệu</span>';
+      }
+    } else if (b.quota_locked) {
+      actions = '<span style="color:#c0392b;font-size:12px;">🔒 Bị khóa — chỉ xem / vô hiệu hóa</span>';
+      if (canDelete) {
+        actions += ' <button class="btn-logout" onclick="deleteBuilding(\'' + b._id + '\')" style="background:#e74c3c;padding:6px 12px;margin-left:6px;">Vô hiệu</button>';
       }
     } else {
       actions = '<button class="btn-edit" onclick="openEditor(\'' + b._id + '\')" style="margin-right:4px;">Vẽ bản đồ</button>' +
@@ -664,7 +1396,7 @@ function renderBuildingsFromCache() {
       }
     }
     return '<tr' + rowStyle + '>' +
-      tdEllipsis(b.name, '<strong>' + escapeHtml(b.name) + '</strong>' + inactiveBadge + desc) +
+      tdEllipsis(b.name, '<strong>' + escapeHtml(b.name) + '</strong>' + inactiveBadge + lockedBadge + desc) +
       tdEllipsis(b.address || '-') +
       '<td style="text-align:center;">' + (b.total_floors || 1) + '</td>' +
       '<td><span class="badge">' + escapeHtml(b.status) + '</span></td>' +
@@ -740,8 +1472,22 @@ function populateOrganizationDropdown() {
         '<option value="' + org._id + '">' + escapeHtml(org.name) + ' (' + escapeHtml(org.slug) + ')</option>'
       ).join('');
   }
+
+  populateBillingOrgSelect();
 }
 
+function populateBillingOrgSelect() {
+  const billingSel = document.getElementById('billingOrgSelect');
+  if (!billingSel) return;
+  const cur = billingSel.value;
+  billingSel.innerHTML = '<option value="">— Chọn tổ chức —</option>' +
+    allOrganizations.map((org) => {
+      const plan = formatPlanNameVi(org.plan || 'FREE');
+      const inactive = org.is_active === false ? ' [tạm dừng]' : '';
+      return '<option value="' + org._id + '">' + escapeHtml(org.name) + ' · ' + escapeHtml(plan) + inactive + '</option>';
+    }).join('');
+  if (cur) billingSel.value = cur;
+}
 
 function renderOrgOverviewCards() {
   const container = document.getElementById('orgOverviewCards');
@@ -825,6 +1571,7 @@ async function fetchPlatformStats() {
     if (!res.ok) return;
     platformStatsCache = await res.json();
     renderPlatformOverviewCards();
+    if (currentUser) updatePlanQuotaBadge(currentUser, resolveQuotaFromStats(platformStatsCache));
   } catch (e) {
     console.warn('fetchPlatformStats:', e);
   }
@@ -954,15 +1701,25 @@ function renderPlatformOverviewCards() {
       );
   } else if (s.scope === 'organization') {
     const orgName = s.organization?.name || 'Tổ chức';
-    if (titleEl) titleEl.textContent = '📊 Tổng quan — ' + orgName;
+    const q = s.quota || {};
+    const planLabel = formatPlanLabel(s.organization || {});
+    if (titleEl) {
+      titleEl.textContent = '📊 Tổng quan — ' + orgName + (planLabel ? ' (' + planLabel + ')' : '');
+    }
     const b = s.buildings || {};
     const u = s.users || {};
     const draft = b.draft || 0;
     const inactiveB = b.inactive || 0;
+    const buildingSub = 'XB ' + (b.published || 0) + ' · nháp ' + draft +
+      (q.buildings?.limit != null ? ' · hạn ' + q.buildings.used + '/' + q.buildings.limit : '') +
+      (q.buildings?.locked > 0 ? ' · 🔒' + q.buildings.locked : '');
+    const userSub = 'ORG ' + (u.org_admin || 0) + ' · BA ' + (u.building_admin || 0) +
+      (q.users?.limit != null ? ' · hạn ' + q.users.used + '/' + q.users.limit : '') +
+      (q.users?.locked > 0 ? ' · 🔒' + q.users.locked : '');
     html =
       buildOverviewCard(
         'Tòa nhà', b.total_active || 0,
-        'XB ' + (b.published || 0) + ' · nháp ' + draft,
+        buildingSub,
         'blue', true, "switchTab('buildings')",
         {
           progress: (b.total_active || 0) > 0
@@ -977,7 +1734,7 @@ function renderPlatformOverviewCards() {
       ) +
       buildOverviewCard(
         'Tài khoản', u.total || 0,
-        'ORG ' + (u.org_admin || 0) + ' · BA ' + (u.building_admin || 0),
+        userSub,
         'orange', true, "switchTab('users')"
       ) +
       buildOverviewCard(
@@ -1176,12 +1933,12 @@ function renderOrganizationsFromCache() {
       : '<span class="status-badge inactive">Tạm dừng</span>';
     const bCount = formatBuildingCountCell(org, oid);
     const uCount = org.user_count != null ? org.user_count : '—';
+    const userOverHint = getOrgQuotaOverHint(org);
+    const uCountHtml = userOverHint
+      ? '<span title="' + escapeHtml(userOverHint) + '">' + uCount + ' <span class="obc-warn">⚠</span></span>'
+      : String(uCount);
     const adminsCell = formatOrgAdminsCell(org);
-    const currentPlan = org.plan || 'FREE';
-    const planSelect = '<select class="org-plan-select" onchange="changeOrganizationPlan(\'' + oid + '\', this)" title="Đổi gói">' +
-      ['FREE', 'PRO', 'ENTERPRISE'].map((p) =>
-        '<option value="' + p + '"' + (currentPlan === p ? ' selected' : '') + '>' + p + '</option>'
-      ).join('') + '</select>';
+    const planCell = formatOrgPlanListCell(org);
     const isLegacy = org.slug === 'legacy';
     let statusBtn;
     if (isLegacy) {
@@ -1194,14 +1951,15 @@ function renderOrganizationsFromCache() {
     return '<tr>' +
       tdEllipsis(org.name, '<strong class="org-name-link" onclick="openOrgDetailModal(\'' + oid + '\')" title="Xem chi tiết">' + escapeHtml(org.name) + '</strong>') +
       tdEllipsis(org.slug) +
-      '<td>' + planSelect + '</td>' +
+      '<td class="org-plan-cell">' + planCell + '</td>' +
       '<td>' + statusBadge + '</td>' +
       '<td style="text-align:center;">' + bCount + '</td>' +
-      '<td style="text-align:center;cursor:pointer;" onclick="jumpToUsers(\'' + oid + '\')" title="Xem tài khoản">' + uCount + '</td>' +
+      '<td style="text-align:center;cursor:pointer;" onclick="jumpToUsers(\'' + oid + '\')" title="Xem tài khoản">' + uCountHtml + '</td>' +
       tdEllipsis(adminsCell.plain, adminsCell.html) +
       '<td>' + date + '</td>' +
       '<td class="actions-cell"><div class="building-actions">' +
         '<button type="button" class="btn-edit org-detail-btn" onclick="openOrgDetailModal(\'' + oid + '\')">Chi tiết</button>' +
+        '<button type="button" class="btn-edit" onclick="openBillingTabForOrg(\'' + oid + '\')" style="background:#2563eb;color:#fff;">Gói & TT</button>' +
         statusBtn +
         '<button type="button" class="btn-edit" onclick="jumpToBuildings(\'' + oid + '\')">Tòa nhà</button>' +
         '<button type="button" class="btn-edit" onclick="jumpToUsers(\'' + oid + '\')" style="background:#f39c12;color:#fff;">User</button>' +
@@ -1229,6 +1987,12 @@ async function patchOrganization(orgId, body, confirmMsg) {
         allOrganizations[idx] = { ...allOrganizations[idx], ...updated };
         populateOrganizationDropdown();
         renderOrganizationsFromCache();
+      }
+      if (_orgDetailId && String(_orgDetailId) === String(orgId)) {
+        openOrgDetailModal(orgId);
+      }
+      if (_billingTabOrgId && String(_billingTabOrgId) === String(orgId)) {
+        loadBillingTab(orgId);
       }
     }
     return true;
@@ -1264,6 +2028,195 @@ async function toggleOrganizationActive(orgId, currentActive) {
 
 let _orgDetailId = null;
 let _orgDetailData = null;
+let _billingTabOrgId = null;
+let _billingTabData = null;
+
+async function refreshBillingOrgViews(orgId) {
+  if (_billingTabOrgId && String(_billingTabOrgId) === String(orgId)) {
+    await loadBillingTab(orgId);
+  }
+  if (_orgDetailId && String(_orgDetailId) === String(orgId)) {
+    await openOrgDetailModal(orgId);
+  }
+  if (typeof fetchOrganizations === 'function') await fetchOrganizations();
+}
+
+async function openBillingTabForOrg(orgId) {
+  if (!orgId) return;
+  closeOrgDetailModal();
+  await switchTab('billing', { billingOrgId: orgId });
+}
+
+async function loadBillingTab(orgId) {
+  const select = document.getElementById('billingOrgSelect');
+  const id = orgId || select?.value;
+  const body = document.getElementById('billingTabBody');
+  if (!body) return;
+  if (!id) {
+    _billingTabOrgId = null;
+    _billingTabData = null;
+    body.innerHTML = '<p class="billing-tab-empty">Chọn một tổ chức để xem và quản lý gói đăng ký.</p>';
+    return;
+  }
+  if (select && select.value !== id) select.value = id;
+  _billingTabOrgId = id;
+  body.innerHTML = '<p class="billing-tab-loading">Đang tải dữ liệu gói & thanh toán…</p>';
+  try {
+    const res = await apiFetch('/organizations/' + id);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      body.innerHTML = '<p class="billing-tab-error">Lỗi: ' + escapeHtml(d.message || 'HTTP ' + res.status) + '</p>';
+      return;
+    }
+    _billingTabData = d;
+    renderBillingTabBody(d);
+  } catch (e) {
+    console.error('loadBillingTab error:', e);
+    body.innerHTML = '<p class="billing-tab-error">Lỗi kết nối khi tải tab Gói & Thanh toán.</p>';
+  }
+}
+
+function renderBillingTabBody(data) {
+  const body = document.getElementById('billingTabBody');
+  if (!body || !data) return;
+  const org = data.organization || {};
+  const oid = String(org._id || _billingTabOrgId || '');
+  const quota = data.quota || null;
+  const subscription = data.current_subscription || null;
+  const quotaBanner = formatDetailQuotaBanner(quota, org);
+  const actionPanel = renderOrgBillingActionPanel(oid, org, subscription, quota);
+  const subscriptionHtml = renderCurrentSubscription(subscription);
+  const invoicesHtml = renderOrgInvoices(data.invoices);
+  const billingEventsHtml = renderOrgBillingEvents(data.billing_events);
+  const planHistoryHtml = renderOrgPlanHistory(data.plan_history);
+  const lifecycleStatsHtml = renderLifecycleStats(data.lifecycle_stats);
+
+  body.innerHTML =
+    '<div class="billing-tab-org-head">' +
+      '<h4>' + escapeHtml(org.name || 'Tổ chức') + '</h4>' +
+      '<span class="billing-tab-org-meta">' + escapeHtml(org.slug || '') + ' · ' + formatOrgBillingBadge(org) + '</span>' +
+    '</div>' +
+    (quotaBanner || '') +
+    '<div class="billing-tab-section-block">' +
+      '<h4>Thao tác theo trạng thái</h4>' + actionPanel +
+    '</div>' +
+    '<div class="billing-tab-section-block">' +
+      '<h4>Gói đăng ký hiện hành</h4>' + subscriptionHtml +
+    '</div>' +
+    '<div class="billing-tab-section-block">' +
+      '<h4>Hóa đơn <span class="org-detail-hint">(20 gần nhất)</span></h4>' + invoicesHtml +
+    '</div>' +
+    '<div class="billing-tab-section-block">' +
+      '<h4>Sự kiện thanh toán <span class="org-detail-hint">(30 gần nhất)</span></h4>' + billingEventsHtml +
+    '</div>' +
+    '<div class="billing-tab-section-block">' +
+      '<h4>Lịch sử gói <span class="org-detail-hint">(20 lần gần nhất)</span></h4>' + planHistoryHtml +
+    '</div>' +
+    '<div class="billing-tab-section-block">' +
+      '<h4>Thống kê vòng đời billing</h4>' + lifecycleStatsHtml +
+    '</div>';
+}
+
+async function loadMyBillingTab() {
+  const body = document.getElementById('billingTabBody');
+  if (!body) return;
+  body.innerHTML = '<p class="billing-tab-loading">Đang tải gói của tổ chức bạn…</p>';
+  try {
+    const res = await apiFetch('/billing/me');
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      body.innerHTML = '<p class="billing-tab-error">Lỗi: ' + escapeHtml(d.message || 'HTTP ' + res.status) + '</p>';
+      return;
+    }
+    _billingTabOrgId = d.organization?._id;
+    _billingTabData = d;
+    renderMyBillingTabBody(d);
+  } catch (e) {
+    console.error('loadMyBillingTab error:', e);
+    body.innerHTML = '<p class="billing-tab-error">Lỗi kết nối khi tải gói.</p>';
+  }
+}
+
+function renderOrgSelfServicePanel(org, subscription, quota) {
+  const plan = String(org?.plan || 'FREE').toUpperCase();
+  const billing = String(org?.billing_status || 'ACTIVE').toUpperCase();
+  const state = resolveOrgBillingUiState(org, subscription, quota);
+  let actions = '';
+
+  if (state === 'FREE' || state === 'EXPIRED' || plan === 'FREE') {
+    actions += '<div class="org-plan-actions">' +
+      '<button type="button" class="btn-create" onclick="checkoutOrgPlan(\'PRO\', \'upgrade\')">Nâng cấp Pro — 990.000đ/tháng</button>' +
+      '<button type="button" class="btn-edit" onclick="checkoutOrgPlan(\'ENTERPRISE\', \'upgrade\')">Nâng cấp Doanh nghiệp — 4.990.000đ/tháng</button>' +
+    '</div>';
+  } else if (state === 'PAID_ACTIVE' || state === 'GRACE') {
+  const renewLabel = state === 'GRACE' ? 'Thanh toán gia hạn ngay' : 'Gia hạn gói';
+    actions += '<div class="org-plan-actions">' +
+      '<button type="button" class="btn-create" onclick="checkoutOrgPlan(\'' + plan + '\', \'renew\')">' + renewLabel + '</button>';
+    if (plan === 'PRO') {
+      actions += '<button type="button" class="btn-edit" onclick="checkoutOrgPlan(\'ENTERPRISE\', \'upgrade\')">Nâng lên Doanh nghiệp</button>';
+    }
+    actions += '</div>';
+    if (state === 'GRACE' && org.grace_ends_at) {
+      actions += '<p class="org-billing-snapshot-hint">Đang trong thời gian gia hạn đến <strong>' + escapeHtml(formatDateTime(org.grace_ends_at)) + '</strong>. Thanh toán để tránh khóa hạn mức.</p>';
+    }
+  }
+
+  return '<div class="org-subscription-manage billing-self-service">' +
+    '<div class="billing-state-badge billing-state-' + state.toLowerCase() + '">' +
+      escapeHtml(BILLING_UI_STATE_LABELS[state] || state) +
+    '</div>' +
+    '<div class="org-sub-manage-hint">Thanh toán qua VNPay (production) hoặc trang mock (dev). Sau khi thanh toán, hệ thống tự kích hoạt gói.</div>' +
+    actions +
+  '</div>';
+}
+
+function renderMyBillingTabBody(data) {
+  const body = document.getElementById('billingTabBody');
+  if (!body || !data) return;
+  const org = data.organization || {};
+  const quota = data.quota || null;
+  const subscription = data.current_subscription || null;
+  const quotaBanner = formatDetailQuotaBanner(quota, org);
+  const selfPanel = renderOrgSelfServicePanel(org, subscription, quota);
+
+  body.innerHTML =
+    '<div class="billing-tab-org-head">' +
+      '<h4>' + escapeHtml(org.name || 'Tổ chức của bạn') + '</h4>' +
+      '<span class="billing-tab-org-meta">' + formatOrgBillingBadge(org) + ' · ' + escapeHtml(formatPlanExpiryLine(org, quota).replace(/<[^>]+>/g, ' ').trim()) + '</span>' +
+    '</div>' +
+    (quotaBanner || '') +
+    '<div class="billing-tab-section-block"><h4>Gói & thanh toán</h4>' + selfPanel + '</div>' +
+    '<div class="billing-tab-section-block"><h4>Gói đăng ký hiện hành</h4>' + renderCurrentSubscription(subscription) + '</div>' +
+    '<div class="billing-tab-section-block"><h4>Hóa đơn</h4>' + renderOrgInvoices(data.invoices) + '</div>' +
+    '<div class="billing-tab-section-block"><h4>Sự kiện thanh toán</h4>' + renderOrgBillingEvents(data.billing_events) + '</div>';
+}
+
+async function checkoutOrgPlan(plan, action) {
+  const p = String(plan || 'PRO').toUpperCase();
+  const act = String(action || 'upgrade').toLowerCase();
+  if (!confirm('Tiếp tục thanh toán gói ' + formatPlanNameVi(p) + '?')) return;
+  try {
+    const res = await apiFetch('/billing/checkout', {
+      method: 'POST',
+      body: JSON.stringify({ plan: p, action: act })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('Lỗi: ' + (d.message || 'HTTP ' + res.status));
+      return;
+    }
+    if (d.checkout_url) {
+      window.location.href = d.checkout_url;
+    } else {
+      alert('Đã xử lý thanh toán.');
+      if (currentUser?.role === 'ORG_ADMIN') await loadMyBillingTab();
+      else if (_billingTabOrgId) await loadBillingTab(_billingTabOrgId);
+    }
+  } catch (e) {
+    console.error('checkoutOrgPlan:', e);
+    alert('Lỗi kết nối khi tạo phiên thanh toán.');
+  }
+}
 
 async function openOrgDetailModal(orgId) {
   _orgDetailId = orgId;
@@ -1306,9 +2259,7 @@ function renderOrgAdminCards(admins) {
   return admins.map((a) => {
     const uid = String(a._id);
     const email = escapeHtml(a.email || '-');
-    const statusHtml = a.is_active === false
-      ? '<span class="status-badge inactive">Đã khóa</span>'
-      : '<span class="status-badge active">Hoạt động</span>';
+    const statusHtml = formatDetailUserStatus(a);
     return '<div class="org-admin-card">' +
       '<div class="org-admin-card-title">' + escapeHtml(a.full_name || a.email || 'ORG_ADMIN') + '</div>' +
       '<div class="org-admin-row"><span>Email đăng nhập</span><strong>' + email + '</strong></div>' +
@@ -1412,7 +2363,8 @@ function renderOrgDetailBody(data) {
   const buildingsHtml = (data.recent_buildings || []).length
     ? '<table class="org-detail-mini-table"><thead><tr><th>Tên</th><th>Trạng thái</th><th>Số tầng</th><th>Cập nhật</th></tr></thead><tbody>' +
       data.recent_buildings.map((b) =>
-        '<tr><td>' + escapeHtml(b.name || '-') + '</td><td>' + escapeHtml(b.status || '-') + '</td><td>' +
+        '<tr' + (b.quota_locked ? ' class="org-detail-row-locked"' : '') + '><td>' + escapeHtml(b.name || '-') + '</td><td>' +
+        formatDetailBuildingStatus(b) + '</td><td>' +
         (b.total_floors != null ? b.total_floors : '—') + '</td><td>' +
         (b.updatedAt ? new Date(b.updatedAt).toLocaleDateString('vi-VN') : '-') + '</td></tr>'
       ).join('') + '</tbody></table>'
@@ -1426,13 +2378,22 @@ function renderOrgDetailBody(data) {
   const usersHtml = (data.recent_users || []).length
     ? '<table class="org-detail-mini-table"><thead><tr><th>Email</th><th>Họ tên</th><th>Vai trò</th><th>Đăng nhập cuối</th><th>Trạng thái</th></tr></thead><tbody>' +
       data.recent_users.map((u) =>
-        '<tr><td>' + escapeHtml(u.email || '-') + '</td><td>' + escapeHtml(u.full_name || '-') + '</td><td>' +
+        '<tr' + (u.quota_locked ? ' class="org-detail-row-locked"' : '') + '><td>' + escapeHtml(u.email || '-') + '</td><td>' + escapeHtml(u.full_name || '-') + '</td><td>' +
         escapeHtml(ROLE_DISPLAY[u.role] || u.role || '-') + '</td><td>' + escapeHtml(formatDateTime(u.last_login)) + '</td><td>' +
-        (u.is_active === false ? '<span class="status-badge inactive">Khóa</span>' : '<span class="status-badge active">OK</span>') +
+        formatDetailUserStatus(u) +
         '</td></tr>'
       ).join('') + '</tbody></table>'
     : '<p class="org-detail-empty">Chưa có tài khoản.</p>';
 
+  const quota = data.quota || null;
+  const billingStatus = (org.billing_status || quota?.billing_status || 'ACTIVE').toUpperCase();
+  const graceNote = billingStatus === 'GRACE_PERIOD' && (org.grace_ends_at || quota?.grace_ends_at)
+    ? ' <span class="org-detail-hint">(đến ' + formatDateTime(org.grace_ends_at || quota.grace_ends_at) + ')</span>'
+    : '';
+  const activeB = data.active_building_count != null ? data.active_building_count : '—';
+  const activeU = data.active_user_count != null ? data.active_user_count : '—';
+  const quotaBanner = formatDetailQuotaBanner(quota, org);
+  const billingSnapshot = renderOrgBillingSnapshot(oid, org, quota, data.current_subscription);
   const logsHtml = (data.recent_logs || []).length
     ? '<ul class="org-detail-list org-detail-logs">' + data.recent_logs.map((l) =>
       '<li><span class="org-detail-log-time">' + formatDateTime(l.createdAt) +
@@ -1444,21 +2405,27 @@ function renderOrgDetailBody(data) {
   const body = document.getElementById('orgDetailBody');
   if (!body) return;
   body.innerHTML =
+    (quotaBanner || '') +
+    billingSnapshot +
     '<div class="org-detail-grid">' +
       '<div><span class="org-detail-label">Mã tổ chức</span><div class="org-detail-value org-detail-id" title="Sao chép ID">' + escapeHtml(oid) + '</div></div>' +
       '<div><span class="org-detail-label">Mã định danh</span><div class="org-detail-value">' + escapeHtml(org.slug || '-') + '</div></div>' +
-      '<div><span class="org-detail-label">Gói</span><div class="org-detail-value"><span class="badge">' + escapeHtml(org.plan || 'FREE') + '</span></div></div>' +
-      '<div><span class="org-detail-label">Trạng thái</span><div class="org-detail-value">' +
+      '<div><span class="org-detail-label">Gói hiện tại</span><div class="org-detail-value">' + formatOrgBillingBadge(org) + graceNote + '</div></div>' +
+      '<div><span class="org-detail-label">Trạng thái tổ chức</span><div class="org-detail-value">' +
         (isActive ? '<span class="status-badge active">Hoạt động</span>' : '<span class="status-badge inactive">Tạm dừng</span>') +
       '</div></div>' +
       '<div><span class="org-detail-label">Ngày tạo</span><div class="org-detail-value">' + escapeHtml(created) + '</div></div>' +
       '<div><span class="org-detail-label">Cập nhật</span><div class="org-detail-value">' + escapeHtml(updated) + '</div></div>' +
       '<div><span class="org-detail-label">Tòa nhà</span><div class="org-detail-value">' + (data.building_count != null ? data.building_count : '—') +
-        ' <span class="org-detail-hint">(PUBLISHED: ' + publishedCount + ', DRAFT: ' + draftCount + ')</span></div></div>' +
+        ' <span class="org-detail-hint">(đang dùng: ' + activeB +
+        (quota?.buildings?.limit != null ? '/' + quota.buildings.limit : '') +
+        ' · đã xuất bản: ' + publishedCount + ', bản nháp: ' + draftCount + ')</span></div></div>' +
       '<div><span class="org-detail-label">Tài khoản</span><div class="org-detail-value">' + (data.user_count != null ? data.user_count : '—') +
-        ' <span class="org-detail-hint">(ORG_ADMIN: ' + orgAdminCount + ', BUILDING_ADMIN: ' + buildingAdminCount + ')</span></div></div>' +
+        ' <span class="org-detail-hint">(đang dùng QT tổ chức/tòa: ' + activeU +
+        (quota?.users?.limit != null ? '/' + quota.users.limit : '') +
+        ' · QT tổ chức: ' + orgAdminCount + ', QT tòa: ' + buildingAdminCount + ')</span></div></div>' +
     '</div>' +
-    '<div class="org-detail-section"><h4>Quản trị viên tổ chức (ORG_ADMIN)</h4>' + adminsHtml + '</div>' +
+    '<div class="org-detail-section"><h4>Quản trị viên tổ chức</h4>' + adminsHtml + '</div>' +
     '<div class="org-detail-section"><h4>Tòa nhà <span class="org-detail-hint">(mới nhất, tối đa 10)</span></h4>' + buildingsHtml + '</div>' +
     '<div class="org-detail-section"><h4>Tài khoản <span class="org-detail-hint">(mới nhất, tối đa 10)</span></h4>' + usersHtml + '</div>' +
     '<div class="org-detail-section"><h4>Nhật ký gần đây <span class="org-detail-hint">(tối đa 10)</span></h4>' + logsHtml + '</div>';
@@ -1466,8 +2433,10 @@ function renderOrgDetailBody(data) {
   const jumpB = document.getElementById('orgDetailJumpBuildings');
   const jumpU = document.getElementById('orgDetailJumpUsers');
   const addAdminBtn = document.getElementById('orgDetailAddAdmin');
+  const openBillingBtn = document.getElementById('orgDetailOpenBilling');
   if (jumpB) jumpB.onclick = () => { closeOrgDetailModal(); jumpToBuildings(oid); };
   if (jumpU) jumpU.onclick = () => { closeOrgDetailModal(); jumpToUsers(oid); };
+  if (openBillingBtn) openBillingBtn.onclick = () => openBillingTabForOrg(oid);
   if (addAdminBtn) {
     addAdminBtn.onclick = () => {
       closeOrgDetailModal();
@@ -1587,6 +2556,8 @@ async function createOrganization() {
   if (!organizationName) return alert('Vui lòng nhập tên tổ chức!');
   if (!slug) slug = slugifyFromName(organizationName);
   if (!adminName || !adminEmail || !adminPassword) return alert('Vui lòng nhập đầy đủ thông tin quản trị viên.');
+  const adminNameErrors = validateFullNameClient(adminName);
+  if (adminNameErrors.length) return alert(adminNameErrors.join('\n'));
   const body = { organizationName, slug, plan, adminName, adminEmail, adminPassword };
   try {
     let res = await apiFetch('/organizations/with-admin', {
@@ -1877,7 +2848,14 @@ async function saveNewUser() {
 
   if (!email) return alert('Vui lòng nhập email.');
   if (!full_name) return alert('Họ tên không được để trống.');
-  if (!password || password.length < 8) return alert('Mật khẩu phải có ít nhất 8 ký tự.');
+  const nameErrors = validateFullNameClient(full_name);
+  if (nameErrors.length) return alert(nameErrors.join('\n'));
+  if (isSuperAdmin) {
+    if (!password || password.length < 8) return alert('Mật khẩu phải có ít nhất 8 ký tự.');
+  } else {
+    const pwdErrors = validatePasswordStrengthClient(password);
+    if (pwdErrors.length) return alert(pwdErrors.join('\n'));
+  }
   if (phone && !/^[0-9\+\-\s]+$/.test(phone)) {
     return alert('Số điện thoại chỉ được chứa số, dấu +, - và khoảng trắng.');
   }
@@ -2432,8 +3410,20 @@ function renderUsers(users) {
       }
     }
     const roleClass = isSuperAdmin ? 'role-badge super-admin' : (u.role === 'ORG_ADMIN' ? 'role-badge org-admin' : 'role-badge building-admin');
-    const statusClass = u.is_active ? 'status-badge active' : 'status-badge inactive';
-    const statusText = u.is_active ? 'Hoạt động' : 'Bị khóa';
+    let statusClass;
+    let statusText;
+    if (u.quota_locked) {
+      statusClass = 'status-badge inactive badge-quota-locked';
+      statusText = 'Khóa quota';
+    } else {
+      statusClass = u.is_active ? 'status-badge active' : 'status-badge inactive';
+      statusText = u.is_active ? 'Hoạt động' : 'Bị khóa';
+    }
+    if (u.quota_locked && !isAdminSelf) {
+      actionBtn = '<span style="color:#c0392b;font-size:12px;">🔒 Vượt hạn mức gói</span>';
+      editBtn = '';
+      pwdBtn = '';
+    }
     const roleText = ROLE_DISPLAY[u.role] || u.role || '-';
     const orgText = u.role === 'SUPER_ADMIN' ? '—' : getOrgName(u.organization_id);
     return '<tr>' +
@@ -2539,6 +3529,11 @@ async function updateUserProfile() {
 
   if (!full_name) {
     alert('Họ tên không được để trống.');
+    return;
+  }
+  const nameErrors = validateFullNameClient(full_name);
+  if (nameErrors.length) {
+    alert(nameErrors.join('\n'));
     return;
   }
 
@@ -2943,6 +3938,13 @@ document.getElementById('btnSaveProfile').onclick = async () => {
   const phone = document.getElementById('profilePhone').value.trim();
   const msgEl = document.getElementById('profileMessage');
   if (!fullName) { msgEl.textContent = 'Họ tên không được để trống.'; msgEl.style.display = 'block'; msgEl.className = 'error-msg'; return; }
+  const profileNameErrors = validateFullNameClient(fullName);
+  if (profileNameErrors.length) {
+    msgEl.textContent = profileNameErrors.join(' ');
+    msgEl.style.display = 'block';
+    msgEl.className = 'error-msg';
+    return;
+  }
   try {
     const res = await apiFetch('/users/me', {
       method: 'PUT',
@@ -2971,7 +3973,6 @@ document.getElementById('btnSaveProfile').onclick = async () => {
 // CHANGE PASSWORD
 const passMsgs = {
   missing: 'Tất cả các trường đều bắt buộc.',
-  short: 'Mật khẩu mới phải có ít nhất 8 ký tự.',
   mismatch: 'Xác nhận mật khẩu không khớp.',
   same: 'Mật khẩu mới phải khác mật khẩu hiện tại.'
 };
@@ -2996,7 +3997,13 @@ document.getElementById('btnChangePassword').onclick = async () => {
   if (!currentPassword || !newPassword || !confirmPassword) {
     msgEl.textContent = passMsgs.missing; msgEl.style.display = 'block'; msgEl.className = 'error-msg'; return;
   }
-  if (newPassword.length < 8) { msgEl.textContent = passMsgs.short; msgEl.style.display = 'block'; msgEl.className = 'error-msg'; return; }
+  const strengthErrors = validatePasswordStrengthClient(newPassword);
+  if (strengthErrors.length) {
+    msgEl.textContent = strengthErrors.join(' ');
+    msgEl.style.display = 'block';
+    msgEl.className = 'error-msg';
+    return;
+  }
   if (newPassword !== confirmPassword) { msgEl.textContent = passMsgs.mismatch; msgEl.style.display = 'block'; msgEl.className = 'error-msg'; return; }
 
   try {
