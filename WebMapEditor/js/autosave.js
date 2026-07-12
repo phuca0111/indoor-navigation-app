@@ -318,7 +318,9 @@ function contentFingerprint(data) {
             pois: data.pois || [],
             pathNodes: data.pathNodes || [],
             pathEdges: data.pathEdges || [],
-            qrs: data.qrs || []
+            qrs: data.qrs || [],
+            blocks: data.blocks || [],
+            blockInserts: data.blockInserts || []
         });
     } catch (e) {
         return '';
@@ -334,9 +336,28 @@ function getCanvasContentFingerprint() {
         pois: typeof pois !== 'undefined' ? pois : [],
         pathNodes: typeof pathNodes !== 'undefined' ? pathNodes : [],
         pathEdges: typeof pathEdges !== 'undefined' ? pathEdges : [],
-        qrs: typeof qrs !== 'undefined' ? qrs : []
+        qrs: typeof qrs !== 'undefined' ? qrs : [],
+        blocks: typeof blocks !== 'undefined' ? blocks : [],
+        blockInserts: typeof blockInserts !== 'undefined' ? blockInserts : []
     });
 }
+
+/** Ghi nháp ngay (không đợi dirty delay) — dùng sau Block/Insert. */
+function flushAutosaveNow() {
+    if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
+    if (_autosaveDirtyTimeoutId != null) {
+        clearTimeout(_autosaveDirtyTimeoutId);
+        _autosaveDirtyTimeoutId = null;
+    }
+    _autosaveDirty = true;
+    if (_autosavePaused) {
+        console.warn('[Autosave] flush bỏ qua — đang pause:', _autosavePauseReason);
+        return false;
+    }
+    runAutoSaveTick();
+    return true;
+}
+window.flushAutosaveNow = flushAutosaveNow;
 
 function readAutosaveRaw() {
     syncAutosaveProjectContext();
@@ -448,7 +469,12 @@ function checkAutoSave(opts) {
 
         var draftFp = contentFingerprint(data);
         var canvasFp = getCanvasContentFingerprint();
-        if (draftFp && draftFp === canvasFp) {
+        var draftHasBlocks = (data.blocks && data.blocks.length) || (data.blockInserts && data.blockInserts.length);
+        var canvasHasBlocks = (typeof blockInserts !== 'undefined' && blockInserts.length)
+            || (typeof blocks !== 'undefined' && blocks.length);
+        // Nếu nháp có Block/Insert mà canvas không → luôn khôi phục (tránh mất sau F5)
+        var forceBlockRestore = !!(draftHasBlocks && !canvasHasBlocks);
+        if (draftFp && draftFp === canvasFp && !forceBlockRestore) {
             console.log('[Autosave] Nháp trùng bản đang mở — không cần khôi phục');
             return false;
         }

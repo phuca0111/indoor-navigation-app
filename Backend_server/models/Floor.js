@@ -126,6 +126,7 @@ const floorSchema = new mongoose.Schema({
 
     map_data: {
         scale_ratio: { type: Number, default: 0.5 },
+        map_bearing_offset: { type: Number, default: 0 },
         background_image: { type: String, default: '' },
         rooms: { type: [roomSchema], default: [] },
         doors: { type: [doorSchema], default: [] },
@@ -133,7 +134,11 @@ const floorSchema = new mongoose.Schema({
         nodes: { type: [nodeSchema], default: [] },
         edges: { type: [edgeSchema], default: [] },
         walls: { type: [wallSchema], default: [] },
-        qr_anchors: { type: [qrAnchorSchema], default: [] }
+        qr_anchors: { type: [qrAnchorSchema], default: [] },
+        // WebMapEditor CAD extras (Android bỏ qua)
+        lines: { type: [mongoose.Schema.Types.Mixed], default: [] },
+        blocks: { type: [mongoose.Schema.Types.Mixed], default: [] },
+        blockInserts: { type: [mongoose.Schema.Types.Mixed], default: [] }
     }
 
 }, {

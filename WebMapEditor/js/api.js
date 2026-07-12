@@ -490,13 +490,15 @@ async function saveMapToServer() {
         }
     }
 
-    const mapData = pipelineResult.mapData;
+    const mapData = attachEditorCadExtras(pipelineResult.mapData);
 
     console.log(`📤 SENDING: Đang gửi bản đồ lên Server...`, {
         buildingId: buildingId,
         floor: floor,
         rooms: mapData.rooms.length,
-        nodes: mapData.nodes.length
+        nodes: mapData.nodes.length,
+        blocks: (mapData.blocks || []).length,
+        blockInserts: (mapData.blockInserts || []).length
     });
 
     showLoading('Đang lưu bản đồ lên máy chủ...');
@@ -556,6 +558,8 @@ function clearCanvasData(opts) {
     qrs = [];
     bgImage = null;
     bgImageBase64 = '';
+    blocks = [];
+    blockInserts = [];
 
     // Reset các ID tự tăng
     nextRoomId = 1;
@@ -565,6 +569,8 @@ function clearCanvasData(opts) {
     nextNodeId = 1;
     nextWallId = 1;
     nextLineId = 1;
+    nextBlockDefId = 1;
+    nextBlockInsertId = 1;
 
     // Reset tên bản đồ về mặc định khi tạo mới
     var mapNameInput = document.getElementById('mapName');
@@ -783,6 +789,22 @@ function applyMapData(data) {
     });
     nextLineId = maxLineId + 1;
 
+    // 6c. Block library + inserts (editor local — autosave/export)
+    blocks = Array.isArray(data.blocks) ? data.blocks : [];
+    blockInserts = Array.isArray(data.blockInserts) ? data.blockInserts : [];
+    nextBlockDefId = 1;
+    blocks.forEach(function (b) {
+        var m = String(b && b.id || '').match(/blk_(\d+)/);
+        if (m) {
+            var n = parseInt(m[1], 10);
+            if (n >= nextBlockDefId) nextBlockDefId = n + 1;
+        }
+    });
+    nextBlockInsertId = 1;
+    blockInserts.forEach(function (bi) {
+        if (bi && bi.id && bi.id >= nextBlockInsertId) nextBlockInsertId = bi.id + 1;
+    });
+
     // Phase 1b Layer system: gán layerId mặc định cho dữ liệu legacy
     // (map hiện tại chưa chắc có layerId trong payload publish)
     var defaultLayerId = 'default';
@@ -791,7 +813,7 @@ function applyMapData(data) {
             defaultLayerId = EditorCore.LayerManager.DEFAULT_LAYER_ID;
         }
     } catch (_) { }
-    [rooms, doors, pois, pathNodes, walls, qrs].forEach(function (arr) {
+    [rooms, doors, pois, pathNodes, walls, qrs, blockInserts].forEach(function (arr) {
         if (!Array.isArray(arr)) return;
         arr.forEach(function (o) {
             if (!o || typeof o !== 'object') return;
@@ -823,7 +845,7 @@ function isEditorCorePublishReady() {
 
 /** Inline publish — không phụ thuộc EditorCore (Phần 17.5) */
 function buildPublishPayloadInline() {
-    return {
+    var payload = {
         scale_ratio: (Number.isFinite(metersPerGrid) && metersPerGrid > 0) ? metersPerGrid : 0.5,
         map_bearing_offset: Number.isFinite(window.mapBearingOffset) ? window.mapBearingOffset : 0,
         background_image: bgImageBase64 || '',
@@ -899,4 +921,45 @@ function buildPublishPayloadInline() {
             node_id: q.node_id != null ? q.node_id : null
         }))
     };
+    return attachEditorCadExtras(payload);
 }
+
+/**
+ * Field chỉ editor (Android bỏ qua): Block/Insert + lines — round-trip sau publish/F5.
+ */
+function attachEditorCadExtras(mapData) {
+    if (!mapData || typeof mapData !== 'object') return mapData;
+    mapData.blocks = JSON.parse(JSON.stringify(blocks || []));
+    mapData.blockInserts = (blockInserts || []).filter(function (bi) {
+        return bi && typeof bi === 'object';
+    }).map(function (bi) {
+        return {
+            id: bi.id,
+            blockId: bi.blockId,
+            name: bi.name || 'Insert',
+            x: Math.round(bi.x || 0),
+            y: Math.round(bi.y || 0),
+            rotation: bi.rotation || 0,
+            scale: bi.scale != null ? bi.scale : 1,
+            layerId: bi.layerId || 'default'
+        };
+    });
+    mapData.lines = (lines || []).filter(function (ln) {
+        return ln && typeof ln === 'object';
+    }).map(function (ln) {
+        return {
+            id: ln.id,
+            type: ln.type || 'segment',
+            color: ln.color || '#3b82f6',
+            lineWeight: ln.lineWeight || 2,
+            layerId: ln.layerId || 'default',
+            points: Array.isArray(ln.points)
+                ? ln.points.map(function (p) {
+                    return { x: Math.round(p.x || 0), y: Math.round(p.y || 0) };
+                })
+                : []
+        };
+    });
+    return mapData;
+}
+window.attachEditorCadExtras = attachEditorCadExtras;

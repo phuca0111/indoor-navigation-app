@@ -20,9 +20,13 @@
                 return 0.5;
             })(),
             mapBearingOffset: Number.isFinite(root.mapBearingOffset) ? root.mapBearingOffset : 0,
-            backgroundImage: (root.EditorCore && root.EditorCore.AssetManager
-                ? root.EditorCore.AssetManager.getBackgroundDataUrl()
-                : root.bgImageBase64) || '',
+            backgroundImage: (function () {
+                var am = root.EditorCore && root.EditorCore.AssetManager;
+                if (am && typeof am.getBackgroundDataUrl === 'function') {
+                    return am.getBackgroundDataUrl() || '';
+                }
+                return root.bgImageBase64 || '';
+            })(),
             rooms: typeof rooms !== 'undefined' ? rooms.slice() : [],
             doors: typeof doors !== 'undefined' ? doors.slice() : [],
             pois: typeof pois !== 'undefined' ? pois.slice() : [],

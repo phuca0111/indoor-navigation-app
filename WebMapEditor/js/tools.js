@@ -5,9 +5,30 @@
 var toolNames = {
     'select': 'Chọn', 'room': 'Phòng', 'circle': 'Tròn',
     'polygon': 'Đa giác', 'door': 'Cửa', 'wall': 'Tường',
-    'line': 'Đoạn thẳng',
-    'poi': 'Điểm POI', 'qr': 'Mốc QR', 'path': 'Đường đi', 'ruler': 'Thước đo'
+    'line': 'Đoạn thẳng', 'mline': 'Tường dày',
+    'poi': 'Điểm POI', 'qr': 'Mốc QR', 'path': 'Đường đi', 'ruler': 'Thước đo',
+    'move': 'Move chính xác', 'copy': 'Sao chép', 'rotate': 'Xoay CAD', 'scale': 'Tỷ lệ CAD',
+    'mirror': 'Lật trục', 'trim': 'Cắt xén', 'extend': 'Kéo dài',
+    'pedit': 'Sửa đỉnh', 'array': 'Hàng loạt', 'matchprop': 'Matchprop',
+    'block': 'Block', 'insert': 'Insert'
 };
+
+function isModifyTool(tool) {
+    if (window.EditorCore && EditorCore.ModifySession && EditorCore.ModifySession.isModifyTool) {
+        return EditorCore.ModifySession.isModifyTool(tool);
+    }
+    return ['move', 'copy', 'rotate', 'scale', 'mirror', 'trim', 'extend',
+        'pedit', 'mline', 'array', 'matchprop'].indexOf(tool) >= 0;
+}
+
+function updateModifyHint() {
+    var hint = document.getElementById('commandHint');
+    if (!hint || !window.EditorCore || !EditorCore.ModifySession) return;
+    var snap = EditorCore.ModifySession.getSnapshot();
+    if (snap && snap.message) {
+        hint.textContent = snap.message;
+    }
+}
 
 function isWallPolyToolActive() {
     return currentTool === 'wall'
@@ -22,6 +43,17 @@ function updateCursor() {
 
 /** Hủy thao tác đang vẽ (Escape / CommandManager.cancel). */
 function cancelActiveCommand() {
+    if (typeof cancelPendingInsert === 'function' && cancelPendingInsert()) {
+        if (typeof selectTool === 'function') selectTool('select');
+        draw();
+        return;
+    }
+    if (window.EditorCore && EditorCore.ModifySession && EditorCore.ModifySession.getMode()) {
+        EditorCore.ModifySession.cancel();
+        updateModifyHint();
+        draw();
+        return;
+    }
     if (isDrawingPolygon) {
         polygonPoints = [];
         isDrawingPolygon = false;
@@ -64,6 +96,29 @@ function selectTool(tool) {
     // Alias: polyline → wall (đã hợp nhất)
     if (tool === 'polyline') tool = 'wall';
 
+    // Block: tạo ngay từ selection rồi về Select
+    if (tool === 'block') {
+        if (typeof createBlockFromSelection === 'function') createBlockFromSelection();
+        tool = 'select';
+    }
+
+    // Insert: chọn block rồi chờ click
+    if (tool === 'insert') {
+        currentTool = 'insert';
+        document.querySelectorAll('.tool-btn').forEach(function (b) {
+            b.classList.remove('active');
+        });
+        var insBtn = document.getElementById('btn-insert');
+        if (insBtn) insBtn.classList.add('active');
+        if (currentToolStatus) currentToolStatus.textContent = toolNames.insert || 'Insert';
+        updateCursor();
+        if (typeof beginInsertTool === 'function') beginInsertTool();
+        draw();
+        return;
+    }
+
+    if (typeof cancelPendingInsert === 'function') cancelPendingInsert();
+
     if (isDrawingPolygon && tool !== 'polygon') {
         if (polygonPoints.length >= 3) {
             var newRoom = createPolygonRoom(polygonPoints);
@@ -86,7 +141,14 @@ function selectTool(tool) {
         if (currentTool === 'wall' && tool !== 'wall') {
             EditorCore.PolylineTool.deactivate({});
         }
-        if (tool === 'wall' && currentTool !== 'wall') {
+        // W lần 2 khi đang wall = reset chuỗi tường (giống Esc rồi W lại)
+        if (tool === 'wall' && currentTool === 'wall') {
+            EditorCore.PolylineTool.cancel({});
+            EditorCore.PolylineTool.activate({});
+            if (typeof showToast === 'function') {
+                showToast('Đã reset chuỗi tường (W×2)', 'success');
+            }
+        } else if (tool === 'wall' && currentTool !== 'wall') {
             EditorCore.PolylineTool.activate({});
         }
     }
@@ -97,6 +159,22 @@ function selectTool(tool) {
         }
         if (tool === 'line' && currentTool !== 'line') {
             EditorCore.LineTool.activate({});
+        }
+    }
+
+    // Phase 2 ModifySession
+    if (window.EditorCore && EditorCore.ModifySession) {
+        var MS = EditorCore.ModifySession;
+        if (isModifyTool(currentTool) && !isModifyTool(tool)) {
+            MS.deactivate();
+        }
+        if (isModifyTool(tool)) {
+            MS.activate(tool);
+            updateModifyHint();
+            if (typeof showToast === 'function') {
+                var snap0 = MS.getSnapshot();
+                if (snap0 && snap0.message) showToast(snap0.message, 'success');
+            }
         }
     }
 
@@ -172,8 +250,13 @@ document.addEventListener('keydown', function (e) {
         case 'q': runToolShortcut('q'); break;
         case 'n': runToolShortcut('n'); break;
         case 's': runToolShortcut('s'); break;
+        case 'm':
+            // M = Move (Phase 2); không đụng path (N)
+            runToolShortcut('m');
+            break;
         case 'b':
             // Shift+B (khi đang vẽ wall): ép ngang/dọc theo điểm neo trước.
+            // B (không Shift): Block
             if (e.shiftKey && isWallPolyToolActive() &&
                 EditorCore &&
                 EditorCore.PolylineTool &&
@@ -182,10 +265,23 @@ document.addEventListener('keydown', function (e) {
                 EditorCore.PolylineTool.toggleOrthoLock();
                 updatePropertiesPanel();
                 draw();
+            } else if (!e.shiftKey) {
+                runToolShortcut('b');
             }
+            break;
+        case 'i':
+            runToolShortcut('i');
             break;
         case 'delete':
         case 'backspace':
+            if (window.EditorCore && EditorCore.ModifySession
+                && EditorCore.ModifySession.getMode() === 'pedit') {
+                e.preventDefault();
+                EditorCore.ModifySession.onKeyDown(e.key === 'Backspace' ? 'Backspace' : 'Delete');
+                updateModifyHint();
+                draw();
+                break;
+            }
             if (isWallPolyToolActive()) {
                 e.preventDefault();
                 EditorCore.PolylineTool.onKeyDown({ key: e.key });
@@ -201,6 +297,14 @@ document.addEventListener('keydown', function (e) {
                 && window.DynamicInputUI.isActive()) {
                 e.preventDefault();
                 window.DynamicInputUI.submit();
+                break;
+            }
+            if (window.EditorCore && EditorCore.ModifySession
+                && EditorCore.ModifySession.getMode() === 'mline') {
+                e.preventDefault();
+                EditorCore.ModifySession.onKeyDown('Enter');
+                updateModifyHint();
+                draw();
                 break;
             }
             if (currentTool === 'wall' && typeof stopWallChain === 'function') {
@@ -234,7 +338,7 @@ function handleWallVertex(world, snapOpts) {
             wallPreviewEnd = p;
         } else {
             saveState();
-            var wall = createWallSegment(wallStartPoint, p, { thickness: 4, is_outer: false });
+            var wall = createWallSegment(wallStartPoint, p, { thickness: window.defaultWallThickness || 4, is_outer: false });
             wallStartPoint = p;
             wallPreviewEnd = p;
             if (wall) {
@@ -263,7 +367,7 @@ function handleWallVertex(world, snapOpts) {
         var a = pts[pts.length - 2];
         var b = pts[pts.length - 1];
         saveState();
-        var created = createWallSegment(a, b, { thickness: 4, is_outer: false });
+        var created = createWallSegment(a, b, { thickness: window.defaultWallThickness || 4, is_outer: false });
         if (created) {
             setEditorSelection('wall', created, { skipUi: true });
             updatePropertiesPanel();

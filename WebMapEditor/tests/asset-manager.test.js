@@ -37,4 +37,13 @@ describe('AssetManager', function () {
         AssetManager.clear();
         expect(AssetManager.list()).toHaveLength(0);
     });
+
+    it('getBackgroundDataUrl / setBackgroundFromDataUrl', function () {
+        globalThis.bgImageBase64 = '';
+        AssetManager.setBackgroundFromDataUrl('data:image/png;base64,abc');
+        expect(AssetManager.getBackgroundDataUrl()).toContain('abc');
+        expect(globalThis.bgImageBase64).toContain('abc');
+        AssetManager.clearBackground();
+        expect(AssetManager.getBackgroundDataUrl()).toBe('');
+    });
 });

@@ -123,6 +123,11 @@ function draw() {
             });
         }
 
+        // 3.3 Block Inserts
+        if (typeof drawBlockInserts === 'function') {
+            drawBlockInserts();
+        }
+
         // 4. Cửa
         doors.forEach(function (door) {
             if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(door)) return;
@@ -170,6 +175,12 @@ function draw() {
         // 8.2 Preview đoạn thẳng (LineTool V4)
         if (currentTool === 'line' && window.EditorCore && EditorCore.LineTool) {
             drawLineToolPreview();
+        }
+
+        // 8.3 Preview Phase 2 ModifySession
+        if (typeof isModifyTool === 'function' && isModifyTool(currentTool)
+            && window.EditorCore && EditorCore.ModifySession) {
+            drawModifyPreview();
         }
 
         // 9. Preview thước đo
@@ -528,6 +539,79 @@ function drawLineToolPreview() {
     }
 }
 
+/** Preview Phase 2: Move/Copy/Mirror/MLine rubber-band */
+function drawModifyPreview() {
+    if (!EditorCore.ModifySession) return;
+    var snap = EditorCore.ModifySession.getSnapshot();
+    if (!snap) return;
+    var prev = snap.preview;
+    ctx.save();
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 1.5 / zoom;
+    ctx.setLineDash([6 / zoom, 4 / zoom]);
+    if (prev && prev.from && prev.to) {
+        ctx.beginPath();
+        ctx.moveTo(prev.from.x, prev.from.y);
+        ctx.lineTo(prev.to.x, prev.to.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#f59e0b';
+        ctx.beginPath();
+        ctx.arc(prev.from.x, prev.from.y, 3 / zoom, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(prev.to.x, prev.to.y, 2.5 / zoom, 0, Math.PI * 2);
+        ctx.fill();
+    } else if (prev && prev.mline && prev.mline.length >= 1) {
+        var pts = prev.mline;
+        var half = (prev.thickness || 12) / 2;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // biên offset preview
+        if (EditorCore.GeometryEngine && EditorCore.GeometryEngine.offsetSegment && pts.length >= 2) {
+            var a = pts[pts.length - 2], b = pts[pts.length - 1];
+            var off = EditorCore.GeometryEngine.offsetSegment(a, b, half);
+            if (off) {
+                ctx.strokeStyle = 'rgba(245, 158, 11, 0.55)';
+                ctx.beginPath();
+                ctx.moveTo(off.left[0].x, off.left[0].y);
+                ctx.lineTo(off.left[1].x, off.left[1].y);
+                ctx.moveTo(off.right[0].x, off.right[0].y);
+                ctx.lineTo(off.right[1].x, off.right[1].y);
+                ctx.stroke();
+            }
+        }
+    }
+        // highlight cutting edge
+    if (snap.cutting && snap.cutting.data && snap.cutting.data.points) {
+        var cpts = snap.cutting.data.points;
+        var si = snap.cutting.segIndex;
+        if (cpts[si] && cpts[si + 1]) {
+            ctx.setLineDash([]);
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 3 / zoom;
+            ctx.beginPath();
+            ctx.moveTo(cpts[si].x, cpts[si].y);
+            ctx.lineTo(cpts[si + 1].x, cpts[si + 1].y);
+            ctx.stroke();
+        }
+    }
+    // Preview kết quả Trim/Extend
+    if (prev && prev.trimResult) {
+        ctx.setLineDash([4 / zoom, 3 / zoom]);
+        ctx.strokeStyle = '#22c55e';
+        ctx.lineWidth = 2.5 / zoom;
+        ctx.beginPath();
+        ctx.moveTo(prev.trimResult.a.x, prev.trimResult.a.y);
+        ctx.lineTo(prev.trimResult.b.x, prev.trimResult.b.y);
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
 // --- Vẽ phòng chữ nhật ---
 function drawRectRoom(room, isSelected) {
     ctx.globalAlpha = 0.5; // Thêm độ trong suốt
@@ -608,6 +692,7 @@ function drawPolygonRoom(room, isSelected) {
             ctx.fillStyle = '#3498db';
             ctx.fillRect(room.points[i].x - size / 2, room.points[i].y - size / 2, size, size);
         }
+        drawRoomRotateHandle(room);
     }
 }
 
@@ -842,15 +927,66 @@ function drawRulerPreview() {
 
 // === RESIZE HANDLES ===
 function drawResizeHandles(room) {
-    if (room.shape === 'polygon') return; // Polygon dùng đỉnh riêng
-    var handles = getHandlePositions(room);
-    var size = HANDLE_SIZE / zoom;
-    for (var name in handles) {
-        var pos = handles[name];
-        ctx.fillStyle = 'white';
-        ctx.fillRect(pos.x - size / 2, pos.y - size / 2, size, size);
-        ctx.strokeStyle = '#3498db';
-        ctx.lineWidth = 1.5 / zoom;
-        ctx.strokeRect(pos.x - size / 2, pos.y - size / 2, size, size);
+    if (room.shape !== 'polygon') {
+        var handles = getHandlePositions(room);
+        var size = HANDLE_SIZE / zoom;
+        for (var name in handles) {
+            var pos = handles[name];
+            ctx.fillStyle = 'white';
+            ctx.fillRect(pos.x - size / 2, pos.y - size / 2, size, size);
+            ctx.strokeStyle = '#3498db';
+            ctx.lineWidth = 1.5 / zoom;
+            ctx.strokeRect(pos.x - size / 2, pos.y - size / 2, size, size);
+        }
     }
+    drawRoomRotateHandle(room);
+}
+
+/** Icon xoay phía trên tâm phòng (giống cửa) */
+function drawRoomRotateHandle(room) {
+    if (typeof getRoomRotateHandle !== 'function') return;
+    var h = getRoomRotateHandle(room);
+    var c = h.center;
+    ctx.save();
+    ctx.strokeStyle = '#3498db';
+    ctx.lineWidth = 1.5 / zoom;
+    ctx.beginPath();
+    ctx.moveTo(c.x, c.y);
+    ctx.lineTo(h.x, h.y);
+    ctx.stroke();
+    ctx.fillStyle = '#3498db';
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, 5 / zoom, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1 / zoom;
+    ctx.stroke();
+
+    // Hiện góc: khi đang kéo xoay HOẶC user bật «Hiện góc trên map»
+    var showDeg = window.isRotatingRoom || window.showRoomAngleLabels;
+    var deg = null;
+    if (window.isRotatingRoom && window.liveRoomRotateDeg != null) {
+        deg = window.liveRoomRotateDeg;
+    } else if (showDeg) {
+        if (typeof room.rotationDeg === 'number') deg = room.rotationDeg;
+        else if (room.shape === 'polygon' && room.points && room.points.length >= 2) {
+            deg = Math.atan2(room.points[1].y - room.points[0].y,
+                room.points[1].x - room.points[0].x) * 180 / Math.PI;
+        } else deg = 0;
+    }
+    if (showDeg && deg != null) {
+        deg = ((deg % 360) + 360) % 360;
+        var label = Math.round(deg * 10) / 10 + '\u00B0';
+        var fontPx = 12 / zoom;
+        ctx.font = 'bold ' + fontPx + 'px sans-serif';
+        var tw = ctx.measureText(label).width;
+        var lx = h.x - tw / 2;
+        var ly = h.y - 10 / zoom;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+        ctx.fillRect(lx - 3 / zoom, ly - fontPx, tw + 6 / zoom, fontPx + 5 / zoom);
+        ctx.fillStyle = '#fbbf24';
+        ctx.textBaseline = 'top';
+        ctx.fillText(label, lx, ly - fontPx + 2 / zoom);
+    }
+    ctx.restore();
 }

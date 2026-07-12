@@ -21,6 +21,9 @@ function createLineSegment(start, end, options) {
         ]
     };
     lines.push(line);
+    if (typeof EditorCore !== 'undefined' && EditorCore.ObjectTransform) {
+        EditorCore.ObjectTransform.ensureOriginalGeometry('line', line);
+    }
     if (typeof syncSpatialIndexFromLegacy === 'function') syncSpatialIndexFromLegacy();
     return line;
 }

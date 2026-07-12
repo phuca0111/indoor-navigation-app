@@ -25,7 +25,22 @@
         poi: 'poi', p: 'poi',
         qr: 'qr', q: 'qr',
         path: 'path', n: 'path',
-        ruler: 'ruler', s: 'ruler', di: 'ruler'
+        ruler: 'ruler', s: 'ruler', di: 'ruler',
+        // Phase 2 Editing
+        move: 'move', m: 'move',
+        copy: 'copy', co: 'copy', cp: 'copy',
+        rotate: 'rotate', ro: 'rotate',
+        scale: 'scale', sc: 'scale',
+        mirror: 'mirror', mi: 'mirror',
+        trim: 'trim', tr: 'trim',
+        extend: 'extend', ex: 'extend',
+        pedit: 'pedit', pe: 'pedit',
+        mline: 'mline', ml: 'mline',
+        array: 'array', ar: 'array',
+        matchprop: 'matchprop', ma: 'matchprop', match: 'matchprop',
+        // Block / Insert
+        block: 'block', b: 'block',
+        insert: 'insert', i: 'insert'
     };
 
     function createToolCommandManager(options) {

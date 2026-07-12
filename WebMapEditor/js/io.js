@@ -58,6 +58,20 @@ function getMapSnapshot() {
             });
         }),
         qrs: qrs.map(q => withLayer(q, { id: q.id, name: q.name, serial: q.serial, x: Math.round(q.x), y: Math.round(q.y), node_id: q.node_id != null ? q.node_id : null })),
+        blocks: (blocks || []).map(function (b) {
+            return JSON.parse(JSON.stringify(b));
+        }),
+        blockInserts: (blockInserts || []).map(function (bi) {
+            return withLayer(bi, {
+                id: bi.id,
+                blockId: bi.blockId,
+                name: bi.name,
+                x: Math.round(bi.x),
+                y: Math.round(bi.y),
+                rotation: bi.rotation || 0,
+                scale: bi.scale != null ? bi.scale : 1
+            });
+        }),
         // Ảnh nền
         bgX: window.bgX || 0,
         bgY: window.bgY || 0,
@@ -99,6 +113,22 @@ function applyMapSnapshot(data) {
 
     qrs = data.qrs || [];
     nextQrId = 1; qrs.forEach(q => { if (q.id >= nextQrId) nextQrId = q.id + 1; });
+
+    // Block library + inserts (luôn gán từ snapshot)
+    blocks = Array.isArray(data.blocks) ? data.blocks : [];
+    blockInserts = Array.isArray(data.blockInserts) ? data.blockInserts : [];
+    nextBlockDefId = 1;
+    blocks.forEach(function (b) {
+        var m = String(b.id || '').match(/blk_(\d+)/);
+        if (m) {
+            var n = parseInt(m[1], 10);
+            if (n >= nextBlockDefId) nextBlockDefId = n + 1;
+        }
+    });
+    nextBlockInsertId = 1;
+    blockInserts.forEach(function (bi) {
+        if (bi.id && bi.id >= nextBlockInsertId) nextBlockInsertId = bi.id + 1;
+    });
 
     if (typeof applyLayersSnapshot === 'function') {
         applyLayersSnapshot(data.layers, data.activeLayerId);
@@ -217,6 +247,21 @@ function exportJSON() {
                 serial: q.serial,
                 x: Math.round(q.x),
                 y: Math.round(q.y)
+            };
+        }),
+        blocks: (typeof blocks !== 'undefined' ? blocks : []).map(function (b) {
+            return JSON.parse(JSON.stringify(b));
+        }),
+        blockInserts: (typeof blockInserts !== 'undefined' ? blockInserts : []).map(function (bi) {
+            return {
+                id: bi.id,
+                blockId: bi.blockId,
+                name: bi.name,
+                x: Math.round(bi.x),
+                y: Math.round(bi.y),
+                rotation: bi.rotation || 0,
+                scale: bi.scale != null ? bi.scale : 1,
+                layerId: bi.layerId || 'default'
             };
         }),
         bgX: window.bgX,

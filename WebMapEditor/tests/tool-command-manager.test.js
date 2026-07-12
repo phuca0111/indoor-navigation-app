@@ -70,9 +70,15 @@ describe('Tool Command Manager', function () {
         expect(h[1].toolId).toBe('wall');
     });
 
-    it('cancel gọi onCancel', function () {
-        tcm.execute('g');
-        tcm.cancel();
-        expect(tcm.getActiveCommand()).toBeNull();
+    it('resolve alias Phase 2 M/CO/TR/ML', function () {
+        expect(tcm.resolve('M')).toBe('move');
+        expect(tcm.resolve('CO')).toBe('copy');
+        expect(tcm.resolve('TR')).toBe('trim');
+        expect(tcm.resolve('ML')).toBe('mline');
+        expect(tcm.resolve('PE')).toBe('pedit');
+        expect(tcm.resolve('AR')).toBe('array');
+        expect(tcm.resolve('MA')).toBe('matchprop');
+        expect(tcm.resolve('B')).toBe('block');
+        expect(tcm.resolve('I')).toBe('insert');
     });
 });

@@ -55,12 +55,42 @@
         Object.keys(_registry).forEach(unregister);
     }
 
+    /** Background map — đồng bộ với window.bgImageBase64 (legacy) */
+    function getBackgroundDataUrl() {
+        if (typeof globalThis !== 'undefined' && globalThis.bgImageBase64) {
+            return globalThis.bgImageBase64;
+        }
+        if (typeof window !== 'undefined' && window.bgImageBase64) {
+            return window.bgImageBase64;
+        }
+        var bg = get('background');
+        return (bg && (bg.data || bg.url)) || '';
+    }
+
+    function setBackgroundFromDataUrl(dataUrl) {
+        if (typeof globalThis !== 'undefined') globalThis.bgImageBase64 = dataUrl || '';
+        if (typeof window !== 'undefined') window.bgImageBase64 = dataUrl || '';
+        if (dataUrl) {
+            register('background', { type: 'image', data: dataUrl, url: dataUrl });
+        } else {
+            unregister('background');
+        }
+        return true;
+    }
+
+    function clearBackground() {
+        return setBackgroundFromDataUrl('');
+    }
+
     return {
         register: register,
         get: get,
         list: list,
         unregister: unregister,
         createBlobUrl: createBlobUrl,
-        clear: clear
+        clear: clear,
+        getBackgroundDataUrl: getBackgroundDataUrl,
+        setBackgroundFromDataUrl: setBackgroundFromDataUrl,
+        clearBackground: clearBackground
     };
 });

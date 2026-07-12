@@ -27,6 +27,9 @@ function createPoi(x, y) {
         type: poiTypes[0].name
     };
     pois.push(poi);
+    if (typeof EditorCore !== 'undefined' && EditorCore.ObjectTransform) {
+        EditorCore.ObjectTransform.ensureOriginalGeometry('poi', poi);
+    }
     if (typeof syncSpatialIndexFromLegacy === 'function') syncSpatialIndexFromLegacy();
     return poi;
 }

@@ -84,7 +84,13 @@ const mapDataSchema = new mongoose.Schema({
         walls: [mongoose.Schema.Types.Mixed],
 
         // 4h: Mảng các điểm dán mã QR
-        qr_anchors: [mongoose.Schema.Types.Mixed]
+        qr_anchors: [mongoose.Schema.Types.Mixed],
+
+        // 4i: WebMapEditor CAD extras (Android bỏ qua)
+        map_bearing_offset: { type: Number, default: 0 },
+        lines: [mongoose.Schema.Types.Mixed],
+        blocks: [mongoose.Schema.Types.Mixed],
+        blockInserts: [mongoose.Schema.Types.Mixed]
     },
 
     // Cột 5: Ngày giờ Admin bấm nút Publish

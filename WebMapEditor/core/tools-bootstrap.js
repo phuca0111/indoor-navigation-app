@@ -20,7 +20,21 @@
         { id: 'poi', name: 'POI', shortcut: 'p', category: 'nav' },
         { id: 'qr', name: 'QR Code', shortcut: 'q', category: 'nav' },
         { id: 'path', name: 'Đường đi', shortcut: 'n', category: 'nav' },
-        { id: 'ruler', name: 'Thước đo', shortcut: 's', category: 'annotate', buttonId: null }
+        { id: 'ruler', name: 'Thước đo', shortcut: 's', category: 'annotate', buttonId: null },
+        // Phase 2 Editing
+        { id: 'move', name: 'Di chuyển', shortcut: 'm', category: 'modify', buttonId: 'btn-move' },
+        { id: 'copy', name: 'Sao chép', shortcut: 'co', category: 'modify', buttonId: 'btn-copy' },
+        { id: 'rotate', name: 'Xoay', shortcut: 'ro', category: 'modify', buttonId: 'btn-rotate' },
+        { id: 'scale', name: 'Tỷ lệ', shortcut: 'sc', category: 'modify', buttonId: 'btn-scale' },
+        { id: 'mirror', name: 'Lật gương', shortcut: 'mi', category: 'modify', buttonId: 'btn-mirror' },
+        { id: 'trim', name: 'Cắt xén', shortcut: 'tr', category: 'modify', buttonId: 'btn-trim' },
+        { id: 'extend', name: 'Kéo dài', shortcut: 'ex', category: 'modify', buttonId: 'btn-extend' },
+        { id: 'pedit', name: 'Sửa polyline', shortcut: 'pe', category: 'modify', buttonId: 'btn-pedit' },
+        { id: 'mline', name: 'Tường dày', shortcut: 'ml', category: 'draw', buttonId: 'btn-mline' },
+        { id: 'array', name: 'Hàng loạt', shortcut: 'ar', category: 'modify', buttonId: 'btn-array' },
+        { id: 'matchprop', name: 'Sao thuộc tính', shortcut: 'ma', category: 'modify', buttonId: 'btn-matchprop' },
+        { id: 'block', name: 'Block', shortcut: 'b', category: 'block', buttonId: 'btn-block' },
+        { id: 'insert', name: 'Insert', shortcut: 'i', category: 'block', buttonId: 'btn-insert' }
     ];
 
     defs.forEach(function (d) {

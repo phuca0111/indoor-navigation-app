@@ -33,6 +33,10 @@
     function runExportPipeline(options) {
         options = options || {};
         var mapData = buildMapDataForPublish();
+        // Gắn Block/Insert/lines dù build qua Map Adapter (Document chưa có field này)
+        if (typeof attachEditorCadExtras === 'function') {
+            mapData = attachEditorCadExtras(mapData);
+        }
 
         if (root.EditorCore && typeof root.EditorCore.assertPublishSchema === 'function') {
             root.EditorCore.assertPublishSchema(mapData);

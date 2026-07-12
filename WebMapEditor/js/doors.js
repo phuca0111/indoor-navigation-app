@@ -19,6 +19,9 @@ function createDoor(x, y) {
         rotation: 0          // 0 = ngang, 90 = dọc
     };
     doors.push(door);
+    if (typeof EditorCore !== 'undefined' && EditorCore.ObjectTransform) {
+        EditorCore.ObjectTransform.ensureOriginalGeometry('door', door);
+    }
     if (typeof syncSpatialIndexFromLegacy === 'function') syncSpatialIndexFromLegacy();
     return door;
 }
