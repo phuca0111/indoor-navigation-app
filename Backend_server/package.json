@@ -29,6 +29,7 @@
     "test:phase5-7": "jest test/integration/phase5_7Payment.test.js --verbose --runInBand",
     "test:phase5-8": "jest test/integration/phase5_8TptpSandbox.test.js --verbose --runInBand",
     "test:phase5": "jest test/unit/planQuota.test.js test/unit/overQuotaLock.test.js test/integration/phase5_1PlanQuota.test.js test/integration/phase5_3OverQuotaLock.test.js test/integration/phase5_6Subscription.test.js test/integration/phase5_7Payment.test.js test/integration/phase5_8TptpSandbox.test.js --verbose --runInBand",
+    "test:phase6": "jest test/integration/phase6Analytics.test.js --verbose --runInBand",
     "start": "node server.js",
     "migrate:org": "node scripts/migrate-organization-legacy.js",
     "verify:org": "node scripts/verify-org-migration.js"

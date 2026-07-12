@@ -1932,3 +1932,279 @@ body {
   gap: 8px;
 }
 
+/* ===== Phase 6 — Analytics ===== */
+.analytics-tab-section {
+  padding: 8px 0 24px;
+}
+
+.analytics-header-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.analytics-tab-intro {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #64748b;
+  max-width: 520px;
+  line-height: 1.45;
+}
+
+.analytics-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.analytics-loading,
+.analytics-error,
+.analytics-empty {
+  margin: 8px 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.analytics-error {
+  color: #b91c1c;
+}
+
+.analytics-summary-meta {
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.analytics-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.analytics-summary-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 14px 16px;
+}
+
+.analytics-summary-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.analytics-summary-label {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.analytics-card-login { border-left: 3px solid #0ea5e9; }
+.analytics-card-publish { border-left: 3px solid #10b981; }
+.analytics-card-invoice { border-left: 3px solid #f59e0b; }
+.analytics-card-amount { border-left: 3px solid #6366f1; }
+
+.analytics-charts-grid,
+.analytics-bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.analytics-chart-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  padding: 14px 16px;
+}
+
+.analytics-chart-card h4 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #334155;
+}
+
+.analytics-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  min-height: 140px;
+  height: 160px;
+  padding-top: 8px;
+}
+
+.analytics-bar-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+}
+
+.analytics-bar-track {
+  flex: 1;
+  width: 100%;
+  max-width: 18px;
+  display: flex;
+  align-items: flex-end;
+  background: #f1f5f9;
+  border-radius: 4px 4px 0 0;
+  overflow: hidden;
+}
+
+.analytics-bar-fill {
+  width: 100%;
+  min-height: 0;
+  background: linear-gradient(180deg, #38bdf8, #0284c7);
+  border-radius: 4px 4px 0 0;
+  transition: height 0.2s ease;
+}
+
+.analytics-bar-label {
+  margin-top: 4px;
+  font-size: 9px;
+  color: #94a3b8;
+  white-space: nowrap;
+  transform: rotate(-35deg);
+  transform-origin: top center;
+  height: 18px;
+}
+
+.analytics-bar-label-spacer {
+  visibility: hidden;
+}
+
+.analytics-plan-row {
+  margin-bottom: 10px;
+}
+
+.analytics-plan-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 4px;
+  color: #475569;
+}
+
+.analytics-plan-bar {
+  height: 10px;
+  background: #f1f5f9;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.analytics-plan-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.analytics-plan-fill.plan-free { background: #94a3b8; }
+.analytics-plan-fill.plan-pro { background: #0ea5e9; }
+.analytics-plan-fill.plan-ent { background: #6366f1; }
+
+.analytics-paid-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.analytics-paid-table th,
+.analytics-paid-table td {
+  text-align: left;
+  padding: 8px 6px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.analytics-paid-table th {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.analytics-alert-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.analytics-alert-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.analytics-alert-item.severity-warn {
+  border-color: #fcd34d;
+  background: #fffbeb;
+}
+
+.analytics-alert-item.severity-danger {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.analytics-alert-item.severity-info {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.analytics-alert-type {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #64748b;
+  min-width: 88px;
+}
+
+.analytics-alert-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: #334155;
+}
+
+.analytics-alerts-ok {
+  color: #059669;
+}
+
+.analytics-billing-hint {
+  margin: 4px 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: #eff6ff;
+}
+
+.analytics-billing-hint-text {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #334155;
+  line-height: 1.45;
+}
+
+.analytics-billing-hint-btn {
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .analytics-summary-grid,
+  .analytics-charts-grid,
+  .analytics-bottom-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

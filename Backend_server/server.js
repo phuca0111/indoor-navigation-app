@@ -95,6 +95,7 @@ const billingRoutes = require('./routes/billingRoutes');
 const webhookRoutes = require('./routes/webhookRoutes');
 const tptpPayRoutes = require('./routes/tptpPayRoutes');
 const tptpBankRoutes = require('./routes/tptpBankRoutes');
+const analyticsRoutes = require('./routes/analyticsRoutes');
 
 app.use('/api/auth',          authRoutes);
 app.use('/api/buildings',     buildingRoutes);
@@ -110,6 +111,7 @@ app.use('/api/billing', billingRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/tptp-pay', tptpPayRoutes);
 app.use('/api/tptp-bank', tptpBankRoutes);
+app.use('/api/analytics', analyticsRoutes);
 app.use('/tptp-pay', tptpPayRoutes);
 
 // Export app cho testing

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Quản Lý Tòa Nhà</title>
-    <link rel="stylesheet" href="css/admin.css?v=20260708p58a">
+    <link rel="stylesheet" href="css/admin.css?v=20260712p6b">
 </head>
 <body>
     <nav class="navbar">
@@ -41,6 +41,7 @@
             <button class="tab-btn active" onclick="switchTab('buildings')">🏢 Tòa Nhà</button>
             <button class="tab-btn super-admin-only" onclick="switchTab('organizations')">🏛️ Tổ Chức</button>
             <button class="tab-btn billing-tab-btn" onclick="switchTab('billing')">💳 Gói & Thanh toán</button>
+            <button class="tab-btn analytics-tab-btn" onclick="switchTab('analytics')">📊 Analytics</button>
             <button class="tab-btn super-admin-only" onclick="switchTab('registrations')">📝 Hồ Sơ ĐK</button>
             <button class="tab-btn" onclick="switchTab('users')">👑 Tài Khoản</button>
             <button class="tab-btn" onclick="switchTab('logs')">📋 Lịch Sử Thao Tác</button>
@@ -336,7 +337,7 @@
   </div>
 </div>
 
-<!-- ===== TAB: BILLING / SUBSCRIPTION (chỉ Super Admin) ===== -->
+<!-- ===== TAB: BILLING / SUBSCRIPTION ===== -->
 <div id="tab-billing" class="tab-content" style="display:none;">
   <div class="admin-section billing-tab-section">
     <div class="section-header">
@@ -354,6 +355,53 @@
     </div>
     <div id="billingTabBody" class="billing-tab-body">
       <p class="billing-tab-empty">Chọn một tổ chức để xem và quản lý gói đăng ký.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: ANALYTICS (Phase 6) ===== -->
+<div id="tab-analytics" class="tab-content" style="display:none;">
+  <div class="admin-section analytics-tab-section">
+    <div class="section-header analytics-header-row">
+      <div>
+        <h3>📊 Analytics</h3>
+        <p class="analytics-tab-intro" id="analyticsIntro">Xu hướng hoạt động và cảnh báo vận hành theo thời gian.</p>
+      </div>
+      <div class="analytics-toolbar">
+        <label class="billing-field-label">Khoảng thời gian</label>
+        <select id="analyticsRangeSelect" onchange="loadAnalyticsTab()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
+          <option value="7d">7 ngày</option>
+          <option value="30d" selected>30 ngày</option>
+          <option value="90d">90 ngày</option>
+        </select>
+        <button type="button" class="btn-edit" onclick="loadAnalyticsTab()">Làm mới</button>
+      </div>
+    </div>
+    <div id="analyticsSummaryCards" class="analytics-summary-cards"></div>
+    <div class="analytics-charts-grid">
+      <div class="analytics-chart-card">
+        <h4>Đăng nhập theo ngày</h4>
+        <div id="analyticsLoginChart" class="analytics-bar-chart"></div>
+      </div>
+      <div class="analytics-chart-card">
+        <h4>Xuất bản bản đồ theo ngày</h4>
+        <div id="analyticsPublishChart" class="analytics-bar-chart"></div>
+      </div>
+    </div>
+    <div class="analytics-bottom-grid">
+      <div class="analytics-chart-card">
+        <h4>Phân bố gói</h4>
+        <div id="analyticsPlanDist" class="analytics-plan-dist"></div>
+      </div>
+      <div class="analytics-chart-card">
+        <h4 id="analyticsPaidMonthTitle">Doanh thu PAID theo tháng</h4>
+        <div id="analyticsPaidMonth" class="analytics-paid-month"></div>
+      </div>
+    </div>
+    <div id="analyticsBillingHint" class="analytics-billing-hint"></div>
+    <div class="analytics-chart-card" style="margin-top:16px;">
+      <h4>Cảnh báo</h4>
+      <div id="analyticsAlerts" class="analytics-alerts"></div>
     </div>
   </div>
 </div>
@@ -808,6 +856,6 @@
 
     <script src="../js/orgListSort.js?v=20260708l"></script>
     <script src="../js/dashboardTableSort.js?v=20260708l"></script>
-    <script src="../js/dashboard.js?v=20260709p57"></script>
+    <script src="../js/dashboard.js?v=20260712p6b"></script>
 </body>
 </html>
