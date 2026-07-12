@@ -8,7 +8,7 @@ const PAGE_SIZE = 15;
 const LOGS_PAGE_SIZE = 20;
 const PLAN_LIMITS_UI = { FREE: { buildings: 2, users: 5 }, PRO: { buildings: 20, users: 50 } };
 
-const VALID_DASHBOARD_TABS = new Set(['buildings', 'users', 'logs', 'organizations', 'billing', 'registrations', 'profile']);
+const VALID_DASHBOARD_TABS = new Set(['buildings', 'users', 'logs', 'organizations', 'billing', 'analytics', 'registrations', 'profile']);
 
 function validatePasswordStrengthClient(password) {
   const errors = [];
@@ -56,6 +56,7 @@ function sanitizeTabForRole(tab, role) {
   if (role === 'ORG_ADMIN' && tab === 'organizations') return 'buildings';
   if (role !== 'SUPER_ADMIN' && tab === 'registrations') return 'buildings';
   if (role === 'BUILDING_ADMIN' && tab === 'billing') return 'buildings';
+  if (role === 'BUILDING_ADMIN' && tab === 'analytics') return 'buildings';
   return tab;
 }
 
@@ -187,7 +188,7 @@ function renderPagination(tabKey, totalItems, currentPage) {
   });
 }
 
-const WIDE_LAYOUT_TABS = new Set(['buildings', 'users', 'logs', 'organizations', 'billing', 'registrations']);
+const WIDE_LAYOUT_TABS = new Set(['buildings', 'users', 'logs', 'organizations', 'billing', 'analytics', 'registrations']);
 
 function applyDashboardLayout(tabName) {
   const root = document.querySelector('.dashboard-content');
@@ -918,6 +919,8 @@ function applyCurrentUserToUI(user) {
   if (logsBtn) logsBtn.style.display = (isSuperAdmin || isOrgAdmin) ? '' : 'none';
   if (orgTabBtn) orgTabBtn.style.display = isSuperAdmin ? '' : 'none';
   if (billingTabBtn) billingTabBtn.style.display = (isSuperAdmin || isOrgAdmin) ? '' : 'none';
+  const analyticsTabBtn = document.querySelector('button[onclick*="analytics"]');
+  if (analyticsTabBtn) analyticsTabBtn.style.display = (isSuperAdmin || isOrgAdmin) ? '' : 'none';
 
   const btnAddUser = document.getElementById('btnAddUser');
   const btnAddBuilding = document.getElementById('btnAddBuilding');
@@ -1154,6 +1157,15 @@ async function switchTab(name, options) {
       setTimeout(() => alert('Thanh toán thành công! Gói đã được kích hoạt/gia hạn.'), 300);
       history.replaceState(history.state, '', dashboardTabHref('billing'));
     }
+  }
+  if (tab === 'analytics') {
+    const intro = document.getElementById('analyticsIntro');
+    if (intro) {
+      intro.textContent = currentUser?.role === 'ORG_ADMIN'
+        ? 'Mức dùng của tổ chức bạn (đăng nhập, xuất bản) và chi phí gói đã thanh toán. Chi tiết từng hóa đơn ở tab Gói & Thanh toán.'
+        : 'Doanh thu nền tảng (tiền tổ chức trả cho hệ thống), hoạt động đăng nhập/xuất bản, phân bố gói và cảnh báo vận hành.';
+    }
+    await loadAnalyticsTab();
   }
 }
 
@@ -2045,6 +2057,188 @@ async function openBillingTabForOrg(orgId) {
   if (!orgId) return;
   closeOrgDetailModal();
   await switchTab('billing', { billingOrgId: orgId });
+}
+
+async function loadAnalyticsTab() {
+  const range = document.getElementById('analyticsRangeSelect')?.value || '30d';
+  const cards = document.getElementById('analyticsSummaryCards');
+  const loginEl = document.getElementById('analyticsLoginChart');
+  const publishEl = document.getElementById('analyticsPublishChart');
+  const planEl = document.getElementById('analyticsPlanDist');
+  const paidEl = document.getElementById('analyticsPaidMonth');
+  const alertsEl = document.getElementById('analyticsAlerts');
+  if (!cards) return;
+
+  cards.innerHTML = '<p class="analytics-loading">Đang tải Analytics…</p>';
+  if (loginEl) loginEl.innerHTML = '';
+  if (publishEl) publishEl.innerHTML = '';
+  if (planEl) planEl.innerHTML = '';
+  if (paidEl) paidEl.innerHTML = '';
+  if (alertsEl) alertsEl.innerHTML = '';
+
+  try {
+    const [ovRes, alRes] = await Promise.all([
+      apiFetch('/analytics/overview?range=' + encodeURIComponent(range)),
+      apiFetch('/analytics/alerts')
+    ]);
+    const overview = await ovRes.json().catch(() => ({}));
+    const alertsData = await alRes.json().catch(() => ({}));
+    if (!ovRes.ok) {
+      cards.innerHTML = '<p class="analytics-error">Lỗi: ' + escapeHtml(overview.message || 'HTTP ' + ovRes.status) + '</p>';
+      return;
+    }
+    renderAnalyticsSummary(overview);
+    renderAnalyticsBarChart(loginEl, overview.series?.login || [], 'count');
+    renderAnalyticsBarChart(publishEl, overview.series?.publish || [], 'count');
+    renderAnalyticsPlanDist(planEl, overview.plan_distribution || {});
+    renderAnalyticsPaidMonth(paidEl, overview.paid_by_month || [], overview.scope);
+    renderAnalyticsBillingHint(overview);
+    if (alRes.ok) {
+      renderAnalyticsAlerts(alertsEl, alertsData.alerts || []);
+    } else {
+      if (alertsEl) {
+        alertsEl.innerHTML = '<p class="analytics-error">Không tải được cảnh báo: ' +
+          escapeHtml(alertsData.message || 'HTTP ' + alRes.status) + '</p>';
+      }
+    }
+  } catch (e) {
+    console.error('loadAnalyticsTab error:', e);
+    cards.innerHTML = '<p class="analytics-error">Lỗi kết nối khi tải Analytics.</p>';
+  }
+}
+
+function isAnalyticsOrgScope(overview) {
+  return overview?.scope === 'organization' || currentUser?.role === 'ORG_ADMIN';
+}
+
+function renderAnalyticsSummary(overview) {
+  const cards = document.getElementById('analyticsSummaryCards');
+  if (!cards) return;
+  const t = overview.totals || {};
+  const isOrg = isAnalyticsOrgScope(overview);
+  const scopeLabel = isOrg ? 'Tổ chức của bạn' : 'Toàn nền tảng';
+  const orgName = overview.organization?.name
+    ? ' · ' + escapeHtml(overview.organization.name)
+    : '';
+  const moneyLabel = isOrg ? 'Chi phí đã trả (VND)' : 'Doanh thu (VND)';
+  const invoiceLabel = isOrg ? 'Hóa đơn đã trả' : 'Hóa đơn PAID';
+  cards.innerHTML =
+    '<div class="analytics-summary-meta">' + escapeHtml(scopeLabel) + orgName +
+      ' · ' + escapeHtml(overview.range || '') + '</div>' +
+    '<div class="analytics-summary-grid">' +
+      analyticsSummaryCard('Đăng nhập', t.logins || 0, 'login') +
+      analyticsSummaryCard('Xuất bản map', t.publishes || 0, 'publish') +
+      analyticsSummaryCard(invoiceLabel, t.paid_invoices || 0, 'invoice') +
+      analyticsSummaryCard(moneyLabel, (Number(t.paid_amount || 0)).toLocaleString('vi-VN'), 'amount') +
+    '</div>';
+}
+
+function analyticsSummaryCard(label, value, kind) {
+  return '<div class="analytics-summary-card analytics-card-' + kind + '">' +
+    '<div class="analytics-summary-value">' + escapeHtml(String(value)) + '</div>' +
+    '<div class="analytics-summary-label">' + escapeHtml(label) + '</div>' +
+  '</div>';
+}
+
+function renderAnalyticsBarChart(container, series, field) {
+  if (!container) return;
+  const rows = Array.isArray(series) ? series : [];
+  if (!rows.length) {
+    container.innerHTML = '<p class="analytics-empty">Chưa có dữ liệu trong khoảng này.</p>';
+    return;
+  }
+  const values = rows.map((r) => Number(r[field] || 0));
+  const max = Math.max(1, ...values);
+  const showEvery = rows.length > 14 ? Math.ceil(rows.length / 10) : 1;
+  container.innerHTML =
+    '<div class="analytics-bars" role="img" aria-label="Biểu đồ cột">' +
+    rows.map((r, i) => {
+      const v = Number(r[field] || 0);
+      const pct = Math.round((v / max) * 100);
+      const label = String(r.date || '').slice(5);
+      const showLabel = i % showEvery === 0 || i === rows.length - 1;
+      return '<div class="analytics-bar-col" title="' + escapeHtml(r.date + ': ' + v) + '">' +
+        '<div class="analytics-bar-track"><div class="analytics-bar-fill" style="height:' + pct + '%"></div></div>' +
+        (showLabel ? '<span class="analytics-bar-label">' + escapeHtml(label) + '</span>' : '<span class="analytics-bar-label analytics-bar-label-spacer"></span>') +
+      '</div>';
+    }).join('') +
+    '</div>';
+}
+
+function renderAnalyticsPlanDist(container, dist) {
+  if (!container) return;
+  const plans = [
+    { key: 'FREE', label: 'Miễn phí', cls: 'plan-free' },
+    { key: 'PRO', label: 'Pro', cls: 'plan-pro' },
+    { key: 'ENTERPRISE', label: 'Enterprise', cls: 'plan-ent' }
+  ];
+  const total = plans.reduce((s, p) => s + (Number(dist[p.key]) || 0), 0) || 1;
+  container.innerHTML = plans.map((p) => {
+    const n = Number(dist[p.key]) || 0;
+    const pct = Math.round((n / total) * 100);
+    return '<div class="analytics-plan-row">' +
+      '<div class="analytics-plan-head"><span>' + escapeHtml(p.label) + '</span><strong>' + n + '</strong></div>' +
+      '<div class="analytics-plan-bar"><div class="analytics-plan-fill ' + p.cls + '" style="width:' + pct + '%"></div></div>' +
+    '</div>';
+  }).join('');
+}
+
+function renderAnalyticsPaidMonth(container, rows, scope) {
+  if (!container) return;
+  const isOrg = scope === 'organization' || currentUser?.role === 'ORG_ADMIN';
+  const titleEl = document.getElementById('analyticsPaidMonthTitle');
+  if (titleEl) {
+    titleEl.textContent = isOrg
+      ? 'Chi phí đã thanh toán theo tháng'
+      : 'Doanh thu PAID theo tháng';
+  }
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) {
+    container.innerHTML = '<p class="analytics-empty">' +
+      (isOrg ? 'Chưa có khoản thanh toán trong khoảng này.' : 'Chưa có hóa đơn PAID trong khoảng này.') +
+      '</p>';
+    return;
+  }
+  container.innerHTML =
+    '<table class="analytics-paid-table"><thead><tr><th>Tháng</th><th>Số HĐ</th><th>Số tiền</th></tr></thead><tbody>' +
+    list.map((r) =>
+      '<tr><td>' + escapeHtml(r.month) + '</td><td>' + (r.count || 0) + '</td><td>' +
+        (Number(r.amount || 0)).toLocaleString('vi-VN') + ' VND</td></tr>'
+    ).join('') +
+    '</tbody></table>';
+}
+
+function renderAnalyticsBillingHint(overview) {
+  const hint = document.getElementById('analyticsBillingHint');
+  if (!hint) return;
+  const isOrg = isAnalyticsOrgScope(overview);
+  if (isOrg) {
+    hint.innerHTML =
+      '<p class="analytics-billing-hint-text">Số liệu trên là <strong>tiền tổ chức đã trả cho nền tảng</strong> (chi phí gói), không phải doanh thu của tổ chức.</p>' +
+      '<button type="button" class="btn-create analytics-billing-hint-btn" onclick="switchTab(\'billing\')">Xem hóa đơn chi tiết → Gói &amp; Thanh toán</button>';
+  } else {
+    hint.innerHTML =
+      '<p class="analytics-billing-hint-text">Doanh thu = tổng hóa đơn PAID các tổ chức trả cho hệ thống. Chi tiết từng hóa đơn / từng org nằm ở tab Gói &amp; Thanh toán.</p>' +
+      '<button type="button" class="btn-create analytics-billing-hint-btn" onclick="switchTab(\'billing\')">Xem hóa đơn chi tiết → Gói &amp; Thanh toán</button>';
+  }
+}
+
+function renderAnalyticsAlerts(container, alerts) {
+  if (!container) return;
+  const list = Array.isArray(alerts) ? alerts : [];
+  if (!list.length) {
+    container.innerHTML = '<p class="analytics-empty analytics-alerts-ok">Không có cảnh báo.</p>';
+    return;
+  }
+  container.innerHTML = '<ul class="analytics-alert-list">' + list.map((a) => {
+    const sev = escapeHtml(a.severity || 'info');
+    return '<li class="analytics-alert-item severity-' + sev + '">' +
+      '<span class="analytics-alert-type">' + escapeHtml(a.type || '') + '</span>' +
+      '<div class="analytics-alert-body">' +
+        '<strong>' + escapeHtml(a.title || '') + '</strong>' +
+        '<span>' + escapeHtml(a.message || '') + '</span>' +
+      '</div></li>';
+  }).join('') + '</ul>';
 }
 
 async function loadBillingTab(orgId) {
