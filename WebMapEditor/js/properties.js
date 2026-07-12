@@ -4,6 +4,16 @@
 
 const roomTypes = ['Văn phòng', 'Nhà vệ sinh', 'Thang máy', 'Cầu thang', 'Sảnh chờ', 'Phòng kỹ thuật', 'Phòng chức năng', 'Khác'];
 
+function setDefaultWallThickness(px) {
+    var v = Math.max(1, Math.min(80, Number(px) || 4));
+    window.defaultWallThickness = v;
+    if (window.EditorCore && EditorCore.ModifySession && EditorCore.ModifySession.setMlineThickness) {
+        EditorCore.ModifySession.setMlineThickness(v);
+    }
+    if (typeof showToast === 'function') showToast('Độ dày tường: ' + v + 'px', 'success');
+}
+window.setDefaultWallThickness = setDefaultWallThickness;
+
 function escapeHtmlValue(value) {
     return String(value || '')
         .replace(/&/g, '&amp;')
@@ -31,14 +41,54 @@ function updatePropertiesPanel() {
             var waitPts = (window.EditorCore && EditorCore.PolylineTool)
                 ? EditorCore.PolylineTool.getPoints().length
                 : 0;
+            var th = window.defaultWallThickness || 4;
             propertiesDiv.innerHTML = `
                 <div class="tool-guide">
                     <p>🧱 <b>Vẽ Tường (W):</b></p>
                     <p>- Click điểm đầu → click tiếp tạo đoạn (hút đỉnh/lưới).</p>
-                    <p>- Tiếp tục click để nối chuỗi; mỗi đoạn là <b>tường</b> (dày, ảnh hưởng bản đồ).</p>
-                    <p>- <b>ESC</b> / <b>Enter</b> / nháy đúp: ngắt chuỗi (giữ tường đã vẽ).</p>
-                    <p>- <b>Shift+B</b>: ép ngang/dọc. <b>Backspace</b>: xóa đỉnh chờ.</p>
+                    <p>- Tiếp tục click để nối chuỗi; mỗi đoạn là <b>tường</b>.</p>
+                    <div class="prop-row"><label>Độ dày:</label>
+                    <input type="number" id="wallThicknessInput" min="1" max="80" step="1" value="${th}"
+                        onchange="setDefaultWallThickness(Number(this.value))"><span class="unit">px</span></div>
+                    <p class="hint-text">Tăng độ dày = tường trông dày hơn (thay MLine đơn giản).</p>
+                    <p>- <b>ESC</b> / <b>Enter</b> / nháy đúp: ngắt chuỗi.</p>
                     <p>- Điểm chờ: <b>${waitPts}</b></p>
+                </div>`;
+        } else if (currentTool === 'mline') {
+            propertiesDiv.innerHTML = `
+                <div class="tool-guide">
+                    <p>🧱 <b>Tường dày (ML):</b></p>
+                    <p>Vẽ tường dày + 2 mép song song. <b>Gợi ý:</b> dùng <b>W</b> + ô Độ dày cho nhanh.</p>
+                    <p>Click chuỗi điểm → <b>Enter</b> / nháy đúp kết thúc.</p>
+                </div>`;
+        } else if (currentTool === 'insert') {
+            propertiesDiv.innerHTML =
+                '<div class="tool-guide">' +
+                '<p>📦 <b>Insert (I):</b></p>' +
+                '<p>Click trên map để chèn block đã chọn. <b>Esc</b> hủy.</p>' +
+                '<p>Thư viện: <b>' + (typeof blocks !== 'undefined' ? blocks.length : 0) + '</b> block</p>' +
+                '</div>';
+        } else if (currentTool === 'trim' || currentTool === 'extend') {
+            var isTrim = currentTool === 'trim';
+            propertiesDiv.innerHTML = isTrim ? `
+                <div class="tool-guide">
+                    <p>✂️ <b>Cắt xén (TR) — đơn giản</b></p>
+                    <p>Click <b>phần muốn bỏ</b> trên tường/đoạn.</p>
+                    <p>· Có tường khác giao → cắt theo giao (như AutoCAD chọn all biên).</p>
+                    <p>· Đoạn đứng một mình → <b>cắt đôi</b> tại chỗ click, bỏ nửa gần chuột.</p>
+                    <p>Preview xanh = phần còn lại. Không cắt phòng/cửa.</p>
+                </div>` : `
+                <div class="tool-guide">
+                    <p>↔️ <b>Kéo dài (EX)</b></p>
+                    <p>B1: biên đích · B2: đoạn ngắn cần kéo tới biên.</p>
+                </div>`;
+        } else if (currentTool === 'move' || currentTool === 'copy' || currentTool === 'array') {
+            propertiesDiv.innerHTML = `
+                <div class="tool-guide">
+                    <p><b>${currentTool === 'move' ? 'Di chuyển chính xác (M)' : currentTool === 'copy' ? 'Sao chép (CO)' : 'Hàng loạt (AR)'}</b></p>
+                    <p>${currentTool === 'move' ? 'Kéo thả thường ngày dùng <b>V</b>. M dùng khi cần snap gốc→đích.' : ''}</p>
+                    <p>${currentTool === 'copy' ? '1 bản. Nhân nhiều đều → <b>Hàng loạt (AR)</b>.' : ''}</p>
+                    <p>${currentTool === 'array' ? 'Copy lặp theo vector (hỏi số bản). Khác CO ở chỗ nhân nhiều lần đều khoảng.' : ''}</p>
                 </div>`;
         } else if (currentTool === 'line') {
             var lineState = (window.EditorCore && EditorCore.LineTool)
@@ -153,6 +203,11 @@ function updatePropertiesPanel() {
     else if (obj.type === 'poi') showPoiProps(obj.data);
     else if (obj.type === 'qr') showQrProps(obj.data);
     else if (obj.type === 'node') showNodeProps(obj.data);
+    else if (obj.type === 'blockRef') {
+        propertiesDiv.innerHTML =
+            (typeof renderBlockRefPropertiesHtml === 'function' ? renderBlockRefPropertiesHtml(obj.data) : '') +
+            '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa Insert</button>';
+    }
 }
 
 // --- ĐOẠN THẲNG (hỗ trợ) — schema-driven ---
@@ -180,6 +235,8 @@ function showWallProps(w) {
         '<div class="prop-group-title">Kích thước</div>' +
         '<div class="prop-row"><label>Chiều dài:</label>' +
         '<input type="number" step="0.01" value="' + calcWallLength(w) + '" onchange="updateWallLength(Number(this.value))"><span class="unit">m</span></div>' +
+        '<div class="prop-row"><label>Độ dày:</label>' +
+        '<input type="number" step="1" min="1" value="' + (w.thickness || 4) + '" onchange="updateObjProp(\'thickness\', Number(this.value))"><span class="unit">px</span></div>' +
         '</div>' +
         '<div class="prop-group">' +
         '<div class="prop-group-title">🔗 Nối tiếp tới Tường khác</div>' +
@@ -352,8 +409,278 @@ function showRoomProps(r) {
         '</div>' +
         schemaHtml +
         sizeHtml +
+        renderQuickTransformHtml('room') +
         '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
 }
+
+/** Panel biến đổi nhanh — xoay đến góc / tỷ lệ chuẩn kỹ thuật */
+function renderQuickTransformHtml(kind) {
+    var angleNow = (typeof getSelectionRotationDeg === 'function') ? getSelectionRotationDeg() : null;
+    var angleVal = angleNow != null ? angleNow.toFixed(1) : '0';
+    var angleLabel = angleNow != null
+        ? ('Góc hiện tại: <b>' + angleNow.toFixed(1) + '°</b>')
+        : 'Góc: —';
+    return '<div class="prop-group">' +
+        '<div class="prop-group-title">Biến đổi nhanh</div>' +
+        '<p class="hint-text" id="qtAngleLabel">' + angleLabel + '</p>' +
+        '<div class="prop-row" style="gap:4px;flex-wrap:wrap">' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="toggleRoomAngleLabels()">' +
+        (window.showRoomAngleLabels ? 'Ẩn góc trên map' : 'Hiện góc trên map') + '</button></div>' +
+
+        '<div class="prop-group-title" style="margin-top:8px">Xoay đến góc</div>' +
+        '<p class="hint-text">Nhập góc muốn đặt (0–360), rồi «Xoay đến». VD: đang 30° → nhập 90 → phòng quay đúng đến 90°.</p>' +
+        '<div class="prop-row"><label>Đến:</label>' +
+        '<input type="number" id="qtRotateToDeg" value="' + angleVal + '" min="0" max="360" step="1" style="width:72px">' +
+        '<span class="unit">°</span>' +
+        '<button class="btn btn-sm btn-primary" type="button" onclick="applySelectionRotateToDegrees(Number(document.getElementById(\'qtRotateToDeg\').value))">Xoay đến</button></div>' +
+        '<div class="prop-row" style="gap:4px;flex-wrap:wrap">' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="applySelectionRotateToDegrees(0)">0°</button>' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="applySelectionRotateToDegrees(45)">45°</button>' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="applySelectionRotateToDegrees(90)">90°</button>' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="applySelectionRotateToDegrees(180)">180°</button>' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="applySelectionRotateToDegrees(270)">270°</button></div>' +
+        '<div class="prop-row"><label>Xoay thêm:</label>' +
+        '<input type="number" id="qtRotateDeg" value="15" step="1" style="width:56px">' +
+        '<span class="unit">°</span>' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="applySelectionRotateDegrees(Number(document.getElementById(\'qtRotateDeg\').value))">+</button>' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="applySelectionRotateDegrees(90)">+90</button>' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="applySelectionRotateDegrees(-90)">-90</button></div>' +
+
+        '<div class="prop-group-title" style="margin-top:8px">Tỷ lệ chuẩn (bản vẽ KT)</div>' +
+        '<p class="hint-text"><b>1:1</b> = giữ kích thước hiện tại (không đổi). <b>Về nguyên bản</b> = khôi phục hình lúc tạo. Nhập <b>A:B</b> rồi Áp dụng để phóng/thu.</p>' +
+        '<div class="prop-row"><label>Tỷ lệ:</label>' +
+        '<input type="text" id="qtScaleRatio" value="' + escapeHtmlValue((selectedRoom && selectedRoom.lastScaleRatio) || (selectedObject && selectedObject.data && selectedObject.data.lastScaleRatio) || '1:1') + '" ' +
+        'placeholder="vd 1:2" style="width:80px" ' +
+        'onkeydown="if(event.key===\'Enter\'){event.preventDefault();applyStandardScaleRatioInput();}">' +
+        '<button class="btn btn-sm btn-primary" type="button" onclick="applyStandardScaleRatioInput()">Áp dụng</button></div>' +
+        '<div class="prop-row" style="gap:4px;flex-wrap:wrap">' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="applyStandardScaleRatio(1,1)">1:1</button>' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="applyStandardScaleRatio(2,1)">2:1</button>' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="applyStandardScaleRatio(5,1)">5:1</button>' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="applyStandardScaleRatio(10,1)">10:1</button>' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="applyStandardScaleRatio(1,2)">1:2</button>' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="applyStandardScaleRatio(1,5)">1:5</button>' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="applyStandardScaleRatio(1,10)">1:10</button>' +
+        '<button class="btn btn-sm btn-primary" type="button" onclick="restoreSelectionOriginalGeometry()" title="Khôi phục hình học lúc tạo đối tượng">Về nguyên bản</button></div>' +
+
+        '<div class="prop-row" style="gap:4px;margin-top:6px">' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="flipSelectionHorizontal()">Lật ngang</button>' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="flipSelectionVertical()">Lật dọc</button></div>' +
+        '</div>';
+}
+
+function getSelectionRotationDeg() {
+    var t = getQuickTransformTarget();
+    if (!t || t.type !== 'room' || !t.data) return null;
+    var r = t.data;
+    if (typeof r.rotationDeg === 'number' && Number.isFinite(r.rotationDeg)) {
+        return ((r.rotationDeg % 360) + 360) % 360;
+    }
+    // Ước lượng từ cạnh đầu (polygon) hoặc 0 với rect chưa xoay
+    if (r.shape === 'polygon' && r.points && r.points.length >= 2) {
+        var a = r.points[0], b = r.points[1];
+        var deg = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+        return ((deg % 360) + 360) % 360;
+    }
+    return 0;
+}
+window.getSelectionRotationDeg = getSelectionRotationDeg;
+
+function toggleRoomAngleLabels() {
+    window.showRoomAngleLabels = !window.showRoomAngleLabels;
+    updatePropertiesPanel();
+    draw();
+    if (typeof showToast === 'function') {
+        showToast(window.showRoomAngleLabels ? 'Đã bật hiện góc trên map' : 'Đã ẩn góc trên map', 'success');
+    }
+}
+window.toggleRoomAngleLabels = toggleRoomAngleLabels;
+
+function getQuickTransformTarget() {
+    if (selectedRoom) return { type: 'room', data: selectedRoom };
+    if (selectedObject && selectedObject.data) {
+        return { type: selectedObject.type, data: selectedObject.data };
+    }
+    return null;
+}
+
+function applySelectionRotateDegrees(deg) {
+    var t = getQuickTransformTarget();
+    if (!t || !window.EditorCore || !EditorCore.ObjectTransform) return;
+    if (!Number.isFinite(deg) || deg === 0) return;
+    saveState();
+    EditorCore.ObjectTransform.rotateByDegrees(t.type, t.data, deg);
+    if (t.data) {
+        t.data.rotationDeg = (((typeof t.data.rotationDeg === 'number' ? t.data.rotationDeg : getSelectionRotationDeg() || 0) + deg) % 360 + 360) % 360;
+    }
+    updatePropertiesPanel();
+    updateObjectList();
+    draw();
+    if (typeof showToast === 'function') {
+        showToast('Xoay thêm ' + deg + '° → đang ' + (t.data.rotationDeg != null ? t.data.rotationDeg.toFixed(1) + '°' : ''), 'success');
+    }
+}
+window.applySelectionRotateDegrees = applySelectionRotateDegrees;
+
+/**
+ * Xoay đến góc tuyệt đối (0–360) mà user yêu cầu.
+ * delta = target − góc hiện tại (chuẩn hóa ±180 để quay đường ngắn).
+ */
+function applySelectionRotateToDegrees(targetDeg) {
+    var t = getQuickTransformTarget();
+    if (!t || !window.EditorCore || !EditorCore.ObjectTransform) return;
+    if (!Number.isFinite(targetDeg)) {
+        if (typeof showToast === 'function') showToast('Nhập góc hợp lệ (0–360)', 'error');
+        return;
+    }
+    targetDeg = ((targetDeg % 360) + 360) % 360;
+    var current = 0;
+    if (t.data && typeof t.data.rotationDeg === 'number') {
+        current = ((t.data.rotationDeg % 360) + 360) % 360;
+    } else {
+        var g = getSelectionRotationDeg();
+        current = g != null ? g : 0;
+        if (t.data) t.data.rotationDeg = current;
+    }
+    var delta = targetDeg - current;
+    // Quay đường ngắn hơn (±180)
+    if (delta > 180) delta -= 360;
+    if (delta < -180) delta += 360;
+    if (Math.abs(delta) < 1e-6) {
+        if (typeof showToast === 'function') showToast('Đã ở góc ' + targetDeg.toFixed(1) + '°', 'success');
+        return;
+    }
+    saveState();
+    EditorCore.ObjectTransform.rotateByDegrees(t.type, t.data, delta);
+    t.data.rotationDeg = targetDeg;
+    updatePropertiesPanel();
+    updateObjectList();
+    draw();
+    if (typeof showToast === 'function') {
+        showToast('Đã xoay đến ' + targetDeg.toFixed(1) + '°', 'success');
+    }
+}
+window.applySelectionRotateToDegrees = applySelectionRotateToDegrees;
+
+/**
+ * Parse ô nhập tỷ lệ "A:B" hoặc "A/B" rồi gọi applyStandardScaleRatio.
+ */
+function applyStandardScaleRatioInput() {
+    var el = document.getElementById('qtScaleRatio');
+    var raw = el ? String(el.value || '').trim() : '';
+    var m = raw.match(/^(\d+(?:\.\d+)?)\s*[:\/]\s*(\d+(?:\.\d+)?)$/);
+    if (!m) {
+        if (typeof showToast === 'function') {
+            showToast('Nhập tỷ lệ dạng A:B (vd 1:2 hoặc 2:1)', 'error');
+        }
+        return;
+    }
+    applyStandardScaleRatio(Number(m[1]), Number(m[2]));
+}
+window.applyStandardScaleRatioInput = applyStandardScaleRatioInput;
+
+/**
+ * Tỷ lệ chuẩn bản vẽ kỹ thuật A:B → hệ số A/B.
+ * 1:1 nguyên hình · 2:1 phóng to · 1:2 thu nhỏ.
+ */
+function applyStandardScaleRatio(a, b) {
+    a = Number(a);
+    b = Number(b);
+    if (!(a > 0) || !(b > 0)) {
+        if (typeof showToast === 'function') showToast('Tỷ lệ A:B không hợp lệ', 'error');
+        return;
+    }
+    var label = a + ':' + b;
+    var factor = a / b;
+    var t = getQuickTransformTarget();
+    if (!t || !window.EditorCore || !EditorCore.ObjectTransform) return;
+    if (Math.abs(factor - 1) < 1e-9) {
+        if (t.data) t.data.lastScaleRatio = label;
+        updatePropertiesPanel();
+        if (typeof showToast === 'function') {
+            showToast('1:1 nguyên hình — kích thước giữ nguyên', 'success');
+        }
+        return;
+    }
+    saveState();
+    EditorCore.ObjectTransform.scaleAboutCenter(t.type, t.data, factor);
+    if (t.data) t.data.lastScaleRatio = label;
+    updatePropertiesPanel();
+    updateObjectList();
+    draw();
+    if (typeof showToast === 'function') {
+        var kind = factor > 1 ? 'Phóng to' : 'Thu nhỏ';
+        showToast(kind + ' ' + label + ' (×' + (Math.round(factor * 1000) / 1000) + ')', 'success');
+    }
+}
+window.applyStandardScaleRatio = applyStandardScaleRatio;
+
+/**
+ * Khôi phục hình học lúc tạo (khác 1:1 — 1:1 chỉ giữ kích thước hiện tại).
+ */
+function restoreSelectionOriginalGeometry() {
+    var t = getQuickTransformTarget();
+    if (!t || !window.EditorCore || !EditorCore.ObjectTransform) return;
+    if (!t.data || !t.data._originalGeometry) {
+        if (typeof showToast === 'function') {
+            showToast('Không có dữ liệu nguyên bản (đối tượng tạo trước khi có tính năng này)', 'error');
+        }
+        return;
+    }
+    saveState();
+    var ok = EditorCore.ObjectTransform.restoreOriginalGeometry(t.type, t.data);
+    updatePropertiesPanel();
+    updateObjectList();
+    draw();
+    if (typeof showToast === 'function') {
+        showToast(ok ? 'Đã về nguyên bản lúc tạo' : 'Không khôi phục được nguyên bản', ok ? 'success' : 'error');
+    }
+}
+window.restoreSelectionOriginalGeometry = restoreSelectionOriginalGeometry;
+
+function applySelectionScaleFactor(factor) {
+    var t = getQuickTransformTarget();
+    if (!t || !window.EditorCore || !EditorCore.ObjectTransform) return;
+    if (!(factor > 0)) {
+        if (typeof showToast === 'function') showToast('Tỷ lệ phải > 0', 'error');
+        return;
+    }
+    if (Math.abs(factor - 1) < 1e-9) {
+        if (typeof showToast === 'function') showToast('1:1 nguyên hình — không đổi kích thước', 'success');
+        return;
+    }
+    saveState();
+    EditorCore.ObjectTransform.scaleAboutCenter(t.type, t.data, factor);
+    updatePropertiesPanel();
+    updateObjectList();
+    draw();
+    if (typeof showToast === 'function') {
+        showToast(factor < 1 ? ('Thu nhỏ ×' + factor) : ('Phóng to ×' + factor), 'success');
+    }
+}
+window.applySelectionScaleFactor = applySelectionScaleFactor;
+
+function flipSelectionHorizontal() {
+    var t = getQuickTransformTarget();
+    if (!t || !window.EditorCore || !EditorCore.ObjectTransform) return;
+    saveState();
+    EditorCore.ObjectTransform.flipHorizontal(t.type, t.data);
+    updatePropertiesPanel();
+    draw();
+    if (typeof showToast === 'function') showToast('Đã lật ngang', 'success');
+}
+window.flipSelectionHorizontal = flipSelectionHorizontal;
+
+function flipSelectionVertical() {
+    var t = getQuickTransformTarget();
+    if (!t || !window.EditorCore || !EditorCore.ObjectTransform) return;
+    saveState();
+    EditorCore.ObjectTransform.flipVertical(t.type, t.data);
+    updatePropertiesPanel();
+    draw();
+    if (typeof showToast === 'function') showToast('Đã lật dọc', 'success');
+}
+window.flipSelectionVertical = flipSelectionVertical;
 
 // --- CỬA ---
 function showDoorProps(d) {
@@ -634,6 +961,8 @@ function deleteSelected() {
             deleteQr(data);
         } else if (type === 'node') {
             deleteNode(data);
+        } else if (type === 'blockRef') {
+            deleteBlockInsert(data);
         }
 
         clearEditorSelection({ skipUi: true });
@@ -655,7 +984,8 @@ function updateObjectList() {
     objectListDiv.innerHTML = '';
 
     var totalItems = rooms.length + doors.length + pois.length + pathNodes.length
-        + (walls ? walls.length : 0) + (lines ? lines.length : 0);
+        + (walls ? walls.length : 0) + (lines ? lines.length : 0)
+        + (typeof blockInserts !== 'undefined' ? blockInserts.length : 0);
     if (totalItems === 0) {
         objectListDiv.innerHTML = '<p class="hint-text">Chưa có đối tượng</p>';
         return;
@@ -719,6 +1049,17 @@ function updateObjectList() {
             setEditorSelection('node', node);
         });
     });
+
+    // Block Inserts
+    if (typeof blockInserts !== 'undefined') {
+        blockInserts.forEach(function (bi) {
+            var isActive = (selectedObject && selectedObject.type === 'blockRef' && selectedObject.data === bi);
+            var def = typeof findBlockDefinition === 'function' ? findBlockDefinition(bi.blockId) : null;
+            addListItem('📦', bi.name || 'Insert #' + bi.id, def ? def.name : bi.blockId, '#be123c', isActive, function () {
+                setEditorSelection('blockRef', bi);
+            });
+        });
+    }
 }
 
 // Thêm 1 item vào danh sách

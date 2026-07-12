@@ -15,7 +15,9 @@ function snapshotPayload() {
         pois: pois,
         pathNodes: pathNodes,
         pathEdges: pathEdges,
-        qrs: qrs
+        qrs: qrs,
+        blocks: typeof blocks !== 'undefined' ? blocks : [],
+        blockInserts: typeof blockInserts !== 'undefined' ? blockInserts : []
     };
 }
 
@@ -29,13 +31,17 @@ function cloneSnapshotPayload(src) {
         pathNodes: JSON.parse(JSON.stringify(src.pathNodes)),
         pathEdges: JSON.parse(JSON.stringify(src.pathEdges)),
         qrs: JSON.parse(JSON.stringify(src.qrs || [])),
+        blocks: JSON.parse(JSON.stringify(src.blocks || [])),
+        blockInserts: JSON.parse(JSON.stringify(src.blockInserts || [])),
         nextRoomId: src.nextRoomId,
         nextWallId: src.nextWallId,
         nextLineId: src.nextLineId,
         nextDoorId: src.nextDoorId,
         nextPoiId: src.nextPoiId,
         nextNodeId: src.nextNodeId,
-        nextQrId: src.nextQrId != null ? src.nextQrId : 1
+        nextQrId: src.nextQrId != null ? src.nextQrId : 1,
+        nextBlockDefId: src.nextBlockDefId != null ? src.nextBlockDefId : 1,
+        nextBlockInsertId: src.nextBlockInsertId != null ? src.nextBlockInsertId : 1
     };
 }
 
@@ -56,7 +62,9 @@ function saveState() {
             pois: lastState.pois,
             pathNodes: lastState.pathNodes,
             pathEdges: lastState.pathEdges,
-            qrs: lastState.qrs || []
+            qrs: lastState.qrs || [],
+            blocks: lastState.blocks || [],
+            blockInserts: lastState.blockInserts || []
         });
         if (newStateStr === lastStateStr) return; // Không có gì thay đổi, ko lưu
     }
@@ -70,13 +78,17 @@ function saveState() {
         pathNodes: pathNodes,
         pathEdges: pathEdges,
         qrs: qrs,
+        blocks: typeof blocks !== 'undefined' ? blocks : [],
+        blockInserts: typeof blockInserts !== 'undefined' ? blockInserts : [],
         nextRoomId: nextRoomId,
         nextWallId: nextWallId,
         nextLineId: nextLineId,
         nextDoorId: nextDoorId,
         nextPoiId: nextPoiId,
         nextNodeId: nextNodeId,
-        nextQrId: nextQrId
+        nextQrId: nextQrId,
+        nextBlockDefId: typeof nextBlockDefId !== 'undefined' ? nextBlockDefId : 1,
+        nextBlockInsertId: typeof nextBlockInsertId !== 'undefined' ? nextBlockInsertId : 1
     });
     undoStack.push(state);
     if (undoStack.length > maxHistory) undoStack.shift();
@@ -99,13 +111,17 @@ function undo() {
         pathNodes: pathNodes,
         pathEdges: pathEdges,
         qrs: qrs,
+        blocks: typeof blocks !== 'undefined' ? blocks : [],
+        blockInserts: typeof blockInserts !== 'undefined' ? blockInserts : [],
         nextRoomId: nextRoomId,
         nextWallId: nextWallId,
         nextLineId: nextLineId,
         nextDoorId: nextDoorId,
         nextPoiId: nextPoiId,
         nextNodeId: nextNodeId,
-        nextQrId: nextQrId
+        nextQrId: nextQrId,
+        nextBlockDefId: typeof nextBlockDefId !== 'undefined' ? nextBlockDefId : 1,
+        nextBlockInsertId: typeof nextBlockInsertId !== 'undefined' ? nextBlockInsertId : 1
     }));
 
     var state = undoStack.pop();
@@ -129,13 +145,17 @@ function redo() {
         pathNodes: pathNodes,
         pathEdges: pathEdges,
         qrs: qrs,
+        blocks: typeof blocks !== 'undefined' ? blocks : [],
+        blockInserts: typeof blockInserts !== 'undefined' ? blockInserts : [],
         nextRoomId: nextRoomId,
         nextWallId: nextWallId,
         nextLineId: nextLineId,
         nextDoorId: nextDoorId,
         nextPoiId: nextPoiId,
         nextNodeId: nextNodeId,
-        nextQrId: nextQrId
+        nextQrId: nextQrId,
+        nextBlockDefId: typeof nextBlockDefId !== 'undefined' ? nextBlockDefId : 1,
+        nextBlockInsertId: typeof nextBlockInsertId !== 'undefined' ? nextBlockInsertId : 1
     }));
 
     var state = redoStack.pop();
@@ -153,6 +173,8 @@ function restoreState(state) {
     pathNodes = state.pathNodes;
     pathEdges = state.pathEdges;
     qrs = state.qrs || [];
+    blocks = state.blocks || [];
+    blockInserts = state.blockInserts || [];
     nextRoomId = state.nextRoomId;
     nextWallId = state.nextWallId || 1;
     nextLineId = state.nextLineId || 1;
@@ -160,6 +182,8 @@ function restoreState(state) {
     nextPoiId = state.nextPoiId;
     nextNodeId = state.nextNodeId;
     nextQrId = state.nextQrId != null ? state.nextQrId : 1;
+    nextBlockDefId = state.nextBlockDefId || 1;
+    nextBlockInsertId = state.nextBlockInsertId || 1;
 
     clearEditorSelection({ skipUi: true });
     roomCountSpan.textContent = 'Phòng: ' + rooms.length;

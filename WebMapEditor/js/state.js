@@ -70,6 +70,14 @@ let resizeStartRoom = null;
 let isResizingDoor = false;
 let resizeDoorSide = null; // 'left' hoặc 'right'
 let isRotatingDoor = false;
+let isRotatingRoom = false;
+let roomRotateLastAngle = 0;
+let roomRotateCenter = null;
+/** Độ dày tường mặc định khi vẽ W (px) */
+window.defaultWallThickness = 4;
+window.showRoomAngleLabels = false;
+/** Góc đang kéo xoay (hiện live trên canvas) */
+window.liveRoomRotateDeg = null;
 
 // Polygon vertex dragging
 let isDraggingVertex = false;
@@ -86,6 +94,12 @@ let nextPoiId = 1;
 // QR Code data (mốc định vị quét mã)
 let qrs = [];
 let nextQrId = 1;
+
+// Block library + Insert instances (Phase 2)
+let blocks = [];
+let blockInserts = [];
+let nextBlockDefId = 1;
+let nextBlockInsertId = 1;
 
 // Path data (đường đi)
 let pathNodes = [];
@@ -132,7 +146,9 @@ const NODE_RADIUS = 8;      // Bán kính path node
         pois: function () { return pois; },
         pathNodes: function () { return pathNodes; },
         pathEdges: function () { return pathEdges; },
-        qrs: function () { return qrs; }
+        qrs: function () { return qrs; },
+        blocks: function () { return blocks; },
+        blockInserts: function () { return blockInserts; }
     };
     Object.keys(getters).forEach(function (key) {
         try {

@@ -97,6 +97,19 @@ canvas.addEventListener('dblclick', function (e) {
     }
     if (currentTool === 'wall' && typeof stopWallChain === 'function') {
         stopWallChain();
+        return;
+    }
+    if (currentTool === 'mline' && window.EditorCore && EditorCore.ModifySession) {
+        var rect = canvas.getBoundingClientRect();
+        var world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+        var snapOpts = typeof getSnapOpts === 'function' ? getSnapOpts(e) : undefined;
+        var snapped = snapWorldPoint(world.x, world.y, snapOpts);
+        EditorCore.ModifySession.onPointerDown(
+            { x: snapped.x, y: snapped.y },
+            { doubleClick: true }
+        );
+        if (typeof updateModifyHint === 'function') updateModifyHint();
+        draw();
     }
 });
 
@@ -133,10 +146,28 @@ function handleLeftMouseDown(e) {
 
     // Chặn vẽ khi lớp active đang khóa (select / ruler / bg-adjust vẫn được)
     var drawTools = {
-        room: 1, circle: 1, polygon: 1, door: 1, wall: 1, line: 1, poi: 1, qr: 1, path: 1
+        room: 1, circle: 1, polygon: 1, door: 1, wall: 1, line: 1, poi: 1, qr: 1, path: 1, mline: 1
     };
     if (drawTools[currentTool] && typeof blockIfActiveLayerLocked === 'function') {
         if (blockIfActiveLayerLocked('vẽ trên lớp này')) return;
+    }
+
+    // --- Phase 2: ModifySession (Move/Copy/…/MLine) ---
+    if (typeof isModifyTool === 'function' && isModifyTool(currentTool)
+        && window.EditorCore && EditorCore.ModifySession) {
+        EditorCore.ModifySession.onPointerDown(
+            { x: snappedX, y: snappedY },
+            { shiftKey: !!e.shiftKey, doubleClick: false }
+        );
+        if (typeof updateModifyHint === 'function') updateModifyHint();
+        draw();
+        return;
+    }
+
+    // --- TOOL: INSERT block ---
+    if (currentTool === 'insert' && window.pendingInsertBlockId) {
+        placeBlockInsertAt(snappedX, snappedY);
+        return;
     }
 
     // --- TOOL: VẼ PHÒNG CHỮ NHẬT ---
@@ -262,6 +293,21 @@ function handleLeftMouseDown(e) {
 
     // --- TOOL: CHỌN ---
     else if (currentTool === 'select') {
+        // Handle xoay phòng (icon trên đầu)
+        if (selectedRoom && typeof hitRoomRotateHandle === 'function'
+            && hitRoomRotateHandle(world.x, world.y, selectedRoom)) {
+            saveState();
+            isRotatingRoom = true;
+            window.isRotatingRoom = true;
+            roomRotateCenter = getRoomCenter(selectedRoom);
+            roomRotateLastAngle = Math.atan2(
+                world.y - roomRotateCenter.y,
+                world.x - roomRotateCenter.x
+            );
+            window.liveRoomRotateDeg = selectedRoom.rotationDeg || 0;
+            return;
+        }
+
         // Kiểm tra kéo đỉnh polygon
         if (selectedRoom && selectedRoom.shape === 'polygon' && selectedRoom.points) {
             var vtxThreshold = 8 / zoom;
@@ -307,6 +353,20 @@ function handleLeftMouseDown(e) {
                     pickType = 'poi';
                     pickData = clickedPoi;
                 } else {
+                    var clickedBlock = typeof findBlockInsertAt === 'function'
+                        ? findBlockInsertAt(world.x, world.y) : null;
+                    if (clickedBlock) {
+                        saveState();
+                        pickType = 'blockRef';
+                        pickData = clickedBlock;
+                        if (!(typeof legacyIsObjectLayerLocked === 'function' && legacyIsObjectLayerLocked(clickedBlock))) {
+                            isDragging = true;
+                            dragOffsetX = world.x - clickedBlock.x;
+                            dragOffsetY = world.y - clickedBlock.y;
+                        } else if (typeof showToast === 'function') {
+                            showToast('Block thuộc lớp khóa — chỉ xem, không kéo', 'error');
+                        }
+                    } else {
                     var clickedDoor = findDoorAt(world.x, world.y);
                     if (clickedDoor) {
                         // Kiểm tra nhấp vào Handle của cửa
@@ -367,6 +427,7 @@ function handleLeftMouseDown(e) {
                             }
                         }
                         }
+                    }
                     }
                 }
             }
@@ -465,6 +526,11 @@ function handleMouseMove(e, world) {
             var doorPt = snapWorldPoint(world.x - dragOffsetX, world.y - dragOffsetY);
             door.x = doorPt.x;
             door.y = doorPt.y;
+        } else if (selectedObject && selectedObject.type === 'blockRef') {
+            var blk = selectedObject.data;
+            var blkPt = snapWorldPoint(world.x - dragOffsetX, world.y - dragOffsetY);
+            blk.x = blkPt.x;
+            blk.y = blkPt.y;
         }
         updatePropertiesPanel();
         draw();
@@ -511,6 +577,26 @@ function handleMouseMove(e, world) {
         draw();
     }
 
+    // Xoay Phòng (handle)
+    if (isRotatingRoom && selectedRoom && roomRotateCenter
+        && window.EditorCore && EditorCore.ObjectTransform) {
+        var ang = Math.atan2(world.y - roomRotateCenter.y, world.x - roomRotateCenter.x);
+        var delta = ang - roomRotateLastAngle;
+        if (Math.abs(delta) > 1e-6) {
+            EditorCore.ObjectTransform.rotateObject(
+                'room', selectedRoom,
+                roomRotateCenter.x, roomRotateCenter.y, delta
+            );
+            selectedRoom.rotationDeg = (((selectedRoom.rotationDeg || 0) + delta * 180 / Math.PI) % 360 + 360) % 360;
+            window.liveRoomRotateDeg = selectedRoom.rotationDeg;
+            roomRotateLastAngle = ang;
+            roomRotateCenter = getRoomCenter(selectedRoom);
+        }
+        updatePropertiesPanel();
+        draw();
+        return;
+    }
+
     // Thước đo
     if (isDrawingRuler) {
         rulerEnd = { x: world.x, y: world.y };
@@ -542,6 +628,15 @@ function handleMouseMove(e, world) {
             draw();
             return;
         }
+    }
+
+    // Phase 2 ModifySession preview
+    if (typeof isModifyTool === 'function' && isModifyTool(currentTool)
+        && window.EditorCore && EditorCore.ModifySession) {
+        EditorCore.ModifySession.onPointerMove({ x: snappedX, y: snappedY });
+        if (typeof updateModifyHint === 'function') updateModifyHint();
+        draw();
+        return;
     }
 
     // Cursor hover
@@ -579,6 +674,11 @@ function handleMouseMove(e, world) {
         }
 
         // Kiểm tra Move cursor
+        if (selectedRoom && typeof hitRoomRotateHandle === 'function'
+            && hitRoomRotateHandle(world.x, world.y, selectedRoom)) {
+            wrapper.style.cursor = 'grab';
+            return;
+        }
         if (findRoomAt(world.x, world.y) || findDoorAt(world.x, world.y)) {
             wrapper.style.cursor = 'move';
         } else {
@@ -587,7 +687,8 @@ function handleMouseMove(e, world) {
     }
 
     // Repaint OSNAP marker khi rê chuột (tool vẽ + Chọn)
-    var snapRepaintTools = ['select', 'wall', 'line', 'room', 'circle', 'door', 'poi', 'path', 'ruler', 'polygon'];
+    var snapRepaintTools = ['select', 'wall', 'line', 'room', 'circle', 'door', 'poi', 'path', 'ruler', 'polygon',
+        'move', 'copy', 'rotate', 'scale', 'mirror', 'trim', 'extend', 'pedit', 'mline', 'array', 'matchprop'];
     if (snapRepaintTools.indexOf(currentTool) >= 0) {
         if (currentTool === 'polygon' && isDrawingPolygon && typeof updatePropertiesPanel === 'function') {
             updatePropertiesPanel();
@@ -605,6 +706,14 @@ function handleMouseMove(e, world) {
 // ============================================================
 function handleLeftMouseUp(e) {
     if (editorLocked()) return;
+
+    if (typeof isModifyTool === 'function' && isModifyTool(currentTool)
+        && window.EditorCore && EditorCore.ModifySession) {
+        EditorCore.ModifySession.onPointerUp();
+        if (typeof updateModifyHint === 'function') updateModifyHint();
+        draw();
+    }
+
     // Kết thúc vẽ rect
     if (isDrawing && currentTool === 'room') {
         saveState();
@@ -648,6 +757,10 @@ function handleLeftMouseUp(e) {
     isResizing = false;
     isResizingDoor = false;
     isRotatingDoor = false;
+    isRotatingRoom = false;
+    window.isRotatingRoom = false;
+    window.liveRoomRotateDeg = null;
+    roomRotateCenter = null;
 
     // Kết thúc Thước đo
     if (isDrawingRuler) {

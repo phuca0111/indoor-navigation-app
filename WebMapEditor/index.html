@@ -96,6 +96,53 @@
                     <button class="tool-btn" id="btn-line" onclick="selectTool('line')" title="Phím L">
                         <i data-lucide="slash"></i> Đoạn thẳng <span class="tool-kbd">L</span>
                     </button>
+                    <button class="tool-btn" id="btn-mline" onclick="selectTool('mline')" title="Lệnh ML — hoặc dùng W + Độ dày">
+                        <i data-lucide="columns-2"></i> Tường dày <span class="tool-kbd">ML</span>
+                    </button>
+                </div>
+
+                <div class="tool-section">
+                    <h3>Khối</h3>
+                    <button class="tool-btn" id="btn-block" onclick="selectTool('block')" title="Tạo block từ đối tượng đang chọn">
+                        <i data-lucide="box"></i> Block <span class="tool-kbd">B</span>
+                    </button>
+                    <button class="tool-btn" id="btn-insert" onclick="selectTool('insert')" title="Chèn block từ thư viện">
+                        <i data-lucide="package-plus"></i> Insert <span class="tool-kbd">I</span>
+                    </button>
+                </div>
+
+                <div class="tool-section">
+                    <h3>Hiệu chỉnh</h3>
+                    <button class="tool-btn" id="btn-copy" onclick="selectTool('copy')" title="Lệnh CO">
+                        <i data-lucide="copy"></i> Sao chép <span class="tool-kbd">CO</span>
+                    </button>
+                    <button class="tool-btn" id="btn-array" onclick="selectTool('array')" title="Lệnh AR — copy lặp nhiều bản">
+                        <i data-lucide="grid-3x3"></i> Hàng loạt <span class="tool-kbd">AR</span>
+                    </button>
+                    <button class="tool-btn" id="btn-trim" onclick="selectTool('trim')" title="Chỉ tường/đoạn giao nhau">
+                        <i data-lucide="scissors"></i> Cắt xén <span class="tool-kbd">TR</span>
+                    </button>
+                    <button class="tool-btn" id="btn-extend" onclick="selectTool('extend')" title="Kéo đoạn tới biên">
+                        <i data-lucide="move-horizontal"></i> Kéo dài <span class="tool-kbd">EX</span>
+                    </button>
+                    <button class="tool-btn" id="btn-pedit" onclick="selectTool('pedit')" title="Lệnh PE">
+                        <i data-lucide="spline"></i> Sửa đỉnh <span class="tool-kbd">PE</span>
+                    </button>
+                    <button class="tool-btn" id="btn-matchprop" onclick="selectTool('matchprop')" title="Lệnh MA">
+                        <i data-lucide="paintbrush"></i> Matchprop <span class="tool-kbd">MA</span>
+                    </button>
+                    <button class="tool-btn" id="btn-move" onclick="selectTool('move')" title="Di chuyển chính xác (kéo thả dùng V)">
+                        <i data-lucide="move"></i> Move chính xác <span class="tool-kbd">M</span>
+                    </button>
+                    <button class="tool-btn" id="btn-rotate" onclick="selectTool('rotate')" title="Hoặc kéo icon xoay / nhập độ ở panel">
+                        <i data-lucide="rotate-cw"></i> Xoay CAD <span class="tool-kbd">RO</span>
+                    </button>
+                    <button class="tool-btn" id="btn-scale" onclick="selectTool('scale')" title="Hoặc nhập tỷ lệ ở panel">
+                        <i data-lucide="scaling"></i> Tỷ lệ CAD <span class="tool-kbd">SC</span>
+                    </button>
+                    <button class="tool-btn" id="btn-mirror" onclick="selectTool('mirror')" title="Hoặc Lật ngang/dọc ở panel">
+                        <i data-lucide="flip-horizontal-2"></i> Lật trục <span class="tool-kbd">MI</span>
+                    </button>
                 </div>
 
                 <div class="tool-section">
@@ -240,7 +287,7 @@
     <script src="core/document.js?v=20260709f"></script>
     <script src="core/models.js?v=20260709f"></script>
     <script src="core/config.js?v=20260709f"></script>
-    <script src="core/geometry/geometry-engine.js?v=20260709f"></script>
+    <script src="core/geometry/geometry-engine.js?v=20260712b"></script>
     <script src="core/selection-manager.js?v=20260709f"></script>
     <script src="core/selection-bridge.js?v=20260710d"></script>
     <script src="core/property-schemas.js?v=20260710e"></script>
@@ -249,11 +296,11 @@
     <script src="core/perf-monitor.js?v=20260709f"></script>
     <script src="core/project-manager.js?v=20260710n"></script>
     <script src="core/version-manager.js?v=20260709f"></script>
-    <script src="core/asset-manager.js?v=20260709f"></script>
+    <script src="core/asset-manager.js?v=20260712b"></script>
     <script src="core/plugin-api.js?v=20260709f"></script>
-    <script src="core/map-adapter.js?v=20260709f"></script>
+    <script src="core/map-adapter.js?v=20260713g"></script>
     <script src="core/validation-engine.js?v=20260709f"></script>
-    <script src="core/legacy-bridge.js?v=20260709f"></script>
+    <script src="core/legacy-bridge.js?v=20260712b"></script>
     <script src="core/spatial-index.js?v=20260709f"></script>
     <script src="core/snap-engine.js?v=20260709f"></script>
     <script src="core/snap-bridge.js?v=20260709f"></script>
@@ -262,11 +309,14 @@
     <script src="core/dynamic-input.js?v=20260709f"></script>
     <script src="core/layer-manager.js?v=20260710b"></script>
     <script src="core/command-manager.js?v=20260709f"></script>
-    <script src="core/tool-command-manager.js?v=20260710a"></script>
+    <script src="core/tool-command-manager.js?v=20260713d"></script>
     <script src="core/tool-registry.js?v=20260709f"></script>
+    <script src="core/object-transform.js?v=20260713c"></script>
+    <script src="core/block-manager.js?v=20260713d"></script>
+    <script src="core/modify-session.js?v=20260712b"></script>
     <script src="core/tools/polyline-tool.js?v=20260709f"></script>
     <script src="core/tools/line-tool.js?v=20260709f"></script>
-    <script src="core/tools-bootstrap.js?v=20260710a"></script>
+    <script src="core/tools-bootstrap.js?v=20260713d"></script>
     <script src="core/rendering/background-renderer.js?v=20260710e"></script>
     <script src="core/rendering/grid-renderer.js?v=20260710e"></script>
     <script src="core/rendering/room-renderer.js?v=20260710e"></script>
@@ -279,30 +329,31 @@
     <script src="core/index.js?v=20260709f"></script>
 
     <!-- Script Scripts -->
-    <script src="js/state.js?v=20260709i"></script>
+    <script src="js/state.js?v=20260713f"></script>
     <script src="js/selection-bridge-ui.js?v=20260710d"></script>
-    <script src="js/history.js?v=20260710f"></script>
+    <script src="js/history.js?v=20260713f"></script>
     <script src="js/utils.js?v=20260709d"></script>
     <script src="js/layers.js?v=20260710e"></script>
     <script src="js/autodetect.js?v=2"></script>
-    <script src="js/rooms.js?v=20260710j"></script>
-    <script src="js/doors.js?v=2"></script>
-    <script src="js/walls.js?v=20260708q"></script>
-    <script src="js/lines.js?v=20260709i"></script>
-    <script src="js/pois.js?v=20260710b"></script>
+    <script src="js/rooms.js?v=20260713c"></script>
+    <script src="js/doors.js?v=20260713c"></script>
+    <script src="js/walls.js?v=20260713c"></script>
+    <script src="js/lines.js?v=20260713c"></script>
+    <script src="js/pois.js?v=20260713c"></script>
+    <script src="js/blocks.js?v=20260713f"></script>
     <script src="js/paths.js?v=2"></script>
-    <script src="js/tools.js?v=20260710i"></script>
-    <script src="js/canvas.js?v=20260710k"></script>
-    <script src="js/io.js?v=20260710f"></script>
-    <script src="js/api.js?v=20260710p"></script>
-    <script src="core/export-pipeline.js?v=20260707"></script>
+    <script src="js/tools.js?v=20260713d"></script>
+    <script src="js/canvas.js?v=20260713d"></script>
+    <script src="js/io.js?v=20260713f"></script>
+    <script src="js/api.js?v=20260713g"></script>
+    <script src="core/export-pipeline.js?v=20260713g"></script>
     <script src="js/secure-lock.js?v=20260710b"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
     <script src="js/property-inspector-ui.js?v=20260710e"></script>
-    <script src="js/properties.js?v=20260710k"></script>
+    <script src="js/properties.js?v=20260713d"></script>
     <script src="js/qrs.js?v=2"></script>
-    <script src="js/autosave.js?v=20260710o"></script>
-    <script src="js/events.js?v=20260710j"></script>
+    <script src="js/autosave.js?v=20260713f"></script>
+    <script src="js/events.js?v=20260713d"></script>
     <script src="js/dynamic-input-ui.js?v=20260709e"></script>
     <script src="js/command-bar-ui.js?v=20260710b"></script>
     <script src="js/layers-ui.js?v=20260710e"></script>

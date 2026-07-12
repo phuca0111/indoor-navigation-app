@@ -144,7 +144,11 @@
             nodes: mapNodes(collections.pathNodes || collections.nodes),
             edges: mapEdges(collections.pathEdges || collections.edges),
             walls: mapWalls(collections.walls),
-            qr_anchors: mapQrAnchors(collections.qrs || collections.qr_anchors)
+            qr_anchors: mapQrAnchors(collections.qrs || collections.qr_anchors),
+            // Editor-only CAD (Android bỏ qua) — round-trip WebMapEditor
+            blocks: Array.isArray(collections.blocks) ? collections.blocks : [],
+            blockInserts: Array.isArray(collections.blockInserts) ? collections.blockInserts : [],
+            lines: Array.isArray(collections.lines) ? collections.lines : []
         };
     }
 

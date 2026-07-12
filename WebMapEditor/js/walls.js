@@ -21,6 +21,9 @@ function createWallSegment(start, end, options) {
         ]
     };
     walls.push(wall);
+    if (typeof EditorCore !== 'undefined' && EditorCore.ObjectTransform) {
+        EditorCore.ObjectTransform.ensureOriginalGeometry('wall', wall);
+    }
     if (typeof syncSpatialIndexFromLegacy === 'function') syncSpatialIndexFromLegacy();
     return wall;
 }

@@ -18,7 +18,8 @@
         door: 'doors',
         poi: 'pois',
         qr: 'qrs',
-        node: 'pathNodes'
+        node: 'pathNodes',
+        blockRef: 'blockInserts'
     };
 
     var _syncingToManager = false;
@@ -33,7 +34,8 @@
             doors: g.doors || [],
             pois: g.pois || [],
             qrs: g.qrs || [],
-            pathNodes: g.pathNodes || []
+            pathNodes: g.pathNodes || [],
+            blockInserts: g.blockInserts || []
         };
     }
 

@@ -246,7 +246,7 @@ function createRoom(startX, startY, endX, endY) {
     if (w < GRID_SIZE / 2 || h < GRID_SIZE / 2) return null;
 
     var colors = ['#e8f4f8', '#fef3e2', '#e8f8e8', '#f8e8f4', '#f0f0e0', '#e0f0f0'];
-    return {
+    var room = {
         id: nextRoomId++,
         shape: 'rect',
         name: 'Phòng ' + (rooms.length + 1),
@@ -259,13 +259,17 @@ function createRoom(startX, startY, endX, endY) {
         labelAutoScale: true,
         labelLineHeight: 1.2
     };
+    if (typeof EditorCore !== 'undefined' && EditorCore.ObjectTransform) {
+        EditorCore.ObjectTransform.ensureOriginalGeometry('room', room);
+    }
+    return room;
 }
 
 // --- TẠO PHÒNG TRÒN ---
 function createCircleRoom(cx, cy, radius) {
     if (radius < 10) return null;
     var colors = ['#e8f4f8', '#fef3e2', '#e8f8e8', '#f8e8f4', '#f0f0e0', '#e0f0f0'];
-    return {
+    var room = {
         id: nextRoomId++,
         shape: 'circle',
         name: 'Phòng ' + (rooms.length + 1),
@@ -281,6 +285,10 @@ function createCircleRoom(cx, cy, radius) {
         labelAutoScale: true,
         labelLineHeight: 1.2
     };
+    if (typeof EditorCore !== 'undefined' && EditorCore.ObjectTransform) {
+        EditorCore.ObjectTransform.ensureOriginalGeometry('room', room);
+    }
+    return room;
 }
 
 /** Cập nhật bbox (x/y/width/height) từ points đa giác. */
@@ -368,6 +376,9 @@ function createPolygonRoom(points) {
         labelLineHeight: 1.2
     };
     updatePolygonBoundingBox(room);
+    if (typeof EditorCore !== 'undefined' && EditorCore.ObjectTransform) {
+        EditorCore.ObjectTransform.ensureOriginalGeometry('room', room);
+    }
     return room;
 }
 
@@ -397,6 +408,35 @@ function getResizeHandle(wx, wy, room) {
         }
     }
     return null;
+}
+
+/** Tâm phòng (rect / circle / polygon) */
+function getRoomCenter(room) {
+    if (!room) return { x: 0, y: 0 };
+    if (window.EditorCore && EditorCore.ObjectTransform) {
+        return EditorCore.ObjectTransform.getObjectCentroid('room', room);
+    }
+    if (room.shape === 'circle') return { x: room.cx, y: room.cy };
+    if (room.shape === 'polygon' && room.points && room.points.length) {
+        var sx = 0, sy = 0;
+        room.points.forEach(function (p) { sx += p.x; sy += p.y; });
+        return { x: sx / room.points.length, y: sy / room.points.length };
+    }
+    return { x: room.x + room.width / 2, y: room.y + room.height / 2 };
+}
+
+/** Handle xoay phía trên tâm phòng */
+function getRoomRotateHandle(room) {
+    var c = getRoomCenter(room);
+    var dist = 28;
+    return { x: c.x, y: c.y - dist, center: c };
+}
+
+function hitRoomRotateHandle(wx, wy, room) {
+    if (!room) return false;
+    var h = getRoomRotateHandle(room);
+    var threshold = (HANDLE_SIZE + 4) / zoom;
+    return Math.abs(wx - h.x) < threshold && Math.abs(wy - h.y) < threshold;
 }
 
 function resizeRoom(snappedX, snappedY) {
