@@ -75,6 +75,24 @@ const userSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Organization',
         default: null
+    },
+
+    // Phase 7 — tăng mỗi lần logout-all / đổi MK; JWT mang field sv để đối chiếu
+    session_version: {
+        type: Number,
+        default: 0
+    },
+
+    // Phase 7 — quên mật khẩu (chỉ lưu hash, không lưu raw token)
+    password_reset_token_hash: {
+        type: String,
+        default: null,
+        select: false
+    },
+    password_reset_expires: {
+        type: Date,
+        default: null,
+        select: false
     }
 
 }, {

@@ -32,11 +32,33 @@ const refreshLimiter = rateLimit({
     max: 20,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { message: 'Quá nhiều yêu cệu refresh token. Vui lòng thử lại sau.' }
+    message: { message: 'Quá nhiều yêu cầu refresh token. Vui lòng thử lại sau.' }
+});
+
+// Forgot / reset password: 5 / 15 phút / IP
+// skip khi Jest — suite Phase 7 gọi nhiều lần cùng IP
+const forgotPasswordLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: () => !!process.env.JEST_WORKER_ID,
+    message: { message: 'Quá nhiều yêu cầu quên mật khẩu. Vui lòng thử lại sau 15 phút.' }
+});
+
+const resetPasswordLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: () => !!process.env.JEST_WORKER_ID,
+    message: { message: 'Quá nhiều lần đặt lại mật khẩu. Vui lòng thử lại sau 15 phút.' }
 });
 
 module.exports = {
     loginLimiter,
     publicRegisterLimiter,
-    refreshLimiter
+    refreshLimiter,
+    forgotPasswordLimiter,
+    resetPasswordLimiter
 };

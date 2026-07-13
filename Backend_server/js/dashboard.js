@@ -1023,6 +1023,37 @@ async function handleLogout() {
   }
 }
 
+/** Phase 7 bậc B — thu hồi mọi refresh token rồi clear session tab này */
+async function handleLogoutAll() {
+  if (!confirm('Thu hồi mọi phiên đăng nhập của tài khoản này? Mọi trình duyệt / máy đang login admin sẽ phải đăng nhập lại.')) {
+    return;
+  }
+  const msgEl = document.getElementById('logoutAllMessage');
+  if (msgEl) {
+    msgEl.style.display = 'none';
+    msgEl.textContent = '';
+  }
+  try {
+    const res = await apiFetch('/auth/logout-all', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (msgEl) {
+        msgEl.textContent = data.message || ('HTTP ' + res.status);
+        msgEl.style.display = 'block';
+      } else {
+        alert(data.message || 'Không thể đăng xuất mọi thiết bị.');
+      }
+      return;
+    }
+  } catch (e) {
+    console.warn('logout-all failed:', e);
+  } finally {
+    clearAuthStorage();
+    try { localStorage.setItem('authEvent', String(Date.now())); } catch (_) {}
+    window.location.replace('/admin/index.html');
+  }
+}
+
 // ============================================================
 // DASHBOARD STARTUP INIT
 // ============================================================
@@ -1038,6 +1069,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const logoutBtn = document.getElementById('btnLogout');
   if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+
+  const logoutAllBtn = document.getElementById('btnLogoutAll');
+  if (logoutAllBtn) logoutAllBtn.addEventListener('click', handleLogoutAll);
 
   let initialTab = localStorage.getItem('activeDashboardTab') || 'buildings';
   const hashTab = (location.hash || '').replace(/^#/, '');
@@ -1062,28 +1096,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateOrgSortIndicators();
   fetchPlatformStats();
 });
-// MULTI-TAB SYNC LISTENERS (TEMPORARILY DISABLED)
+// MULTI-TAB SYNC LISTENERS (Phase 7 — bật lại)
 // ============================================================
-// 1. Storage event: khi tab khác thay đổi localStorage
-// window.addEventListener('storage', (event) => {
-//   if (['token', 'refreshToken', 'userEmail', 'userRole', 'userId', 'authEvent'].includes(event.key)) {
-//     syncCurrentSession('storage-change');
-//   }
-// });
+window.addEventListener('storage', (event) => {
+  if (['token', 'refreshToken', 'userEmail', 'userRole', 'userId', 'authEvent'].includes(event.key)) {
+    syncCurrentSession('storage-change');
+  }
+});
 
-// 2. Visibility change: khi tab được focus lại
-// document.addEventListener('visibilitychange', () => {
-//   if (document.visibilityState === 'visible') {
-//     syncCurrentSession('tab-visible');
-//   }
-// });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    syncCurrentSession('tab-visible');
+  }
+});
 
-// 3. Page show (bfcache restore)
-// window.addEventListener('pageshow', (event) => {
-//   if (event.persisted) {
-//     syncCurrentSession('pageshow');
-//   }
-// });
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) {
+    syncCurrentSession('pageshow');
+  }
+});
 
 // ============================================================
 // TAB SWITCHING
@@ -3834,6 +3865,9 @@ const ACTION_LABELS = {
   REGISTER: 'Đăng ký công khai',
   UPDATE_PROFILE: 'Cập nhật hồ sơ',
   CHANGE_PASSWORD: 'Đổi mật khẩu',
+  PASSWORD_RESET_REQUEST: 'Yêu cầu quên mật khẩu',
+  PASSWORD_RESET_COMPLETE: 'Đặt lại mật khẩu',
+  LOGOUT_ALL: 'Đăng xuất mọi thiết bị',
   PUBLISH_MAP: 'Xuất bản bản đồ',
   LOAD_MAP: 'Tải bản đồ',
   ROLLBACK_MAP: 'Khôi phục phiên bản bản đồ',
@@ -3965,6 +3999,9 @@ function getActionFallbackDetail(action, target) {
     BUILDING_ASSIGN: 'Gán quyền quản lý tòa nhà' + name,
     BUILDING_UNASSIGN: 'Thu hồi quyền quản lý tòa nhà' + name,
     CHANGE_PASSWORD: 'Đổi mật khẩu tài khoản',
+    PASSWORD_RESET_REQUEST: 'Yêu cầu quên mật khẩu' + name,
+    PASSWORD_RESET_COMPLETE: 'Đặt lại mật khẩu' + name,
+    LOGOUT_ALL: 'Đăng xuất mọi thiết bị' + name,
     CREATE_ORG: 'Tạo tổ chức' + name,
     APPROVE_ORG_REGISTRATION: 'Duyệt hồ sơ đăng ký tổ chức' + name,
     REJECT_ORG_REGISTRATION: 'Từ chối hồ sơ đăng ký' + name,

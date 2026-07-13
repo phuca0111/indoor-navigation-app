@@ -16,7 +16,9 @@
 
     function buildKey(buildingId, floor, userId) {
         var uid = (userId != null && String(userId).trim() !== '') ? String(userId) : 'anon';
-        return STORAGE_PREFIX + uid + '_' + (buildingId || 'default') + '_' + (floor || '1');
+        // floor "0" hợp lệ — không dùng || vì 0/falsy sẽ thành '1'
+        var fl = (floor != null && String(floor) !== '') ? String(floor) : '0';
+        return STORAGE_PREFIX + uid + '_' + (buildingId || 'default') + '_' + fl;
     }
 
     function safeStringify(data) {
