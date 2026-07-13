@@ -39,6 +39,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.khoaluan.indoornav.ui.components.BottomInfoCard
 import com.khoaluan.indoornav.ui.components.CompassButton
 import com.khoaluan.indoornav.ui.components.CrosshairButton
+import com.khoaluan.indoornav.ui.components.DestinationFocusButton
 import com.khoaluan.indoornav.ui.components.EmptyStateOverlay
 import com.khoaluan.indoornav.ui.components.FloorSelectorSheet
 import com.khoaluan.indoornav.ui.components.MapView
@@ -94,21 +95,21 @@ fun MapScreen(
         viewModel.clearQrError()
     }
 
-    // Snackbar khi vị trí được xác định lần đầu
-    // FIX #9: Chỉ hiển thị 1 lần khi userPos chuyển từ null → non-null
-    // Tránh spam snackbar do TPF update liên tục (~50Hz)
+    // Snackbar khi vị trí được xác định lần đầu (null → có vị trí).
+    // FIX: chỉ key theo nullability; set flag TRƯỚC showSnackbar.
+    // Trước đây LaunchedEffect(userPos) restart mỗi frame PDR + flag sau suspend → spam ~3 lần/giây.
     var hasShownPositionSnackbar by remember { mutableStateOf(false) }
-    LaunchedEffect(navState.userPos) {
-        if (navState.userPos != null) {
+    val hasUserPos = navState.userPos != null
+    LaunchedEffect(hasUserPos) {
+        if (hasUserPos) {
             if (!hasShownPositionSnackbar) {
+                hasShownPositionSnackbar = true
                 snackbarHostState.showSnackbar(
                     message = "✓ Đã xác định vị trí",
                     duration = SnackbarDuration.Short,
                 )
-                hasShownPositionSnackbar = true
             }
         } else {
-            // Reset khi userPos về null (sau exitIndoorNavigation)
             hasShownPositionSnackbar = false
         }
     }
@@ -173,6 +174,7 @@ fun MapScreen(
                     var selectedRoomId   by remember { mutableStateOf<Int?>(null) }
                     var selectedRoomName by remember { mutableStateOf<String?>(null) }
                     var centerTrigger    by remember { mutableStateOf(0) }
+                    var centerDestTrigger by remember { mutableStateOf(0) }
                     var currentFloor     by remember { mutableStateOf(0) }
                     var showFloorSheet   by remember { mutableStateOf(false) }
 
@@ -205,15 +207,17 @@ fun MapScreen(
                         // KHÔNG reset showEmptyState vì đã có LaunchedEffect(navState.userPos)
                     }
 
-                    // UX fix 3: 3 trạng thái card
+                    // G1: chọn đích ≠ tự tính path; cờ UI qua computeNavigationUiFlags
                     val isParkingDest = navState.destinationPoiId == -1
                     val currentDestinationName = if (isParkingDest) "Bãi đỗ xe" else selectedRoomName
-                    
-                    val showBottomCard   = currentDestinationName != null || navState.path != null
-                    val isSearchingPath  = currentDestinationName != null && navState.path == null && navState.userPos != null
-                    val isPathPreview    = currentDestinationName != null
-                        && !navState.isNavigatingMode
-                        && !isSearchingPath
+                    val uiFlags = com.khoaluan.indoornav.ui.navigation.computeNavigationUiFlags(
+                        destinationName = currentDestinationName,
+                        path = navState.path,
+                        isNavigatingMode = navState.isNavigatingMode,
+                    )
+                    val showBottomCard = uiFlags.showBottomCard
+                    val isSearchingPath = uiFlags.isSearchingPath
+                    val isPathPreview = uiFlags.isPathPreview
 
                     // Data class dùng chung cho danh sách tìm kiếm
                     data class SearchItem(val id: Int, val name: String, val isRoom: Boolean)
@@ -270,6 +274,7 @@ fun MapScreen(
                                 navState = navState,
                                 mapRotationMode = mapRotationMode,
                                 centerOnUserTrigger = centerTrigger,
+                                centerOnDestinationTrigger = centerDestTrigger,
                             )
 
                             // UX fix 1: EmptyStateOverlay
@@ -368,7 +373,20 @@ fun MapScreen(
                                     .padding(start = 16.dp, bottom = 16.dp),
                             )
 
-                            // RULE 2: CrosshairButton — chỉ khi biết vị trí
+                            // RULE 2: Crosshair = vị trí đang đứng; Pin đỏ = điểm đến
+                            val hasDestination = navState.destinationMarkerPos != null ||
+                                (navState.path?.isNotEmpty() == true)
+                            if (hasDestination) {
+                                DestinationFocusButton(
+                                    onClick = { centerDestTrigger++ },
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(
+                                            end = 16.dp,
+                                            bottom = if (navState.userPos != null) 68.dp else 16.dp,
+                                        ),
+                                )
+                            }
                             if (navState.userPos != null) {
                                 CrosshairButton(
                                     onClick = { centerTrigger++ },
