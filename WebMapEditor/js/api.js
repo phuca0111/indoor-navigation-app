@@ -259,6 +259,26 @@ function hideEditorAccessBanner() {
     if (bar) bar.style.opacity = '';
 }
 
+/** Rebuild #floorSelect theo total_floors (0 .. N-1). Giữ selection nếu còn hợp lệ. */
+function rebuildFloorSelect(totalFloors) {
+    const sel = document.getElementById('floorSelect');
+    if (!sel) return;
+    const n = Math.max(1, parseInt(totalFloors, 10) || 1);
+    const prev = sel.value;
+    let html = '';
+    for (let i = 0; i < n; i++) {
+        const label = i === 0 ? 'Tầng trệt' : ('Tầng ' + i);
+        html += '<option value="' + i + '">' + label + '</option>';
+    }
+    sel.innerHTML = html;
+    if (prev !== '' && Number(prev) >= 0 && Number(prev) < n) {
+        sel.value = String(prev);
+    } else {
+        sel.value = '0';
+    }
+    if (typeof updateEditorFloorLabel === 'function') updateEditorFloorLabel();
+}
+
 async function loadBuildingContext() {
     hideEditorAccessBanner();
     updateEditorFloorLabel();
@@ -266,6 +286,7 @@ async function loadBuildingContext() {
 
     if (!buildingId) {
         renderEditorBuildingContext(null);
+        rebuildFloorSelect(1);
         return null;
     }
 
@@ -293,6 +314,7 @@ async function loadBuildingContext() {
         }
 
         window.editorBuildingMeta = data;
+        rebuildFloorSelect(data.total_floors || 1);
         renderEditorBuildingContext(data);
         return data;
     } catch (error) {
@@ -560,6 +582,7 @@ function clearCanvasData(opts) {
     bgImageBase64 = '';
     blocks = [];
     blockInserts = [];
+    dimensions = [];
 
     // Reset các ID tự tăng
     nextRoomId = 1;
@@ -571,6 +594,7 @@ function clearCanvasData(opts) {
     nextLineId = 1;
     nextBlockDefId = 1;
     nextBlockInsertId = 1;
+    nextDimId = 1;
 
     // Reset tên bản đồ về mặc định khi tạo mới
     var mapNameInput = document.getElementById('mapName');
@@ -805,6 +829,13 @@ function applyMapData(data) {
         if (bi && bi.id && bi.id >= nextBlockInsertId) nextBlockInsertId = bi.id + 1;
     });
 
+    // 6d. Dimensions (annotation — editor only)
+    dimensions = Array.isArray(data.dimensions) ? data.dimensions : [];
+    nextDimId = 1;
+    dimensions.forEach(function (d) {
+        if (d && d.id && d.id >= nextDimId) nextDimId = d.id + 1;
+    });
+
     // Phase 1b Layer system: gán layerId mặc định cho dữ liệu legacy
     // (map hiện tại chưa chắc có layerId trong payload publish)
     var defaultLayerId = 'default';
@@ -813,7 +844,7 @@ function applyMapData(data) {
             defaultLayerId = EditorCore.LayerManager.DEFAULT_LAYER_ID;
         }
     } catch (_) { }
-    [rooms, doors, pois, pathNodes, walls, qrs, blockInserts].forEach(function (arr) {
+    [rooms, doors, pois, pathNodes, walls, qrs, blockInserts, dimensions].forEach(function (arr) {
         if (!Array.isArray(arr)) return;
         arr.forEach(function (o) {
             if (!o || typeof o !== 'object') return;
@@ -925,7 +956,7 @@ function buildPublishPayloadInline() {
 }
 
 /**
- * Field chỉ editor (Android bỏ qua): Block/Insert + lines — round-trip sau publish/F5.
+ * Field chỉ editor (Android bỏ qua): Block/Insert + lines + dimensions — round-trip sau publish/F5.
  */
 function attachEditorCadExtras(mapData) {
     if (!mapData || typeof mapData !== 'object') return mapData;
@@ -958,6 +989,20 @@ function attachEditorCadExtras(mapData) {
                     return { x: Math.round(p.x || 0), y: Math.round(p.y || 0) };
                 })
                 : []
+        };
+    });
+    mapData.dimensions = (dimensions || []).filter(function (d) {
+        return d && typeof d === 'object';
+    }).map(function (d) {
+        return {
+            id: d.id,
+            type: d.type || 'dimlinear',
+            orientation: d.type === 'dimaligned' ? undefined : (d.orientation || 'horizontal'),
+            p1: d.p1 ? { x: Math.round(d.p1.x || 0), y: Math.round(d.p1.y || 0) } : null,
+            p2: d.p2 ? { x: Math.round(d.p2.x || 0), y: Math.round(d.p2.y || 0) } : null,
+            offset: d.offset || 0,
+            color: d.color || (d.type === 'dimaligned' ? '#c026d3' : '#e11d48'),
+            layerId: d.layerId || 'default'
         };
     });
     return mapData;

@@ -3163,12 +3163,76 @@ function openEditBuildingModal(id) {
   document.getElementById('editBuildingName').value = b.name || '';
   document.getElementById('editBuildingAddress').value = b.address || '';
   document.getElementById('editBuildingDesc').value = b.description || '';
-  document.getElementById('editBuildingFloors').value = b.total_floors || 1;
+  syncEditBuildingFloorsUI(b.total_floors || 1);
   document.getElementById('editBuildingLat').value = b.gps_location ? b.gps_location.lat : 0;
   document.getElementById('editBuildingLng').value = b.gps_location ? b.gps_location.lng : 0;
   document.getElementById('editBuildingStatus').value = b.status || 'DRAFT';
   document.getElementById('editBuildingOrganizationId').value = b.organization_id || '';
+  const floorMsg = document.getElementById('editBuildingFloorMsg');
+  if (floorMsg) {
+    floorMsg.style.display = 'none';
+    floorMsg.textContent = '';
+  }
   document.getElementById('editBuildingModal').style.display = 'flex';
+}
+
+function syncEditBuildingFloorsUI(n) {
+  const count = Math.max(1, parseInt(n, 10) || 1);
+  const hidden = document.getElementById('editBuildingFloors');
+  const label = document.getElementById('editBuildingFloorsLabel');
+  const hint = document.getElementById('editBuildingFloorHint');
+  if (hidden) hidden.value = String(count);
+  if (label) label.textContent = String(count);
+  if (hint) {
+    const range = count === 1
+      ? 'Tầng hợp lệ: 0 (trệt)'
+      : ('Tầng hợp lệ: 0 .. ' + (count - 1) + ' (0 = trệt)');
+    hint.textContent = range + '. Chỉ bớt được tầng cao nhất khi chưa có bản đồ.';
+  }
+}
+
+async function patchBuildingFloor(action) {
+  if (!canManageBuildingMeta()) {
+    alert('Bạn không có quyền sửa số tầng.');
+    return;
+  }
+  const id = document.getElementById('editBuildingId').value;
+  if (!id) return;
+  const floorMsg = document.getElementById('editBuildingFloorMsg');
+  if (floorMsg) {
+    floorMsg.style.display = 'none';
+    floorMsg.textContent = '';
+  }
+  const confirmMsg = action === 'add'
+    ? 'Thêm 1 tầng ở đuôi (chưa tạo bản đồ)?'
+    : 'Bớt tầng cao nhất? Chỉ thành công nếu tầng đó chưa có bản đồ.';
+  if (!confirm(confirmMsg)) return;
+  try {
+    const res = await apiFetch('/buildings/' + id + '/floors', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: action })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (res.ok) {
+      const n = d.total_floors != null ? d.total_floors : (d.building && d.building.total_floors);
+      syncEditBuildingFloorsUI(n);
+      // Cập nhật cache danh sách để mở lại modal đúng
+      const cached = allBuildings.find(x => x._id === id);
+      if (cached) cached.total_floors = n;
+      alert(d.message || 'Đã cập nhật số tầng.');
+      fetchBuildings();
+    } else {
+      const msg = d.message || ('HTTP ' + res.status);
+      if (floorMsg) {
+        floorMsg.textContent = msg;
+        floorMsg.style.display = 'block';
+      }
+      alert(msg);
+    }
+  } catch (e) {
+    alert('Lỗi kết nối!');
+  }
 }
 
 function closeEditBuildingModal() { document.getElementById('editBuildingModal').style.display = 'none'; }
@@ -3178,13 +3242,13 @@ async function saveEditBuilding() {
   const name = document.getElementById('editBuildingName').value.trim();
   const address = document.getElementById('editBuildingAddress').value.trim();
   const desc = document.getElementById('editBuildingDesc').value.trim();
-  const floors = parseInt(document.getElementById('editBuildingFloors').value) || 1;
+  // Số tầng đổi qua PATCH /floors — không gửi total_floors ở PUT để tránh nhảy số tự do
   const lat = parseFloat(document.getElementById('editBuildingLat').value) || 0;
   const lng = parseFloat(document.getElementById('editBuildingLng').value) || 0;
   const status = document.getElementById('editBuildingStatus').value;
   const orgId = document.getElementById('editBuildingOrganizationId')?.value?.trim() || '';
   try {
-    const payload = { name, address, description: desc, total_floors: floors, lat, lng, status };
+    const payload = { name, address, description: desc, lat, lng, status };
     // Chỉ Super Admin được gửi organization_id
     if (currentUser?.role === 'SUPER_ADMIN' && orgId) {
       payload.organization_id = orgId;
@@ -3776,6 +3840,8 @@ const ACTION_LABELS = {
   MAP_VERSION_RETENTION: 'Dọn phiên bản map cũ',
   CREATE_BUILDING: 'Tạo tòa nhà',
   UPDATE_BUILDING: 'Cập nhật tòa nhà',
+  ADD_FLOOR: 'Thêm tầng',
+  REMOVE_FLOOR: 'Bớt tầng',
   DELETE_BUILDING: 'Xóa tòa nhà',
   DEACTIVATE_BUILDING: 'Vô hiệu hóa tòa nhà',
   ACTIVATE_BUILDING: 'Khôi phục tòa nhà',
@@ -3887,6 +3953,8 @@ function getActionFallbackDetail(action, target) {
     CREATE_USER: 'Tạo tài khoản quản trị' + name,
     CREATE_BUILDING: 'Tạo tòa nhà mới' + name,
     UPDATE_BUILDING: 'Cập nhật thông tin tòa nhà' + name,
+    ADD_FLOOR: 'Thêm tầng tòa nhà' + name,
+    REMOVE_FLOOR: 'Bớt tầng tòa nhà' + name,
     DEACTIVATE_BUILDING: 'Vô hiệu hóa tòa nhà' + name,
     ACTIVATE_BUILDING: 'Khôi phục tòa nhà' + name,
     DELETE_BUILDING: 'Xóa tòa nhà' + name,

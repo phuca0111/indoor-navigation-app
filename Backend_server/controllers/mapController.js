@@ -13,6 +13,7 @@ const ActivityLog = require('../models/ActivityLog');
 const { buildMapSnapshot } = require('../utils/mapSnapshot');
 const { applyRetentionForFloor } = require('../utils/mapVersionRetention');
 const { assertBuildingWritable, isBuildingQuotaLocked } = require('../utils/overQuotaLock');
+const { assertFloorInRange } = require('../services/floorLifecycle');
 
 function logActivity(data) {
     return ActivityLog.create(data).catch(() => {});
@@ -79,10 +80,26 @@ const saveMap = async (req, res) => {
             return res.status(400).json({ message: 'Số tầng không hợp lệ.' });
         }
 
+        const buildingMeta = await Building.findById(buildingId)
+            .select('organization_id total_floors')
+            .lean();
+        if (!buildingMeta) {
+            return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
+        }
+        try {
+            assertFloorInRange(floorNum, buildingMeta.total_floors);
+        } catch (e) {
+            return res.status(e.status || 400).json({
+                message: e.message,
+                code: e.code || 'FLOOR_OUT_OF_RANGE',
+                floor_number: e.floor_number,
+                total_floors: e.total_floors
+            });
+        }
+
         if (req.user?.role !== 'SUPER_ADMIN') {
-            const building = await Building.findById(buildingId).select('organization_id').lean();
-            if (building?.organization_id) {
-                const org = await Organization.findById(building.organization_id);
+            if (buildingMeta.organization_id) {
+                const org = await Organization.findById(buildingMeta.organization_id);
                 const writable = await assertBuildingWritable(buildingId, org);
                 if (!writable.ok) {
                     return res.status(403).json({
@@ -207,10 +224,25 @@ const saveMap = async (req, res) => {
 const loadMap = async (req, res) => {
     try {
         const { buildingId, floor } = req.params;
+        const floorNum = parseInt(floor, 10);
 
         if (!req.user) {
             const allowed = await assertPublicBuildingAccess(buildingId, res);
             if (!allowed) return;
+        }
+
+        const buildingMeta = await Building.findById(buildingId).select('total_floors').lean();
+        if (!buildingMeta) {
+            return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
+        }
+        if (Number.isFinite(floorNum)) {
+            const n = Number(buildingMeta.total_floors) || 1;
+            if (floorNum < 0 || floorNum >= n) {
+                return res.status(404).json({
+                    message: `Tầng ${floorNum} ngoài phạm vi (0..${n - 1}).`,
+                    code: 'FLOOR_OUT_OF_RANGE'
+                });
+            }
         }
 
         const map = await Floor.findOne({
@@ -261,9 +293,12 @@ const downloadMap = async (req, res) => {
             return res.status(404).json({ message: 'Tòa nhà này chưa có bản đồ!' });
         }
 
+        const buildingMeta = await Building.findById(buildingId).select('total_floors').lean();
+        // total_floors = metadata tòa (0..N-1); floors_count = số Floor document thực tế
         res.status(200).json({
             building_id: buildingId,
-            total_floors: maps.length,
+            total_floors: buildingMeta?.total_floors ?? maps.length,
+            floors_count: maps.length,
             floors: maps
         });
     } catch (error) {

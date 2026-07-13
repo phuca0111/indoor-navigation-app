@@ -21,10 +21,8 @@ import com.khoaluan.indoornav.ui.theme.NavBlue
 /**
  * BottomSheet chọn tầng — hiện khi user nhấn chip "Tầng X ▼" trên TopAppBar.
  *
- * UX fix: Floor selector "Tầng 1 ▼" không có UI chọn tầng.
- *
  * @param currentFloor    Tầng hiện đang xem
- * @param totalFloors     Tổng số tầng (mặc định 5)
+ * @param totalFloors     Tổng số tầng từ server (N → tầng 0..N-1). Fallback tối thiểu 1.
  * @param onFloorSelected Callback trả về tầng được chọn
  * @param onDismiss       Callback đóng sheet
  */
@@ -32,11 +30,13 @@ import com.khoaluan.indoornav.ui.theme.NavBlue
 @Composable
 fun FloorSelectorSheet(
     currentFloor: Int,
-    totalFloors: Int = 5,
+    totalFloors: Int = 1,
     onFloorSelected: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val floors = (0..totalFloors).toList()
+    // Convention: total_floors = N ↔ 0 .. N-1 (không dùng inclusive range cũ gây off-by-one)
+    val safeTotal = totalFloors.coerceAtLeast(1)
+    val floors = (0 until safeTotal).toList()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,

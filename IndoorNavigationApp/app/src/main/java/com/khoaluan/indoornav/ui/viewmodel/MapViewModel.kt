@@ -117,6 +117,15 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     fun stopGpsGeofencing() {
         gpsGeofenceManager.stopMonitoring()
     }
+    fun getTotalFloorsForBuilding(buildingId: String): Int {
+        val listState = _buildingListState.value
+        if (listState is BuildingListUiState.Success) {
+            val b = listState.buildings.find { it.id == buildingId }
+            if (b != null) return b.totalFloors.coerceAtLeast(1)
+        }
+        return 1
+    }
+
     fun exitIndoorNavigation() {
         locationEngine?.stop()
         _navState.value = NavigationState()

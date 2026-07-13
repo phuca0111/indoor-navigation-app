@@ -483,6 +483,7 @@ fun MapScreen(
                     if (showFloorSheet) {
                         FloorSelectorSheet(
                             currentFloor = currentFloor,
+                            totalFloors = viewModel.getTotalFloorsForBuilding(buildingId),
                             onFloorSelected = { floor ->
                                 currentFloor = floor
                                 viewModel.refreshMap(buildingId, floor)

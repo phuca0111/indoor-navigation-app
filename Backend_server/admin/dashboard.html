@@ -426,6 +426,8 @@
                   <option value="CHANGE_PASSWORD">Đổi mật khẩu</option>
                   <option value="CREATE_BUILDING">Tạo tòa nhà</option>
                   <option value="UPDATE_BUILDING">Cập nhật tòa nhà</option>
+                  <option value="ADD_FLOOR">Thêm tầng</option>
+                  <option value="REMOVE_FLOOR">Bớt tầng</option>
                   <option value="DELETE_BUILDING">Xóa tòa nhà (cũ)</option>
                   <option value="DEACTIVATE_BUILDING">Vô hiệu hóa tòa nhà</option>
                   <option value="PUBLISH_MAP">Xuất bản bản đồ</option>
@@ -623,7 +625,17 @@
             <label>Mô tả:</label>
             <input type="text" id="editBuildingDesc">
             <label>Số tầng:</label>
-            <input type="number" id="editBuildingFloors" min="1">
+            <div id="editBuildingFloorsPanel" style="margin-bottom:12px;">
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <span>Số tầng hiện tại: <strong id="editBuildingFloorsLabel">1</strong></span>
+                    <button type="button" id="btnAddFloor" class="btn-create" style="padding:6px 12px;" onclick="patchBuildingFloor('add')">+ Thêm tầng</button>
+                    <button type="button" id="btnRemoveFloor" class="btn-logout" style="padding:6px 12px; background:#e67e22;" onclick="patchBuildingFloor('remove')">− Bớt tầng cao nhất</button>
+                </div>
+                <p id="editBuildingFloorHint" style="font-size:12px; color:#666; margin:8px 0 0;">Tầng hợp lệ: 0 .. N-1 (0 = trệt). Chỉ bớt được tầng cao nhất khi chưa có bản đồ.</p>
+                <p id="editBuildingFloorMsg" style="font-size:13px; color:#c0392b; margin:6px 0 0; display:none;"></p>
+                <!-- Giữ input ẩn để không phá form cũ; giá trị sync từ API -->
+                <input type="hidden" id="editBuildingFloors" value="1">
+            </div>
             <div style="display:flex; gap:10px;">
                 <div style="flex:1;">
                     <label>Vĩ độ (Lat):</label>
