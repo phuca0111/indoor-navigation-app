@@ -247,7 +247,7 @@ const loadMap = async (req, res) => {
 
         const map = await Floor.findOne({
             building_id: buildingId,
-            floor_number: floor
+            floor_number: Number.isFinite(floorNum) ? { $in: [floorNum, String(floorNum)] } : floor
         });
 
         if (!map) {

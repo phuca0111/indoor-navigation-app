@@ -23,25 +23,39 @@ const auth = async (req, res, next) => {
         const thongTinTrongThe = jwt.verify(token, process.env.JWT_SECRET);
         req.user = thongTinTrongThe;
 
+        // Phase 7: access JWT phải khớp session_version hiện tại (logout-all / đổi MK)
+        const sessionUser = await User.findById(req.user.userId)
+            .select('organization_id is_active role session_version')
+            .lean();
+        if (!sessionUser || sessionUser.is_active === false) {
+            return res.status(403).json({ message: 'Tài khoản đã bị khóa.', code: 'USER_INACTIVE' });
+        }
+        const userSv = Number(sessionUser.session_version) || 0;
+        // Token không có sv coi như version 0 (JWT cấp trước Phase 7)
+        const tokenSv = (req.user.sv === undefined || req.user.sv === null)
+          ? 0
+          : Number(req.user.sv);
+        if (tokenSv !== userSv) {
+            console.log(`[Auth] SESSION_REVOKED user=${req.user.userId} tokenSv=${tokenSv} userSv=${userSv}`);
+            return res.status(401).json({
+                message: 'Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại.',
+                code: 'SESSION_REVOKED'
+            });
+        }
+
         if (['ORG_ADMIN', 'BUILDING_ADMIN'].includes(req.user.role)) {
-            const dbUser = await User.findById(req.user.userId)
-                .select('organization_id is_active role')
-                .lean();
-            if (!dbUser || !dbUser.is_active) {
-                return res.status(403).json({ message: 'Tài khoản đã bị khóa.', code: 'USER_INACTIVE' });
-            }
-            const orgCheck = await assertUserOrgActive(dbUser);
+            const orgCheck = await assertUserOrgActive(sessionUser);
             if (!orgCheck.ok) {
                 return res.status(403).json({ message: orgCheck.message, code: orgCheck.code });
             }
-            const org = await Organization.findById(dbUser.organization_id);
-            if (org && await isUserQuotaLocked(dbUser._id, org)) {
+            const org = await Organization.findById(sessionUser.organization_id);
+            if (org && await isUserQuotaLocked(sessionUser._id, org)) {
                 return res.status(403).json({
                     message: 'Tài khoản bị khóa do vượt hạn mức gói. Liên hệ ORG Admin hoặc nâng cấp PRO.',
                     code: 'OVER_QUOTA_USER_LOCKED'
                 });
             }
-            req.user.organization_id = String(dbUser.organization_id);
+            req.user.organization_id = String(sessionUser.organization_id);
         }
 
         next();

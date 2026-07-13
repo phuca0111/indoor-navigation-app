@@ -31,6 +31,7 @@
     "test:phase5": "jest test/unit/planQuota.test.js test/unit/overQuotaLock.test.js test/integration/phase5_1PlanQuota.test.js test/integration/phase5_3OverQuotaLock.test.js test/integration/phase5_6Subscription.test.js test/integration/phase5_7Payment.test.js test/integration/phase5_8TptpSandbox.test.js --verbose --runInBand",
     "test:phase6": "jest test/integration/phase6Analytics.test.js --verbose --runInBand",
     "test:floor": "jest test/integration/floorLifecycle.test.js --verbose --runInBand",
+    "test:phase7": "jest test/integration/phase7Security.test.js --verbose --runInBand",
     "start": "node server.js",
     "migrate:org": "node scripts/migrate-organization-legacy.js",
     "verify:org": "node scripts/verify-org-migration.js"
@@ -48,6 +49,7 @@
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.3.1",
+    "nodemailer": "^9.0.3",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {

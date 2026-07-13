@@ -167,6 +167,7 @@ if (bSli) {
         }
 
         if (typeof updateEditorFloorLabel === 'function') updateEditorFloorLabel();
+        if (typeof persistEditorFloor === 'function') persistEditorFloor(targetFloor);
         loadMapFromServer().then(function (result) {
             activeFloor = floorSelect.value;
             if (typeof updateEditorMapVersion === 'function') {

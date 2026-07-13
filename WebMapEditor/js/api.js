@@ -13,7 +13,7 @@ window.buildingId = buildingId;
 window.editorBuildingMeta = null;
 window.editorAccessBlocked = false;
 
-// Đồng bộ tầng từ URL (?floor=0) — value "0" hợp lệ
+// Đồng bộ tầng từ URL (?floor=0) — chạy sớm; rebuildFloorSelect sẽ ưu tiên lại sau khi có đủ option
 (function syncFloorFromUrl() {
     var floorParam = urlParams.get('floor');
     if (floorParam == null || floorParam === '') return;
@@ -24,6 +24,39 @@ window.editorAccessBlocked = false;
     });
     if (exists) sel.value = String(floorParam);
 })();
+
+/** Đọc tầng ưu tiên: URL ?floor= → sessionStorage → null */
+function resolvePreferredEditorFloor(totalFloors) {
+    var n = Math.max(1, parseInt(totalFloors, 10) || 1);
+    var fromUrl = null;
+    try {
+        fromUrl = new URLSearchParams(window.location.search).get('floor');
+    } catch (e) { /* ignore */ }
+    var fromSession = null;
+    try {
+        if (buildingId) fromSession = sessionStorage.getItem('editorFloor_' + buildingId);
+    } catch (e2) { /* ignore */ }
+    var candidate = (fromUrl != null && fromUrl !== '') ? fromUrl : fromSession;
+    if (candidate != null && candidate !== '' && Number(candidate) >= 0 && Number(candidate) < n) {
+        return String(candidate);
+    }
+    return null;
+}
+
+/** Ghi tầng đang chọn vào URL + session — F5 giữ đúng tầng */
+function persistEditorFloor(floor) {
+    var f = String(floor);
+    try {
+        if (buildingId) sessionStorage.setItem('editorFloor_' + buildingId, f);
+    } catch (e) { /* ignore */ }
+    try {
+        var url = new URL(window.location.href);
+        url.searchParams.set('floor', f);
+        history.replaceState(null, '', url.pathname + url.search + url.hash);
+    } catch (e2) { /* ignore */ }
+}
+window.persistEditorFloor = persistEditorFloor;
+window.resolvePreferredEditorFloor = resolvePreferredEditorFloor;
 
 // 2. Kiểm tra quyền truy cập (chỉ warning, không chặn)
 if (!token && buildingId) {
@@ -259,7 +292,7 @@ function hideEditorAccessBanner() {
     if (bar) bar.style.opacity = '';
 }
 
-/** Rebuild #floorSelect theo total_floors (0 .. N-1). Giữ selection nếu còn hợp lệ. */
+/** Rebuild #floorSelect theo total_floors (0 .. N-1). Ưu tiên URL/session, rồi selection cũ. */
 function rebuildFloorSelect(totalFloors) {
     const sel = document.getElementById('floorSelect');
     if (!sel) return;
@@ -271,11 +304,17 @@ function rebuildFloorSelect(totalFloors) {
         html += '<option value="' + i + '">' + label + '</option>';
     }
     sel.innerHTML = html;
-    if (prev !== '' && Number(prev) >= 0 && Number(prev) < n) {
+    const preferred = typeof resolvePreferredEditorFloor === 'function'
+        ? resolvePreferredEditorFloor(n)
+        : null;
+    if (preferred != null) {
+        sel.value = preferred;
+    } else if (prev !== '' && Number(prev) >= 0 && Number(prev) < n) {
         sel.value = String(prev);
     } else {
         sel.value = '0';
     }
+    if (typeof persistEditorFloor === 'function') persistEditorFloor(sel.value);
     if (typeof updateEditorFloorLabel === 'function') updateEditorFloorLabel();
 }
 
@@ -1001,6 +1040,7 @@ function attachEditorCadExtras(mapData) {
             p1: d.p1 ? { x: Math.round(d.p1.x || 0), y: Math.round(d.p1.y || 0) } : null,
             p2: d.p2 ? { x: Math.round(d.p2.x || 0), y: Math.round(d.p2.y || 0) } : null,
             offset: d.offset || 0,
+            textOverride: d.textOverride != null && String(d.textOverride) !== '' ? String(d.textOverride) : undefined,
             color: d.color || (d.type === 'dimaligned' ? '#c026d3' : '#e11d48'),
             layerId: d.layerId || 'default'
         };

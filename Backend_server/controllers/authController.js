@@ -17,9 +17,22 @@ const { assertCanCreateUser } = require('../utils/planQuota');
 const { isUserQuotaLocked } = require('../utils/overQuotaLock');
 const { validatePasswordStrength, validatePasswordMinLength } = require('../utils/passwordPolicy');
 const { validateFullName, normalizeFullName } = require('../utils/fullNamePolicy');
+const {
+  issuePasswordResetToken,
+  findUserByValidResetToken,
+  clearPasswordResetFields,
+  shouldExposeResetToken,
+  revokeAllAccessSessions
+} = require('../services/passwordReset');
+const {
+  isSmtpConfigured,
+  buildPasswordResetLink,
+  sendPasswordResetEmail
+} = require('../services/mailService');
 
-// WHY: Tránh bị buộc đăng nhập lại sau mỗi 15 phút.
-// Có thể override bằng ENV JWT_ACCESS_EXPIRES_IN (ví dụ: 12h, 7d).
+// WHY: Tránh bị buộc đăng nhập lại sau mỗi 15 phút (đồ án / demo).
+// Production có thể set JWT_ACCESS_EXPIRES_IN=15m (xem WorldFlow Phase 7 roadmap).
+// Override: ENV JWT_ACCESS_EXPIRES_IN (ví dụ: 12h, 7d, 15m).
 const ACCESS_TOKEN_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || '7d';
 
 function logActivity(data) {
@@ -311,8 +324,13 @@ const login = async (req, res) => {
         }
 
         // Bước 5: Tạo access token (mặc định 7 ngày) + refresh token (7 ngày)
+        // sv = session_version — logout-all tăng version → JWT cũ bị từ chối
         const accessToken = jwt.sign(
-            { userId: user._id, role: user.role },
+            {
+                userId: user._id,
+                role: user.role,
+                sv: Number(user.session_version) || 0
+            },
             process.env.JWT_SECRET,
             { expiresIn: ACCESS_TOKEN_EXPIRES_IN }
         );
@@ -386,7 +404,11 @@ const refresh = async (req, res) => {
         }
 
         const newAccessToken = jwt.sign(
-            { userId: user._id, role: user.role },
+            {
+                userId: user._id,
+                role: user.role,
+                sv: Number(user.session_version) || 0
+            },
             process.env.JWT_SECRET,
             { expiresIn: ACCESS_TOKEN_EXPIRES_IN }
         );
@@ -502,4 +524,182 @@ const unlockSession = async (req, res) => {
     }
 };
 
-module.exports = { register, login, refresh, logout, unlockSession, registerPublic };
+// ==========================================
+// HÀM 6: FORGOT PASSWORD — Yêu cầu đặt lại MK (public)
+// Response luôn giống nhau để không leak email tồn tại.
+// ==========================================
+const forgotPassword = async (req, res) => {
+    try {
+        const email = String(req.body?.email || '').trim().toLowerCase();
+        const generic = {
+            message: 'Nếu email tồn tại trong hệ thống, hướng dẫn đặt lại mật khẩu đã được gửi.'
+        };
+
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ message: 'Email không hợp lệ.' });
+        }
+
+        // Cần +password_reset fields vì select:false
+        const user = await User.findOne({ email }).select('+password_reset_token_hash +password_reset_expires');
+        if (!user || user.is_active === false) {
+            return res.status(200).json(generic);
+        }
+
+        const { rawToken, expiresAt } = await issuePasswordResetToken(user);
+
+        logActivity({
+            user_id: user._id,
+            action: 'PASSWORD_RESET_REQUEST',
+            target_type: 'user',
+            target_id: String(user._id),
+            target: user.email,
+            details: { message: 'Yêu cầu quên mật khẩu', expires_at: expiresAt },
+            ip_address: req.ip || '',
+            organization_id: user.organization_id || undefined
+        });
+
+        // Sandbox: không SMTP — log ngắn (không log raw token đầy đủ)
+        console.log(`[Auth] Password reset issued for user ${user._id} (expires ${expiresAt.toISOString()})`);
+
+        let emailSent = false;
+        if (isSmtpConfigured()) {
+            try {
+                const resetLink = buildPasswordResetLink(rawToken);
+                await sendPasswordResetEmail({
+                    to: user.email,
+                    resetLink,
+                    expiresAt
+                });
+                emailSent = true;
+            } catch (mailErr) {
+                // Không leak chi tiết cho client; giữ token để sandbox/retry
+                console.error('[Auth] Gửi email reset thất bại:', mailErr.message || mailErr);
+            }
+        }
+
+        const body = { ...generic };
+        if (emailSent) {
+            body.emailSent = true;
+        }
+        // Production hoặc đã gửi mail → không trả raw token
+        if (shouldExposeResetToken({ emailSent })) {
+            body.resetToken = rawToken;
+            body.expiresAt = expiresAt;
+            body.devNote = 'Sandbox: hiện token khi chưa gửi được email. Production không trả field này.';
+        }
+        return res.status(200).json(body);
+    } catch (error) {
+        return res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+    }
+};
+
+// ==========================================
+// HÀM 7: RESET PASSWORD — Đặt MK mới bằng token (public)
+// ==========================================
+const resetPassword = async (req, res) => {
+    try {
+        const { token, newPassword, confirmPassword } = req.body || {};
+        if (!token) {
+            return res.status(400).json({ message: 'Thiếu token đặt lại mật khẩu.', code: 'RESET_TOKEN_MISSING' });
+        }
+
+        const strengthErrors = validatePasswordStrength(newPassword);
+        if (strengthErrors.length) {
+            return res.status(400).json({ message: 'Mật khẩu mới không hợp lệ.', errors: strengthErrors });
+        }
+        if (newPassword !== confirmPassword) {
+            return res.status(400).json({ message: 'Xác nhận mật khẩu không khớp.' });
+        }
+
+        const user = await findUserByValidResetToken(token);
+        if (!user) {
+            return res.status(400).json({
+                message: 'Token không hợp lệ hoặc đã hết hạn.',
+                code: 'RESET_TOKEN_INVALID'
+            });
+        }
+
+        user.password = await bcrypt.hash(newPassword, 10);
+        await user.save();
+        await clearPasswordResetFields(user);
+
+        // Thu hồi refresh + vô hiệu hóa access JWT cũ
+        await RefreshToken.updateMany(
+            { user_id: user._id, is_revoked: false },
+            { $set: { is_revoked: true } }
+        );
+        await revokeAllAccessSessions(user._id);
+
+        logActivity({
+            user_id: user._id,
+            action: 'PASSWORD_RESET_COMPLETE',
+            target_type: 'user',
+            target_id: String(user._id),
+            target: user.email,
+            details: { message: 'Đặt lại mật khẩu thành công (self-service)' },
+            ip_address: req.ip || '',
+            organization_id: user.organization_id || undefined
+        });
+
+        return res.status(200).json({ message: 'Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.' });
+    } catch (error) {
+        return res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+    }
+};
+
+// ==========================================
+// HÀM 8: LOGOUT ALL — Thu hồi mọi refresh token (bậc B)
+// ==========================================
+const logoutAll = async (req, res) => {
+    try {
+        const userId = req.user?.userId;
+        if (!userId) {
+            return res.status(401).json({ message: 'Chưa đăng nhập.' });
+        }
+
+        const result = await RefreshToken.updateMany(
+            { user_id: userId, is_revoked: false },
+            { $set: { is_revoked: true } }
+        );
+
+        // WHY: Access JWT vẫn còn hạn 7 ngày nếu chỉ revoke refresh — tăng session_version
+        const newSv = await revokeAllAccessSessions(userId);
+        console.log(`[Auth] logout-all OK user=${userId} session_version=${newSv} refresh_revoked=${result.modifiedCount || 0}`);
+
+        const user = await User.findById(userId).select('email organization_id').lean();
+        logActivity({
+            user_id: userId,
+            action: 'LOGOUT_ALL',
+            target_type: 'user',
+            target_id: String(userId),
+            target: user?.email || '',
+            details: {
+                message: 'Thu hồi mọi phiên đăng nhập',
+                revoked_count: result.modifiedCount || 0,
+                session_version: newSv
+            },
+            ip_address: req.ip || '',
+            organization_id: user?.organization_id || undefined
+        });
+
+        return res.status(200).json({
+            message: 'Đã thu hồi mọi phiên đăng nhập.',
+            revoked_count: result.modifiedCount || 0,
+            session_version: newSv
+        });
+    } catch (error) {
+        return res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+    }
+};
+
+module.exports = {
+    register,
+    login,
+    refresh,
+    logout,
+    logoutAll,
+    unlockSession,
+    registerPublic,
+    forgotPassword,
+    resetPassword
+};
