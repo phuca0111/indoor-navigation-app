@@ -6,7 +6,16 @@
 const express = require('express');
 const router = express.Router();
 
-const { getBuildings, getBuildingById, createBuilding, updateBuilding, deleteBuilding, restoreBuilding, checkLocation } = require('../controllers/buildingController');
+const {
+  getBuildings,
+  getBuildingById,
+  createBuilding,
+  updateBuilding,
+  patchBuildingFloors,
+  deleteBuilding,
+  restoreBuilding,
+  checkLocation
+} = require('../controllers/buildingController');
 const { auth, requireAdmin } = require('../middlewares/auth');
 const { requireBuildingAccess } = require('../middlewares/buildingAccess');
 
@@ -17,6 +26,9 @@ router.get('/check-location',  checkLocation);         // Android kiểm tra GPS
 router.get('/:id',             auth, requireBuildingAccess, getBuildingById);
 
 router.post('/',       auth, requireAdmin, createBuilding);
+
+// Floor lifecycle: thêm/bớt tầng đuôi (SUPER/ORG — BUILDING_ADMIN bị chặn trong controller)
+router.patch('/:id/floors', auth, requireBuildingAccess, patchBuildingFloors);
 
 // Update: chỉ user có quyền trên building (SUPER_ADMIN hoặc assigned) mới được sửa
 router.put('/:id',     auth, requireBuildingAccess, updateBuilding);

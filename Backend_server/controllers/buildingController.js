@@ -12,6 +12,13 @@ const {
   annotateBuildingsQuotaLock,
   assertBuildingWritable
 } = require('../utils/overQuotaLock');
+const {
+  addFloor,
+  removeFloor,
+  applyTotalFloorsChange,
+  floorRangeList,
+  clampCreateTotalFloors
+} = require('../services/floorLifecycle');
 
 function logActivity(data) {
     ActivityLog.create(data).catch(() => {});
@@ -154,13 +161,24 @@ const createBuilding = async (req, res) => {
             });
         }
 
+        let initialFloors;
+        try {
+            initialFloors = clampCreateTotalFloors(req.body.total_floors || 1);
+        } catch (e) {
+            return res.status(e.status || 400).json({
+                message: e.message,
+                code: e.code,
+                max: e.max
+            });
+        }
+
         const building = await Building.create({
             name:              name,
             address:           address || '',
             gps_location:      { lat: lat || 0, lng: lng || 0 },
             activation_radius: activation_radius || 50,
             description:       req.body.description || '',
-            total_floors:      req.body.total_floors || 1,
+            total_floors:      initialFloors,
             created_by:        req.user ? req.user.userId : null,
             organization_id:   orgId
         });
@@ -255,7 +273,6 @@ const updateBuilding = async (req, res) => {
         if (name !== undefined)              updateData.name = name;
         if (address !== undefined)           updateData.address = address;
         if (description !== undefined)       updateData.description = description;
-        if (total_floors !== undefined)      updateData.total_floors = total_floors;
         if (activation_radius !== undefined) updateData.activation_radius = activation_radius;
         if (status !== undefined)            updateData.status = status;
         if (lat !== undefined || lng !== undefined) {
@@ -279,40 +296,65 @@ const updateBuilding = async (req, res) => {
             }
         }
 
-if (organization_id !== undefined && organization_id !== '') {
-  if (req.user.role !== 'SUPER_ADMIN') {
-    return res.status(403).json({ message: 'Chỉ Super Admin được thay đổi organization của tòa nhà.' });
-  }
-  const org = await Organization.findById(organization_id);
-  if (!org) {
-    return res.status(400).json({ message: 'Organization không tồn tại.' });
-  }
-  if (!org.is_active) {
-    return res.status(400).json({ message: 'Organization đã bị vô hiệu hóa.' });
-  }
-  updateData.organization_id = organization_id;
-}
-  const building = await Building.findByIdAndUpdate(id, updateData, { new: true });
-        if (!building) return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
+        // total_floors: đi qua floorLifecycle (không gán thẳng)
+        let floorLifecycleResult = null;
+        if (total_floors !== undefined) {
+            try {
+                floorLifecycleResult = await applyTotalFloorsChange(oldBuilding, total_floors);
+            } catch (e) {
+                return res.status(e.status || 400).json({
+                    message: e.message,
+                    code: e.code,
+                    floor_number: e.floor_number,
+                    version: e.version,
+                    max: e.max
+                });
+            }
+        }
+
+        if (organization_id !== undefined && organization_id !== '') {
+            if (req.user.role !== 'SUPER_ADMIN') {
+                return res.status(403).json({ message: 'Chỉ Super Admin được thay đổi organization của tòa nhà.' });
+            }
+            const org = await Organization.findById(organization_id);
+            if (!org) {
+                return res.status(400).json({ message: 'Organization không tồn tại.' });
+            }
+            if (!org.is_active) {
+                return res.status(400).json({ message: 'Organization đã bị vô hiệu hóa.' });
+            }
+            updateData.organization_id = organization_id;
+        }
+
+        let building = oldBuilding;
+        if (Object.keys(updateData).length > 0) {
+            building = await Building.findByIdAndUpdate(id, updateData, { new: true });
+            if (!building) return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
+        } else if (floorLifecycleResult) {
+            building = floorLifecycleResult.building;
+        }
 
         const changes = {};
-        const trackFields = ['name', 'address', 'description', 'total_floors', 'status', 'activation_radius'];
+        const trackFields = ['name', 'address', 'description', 'status', 'activation_radius'];
         trackFields.forEach(field => {
-          if (updateData[field] !== undefined && String(oldBuilding[field] ?? '') !== String(updateData[field] ?? '')) {
-            changes[field] = { from: oldBuilding[field], to: updateData[field] };
-          }
+            if (updateData[field] !== undefined && String(oldBuilding[field] ?? '') !== String(updateData[field] ?? '')) {
+                changes[field] = { from: oldBuilding[field], to: updateData[field] };
+            }
         });
+        if (floorLifecycleResult?.changed) {
+            changes.total_floors = { from: floorLifecycleResult.from, to: floorLifecycleResult.to };
+        }
         if (updateData['gps_location.lat'] !== undefined || updateData['gps_location.lng'] !== undefined) {
-          const oldLat = oldBuilding.gps_location?.lat;
-          const oldLng = oldBuilding.gps_location?.lng;
-          const newLat = updateData['gps_location.lat'] ?? oldLat;
-          const newLng = updateData['gps_location.lng'] ?? oldLng;
-          if (oldLat !== newLat || oldLng !== newLng) {
-            changes.gps_location = { from: { lat: oldLat, lng: oldLng }, to: { lat: newLat, lng: newLng } };
-          }
+            const oldLat = oldBuilding.gps_location?.lat;
+            const oldLng = oldBuilding.gps_location?.lng;
+            const newLat = updateData['gps_location.lat'] ?? oldLat;
+            const newLng = updateData['gps_location.lng'] ?? oldLng;
+            if (oldLat !== newLat || oldLng !== newLng) {
+                changes.gps_location = { from: { lat: oldLat, lng: oldLng }, to: { lat: newLat, lng: newLng } };
+            }
         }
         if (updateData.organization_id !== undefined && String(oldBuilding.organization_id || '') !== String(updateData.organization_id || '')) {
-          changes.organization_id = { from: oldBuilding.organization_id, to: updateData.organization_id };
+            changes.organization_id = { from: oldBuilding.organization_id, to: updateData.organization_id };
         }
 
         logActivity({
@@ -322,13 +364,96 @@ if (organization_id !== undefined && organization_id !== '') {
             target_id:   String(building._id),
             target:      building.name,
             details:     Object.keys(changes).length
-              ? { message: 'Cập nhật thông tin tòa nhà', changes }
-              : { message: 'Cập nhật thông tin tòa nhà (không có thay đổi)' },
+                ? { message: 'Cập nhật thông tin tòa nhà', changes }
+                : { message: 'Cập nhật thông tin tòa nhà (không có thay đổi)' },
             ip_address:  req.ip || '',
             organization_id: oldBuilding.organization_id
         });
 
         res.status(200).json({ message: 'Cập nhật tòa nhà thành công!', building });
+    } catch (error) {
+        res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+    }
+};
+
+// ==========================================
+// PATCH /api/buildings/:id/floors — thêm/bớt tầng đuôi
+// Body: { action: "add" | "remove" }
+// ==========================================
+const patchBuildingFloors = async (req, res) => {
+    try {
+        if (req.user.role === 'BUILDING_ADMIN') {
+            return res.status(403).json({
+                message: 'Building Admin không được sửa số tầng. Chỉ SUPER_ADMIN / ORG_ADMIN.'
+            });
+        }
+
+        const { id } = req.params;
+        const action = String(req.body?.action || '').toLowerCase();
+        if (action !== 'add' && action !== 'remove') {
+            return res.status(400).json({
+                message: 'action phải là "add" hoặc "remove".',
+                code: 'FLOOR_ACTION_INVALID'
+            });
+        }
+
+        const building = await Building.findById(id);
+        if (!building) {
+            return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
+        }
+
+        if (building.organization_id && req.user.role !== 'SUPER_ADMIN') {
+            const org = await Organization.findById(building.organization_id);
+            if (org) {
+                const writable = await assertBuildingWritable(id, org);
+                if (!writable.ok) {
+                    return res.status(403).json({
+                        message: writable.message,
+                        code: writable.code
+                    });
+                }
+            }
+        }
+
+        let result;
+        try {
+            result = action === 'add' ? await addFloor(building) : await removeFloor(building);
+        } catch (e) {
+            return res.status(e.status || 400).json({
+                message: e.message,
+                code: e.code,
+                floor_number: e.floor_number,
+                version: e.version,
+                max: e.max
+            });
+        }
+
+        const logAction = action === 'add' ? 'ADD_FLOOR' : 'REMOVE_FLOOR';
+        logActivity({
+            user_id: req.user ? req.user.userId : null,
+            action: logAction,
+            target_type: 'building',
+            target_id: String(result.building._id),
+            target: result.building.name,
+            details: {
+                message: action === 'add' ? 'Thêm tầng (đuôi)' : 'Bớt tầng cao nhất',
+                changes: { total_floors: { from: result.from, to: result.to } },
+                new_floor_number: result.new_floor_number,
+                removed_floor_number: result.removed_floor_number
+            },
+            ip_address: req.ip || '',
+            organization_id: result.building.organization_id
+        });
+
+        const n = result.building.total_floors;
+        res.status(200).json({
+            message: action === 'add'
+                ? `Đã thêm tầng. Số tầng hiện tại: ${n}.`
+                : `Đã bớt tầng cao nhất. Số tầng hiện tại: ${n}.`,
+            building: result.building,
+            total_floors: n,
+            floors: floorRangeList(n)
+        });
     } catch (error) {
         res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
     }
@@ -493,5 +618,14 @@ const getBuildingById = async (req, res) => {
     }
 };
 
-module.exports = { getBuildings, getBuildingById, createBuilding, updateBuilding, deleteBuilding, restoreBuilding, checkLocation };
+module.exports = {
+    getBuildings,
+    getBuildingById,
+    createBuilding,
+    updateBuilding,
+    patchBuildingFloors,
+    deleteBuilding,
+    restoreBuilding,
+    checkLocation
+};
 
