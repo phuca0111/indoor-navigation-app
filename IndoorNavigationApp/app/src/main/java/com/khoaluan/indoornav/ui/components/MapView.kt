@@ -26,6 +26,9 @@ import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import com.khoaluan.indoornav.R
 import com.khoaluan.indoornav.data.model.MapData
+import com.khoaluan.indoornav.ui.navigation.computeHeadingDrivenRotation
+import com.khoaluan.indoornav.ui.navigation.resolveManualMapRotationDelta
+import com.khoaluan.indoornav.ui.navigation.screenPanToMapOffsetDelta
 import com.khoaluan.indoornav.ui.viewmodel.MapRotationMode
 import com.khoaluan.indoornav.ui.viewmodel.NavigationState
 import kotlin.math.cos
@@ -63,12 +66,14 @@ fun MapView(
     navState: NavigationState = NavigationState(),
     mapRotationMode: MapRotationMode = MapRotationMode.NORTH_UP,
     centerOnUserTrigger: Int = 0,
+    centerOnDestinationTrigger: Int = 0,
 ) {
     // 1. Quản lý trạng thái Camera
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var autoFollowUser by remember { mutableStateOf(false) }
-    var manualRotation by remember { mutableFloatStateOf(0f) } // Góc xoay tay (chỉ dùng ở NORTH_UP)
+    // G2: offset xoay tay — dùng cả NORTH_UP và HEADING_UP (kiểu Google)
+    var userMapBearingOffset by remember { mutableFloatStateOf(0f) }
 
     // Unwrap heading để tránh jitter khi vượt 360° (dùng chung cho map rotation và user arrow)
     var unwrappedUserHeading by remember { mutableFloatStateOf(0f) }
@@ -79,25 +84,28 @@ fun MapView(
         unwrappedUserHeading += delta
     }
 
-    // Khi chuyển sang NORTH_UP: reset về 0° để bản đồ luôn hiển thị thẳng.
+    // La bàn đổi mode → reset offset (về hành vi mặc định mode)
     LaunchedEffect(mapRotationMode) {
-        if (mapRotationMode == MapRotationMode.NORTH_UP) {
-            manualRotation = 0f
+        userMapBearingOffset = 0f
+    }
+
+    // Crosshair recenter → reset offset xoay tay (Google: về theo hướng đi / North)
+    LaunchedEffect(centerOnUserTrigger) {
+        if (centerOnUserTrigger > 0) {
+            userMapBearingOffset = 0f
         }
     }
 
-    // Rotation hiệu quả cho bản đồ: HEADING_UP dùng -unwrappedUserHeading, NORTH_UP dùng manualRotation
-    val effectiveRotation = if (mapRotationMode == MapRotationMode.HEADING_UP) {
-        -unwrappedUserHeading
-    } else {
-        manualRotation
-    }
-
-    val animatedRotation by animateFloatAsState(
-        targetValue = effectiveRotation,
-        animationSpec = tween(durationMillis = 100, easing = androidx.compose.animation.core.LinearEasing),
-        label = "MapRotation"
+    // G2: HEADING_UP = -heading + offset; NORTH_UP = offset
+    // Offset tay áp ngay (không animate) — tránh khựng khi xoay tay quanh 90°.
+    // Chỉ animate phần heading từ sensor.
+    val headingDriven = computeHeadingDrivenRotation(mapRotationMode, unwrappedUserHeading)
+    val animatedHeadingPart by animateFloatAsState(
+        targetValue = headingDriven,
+        animationSpec = tween(durationMillis = 80, easing = androidx.compose.animation.core.LinearEasing),
+        label = "MapHeadingRotation"
     )
+    val effectiveRotation = animatedHeadingPart + userMapBearingOffset
 
     // UI Interpolation cho User Position & Heading
     val animatedUserPos by androidx.compose.animation.core.animateOffsetAsState(
@@ -108,7 +116,7 @@ fun MapView(
 
     val animatedUserHeading by animateFloatAsState(
         targetValue = unwrappedUserHeading,
-        animationSpec = tween(durationMillis = 100, easing = androidx.compose.animation.core.LinearEasing),
+        animationSpec = tween(durationMillis = 80, easing = androidx.compose.animation.core.LinearEasing),
         label = "UserHeadingInterpolation"
     )
 
@@ -169,27 +177,27 @@ fun MapView(
         }
     }
 
-    // 3. Gestures
+    // 3. Gestures — pan theo chiều ngón tay kể cả khi map đang xoay
+    val mapRotationForGestures = rememberUpdatedState(effectiveRotation)
     val mapModifier = Modifier
         .fillMaxSize()
-        .pointerInput(mapRotationMode) { // key = mapRotationMode để re-register khi mode đổi
-            detectTransformGestures { centroid, pan, zoom, gestureRotation ->
+        .pointerInput(mapRotationMode) {
+            detectTransformGestures { centroid, pan, zoom, gestureRotationDeg ->
                 autoFollowUser = false
-                
-                // Cho phép xoay tay thủ công CHỈ trong chế độ NORTH_UP
-                // Nhưng PHẢI thỏa mãn đầy đủ điều kiện của một cử chỉ xoay thuần túy:
-                //   1. Rotation đủ lớn (>= 2 độ) — lọc nhiễu khi không cố ý xoay
-                //   2. Zoom trung lập (không thu/phóng) — đảm bảo là cử chỉ xoay, không phải zoom
-                //   3. Pan nhỏ — đảm bảo là cử chỉ xoay, không phải kéo bản đồ
-                val isPureRotationGesture = kotlin.math.abs(gestureRotation) >= 2.0f
-                    && kotlin.math.abs(zoom - 1f) < 0.005f
-                    && pan.getDistance() < 8f
-                if (mapRotationMode == MapRotationMode.NORTH_UP && isPureRotationGesture) {
-                    manualRotation += gestureRotation
+
+                val delta = resolveManualMapRotationDelta(
+                    gestureRotationDegrees = gestureRotationDeg,
+                    panDistancePx = pan.getDistance(),
+                    zoom = zoom,
+                )
+                if (delta != 0f) {
+                    userMapBearingOffset += delta
                 }
+
+                val adjustedPan = screenPanToMapOffsetDelta(pan, mapRotationForGestures.value)
                 val oldScale = scale
                 val newScale = (scale * zoom).coerceIn(0.1f, 10f)
-                offset = centroid + pan - (centroid - offset) * (newScale / oldScale)
+                offset = centroid + adjustedPan - (centroid - offset) * (newScale / oldScale)
                 scale = newScale
             }
         }
@@ -232,6 +240,14 @@ fun MapView(
             }
         }
 
+        // Căn giữa điểm đến (pin đỏ / cuối path) — tắt follow user
+        LaunchedEffect(centerOnDestinationTrigger) {
+            if (centerOnDestinationTrigger <= 0) return@LaunchedEffect
+            val dest = navState.path?.lastOrNull() ?: navState.destinationMarkerPos ?: return@LaunchedEffect
+            autoFollowUser = false
+            offset = Offset(screenW / 2f, screenH / 2f) - dest * scale
+        }
+
         // 5. Canvas Drawing
         Canvas(
             modifier = Modifier
@@ -253,8 +269,8 @@ fun MapView(
                 // Tâm màn hình trong canvas space → xoay bản đồ quanh giữa view, không bị méo
                 Offset((screenW / 2f - offset.x) / scale, (screenH / 2f - offset.y) / scale)
             }
-            withTransform({
-                rotate(animatedRotation, pivot = pivot)
+                withTransform({
+                rotate(effectiveRotation, pivot = pivot)
             }) {
                 // LAYER 0: Background
                 bgPainter?.let { painter ->
@@ -312,7 +328,7 @@ fun MapView(
                         )
                         withTransform({
                             translate(room.center.x, room.center.y)
-                            rotate(-animatedRotation, pivot = Offset.Zero) // Đặt pivot về 0,0 để chữ xoay quanh tâm của chính nó
+                            rotate(-effectiveRotation, pivot = Offset.Zero) // Đặt pivot về 0,0 để chữ xoay quanh tâm của chính nó
                             translate(-layout.size.width / 2f, -layout.size.height / 2f)
                         }) {
                             drawText(layout)
@@ -356,14 +372,15 @@ fun MapView(
                     }
                 }
 
-                // LAYER 4.5: Destination Marker (red pin at end of path)
-                navState.path?.lastOrNull()?.let { destPos ->
+                // LAYER 4.5: Destination Marker — ưu tiên path cuối; G1: dùng destinationMarkerPos khi chưa có path
+                val destPos = navState.path?.lastOrNull() ?: navState.destinationMarkerPos
+                destPos?.let { pos ->
                     val pinAlpha = if (navState.isNavigatingMode) 1f else 0.75f
-                    drawCircle(Color(0xFFFF1744).copy(0.3f * pinAlpha), radius = 20f / scale, center = destPos)
-                    drawCircle(Color(0xFFFF1744).copy(pinAlpha), radius = 10f / scale, center = destPos)
-                    drawCircle(Color.White.copy(pinAlpha), radius = 5f / scale, center = destPos)
+                    drawCircle(Color(0xFFFF1744).copy(0.3f * pinAlpha), radius = 20f / scale, center = pos)
+                    drawCircle(Color(0xFFFF1744).copy(pinAlpha), radius = 10f / scale, center = pos)
+                    drawCircle(Color.White.copy(pinAlpha), radius = 5f / scale, center = pos)
                     if (navState.isNavigatingMode) {
-                        withTransform({ translate(destPos.x, destPos.y) }) {
+                        withTransform({ translate(pos.x, pos.y) }) {
                             val pinPath = Path().apply {
                                 moveTo(0f, -18f / scale)
                                 lineTo(-10f / scale, 2f / scale)
@@ -385,7 +402,7 @@ fun MapView(
                         // FIX: Counter-rotate POI text to keep it always horizontal
                         withTransform({
                             translate(poi.pos.x, poi.pos.y)
-                            rotate(-animatedRotation, pivot = Offset.Zero)
+                            rotate(-effectiveRotation, pivot = Offset.Zero)
                             translate(-layout.size.width / 2f, 10f / scale)
                         }) {
                             drawText(layout)

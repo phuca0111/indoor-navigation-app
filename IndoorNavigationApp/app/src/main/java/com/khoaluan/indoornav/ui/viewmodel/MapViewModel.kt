@@ -22,6 +22,7 @@ import com.khoaluan.indoornav.navigation.tpf.LocationEngine
 import com.khoaluan.indoornav.navigation.tpf.TopologicalParticle
 import com.khoaluan.indoornav.data.local.ParkingManager
 import com.khoaluan.indoornav.data.model.SavedParkingSpot
+import com.khoaluan.indoornav.ui.navigation.buildMapSessionKey
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
@@ -33,6 +34,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 // Trang thai UI cua ban do - 3 trang thai: Loading / Success / Error
 // Success.floorNumber: so tang hien tai, dung de sync currentFloor trong MapScreen
 sealed interface MapUiState {
@@ -58,6 +60,8 @@ data class NavigationState(
     val isRerouting: Boolean = false,
     val isNavigatingMode: Boolean = false,
     val destinationPoiId: Int? = null,
+    /** Pin đích khi đã chọn phòng/POI nhưng chưa bấm "Xem đường" (G1). */
+    val destinationMarkerPos: Offset? = null,
     val navigationError: String? = null,
     val rerouteSourceNodeId: String? = null
 )
@@ -126,9 +130,29 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         return 1
     }
 
-    fun exitIndoorNavigation() {
+    /**
+     * G1b: khóa map đã quét QR / localize.
+     * null = chưa định vị trên map hiện tại → không chấp nhận cập nhật userPos từ engine cũ.
+     */
+    private var localizationMapKey: String? = null
+    /** Hủy fetchMap trước đó khi đổi map/tầng liên tục (tránh 2 LocationEngine sống song song). */
+    private var fetchMapJob: Job? = null
+    /**
+     * G1b — dừng PDR/TPF và xóa vị trí/path khi đổi building, tầng, hoặc thoát indoor.
+     * Tránh chấm xanh "dính" tọa độ map cũ giữa khoảng trống map mới.
+     */
+    fun clearLocalizationSession() {
         locationEngine?.stop()
+        locationEngine = null
+        localizationMapKey = null
+        graphModel = null
+        pathfinder = null
+        activePath = emptyList()
+        lastRerouteAtMs = 0L
         _navState.value = NavigationState()
+    }
+    fun exitIndoorNavigation() {
+        clearLocalizationSession()
         val listState = _buildingListState.value
         if (listState is BuildingListUiState.Success) {
             startGpsGeofencing(listState.buildings)
@@ -197,7 +221,10 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     // Goi khi: MapScreen vua vao (buildingId, floor=0) hoac user chon tang khac
     private fun fetchMap(buildingId: String, floor: Int) {
         stopGpsGeofencing() // Tat GPS geofence de tiet kiem pin khi da vao Indoor
-        viewModelScope.launch {
+        // G1b: mỗi lần tải map mới → dừng engine cũ + xóa userPos (kể cả đổi tầng)
+        clearLocalizationSession()
+        fetchMapJob?.cancel()
+        fetchMapJob = viewModelScope.launch {
             _uiState.value = MapUiState.Loading
             try {
                 val api = RetrofitClient.getApiService()
@@ -214,7 +241,9 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                         } else {
                             80f // fallback neu scaleRatio khong hop le
                         }
-                        _uiState.value = MapUiState.Success(mapData, buildingId, body.floorNumber)
+                        val floorNumber = body.floorNumber
+                        val sessionKey = buildMapSessionKey(buildingId, floorNumber)
+                        _uiState.value = MapUiState.Success(mapData, buildingId, floorNumber)
                         val gModel = GraphModel(mapData)
                         graphModel = gModel
                         pathfinder = AStarPathfinder(gModel)
@@ -222,22 +251,25 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                         Log.d("MapViewModel", "scaleRatio=${mapData.scaleRatio}, pixelsPerMeter=$pixelsPerMeter")
                         locationEngine = LocationEngine(context, mapData).apply {
                             onLocationUpdated = { x, y, heading, confidence, isTpf ->
-                                _navState.update { current ->
-                                    val newState = current.copy(
-                                        userPos = Offset(x, y),
-                                        userHeading = heading,
-                                        confidence = minOf(confidence, confidenceEngine.calculateCurrentConfidence()),
-                                        isTpfActive = isTpf,
-                                        particles = getParticles()
-                                    )
-                                    newState.destinationNodeId?.let { destinationNodeId ->
-                                        maybeTriggerReroute(destinationNodeId)
+                                // G1b: bỏ qua callback nếu chưa QR trên đúng map này (engine cũ / race)
+                                if (localizationMapKey == sessionKey) {
+                                    _navState.update { current ->
+                                        val newState = current.copy(
+                                            userPos = Offset(x, y),
+                                            userHeading = heading,
+                                            confidence = minOf(confidence, confidenceEngine.calculateCurrentConfidence()),
+                                            isTpfActive = isTpf,
+                                            particles = getParticles()
+                                        )
+                                        newState.destinationNodeId?.let { destinationNodeId ->
+                                            maybeTriggerReroute(destinationNodeId)
+                                        }
+                                        newState
                                     }
-                                    newState
                                 }
                             }
                         }
-                        Log.d("MapViewModel", "Tai ban do & Khoi dong Engine thanh cong!")
+                        Log.d("MapViewModel", "Tai ban do & Khoi dong Engine thanh cong! sessionKey=$sessionKey")
                     } else {
                         _uiState.value = MapUiState.Error("Du lieu trong!")
                     }
@@ -290,10 +322,18 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     return@launch
                 }
                 confidenceEngine.updateGroundTruth()
+                val mapKey = buildMapSessionKey(state.buildingId, state.floorNumber)
+                // G1b: gắn key TRƯỚC khi start engine để callback onLocationUpdated không bị bỏ
+                fun markLocalizedAndStart(block: () -> Boolean): Boolean {
+                    localizationMapKey = mapKey
+                    val ok = block()
+                    if (!ok) localizationMapKey = null
+                    return ok
+                }
                 val nodeId = body.node_id?.takeIf { it.isNotBlank() }
                 if (nodeId != null) {
                     // TH1: API tra ve node_id -> khoi dong TPF tai node nay
-                    val ok = engine.startWithQR(nodeId)
+                    val ok = markLocalizedAndStart { engine.startWithQR(nodeId) }
                     if (!ok) {
                         // Node khong ton tai trong do thi (backend vs frontend mismatch)
                         _qrScanError.value = "Vi tri QR khong hop le (node khong ton tai)"
@@ -303,7 +343,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     // TH2: Khong co node_id -> tim node gan nhat roi khoi dong
                     val nearestNodeId = findNearestNodeId(body.x, body.y, state.mapData)
                     if (nearestNodeId != null) {
-                        val ok = engine.startWithQR(nearestNodeId)
+                        val ok = markLocalizedAndStart { engine.startWithQR(nearestNodeId) }
                         if (!ok) {
                             _qrScanError.value = "Vi tri QR khong hop le (node gan nhat khong ton tai)"
                             return@launch
@@ -311,6 +351,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     } else {
                         // TH3: Fallback PDR thuan - khong co TPF
                         Log.i("MapViewModel", "QR fallback to PDR-only at (${body.x}, ${body.y})")
+                        localizationMapKey = mapKey
                         engine.startWithPosition(body.x, body.y)
                     }
                 }
@@ -358,34 +399,71 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     fun clearQrError() {
         _qrScanError.value = null
     }
+    /**
+     * G1: Chỉ chọn đích (pin + tên). KHÔNG tính/vẽ path.
+     * Path chỉ khi [previewPath] ("Xem đường") hoặc [startNavigationMode].
+     */
     fun setDestination(roomId: Int) {
         val state = _uiState.value as? MapUiState.Success ?: return
         val room = state.mapData.rooms.find { it.id == roomId } ?: return
         val gModel = graphModel ?: return
-        val pFinder = pathfinder ?: return
         val roomCenterX = room.x + room.width / 2.0
         val roomCenterY = room.y + room.height / 2.0
+        val markerPos = Offset(roomCenterX.toFloat(), roomCenterY.toFloat())
         val targetNode = gModel.nodeMap.values.minByOrNull {
             val dx = it.x - roomCenterX
             val dy = it.y - roomCenterY
             dx * dx + dy * dy
         } ?: return
-        Log.d("MapViewModel", "setDestination: roomId=$roomId, roomName=${room.name}, roomCenter=(${"%.1f".format(roomCenterX)},${"%.1f".format(roomCenterY)}), targetNodeId=${targetNode.nodeId}, nodePos=(${targetNode.x},${targetNode.y})")
-        _navState.value = _navState.value.copy(destinationPoiId = null)
-        updatePath(targetNode.nodeId)
+        Log.d(
+            "MapViewModel",
+            "setDestination(G1 select-only): roomId=$roomId, roomName=${room.name}, " +
+                "targetNodeId=${targetNode.nodeId}, path NOT computed"
+        )
+        activePath = emptyList()
+        _navState.value = _navState.value.copy(
+            destinationPoiId = null,
+            destinationNodeId = targetNode.nodeId,
+            destinationMarkerPos = markerPos,
+            path = null,
+            totalDistanceMeters = 0f,
+            etaSeconds = 0,
+            isNavigatingMode = false,
+            navigationError = null,
+            rerouteCount = 0,
+            rerouteSourceNodeId = null,
+        )
     }
+
+    /** G1: Chọn POI làm đích — chưa tính path. */
     fun setDestinationPoi(poiId: Int) {
         val state = _uiState.value as? MapUiState.Success ?: return
         val poi = state.mapData.pois.find { it.id == poiId } ?: return
         val gModel = graphModel ?: return
+        val markerPos = Offset(poi.x.toFloat(), poi.y.toFloat())
         val targetNode = gModel.nodeMap.values.minByOrNull {
             val dx = it.x - poi.x
             val dy = it.y - poi.y
             dx * dx + dy * dy
         } ?: return
-        Log.d("MapViewModel", "setDestinationPoi: poiId=$poiId, poiName=${poi.name}, poiPos=(${poi.x},${poi.y}), targetNodeId=${targetNode.nodeId}, nodePos=(${targetNode.x},${targetNode.y})")
-        _navState.value = _navState.value.copy(destinationPoiId = poiId)
-        updatePath(targetNode.nodeId)
+        Log.d(
+            "MapViewModel",
+            "setDestinationPoi(G1 select-only): poiId=$poiId, poiName=${poi.name}, " +
+                "targetNodeId=${targetNode.nodeId}, path NOT computed"
+        )
+        activePath = emptyList()
+        _navState.value = _navState.value.copy(
+            destinationPoiId = poiId,
+            destinationNodeId = targetNode.nodeId,
+            destinationMarkerPos = markerPos,
+            path = null,
+            totalDistanceMeters = 0f,
+            etaSeconds = 0,
+            isNavigatingMode = false,
+            navigationError = null,
+            rerouteCount = 0,
+            rerouteSourceNodeId = null,
+        )
     }
     /** Tính lại đường preview tới đích hiện tại (nút "Xem đường"). */
     fun previewPath() {
@@ -450,9 +528,11 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 confidence = _navState.value.confidence
             )
             val rerouteCount = if (force) _navState.value.rerouteCount + 1 else _navState.value.rerouteCount
+            val markerPos = pathOffsets.lastOrNull() ?: _navState.value.destinationMarkerPos
             _navState.value = _navState.value.copy(
                 path = pathOffsets,
                 destinationNodeId = targetNodeId,
+                destinationMarkerPos = markerPos,
                 totalDistanceMeters = result.totalDistanceMeters,
                 etaSeconds = etaSeconds,
                 rerouteCount = rerouteCount,
@@ -612,6 +692,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     }
     fun stopNavigation() {
         locationEngine?.stop()
+        localizationMapKey = null
         activePath = emptyList()
         lastRerouteAtMs = 0L
         _navState.value = NavigationState()
@@ -655,7 +736,16 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             findNearestNodeIdFromPos(spot.x, spot.y, gModel)
         }
         if (targetNodeId != null) {
-            _navState.value = _navState.value.copy(destinationPoiId = -1)
+            val node = gModel.nodeMap[targetNodeId]
+            val marker = if (node != null) {
+                Offset(node.x.toFloat(), node.y.toFloat())
+            } else {
+                Offset(spot.x, spot.y)
+            }
+            _navState.value = _navState.value.copy(
+                destinationPoiId = -1,
+                destinationMarkerPos = marker,
+            )
             updatePath(targetNodeId, force = true)
         } else {
             _qrScanError.value = "Khong the dinh tuyen den vi tri xe da luu."

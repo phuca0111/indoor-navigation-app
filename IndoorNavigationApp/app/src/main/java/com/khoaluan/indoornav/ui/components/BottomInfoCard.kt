@@ -221,11 +221,19 @@ fun BottomInfoCard(
                     }
                     isPathPreview -> {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = "Tổng khoảng cách: $distanceLabel · ETA $etaLabel",
-                                fontSize = 12.sp,
-                                color = Color(0xFF757575),
-                            )
+                            if (distanceMeters <= 0f && navigationError == null) {
+                                Text(
+                                    text = "Đã chọn điểm đến. Nhấn \"Xem đường\" để hiện lộ trình.",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF757575),
+                                )
+                            } else {
+                                Text(
+                                    text = "Tổng khoảng cách: $distanceLabel · ETA $etaLabel",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF757575),
+                                )
+                            }
                             navigationError?.let { err ->
                                 Text(
                                     text = err,
