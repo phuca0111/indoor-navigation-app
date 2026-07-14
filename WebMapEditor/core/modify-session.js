@@ -112,7 +112,7 @@
         if (mode === MODE.TRIM) {
             state.stage = 'target';
             state.cutting = null;
-            state.message = 'Cắt xén: click phần muốn BỎ trên tường/đoạn. Tự dùng mọi tường khác làm biên. Đoạn đơn → cắt đôi tại chỗ click.';
+            state.message = 'Cắt xén: click đúng phần muốn BỎ (đuôi thừa / đoạn giữa 2 tường). Biên = mọi tường & đoạn khác.';
             return getSnapshot();
         }
         if (mode === MODE.EXTEND) {
@@ -141,7 +141,7 @@
                 return getSnapshot();
             }
             state.stage = 'pedit';
-            state.message = 'PEdit: kéo đỉnh · Shift+click thêm đỉnh · Del xóa đỉnh · Esc xong';
+            state.message = 'PEdit: kéo đỉnh · Ctrl+click trên cạnh = thêm đỉnh · Del xóa · Esc xong';
             return getSnapshot();
         }
         // transform + array cần selection
@@ -165,7 +165,7 @@
             state.message = 'Hàng loạt ×' + state.arrayCount + ': click gốc → click hướng/khoảng cách (copy lặp đều).';
         } else if (mode === MODE.ROTATE) {
             state.stage = 'base';
-            state.message = 'Xoay CAD: gốc → hướng. Nhanh hơn: kéo icon xoay trên phòng hoặc nhập độ ở panel.';
+            state.message = 'Xoay CAD: gốc → hướng. Nhanh: kéo chấm xoay trên phòng/đoạn/tường hoặc nhập ° ở panel.';
         } else if (mode === MODE.SCALE) {
             state.stage = 'base';
             state.message = 'Tỷ lệ CAD: gốc → kéo. Nhanh hơn: nhập hệ số ở panel thuộc tính (vd 1.5).';
@@ -261,6 +261,30 @@
         return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
     }
 
+    /** Chiếu điểm lên cạnh gần nhất — dùng Ctrl+click thêm đỉnh trên cạnh (không lệch khỏi đoạn). */
+    function findEdgeInsertPoint(pts, pt, thr) {
+        if (!pts || pts.length < 2 || !pt) return null;
+        var best = null;
+        var bestD = thr != null ? thr : Infinity;
+        for (var i = 0; i < pts.length - 1; i++) {
+            var a = pts[i], b = pts[i + 1];
+            var dx = b.x - a.x, dy = b.y - a.y;
+            var len2 = dx * dx + dy * dy;
+            var t = 0;
+            if (len2 > 1e-10) {
+                t = ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / len2;
+                t = Math.max(0.05, Math.min(0.95, t));
+            }
+            var px = a.x + t * dx, py = a.y + t * dy;
+            var d = Math.hypot(pt.x - px, pt.y - py);
+            if (d < bestD) {
+                bestD = d;
+                best = { index: i, x: px, y: py };
+            }
+        }
+        return best;
+    }
+
     function applyTransform(sel, base, dest) {
         var T = OT();
         if (!T || !sel) return false;
@@ -353,16 +377,15 @@
         var result = ge.trimAgainstCutters(ta, tb, cutters, clickPt);
         if (result) {
             replaceSegmentPoints(targetHit, result.a, result.b);
-            return { ok: true, mode: 'trim' };
+            if (result.otherHalf && result.otherHalf.a && result.otherHalf.b) {
+                pushBrokenOtherHalf(targetHit, result.otherHalf.a, result.otherHalf.b);
+            }
+            return { ok: true, mode: result.otherHalf ? 'trim_split' : 'trim' };
         }
-        // Không giao biên → cắt đôi tại điểm click (Break), xóa nửa chứa... 
-        // Thực tế: giữ nửa XA click hơn? User click phần muốn BỎ → xóa nửa chứa click.
+        // Không giao biên → cắt đôi tại điểm click (Break), bỏ nửa chứa click
         var br = ge.breakSegmentAt(ta, tb, clickPt);
         if (!br) return { ok: false, reason: 'no_cut' };
-        var proj = ge.projectOnSegment(clickPt, ta, tb);
-        var removeLeft = proj.t < 0.5;
-        // Nếu click gần giữa: so theo t vs 0.5; nếu gần một đầu thì bỏ nửa chứa click
-        removeLeft = Math.hypot(clickPt.x - br.left.a.x, clickPt.y - br.left.a.y) +
+        var removeLeft = Math.hypot(clickPt.x - br.left.a.x, clickPt.y - br.left.a.y) +
             Math.hypot(clickPt.x - br.left.b.x, clickPt.y - br.left.b.y) <
             Math.hypot(clickPt.x - br.right.a.x, clickPt.y - br.right.a.y) +
             Math.hypot(clickPt.x - br.right.b.x, clickPt.y - br.right.b.y);
@@ -394,8 +417,6 @@
 
     function finishMline() {
         if (state.mlinePoints.length < 2) return false;
-        var half = state.mlineThickness / 2;
-        var ge = GE();
         var created = 0;
         for (var i = 0; i < state.mlinePoints.length - 1; i++) {
             var a = state.mlinePoints[i], b = state.mlinePoints[i + 1];
@@ -406,27 +427,9 @@
                     created++;
                 }
             }
-            // Vẽ thêm 2 cạnh biên (line) nếu có Geometry offset
-            if (ge && ge.offsetSegment && typeof lines !== 'undefined') {
-                var off = ge.offsetSegment(a, b, half);
-                if (off && typeof nextLineId !== 'undefined') {
-                    lines.push({
-                        id: nextLineId++,
-                        type: 'segment',
-                        layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default',
-                        points: off.left.slice(),
-                        isMlineEdge: true
-                    });
-                    lines.push({
-                        id: nextLineId++,
-                        type: 'segment',
-                        layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default',
-                        points: off.right.slice(),
-                        isMlineEdge: true
-                    });
-                }
-            }
         }
+        // Chỉ tạo tường dày (lineWidth = thickness) — không thêm 2 mép lines[]
+        // (mép riêng lệch góc + chọn/xóa lẫn với Đoạn thẳng → nhìn lạ).
         state.mlinePoints = [];
         state.message = 'MLine: đã tạo ' + created + ' đoạn · click để vẽ tiếp';
         return created > 0;
@@ -527,10 +530,12 @@
             if (tr.ok) {
                 state.message = tr.mode === 'break'
                     ? 'Đã cắt đôi đoạn (không có biên giao) — đã bỏ nửa gần chỗ click'
-                    : 'Đã cắt theo biên giao · click phần khác để cắt tiếp';
+                    : (tr.mode === 'trim_split'
+                        ? 'Đã bỏ đoạn giữa 2 biên · còn 2 nửa · click tiếp nếu cần'
+                        : 'Đã bỏ phần click theo biên giao · click phần khác để cắt tiếp');
                 commitSave();
                 if (typeof showToast === 'function') {
-                    showToast(tr.mode === 'break' ? 'Cắt đôi đoạn OK' : 'Cắt xén OK', 'success');
+                    showToast(tr.mode === 'break' ? 'Cắt đôi OK' : 'Cắt xén OK', 'success');
                 }
             } else {
                 state.message = 'Không cắt được đoạn này';
@@ -581,17 +586,38 @@
                 var d = Math.hypot(pts[i].x - pt.x, pts[i].y - pt.y);
                 if (d < best) { best = d; nearest = i; }
             }
-            if (opts.shiftKey && nearest >= 0) {
-                if (typeof saveState === 'function') saveState();
-                pts.splice(nearest + 1, 0, { x: pt.x, y: pt.y });
-                if (sel.type === 'room' && OT()) OT().updatePolygonBBox(sel.data);
-                commitSave();
-                state.message = 'PEdit: đã thêm đỉnh';
+
+            // Ctrl+click trên cạnh → thêm đỉnh (chiếu lên đoạn). KHÔNG dùng Shift (dễ nhầm kéo dài).
+            if (opts.ctrlKey || opts.metaKey) {
+                var insertAt = findEdgeInsertPoint(pts, pt, thr * 2.5);
+                if (insertAt) {
+                    if (typeof saveState === 'function') saveState();
+                    pts.splice(insertAt.index + 1, 0, { x: insertAt.x, y: insertAt.y });
+                    if (sel.type === 'room' && OT()) OT().updatePolygonBBox(sel.data);
+                    commitSave();
+                    state.message = 'PEdit: đã thêm đỉnh trên cạnh #' + (insertAt.index + 1);
+                    if (typeof showToast === 'function') showToast('Đã thêm đỉnh (Ctrl+click)', 'success');
+                } else if (typeof showToast === 'function') {
+                    showToast('Ctrl+click gần giữa cạnh để thêm đỉnh', 'error');
+                }
                 return getSnapshot();
             }
+
+            // Shift+click cũ: không còn thêm đỉnh — báo rõ để tránh kéo dài nhầm
+            if (opts.shiftKey && nearest >= 0) {
+                if (typeof showToast === 'function') {
+                    showToast('Kéo đỉnh: chỉ click+kéo (không Shift). Thêm đỉnh: Ctrl+click trên cạnh', 'error');
+                }
+                state.peditVertex = nearest;
+                state.message = 'PEdit: đang kéo đỉnh #' + (nearest + 1);
+                return getSnapshot();
+            }
+
             if (nearest >= 0) {
                 state.peditVertex = nearest;
                 state.message = 'PEdit: đang kéo đỉnh #' + (nearest + 1);
+            } else if (typeof showToast === 'function') {
+                showToast('Click đúng ô/đỉnh để kéo. Thêm đỉnh: Ctrl+click trên cạnh', 'error');
             }
             return getSnapshot();
         }

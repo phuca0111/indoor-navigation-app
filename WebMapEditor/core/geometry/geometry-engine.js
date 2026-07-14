@@ -63,7 +63,7 @@
     }
 
     /**
-     * Trim đoạn target theo cutting: bỏ phần cùng phía với clickPt.
+     * Trim đoạn target theo cutting: BỎ phần cùng phía với clickPt (giống AutoCAD Trim).
      * @returns {{a:{x,y}, b:{x,y}}|null} đoạn còn lại
      */
     function trimSegment(targetA, targetB, cutA, cutB, clickPt) {
@@ -73,41 +73,88 @@
         var hitT = hit.t;
         if (hitT < 0) hitT = 0;
         if (hitT > 1) hitT = 1;
-        var keepStart = proj.t >= hitT;
-        if (keepStart) {
-            return { a: { x: hit.x, y: hit.y }, b: { x: targetB.x, y: targetB.y } };
+        // Click phía B của giao → bỏ phía B → giữ A→giao
+        if (proj.t >= hitT) {
+            return { a: { x: targetA.x, y: targetA.y }, b: { x: hit.x, y: hit.y } };
         }
-        return { a: { x: targetA.x, y: targetA.y }, b: { x: hit.x, y: hit.y } };
+        // Click phía A → bỏ phía A → giữ giao→B
+        return { a: { x: hit.x, y: hit.y }, b: { x: targetB.x, y: targetB.y } };
     }
 
     /**
-     * Trim đối với nhiều biên cắt: tìm giao gần click nhất (phía bỏ), giữ phần còn lại.
-     * @param {{x,y}} targetA
-     * @param {{x,y}} targetB
-     * @param {Array<{a:{x,y},b:{x,y}}>} cutters
-     * @param {{x,y}} clickPt
+     * Trim với nhiều biên: BỎ khoảng chứa click (đuôi ngoài / đoạn giữa hai tường).
+     * Nếu còn 2 nửa tách rời → trả thêm otherHalf để tạo đoạn thứ hai.
+     * @returns {{a,b, otherHalf?:{a,b}}|null}
      */
     function trimAgainstCutters(targetA, targetB, cutters, clickPt) {
         if (!cutters || !cutters.length) return null;
         var proj = projectOnSegment(clickPt, targetA, targetB);
         var clickT = proj.t;
-        var best = null;
-        var bestDist = Infinity;
+        var hits = [];
         for (var i = 0; i < cutters.length; i++) {
             var hit = segmentIntersection(targetA, targetB, cutters[i].a, cutters[i].b);
             if (!hit) continue;
-            var d = Math.abs(hit.t - clickT);
-            if (d < bestDist) {
-                bestDist = d;
-                best = hit;
+            var t = Math.max(0, Math.min(1, hit.t));
+            // Gộp giao trùng (cùng chỗ)
+            var dup = false;
+            for (var k = 0; k < hits.length; k++) {
+                if (Math.abs(hits[k].t - t) < 1e-4) { dup = true; break; }
+            }
+            if (!dup) hits.push({ x: hit.x, y: hit.y, t: t });
+        }
+        if (!hits.length) return null;
+        hits.sort(function (p, q) { return p.t - q.t; });
+
+        // Các mốc: 0 | hit0 | hit1 | ... | 1 — tìm khoảng chứa click để BỎ
+        var leftT = 0;
+        var rightT = 1;
+        var leftPt = { x: targetA.x, y: targetA.y };
+        var rightPt = { x: targetB.x, y: targetB.y };
+        for (var h = 0; h < hits.length; h++) {
+            if (clickT >= hits[h].t) {
+                leftT = hits[h].t;
+                leftPt = { x: hits[h].x, y: hits[h].y };
             }
         }
-        if (!best) return null;
-        var hitT = Math.max(0, Math.min(1, best.t));
-        if (clickT >= hitT) {
-            return { a: { x: best.x, y: best.y }, b: { x: targetB.x, y: targetB.y } };
+        for (var h2 = hits.length - 1; h2 >= 0; h2--) {
+            if (clickT <= hits[h2].t) {
+                rightT = hits[h2].t;
+                rightPt = { x: hits[h2].x, y: hits[h2].y };
+            }
         }
-        return { a: { x: targetA.x, y: targetA.y }, b: { x: best.x, y: best.y } };
+
+        // Click đúng tại giao → chọn khoảng gần hơn theo phía tip (ưu tiên đuôi)
+        if (Math.abs(rightT - leftT) < 1e-6) {
+            var nearest = hits[0];
+            var bestD = Math.abs(hits[0].t - clickT);
+            for (var n = 1; n < hits.length; n++) {
+                var dn = Math.abs(hits[n].t - clickT);
+                if (dn < bestD) { bestD = dn; nearest = hits[n]; }
+            }
+            if (clickT >= nearest.t) {
+                return { a: { x: targetA.x, y: targetA.y }, b: { x: nearest.x, y: nearest.y } };
+            }
+            return { a: { x: nearest.x, y: nearest.y }, b: { x: targetB.x, y: targetB.y } };
+        }
+
+        var keepLeft = leftT > 1e-4;
+        var keepRight = rightT < 1 - 1e-4;
+        if (!keepLeft && !keepRight) return null;
+
+        // Bỏ đuôi đầu (click trước giao đầu): chỉ giữ từ rightPt → B
+        if (!keepLeft && keepRight) {
+            return { a: rightPt, b: { x: targetB.x, y: targetB.y } };
+        }
+        // Bỏ đuôi cuối (click sau giao cuối): chỉ giữ A → leftPt  ← case ảnh user
+        if (keepLeft && !keepRight) {
+            return { a: { x: targetA.x, y: targetA.y }, b: leftPt };
+        }
+        // Bỏ đoạn giữa hai biên: giữ 2 nửa
+        return {
+            a: { x: targetA.x, y: targetA.y },
+            b: leftPt,
+            otherHalf: { a: rightPt, b: { x: targetB.x, y: targetB.y } }
+        };
     }
 
     /**

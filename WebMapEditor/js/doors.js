@@ -14,7 +14,7 @@ function createDoor(x, y) {
         layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default',
         x: sp.x,
         y: sp.y,
-        width: GRID_SIZE,    // Chiều rộng cửa = 1 ô
+        width: GRID_SIZE,    // Chiều dài cửa mặc định = 1 ô lưới (px; panel nhập theo mét)
         type: doorTypes[0],
         rotation: 0          // 0 = ngang, 90 = dọc
     };

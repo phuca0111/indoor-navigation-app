@@ -148,7 +148,8 @@
             // Editor-only CAD (Android bỏ qua) — round-trip WebMapEditor
             blocks: Array.isArray(collections.blocks) ? collections.blocks : [],
             blockInserts: Array.isArray(collections.blockInserts) ? collections.blockInserts : [],
-            lines: Array.isArray(collections.lines) ? collections.lines : []
+            lines: Array.isArray(collections.lines) ? collections.lines : [],
+            dimensions: Array.isArray(collections.dimensions) ? collections.dimensions : []
         };
     }
 

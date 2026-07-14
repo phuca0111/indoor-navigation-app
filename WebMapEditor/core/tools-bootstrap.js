@@ -20,7 +20,9 @@
         { id: 'poi', name: 'POI', shortcut: 'p', category: 'nav' },
         { id: 'qr', name: 'QR Code', shortcut: 'q', category: 'nav' },
         { id: 'path', name: 'Đường đi', shortcut: 'n', category: 'nav' },
-        { id: 'ruler', name: 'Thước đo', shortcut: 's', category: 'annotate', buttonId: null },
+        { id: 'ruler', name: 'Dist', shortcut: 'di', category: 'annotate', buttonId: 'btn-dist' },
+        { id: 'area', name: 'Area', shortcut: 'aa', category: 'annotate', buttonId: 'btn-area' },
+        { id: 'hatch', name: 'Hatch', shortcut: 'h', category: 'annotate', buttonId: 'btn-hatch' },
         // Phase 2 Editing
         { id: 'move', name: 'Di chuyển', shortcut: 'm', category: 'modify', buttonId: 'btn-move' },
         { id: 'copy', name: 'Sao chép', shortcut: 'co', category: 'modify', buttonId: 'btn-copy' },
@@ -34,7 +36,10 @@
         { id: 'array', name: 'Hàng loạt', shortcut: 'ar', category: 'modify', buttonId: 'btn-array' },
         { id: 'matchprop', name: 'Sao thuộc tính', shortcut: 'ma', category: 'modify', buttonId: 'btn-matchprop' },
         { id: 'block', name: 'Block', shortcut: 'b', category: 'block', buttonId: 'btn-block' },
-        { id: 'insert', name: 'Insert', shortcut: 'i', category: 'block', buttonId: 'btn-insert' }
+        { id: 'insert', name: 'Insert', shortcut: 'i', category: 'block', buttonId: 'btn-insert' },
+        { id: 'dimlinear', name: 'Dimlinear', shortcut: 'dli', category: 'annotate', buttonId: 'btn-dimlinear' },
+        { id: 'dimaligned', name: 'Dimaligned', shortcut: 'dal', category: 'annotate', buttonId: 'btn-dimaligned' },
+        { id: 'dimedit', name: 'DIMEdit', shortcut: 'ded', category: 'annotate', buttonId: 'btn-dimedit' }
     ];
 
     defs.forEach(function (d) {

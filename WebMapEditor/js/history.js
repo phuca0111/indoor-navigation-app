@@ -17,7 +17,8 @@ function snapshotPayload() {
         pathEdges: pathEdges,
         qrs: qrs,
         blocks: typeof blocks !== 'undefined' ? blocks : [],
-        blockInserts: typeof blockInserts !== 'undefined' ? blockInserts : []
+        blockInserts: typeof blockInserts !== 'undefined' ? blockInserts : [],
+        dimensions: typeof dimensions !== 'undefined' ? dimensions : []
     };
 }
 
@@ -33,6 +34,7 @@ function cloneSnapshotPayload(src) {
         qrs: JSON.parse(JSON.stringify(src.qrs || [])),
         blocks: JSON.parse(JSON.stringify(src.blocks || [])),
         blockInserts: JSON.parse(JSON.stringify(src.blockInserts || [])),
+        dimensions: JSON.parse(JSON.stringify(src.dimensions || [])),
         nextRoomId: src.nextRoomId,
         nextWallId: src.nextWallId,
         nextLineId: src.nextLineId,
@@ -41,7 +43,8 @@ function cloneSnapshotPayload(src) {
         nextNodeId: src.nextNodeId,
         nextQrId: src.nextQrId != null ? src.nextQrId : 1,
         nextBlockDefId: src.nextBlockDefId != null ? src.nextBlockDefId : 1,
-        nextBlockInsertId: src.nextBlockInsertId != null ? src.nextBlockInsertId : 1
+        nextBlockInsertId: src.nextBlockInsertId != null ? src.nextBlockInsertId : 1,
+        nextDimId: src.nextDimId != null ? src.nextDimId : 1
     };
 }
 
@@ -64,7 +67,8 @@ function saveState() {
             pathEdges: lastState.pathEdges,
             qrs: lastState.qrs || [],
             blocks: lastState.blocks || [],
-            blockInserts: lastState.blockInserts || []
+            blockInserts: lastState.blockInserts || [],
+            dimensions: lastState.dimensions || []
         });
         if (newStateStr === lastStateStr) return; // Không có gì thay đổi, ko lưu
     }
@@ -80,6 +84,7 @@ function saveState() {
         qrs: qrs,
         blocks: typeof blocks !== 'undefined' ? blocks : [],
         blockInserts: typeof blockInserts !== 'undefined' ? blockInserts : [],
+        dimensions: typeof dimensions !== 'undefined' ? dimensions : [],
         nextRoomId: nextRoomId,
         nextWallId: nextWallId,
         nextLineId: nextLineId,
@@ -88,7 +93,8 @@ function saveState() {
         nextNodeId: nextNodeId,
         nextQrId: nextQrId,
         nextBlockDefId: typeof nextBlockDefId !== 'undefined' ? nextBlockDefId : 1,
-        nextBlockInsertId: typeof nextBlockInsertId !== 'undefined' ? nextBlockInsertId : 1
+        nextBlockInsertId: typeof nextBlockInsertId !== 'undefined' ? nextBlockInsertId : 1,
+        nextDimId: typeof nextDimId !== 'undefined' ? nextDimId : 1
     });
     undoStack.push(state);
     if (undoStack.length > maxHistory) undoStack.shift();
@@ -113,6 +119,7 @@ function undo() {
         qrs: qrs,
         blocks: typeof blocks !== 'undefined' ? blocks : [],
         blockInserts: typeof blockInserts !== 'undefined' ? blockInserts : [],
+        dimensions: typeof dimensions !== 'undefined' ? dimensions : [],
         nextRoomId: nextRoomId,
         nextWallId: nextWallId,
         nextLineId: nextLineId,
@@ -121,7 +128,8 @@ function undo() {
         nextNodeId: nextNodeId,
         nextQrId: nextQrId,
         nextBlockDefId: typeof nextBlockDefId !== 'undefined' ? nextBlockDefId : 1,
-        nextBlockInsertId: typeof nextBlockInsertId !== 'undefined' ? nextBlockInsertId : 1
+        nextBlockInsertId: typeof nextBlockInsertId !== 'undefined' ? nextBlockInsertId : 1,
+        nextDimId: typeof nextDimId !== 'undefined' ? nextDimId : 1
     }));
 
     var state = undoStack.pop();
@@ -147,6 +155,7 @@ function redo() {
         qrs: qrs,
         blocks: typeof blocks !== 'undefined' ? blocks : [],
         blockInserts: typeof blockInserts !== 'undefined' ? blockInserts : [],
+        dimensions: typeof dimensions !== 'undefined' ? dimensions : [],
         nextRoomId: nextRoomId,
         nextWallId: nextWallId,
         nextLineId: nextLineId,
@@ -155,7 +164,8 @@ function redo() {
         nextNodeId: nextNodeId,
         nextQrId: nextQrId,
         nextBlockDefId: typeof nextBlockDefId !== 'undefined' ? nextBlockDefId : 1,
-        nextBlockInsertId: typeof nextBlockInsertId !== 'undefined' ? nextBlockInsertId : 1
+        nextBlockInsertId: typeof nextBlockInsertId !== 'undefined' ? nextBlockInsertId : 1,
+        nextDimId: typeof nextDimId !== 'undefined' ? nextDimId : 1
     }));
 
     var state = redoStack.pop();
@@ -175,6 +185,7 @@ function restoreState(state) {
     qrs = state.qrs || [];
     blocks = state.blocks || [];
     blockInserts = state.blockInserts || [];
+    dimensions = state.dimensions || [];
     nextRoomId = state.nextRoomId;
     nextWallId = state.nextWallId || 1;
     nextLineId = state.nextLineId || 1;
@@ -184,6 +195,7 @@ function restoreState(state) {
     nextQrId = state.nextQrId != null ? state.nextQrId : 1;
     nextBlockDefId = state.nextBlockDefId || 1;
     nextBlockInsertId = state.nextBlockInsertId || 1;
+    nextDimId = state.nextDimId || 1;
 
     clearEditorSelection({ skipUi: true });
     roomCountSpan.textContent = 'Phòng: ' + rooms.length;

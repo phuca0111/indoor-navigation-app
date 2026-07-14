@@ -31,6 +31,17 @@ function getMapSnapshot() {
                 widthMeters: parseFloat(pixelsToMeters(r.width).toFixed(1)),
                 heightMeters: parseFloat(pixelsToMeters(r.height).toFixed(1))
             });
+            if (r.hatch && typeof EditorCore !== 'undefined' && EditorCore.Hatch) {
+                var hp = EditorCore.Hatch.cloneForPersist(r.hatch);
+                if (hp) item.hatch = hp;
+            } else if (r.hatch && r.hatch.pattern && r.hatch.pattern !== 'none') {
+                item.hatch = {
+                    pattern: r.hatch.pattern,
+                    color: r.hatch.color || '#64748b',
+                    spacing: r.hatch.spacing || 12,
+                    angle: r.hatch.angle || 45
+                };
+            }
             if (r.shape === 'polygon' && r.points) item.points = r.points.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }));
             else if (r.shape === 'circle') { item.cx = Math.round(r.cx); item.cy = Math.round(r.cy); item.radius = Math.round(r.radius); }
             return item;
@@ -70,6 +81,18 @@ function getMapSnapshot() {
                 y: Math.round(bi.y),
                 rotation: bi.rotation || 0,
                 scale: bi.scale != null ? bi.scale : 1
+            });
+        }),
+        dimensions: (dimensions || []).map(function (d) {
+            return withLayer(d, {
+                id: d.id,
+                type: d.type || 'dimlinear',
+                orientation: d.type === 'dimaligned' ? undefined : (d.orientation || 'horizontal'),
+                p1: d.p1 ? { x: Math.round(d.p1.x), y: Math.round(d.p1.y) } : null,
+                p2: d.p2 ? { x: Math.round(d.p2.x), y: Math.round(d.p2.y) } : null,
+                offset: d.offset || 0,
+                textOverride: d.textOverride != null && String(d.textOverride) !== '' ? String(d.textOverride) : undefined,
+                color: d.color || (d.type === 'dimaligned' ? '#c026d3' : '#e11d48')
             });
         }),
         // Ảnh nền
@@ -130,6 +153,12 @@ function applyMapSnapshot(data) {
         if (bi.id && bi.id >= nextBlockInsertId) nextBlockInsertId = bi.id + 1;
     });
 
+    dimensions = Array.isArray(data.dimensions) ? data.dimensions : [];
+    nextDimId = 1;
+    dimensions.forEach(function (d) {
+        if (d && d.id && d.id >= nextDimId) nextDimId = d.id + 1;
+    });
+
     if (typeof applyLayersSnapshot === 'function') {
         applyLayersSnapshot(data.layers, data.activeLayerId);
     }
@@ -186,6 +215,15 @@ function exportJSON() {
                 widthMeters: parseFloat(pixelsToMeters(r.width).toFixed(1)),
                 heightMeters: parseFloat(pixelsToMeters(r.height).toFixed(1))
             };
+
+            if (r.hatch && r.hatch.pattern && r.hatch.pattern !== 'none') {
+                exportItem.hatch = {
+                    pattern: r.hatch.pattern,
+                    color: r.hatch.color || '#64748b',
+                    spacing: r.hatch.spacing || 12,
+                    angle: r.hatch.angle != null ? r.hatch.angle : 45
+                };
+            }
 
             // Nếu là Đa giác -> Lưu danh sách các điểm chóp
             if (r.shape === 'polygon' && r.points) {
@@ -262,6 +300,19 @@ function exportJSON() {
                 rotation: bi.rotation || 0,
                 scale: bi.scale != null ? bi.scale : 1,
                 layerId: bi.layerId || 'default'
+            };
+        }),
+        dimensions: (typeof dimensions !== 'undefined' ? dimensions : []).map(function (d) {
+            return {
+                id: d.id,
+                type: d.type || 'dimlinear',
+                orientation: d.type === 'dimaligned' ? undefined : (d.orientation || 'horizontal'),
+                p1: d.p1 ? { x: Math.round(d.p1.x), y: Math.round(d.p1.y) } : null,
+                p2: d.p2 ? { x: Math.round(d.p2.x), y: Math.round(d.p2.y) } : null,
+                offset: d.offset || 0,
+                textOverride: d.textOverride != null && String(d.textOverride) !== '' ? String(d.textOverride) : undefined,
+                color: d.color || (d.type === 'dimaligned' ? '#c026d3' : '#e11d48'),
+                layerId: d.layerId || 'default'
             };
         }),
         bgX: window.bgX,

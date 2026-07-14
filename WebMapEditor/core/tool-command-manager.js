@@ -25,7 +25,7 @@
         poi: 'poi', p: 'poi',
         qr: 'qr', q: 'qr',
         path: 'path', n: 'path',
-        ruler: 'ruler', s: 'ruler', di: 'ruler',
+        ruler: 'ruler', s: 'ruler', di: 'ruler', dist: 'ruler',
         // Phase 2 Editing
         move: 'move', m: 'move',
         copy: 'copy', co: 'copy', cp: 'copy',
@@ -40,7 +40,13 @@
         matchprop: 'matchprop', ma: 'matchprop', match: 'matchprop',
         // Block / Insert
         block: 'block', b: 'block',
-        insert: 'insert', i: 'insert'
+        insert: 'insert', i: 'insert',
+        // Phase 3 Annotation
+        dimlinear: 'dimlinear', dli: 'dimlinear', dimlin: 'dimlinear',
+        dimaligned: 'dimaligned', dal: 'dimaligned', dimal: 'dimaligned',
+        dimedit: 'dimedit', ded: 'dimedit', dimed: 'dimedit',
+        area: 'area', aa: 'area',
+        hatch: 'hatch', h: 'hatch', bhatch: 'hatch'
     };
 
     function createToolCommandManager(options) {

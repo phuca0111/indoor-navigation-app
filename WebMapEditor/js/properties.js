@@ -55,11 +55,15 @@ function updatePropertiesPanel() {
                     <p>- Điểm chờ: <b>${waitPts}</b></p>
                 </div>`;
         } else if (currentTool === 'mline') {
+            var mt = (window.EditorCore && EditorCore.ModifySession && EditorCore.ModifySession.getSnapshot)
+                ? (EditorCore.ModifySession.getSnapshot().mlineThickness || 12)
+                : 12;
             propertiesDiv.innerHTML = `
                 <div class="tool-guide">
                     <p>🧱 <b>Tường dày (ML):</b></p>
-                    <p>Vẽ tường dày + 2 mép song song. <b>Gợi ý:</b> dùng <b>W</b> + ô Độ dày cho nhanh.</p>
+                    <p>Vẽ tường <b>độ dày lớn</b> (một đối tượng tường — không tạo mép phụ).</p>
                     <p>Click chuỗi điểm → <b>Enter</b> / nháy đúp kết thúc.</p>
+                    <p>Độ dày hiện tại: <b>${mt} px</b> (đổi ở panel tường sau khi chọn, hoặc W + Độ dày).</p>
                 </div>`;
         } else if (currentTool === 'insert') {
             propertiesDiv.innerHTML =
@@ -67,6 +71,40 @@ function updatePropertiesPanel() {
                 '<p>📦 <b>Insert (I):</b></p>' +
                 '<p>Click trên map để chèn block đã chọn. <b>Esc</b> hủy.</p>' +
                 '<p>Thư viện: <b>' + (typeof blocks !== 'undefined' ? blocks.length : 0) + '</b> block</p>' +
+                '</div>';
+        } else if (currentTool === 'dimlinear') {
+            var step = (typeof dimlinearSession !== 'undefined' && dimlinearSession)
+                ? dimlinearSession.step : 1;
+            var stepHint = step === 1 ? 'Click điểm đo 1'
+                : step === 2 ? 'Click điểm đo 2'
+                : 'Click vị trí đường dim (ngang/dọc theo chuột)';
+            propertiesDiv.innerHTML =
+                '<div class="tool-guide">' +
+                '<p>📏 <b>Dimlinear (DLI):</b></p>' +
+                '<p>Đo ngang hoặc dọc (tự chọn theo vị trí đặt dim).</p>' +
+                '<p><b>Bước:</b> ' + stepHint + '</p>' +
+                '<p><b>Esc</b> hủy phiên. Annotation — không sang Android.</p>' +
+                '</div>';
+        } else if (currentTool === 'dimaligned') {
+            var stepA = (typeof dimalignedSession !== 'undefined' && dimalignedSession)
+                ? dimalignedSession.step : 1;
+            var stepHintA = stepA === 1 ? 'Click điểm đo 1'
+                : stepA === 2 ? 'Click điểm đo 2'
+                : 'Click vị trí đường dim (song song cạnh)';
+            propertiesDiv.innerHTML =
+                '<div class="tool-guide">' +
+                '<p>📐 <b>Dimaligned (DAL):</b></p>' +
+                '<p>Đo <b>đúng chiều dài cạnh</b> (kể cả nghiêng) — khác DLI chỉ đo ngang/dọc.</p>' +
+                '<p><b>Bước:</b> ' + stepHintA + '</p>' +
+                '<p><b>Esc</b> hủy phiên. Annotation — không sang Android.</p>' +
+                '</div>';
+        } else if (currentTool === 'dimedit') {
+            propertiesDiv.innerHTML =
+                '<div class="tool-guide">' +
+                '<p>✏️ <b>DIMEdit (DED):</b></p>' +
+                '<p>Click / kéo <b>dim</b> để đổi vị trí đường đo.</p>' +
+                '<p>Panel thuộc tính: sửa <b>nhãn</b> hoặc <b>Khôi phục đo</b>.</p>' +
+                '<p>Cũng kéo được bằng tool <b>V</b> khi đã chọn dim.</p>' +
                 '</div>';
         } else if (currentTool === 'trim' || currentTool === 'extend') {
             var isTrim = currentTool === 'trim';
@@ -98,10 +136,11 @@ function updatePropertiesPanel() {
             propertiesDiv.innerHTML = `
                 <div class="tool-guide">
                     <p>📏 <b>Vẽ Đoạn thẳng (L):</b></p>
-                    <p>- Click điểm 1 → click điểm 2: tạo <b>1 đoạn hỗ trợ</b> (mảnh, xanh).</p>
-                    <p>- <b>Không</b> nối chuỗi như tường; mỗi cặp click là 1 đoạn mới.</p>
-                    <p>- Dùng để căn chỉnh/khung tham chiếu, <b>không</b> thay thế tường.</p>
-                    <p>- <b>ESC</b>: hủy đoạn đang vẽ. Trạng thái: <b>${lineStateVi}</b></p>
+                    <p>- Click điểm 1 → click điểm 2 (hoặc <b>gõ chiều dài</b>).</p>
+                    <p>- Khi đang vẽ: nhãn <b>m</b> gần đầu chuột · ô <b>Chiều dài</b> dưới status bar.</p>
+                    <p>- Gõ ví dụ <b>3.5m</b> rồi <b>Enter</b> = đặt đúng độ dài theo hướng chuột.</p>
+                    <p>- Đoạn đã tạo: bật <b>Hiện kích thước</b> để thấy nhãn giữa cạnh.</p>
+                    <p>- <b>ESC</b>: hủy. Trạng thái: <b>${lineStateVi}</b></p>
                 </div>`;
         } else if (currentTool === 'polygon') {
             var polyMetrics = (typeof getPolygonMetrics === 'function' && polygonPoints.length >= 2)
@@ -134,12 +173,82 @@ function updatePropertiesPanel() {
                     ${statLine}
                 </div>`;
         } else if (currentTool === 'ruler') {
+            var distHtml = '';
+            if (typeof lastDistMeasure !== 'undefined' && lastDistMeasure) {
+                var m = lastDistMeasure;
+                distHtml =
+                    '<div class="prop-group">' +
+                    '<div class="prop-group-title">Kết quả Dist</div>' +
+                    '<div class="prop-row"><label>Khoảng cách:</label><span><b>' + m.distM.toFixed(2) + ' m</b></span></div>' +
+                    '<div class="prop-row"><label>ΔX:</label><span>' + m.dxM.toFixed(2) + ' m</span></div>' +
+                    '<div class="prop-row"><label>ΔY:</label><span>' + m.dyM.toFixed(2) + ' m</span></div>' +
+                    '<div class="prop-row"><label>Góc:</label><span>' + m.angleDeg.toFixed(1) + '°</span></div>' +
+                    '<p class="hint-text">Chỉ đo — <b>không</b> đổi tỷ lệ map. Căn tỷ lệ: ô <b>Tỷ lệ (m/ô)</b> bên trái.</p>' +
+                    '</div>';
+            }
             propertiesDiv.innerHTML =
                 '<div class="tool-guide">' +
-                '<p>💡 <b>Thước (S) — chế độ Đo</b></p>' +
-                '<p>Kéo 2 điểm → xem <b>m + px</b> theo tỷ lệ cố định <b>0.5 m/ô</b>.</p>' +
-                '<p><b>Không đổi</b> tỷ lệ (chuẩn indoor nav / Android).</p>' +
-                '<p>Căn ảnh nền: dùng <b>Nền</b> / kéo ảnh — không dùng thước.</p>' +
+                '<p>📏 <b>Dist (DI):</b></p>' +
+                '<p>Click điểm 1 → kéo → thả điểm 2.</p>' +
+                '<p>Hiện khoảng cách, ΔX, ΔY, góc theo tỷ lệ hiện tại.</p>' +
+                '<p>Phím tắt: <b>DI</b> / <b>S</b> · <b>Esc</b> xóa kết quả.</p>' +
+                '</div>' + distHtml;
+        } else if (currentTool === 'area') {
+            var areaHtml = '';
+            if (typeof lastAreaMeasure !== 'undefined' && lastAreaMeasure) {
+                var am = lastAreaMeasure;
+                areaHtml =
+                    '<div class="prop-group">' +
+                    '<div class="prop-group-title">Kết quả Area</div>' +
+                    '<div class="prop-row"><label>Diện tích:</label><span><b>' + am.areaM2.toFixed(2) + ' m²</b></span></div>' +
+                    '<div class="prop-row"><label>Chu vi:</label><span>' + am.perimeterM.toFixed(2) + ' m</span></div>' +
+                    '<p class="hint-text">Chỉ đo — <b>không</b> tạo phòng (khác Đa giác G) · không đổi tỷ lệ.</p>' +
+                    '</div>';
+            }
+            propertiesDiv.innerHTML =
+                '<div class="tool-guide">' +
+                '<p>📐 <b>Area (AA):</b></p>' +
+                '<p>Click vào <b>phòng có sẵn</b> để xem diện tích (m²) + chu vi.</p>' +
+                '<p>Không vẽ đỉnh — muốn tạo phòng dùng tool <b>Đa giác (G)</b>.</p>' +
+                '<p>Phím tắt: <b>AA</b> · <b>Esc</b> xóa kết quả.</p>' +
+                '</div>' + areaHtml;
+        } else if (currentTool === 'hatch') {
+            var st = window.hatchToolStyle || {
+                pattern: 'lines', color: '#64748b', spacing: 12, angle: 45, useRoomTypeDefault: true
+            };
+            var hatchOpts = ['none', 'solid', 'lines', 'cross', 'dots'].map(function (p) {
+                return '<option value="' + p + '"' + (st.pattern === p ? ' selected' : '') + '>' + p + '</option>';
+            }).join('');
+            propertiesDiv.innerHTML =
+                '<div class="tool-guide">' +
+                '<p>▤ <b>Hatch (H):</b></p>' +
+                '<p>Click vào <b>phòng</b> để tô pattern phân loại (lưu trên phòng).</p>' +
+                '<p>Khác Area: Area chỉ đo · Hatch đổi kiểu tô.</p>' +
+                '</div>' +
+                '<div class="prop-group">' +
+                '<div class="prop-group-title">Kiểu tô</div>' +
+                '<div class="prop-row"><label>Theo loại phòng:</label>' +
+                '<input type="checkbox" ' + (st.useRoomTypeDefault ? 'checked' : '') +
+                ' onchange="setHatchToolStyleProp(\'useRoomTypeDefault\', this.checked)"></div>' +
+                '<div class="prop-row"><label>Pattern:</label>' +
+                '<select onchange="setHatchToolStyleProp(\'pattern\', this.value)" ' +
+                (st.useRoomTypeDefault ? 'disabled' : '') + '>' + hatchOpts + '</select></div>' +
+                '<div class="prop-row"><label>Màu:</label>' +
+                '<input type="color" value="' + (st.color || '#64748b') + '" ' +
+                (st.useRoomTypeDefault ? 'disabled' : '') +
+                ' onchange="setHatchToolStyleProp(\'color\', this.value)"></div>' +
+                '<div class="prop-row"><label>Khoảng:</label>' +
+                '<input type="number" min="4" max="48" value="' + (st.spacing || 12) + '" ' +
+                (st.useRoomTypeDefault ? 'disabled' : '') +
+                ' onchange="setHatchToolStyleProp(\'spacing\', Number(this.value))">' +
+                '<span class="unit">px</span></div>' +
+                '<div class="prop-row"><label>Góc:</label>' +
+                '<input type="number" min="0" max="179" value="' + (st.angle != null ? st.angle : 45) + '" ' +
+                (st.useRoomTypeDefault ? 'disabled' : '') +
+                ' onchange="setHatchToolStyleProp(\'angle\', Number(this.value))">' +
+                '<span class="unit">°</span></div>' +
+                '<button class="btn btn-sm btn-outline" type="button" onclick="clearHatchFromSelectedRoom()">Xóa hatch phòng đang chọn</button>' +
+                '<p class="hint-text">Bật «Theo loại phòng» = pattern mặc định theo Loại (WC / thang / VP…).</p>' +
                 '</div>';
         } else {
             var bgHtml = '';
@@ -207,16 +316,76 @@ function updatePropertiesPanel() {
         propertiesDiv.innerHTML =
             (typeof renderBlockRefPropertiesHtml === 'function' ? renderBlockRefPropertiesHtml(obj.data) : '') +
             '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa Insert</button>';
+    } else if (obj.type === 'dimension') {
+        propertiesDiv.innerHTML =
+            (typeof renderDimensionPropertiesHtml === 'function' ? renderDimensionPropertiesHtml(obj.data) : '') +
+            '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa Dim</button>';
     }
 }
 
 // --- ĐOẠN THẲNG (hỗ trợ) — schema-driven ---
 function showLineProps(ln) {
     var desc = getInspectorDescriptor();
+    var heading = typeof getPolylineHeadingDeg === 'function' ? getPolylineHeadingDeg(ln) : 0;
+    var lenVal = '0';
+    if (ln.points && ln.points.length >= 2 && typeof pixelsToMeters === 'function') {
+        var a0 = ln.points[0], b0 = ln.points[1];
+        var px0 = Math.hypot(b0.x - a0.x, b0.y - a0.y);
+        lenVal = pixelsToMeters(px0).toFixed(2);
+    }
     propertiesDiv.innerHTML =
         renderSchemaPropGroup(desc, { title: '📏 Đoạn thẳng #' + ln.id }) +
+        '<div class="prop-group">' +
+        '<div class="prop-group-title">Kích thước</div>' +
+        '<div class="prop-row"><label>Chiều dài:</label>' +
+        '<input type="number" step="0.01" min="0.01" value="' + lenVal + '" ' +
+        'onchange="updateLineLength(Number(this.value))"><span class="unit">m</span></div>' +
+        '<div class="prop-row"><label>Hướng:</label><span>' + heading.toFixed(1) + '°</span></div>' +
+        '<p class="hint-text">Nhập mét rồi Enter/blur — giữ hướng, kéo đầu còn lại. Giống tường.</p>' +
+        '</div>' +
+        renderEndpointTrimHtml() +
+        renderQuickTransformHtml('line') +
         '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
 }
+
+/** Đặt chiều dài đoạn (mét), giữ điểm đầu cố định, kéo điểm cuối theo hướng hiện tại. */
+function updateLineLength(newLenMeters) {
+    if (!selectedObject || selectedObject.type !== 'line') return;
+    var ln = selectedObject.data;
+    if (!ln.points || ln.points.length < 2) return;
+    if (!(newLenMeters > 0) || !Number.isFinite(newLenMeters)) return;
+
+    var newLenPx = typeof metersToPixels === 'function' ? metersToPixels(newLenMeters) : newLenMeters;
+    if (!(newLenPx >= 4)) {
+        if (typeof showToast === 'function') showToast('Chiều dài quá ngắn', 'error');
+        return;
+    }
+
+    saveState();
+    var p1 = ln.points[0];
+    var p2 = ln.points[ln.points.length - 1];
+    var dx = p2.x - p1.x;
+    var dy = p2.y - p1.y;
+    var currentLenPx = Math.sqrt(dx * dx + dy * dy);
+
+    if (currentLenPx < 1e-6) {
+        ln.points[ln.points.length - 1].x = p1.x + newLenPx;
+        ln.points[ln.points.length - 1].y = p1.y;
+    } else {
+        var ratio = newLenPx / currentLenPx;
+        ln.points[ln.points.length - 1].x = p1.x + dx * ratio;
+        ln.points[ln.points.length - 1].y = p1.y + dy * ratio;
+    }
+
+    if (typeof EditorCore !== 'undefined' && EditorCore.ObjectTransform) {
+        EditorCore.ObjectTransform.ensureOriginalGeometry('line', ln);
+    }
+    if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
+    updatePropertiesPanel();
+    updateObjectList();
+    draw();
+}
+window.updateLineLength = updateLineLength;
 
 function updateLineProp(prop, value) {
     if (!selectedObject || selectedObject.type !== 'line') return;
@@ -248,6 +417,9 @@ function showWallProps(w) {
         '</div>' +
         '</div>' +
         '</div>' +
+        '<p class="hint-text">Kéo ô vuông đỉnh / chấm xoay trên map · hoặc panel bên dưới · lệnh <b>PE</b>: kéo đỉnh · <b>Ctrl+click</b> trên cạnh = thêm đỉnh.</p>' +
+        renderEndpointTrimHtml() +
+        renderQuickTransformHtml('wall') +
         '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
 }
 
@@ -413,6 +585,43 @@ function showRoomProps(r) {
         '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
 }
 
+/** Cắt đuôi thừa về giao tường/đoạn gần nhất */
+function renderEndpointTrimHtml() {
+    return '<div class="prop-group">' +
+        '<div class="prop-group-title">Cắt đuôi thừa</div>' +
+        '<p class="hint-text">Đưa đỉnh đầu/cuối về <b>giao</b> với tường hoặc đoạn khác (thay kéo tay / lệnh TR).</p>' +
+        '<div class="prop-row" style="gap:4px;flex-wrap:wrap">' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="retractSelectedEndpoint(\'start\')">Cắt đỉnh đầu</button>' +
+        '<button class="btn btn-sm btn-outline" type="button" onclick="retractSelectedEndpoint(\'end\')">Cắt đỉnh cuối</button>' +
+        '</div></div>';
+}
+
+function retractSelectedEndpoint(which) {
+    var t = getQuickTransformTarget();
+    if (!t || (t.type !== 'line' && t.type !== 'wall')) {
+        if (typeof showToast === 'function') showToast('Chọn đoạn hoặc tường trước', 'error');
+        return;
+    }
+    if (typeof retractPolylineEndpointToNearestCutter !== 'function') {
+        if (typeof showToast === 'function') showToast('Thiếu hàm cắt đuôi', 'error');
+        return;
+    }
+    if (typeof saveState === 'function') saveState();
+    var ok = retractPolylineEndpointToNearestCutter(t.type, t.data, which);
+    if (ok) {
+        if (typeof syncSpatialIndexFromLegacy === 'function') syncSpatialIndexFromLegacy();
+        updatePropertiesPanel();
+        updateObjectList();
+        draw();
+        if (typeof showToast === 'function') {
+            showToast(which === 'start' ? 'Đã cắt đỉnh đầu về giao' : 'Đã cắt đỉnh cuối về giao', 'success');
+        }
+    } else if (typeof showToast === 'function') {
+        showToast('Không tìm thấy giao với tường/đoạn khác trên cạnh đuôi', 'error');
+    }
+}
+window.retractSelectedEndpoint = retractSelectedEndpoint;
+
 /** Panel biến đổi nhanh — xoay đến góc / tỷ lệ chuẩn kỹ thuật */
 function renderQuickTransformHtml(kind) {
     var angleNow = (typeof getSelectionRotationDeg === 'function') ? getSelectionRotationDeg() : null;
@@ -428,7 +637,7 @@ function renderQuickTransformHtml(kind) {
         (window.showRoomAngleLabels ? 'Ẩn góc trên map' : 'Hiện góc trên map') + '</button></div>' +
 
         '<div class="prop-group-title" style="margin-top:8px">Xoay đến góc</div>' +
-        '<p class="hint-text">Nhập góc muốn đặt (0–360), rồi «Xoay đến». VD: đang 30° → nhập 90 → phòng quay đúng đến 90°.</p>' +
+        '<p class="hint-text">Phòng / đoạn / tường: kéo chấm xoay trên map, hoặc nhập góc tuyệt đối bên dưới.</p>' +
         '<div class="prop-row"><label>Đến:</label>' +
         '<input type="number" id="qtRotateToDeg" value="' + angleVal + '" min="0" max="360" step="1" style="width:72px">' +
         '<span class="unit">°</span>' +
@@ -471,7 +680,17 @@ function renderQuickTransformHtml(kind) {
 
 function getSelectionRotationDeg() {
     var t = getQuickTransformTarget();
-    if (!t || t.type !== 'room' || !t.data) return null;
+    if (!t || !t.data) return null;
+    if (t.type === 'line' || t.type === 'wall') {
+        if (typeof t.data.rotationDeg === 'number' && Number.isFinite(t.data.rotationDeg)) {
+            return ((t.data.rotationDeg % 360) + 360) % 360;
+        }
+        if (typeof getPolylineHeadingDeg === 'function') {
+            return getPolylineHeadingDeg(t.data);
+        }
+        return 0;
+    }
+    if (t.type !== 'room') return null;
     var r = t.data;
     if (typeof r.rotationDeg === 'number' && Number.isFinite(r.rotationDeg)) {
         return ((r.rotationDeg % 360) + 360) % 360;
@@ -963,6 +1182,8 @@ function deleteSelected() {
             deleteNode(data);
         } else if (type === 'blockRef') {
             deleteBlockInsert(data);
+        } else if (type === 'dimension') {
+            deleteDimension(data);
         }
 
         clearEditorSelection({ skipUi: true });
@@ -1057,6 +1278,19 @@ function updateObjectList() {
             var def = typeof findBlockDefinition === 'function' ? findBlockDefinition(bi.blockId) : null;
             addListItem('📦', bi.name || 'Insert #' + bi.id, def ? def.name : bi.blockId, '#be123c', isActive, function () {
                 setEditorSelection('blockRef', bi);
+            });
+        });
+    }
+
+    // Dimensions
+    if (typeof dimensions !== 'undefined') {
+        dimensions.forEach(function (dim) {
+            var isActive = (selectedObject && selectedObject.type === 'dimension' && selectedObject.data === dim);
+            var label = typeof formatDimensionLabel === 'function' ? formatDimensionLabel(dim) : ('#' + dim.id);
+            var kind = dim.type === 'dimaligned' ? 'DAL' : 'DLI';
+            var color = dim.type === 'dimaligned' ? '#c026d3' : '#e11d48';
+            addListItem('📏', kind + ' #' + dim.id, label, color, isActive, function () {
+                setEditorSelection('dimension', dim);
             });
         });
     }
