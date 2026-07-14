@@ -61,6 +61,7 @@ let isDrawingPolygon = false;
 // Dragging state (kéo phòng)
 let isDragging = false;
 window.isDraggingBg = false;
+let isDraggingDim = false; // DIMEdit / kéo offset dim
 let dragOffsetX, dragOffsetY;
 
 // Resizing state
@@ -73,11 +74,21 @@ let isRotatingDoor = false;
 let isRotatingRoom = false;
 let roomRotateLastAngle = 0;
 let roomRotateCenter = null;
+/** Xoay đoạn thẳng / tường bằng handle (giống phòng) */
+let isRotatingSegment = false;
+let segmentRotateLastAngle = 0;
+let segmentRotateCenter = null;
+let segmentRotateType = null; // 'line' | 'wall'
+/** Kéo đỉnh line/wall khi tool Chọn (không cần PE) */
+let isDraggingSegVertex = false;
+let draggingSegVertexIndex = -1;
 /** Độ dày tường mặc định khi vẽ W (px) */
 window.defaultWallThickness = 4;
 window.showRoomAngleLabels = false;
 /** Góc đang kéo xoay (hiện live trên canvas) */
 window.liveRoomRotateDeg = null;
+window.liveSegmentRotateDeg = null;
+window.isRotatingSegment = false;
 
 // Polygon vertex dragging
 let isDraggingVertex = false;
@@ -101,17 +112,39 @@ let blockInserts = [];
 let nextBlockDefId = 1;
 let nextBlockInsertId = 1;
 
+// Dimensions (Phase 3 Annotation) — editor only, không publish nav Android
+let dimensions = [];
+let nextDimId = 1;
+
 // Path data (đường đi)
 let pathNodes = [];
 let pathEdges = [];
 let nextNodeId = 1;
 let firstNodeForEdge = null; // node đầu khi đang nối edge
 
-// --- THƯỚC ĐO (RULER) ---
+// --- THƯỚC ĐO / DIST (DI) ---
 let rulerStart = null; // {x, y}
 let rulerEnd = null;   // {x, y}
 let isDrawingRuler = false;
 let rulerLine = null; // {x1, y1, x2, y2}
+/** Kết quả Dist gần nhất (ephemeral, không lưu document) */
+let lastDistMeasure = null;
+
+// --- AREA (AA) — đo diện tích/chu vi ephemeral ---
+let areaPoints = [];       // đỉnh đang click
+let areaPreview = null;    // {x,y} con trỏ khi đang vẽ
+let isDrawingArea = false;
+/** Kết quả Area gần nhất (ephemeral, không lưu document) */
+let lastAreaMeasure = null;
+
+/** Style đang chọn cho tool Hatch (H) */
+window.hatchToolStyle = window.hatchToolStyle || {
+    pattern: 'lines',
+    color: '#64748b',
+    spacing: 12,
+    angle: 45,
+    useRoomTypeDefault: true
+};
 
 // Background image (ảnh nền)
 window.bgImage = null;       // Image object
@@ -148,7 +181,8 @@ const NODE_RADIUS = 8;      // Bán kính path node
         pathEdges: function () { return pathEdges; },
         qrs: function () { return qrs; },
         blocks: function () { return blocks; },
-        blockInserts: function () { return blockInserts; }
+        blockInserts: function () { return blockInserts; },
+        dimensions: function () { return dimensions; }
     };
     Object.keys(getters).forEach(function (key) {
         try {

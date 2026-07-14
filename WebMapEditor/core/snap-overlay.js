@@ -16,7 +16,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
     'use strict';
 
-    var DRAW_TOOLS = ['wall', 'line', 'room', 'circle', 'door', 'poi', 'path', 'ruler', 'polygon'];
+    var DRAW_TOOLS = ['wall', 'line', 'room', 'circle', 'door', 'poi', 'path', 'ruler', 'polygon', 'dimlinear', 'dimaligned', 'dimedit'];
     var HINT_TOOLS = ['select'].concat(DRAW_TOOLS);
 
     var hint = null;

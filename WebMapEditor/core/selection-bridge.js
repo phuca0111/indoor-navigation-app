@@ -19,7 +19,8 @@
         poi: 'pois',
         qr: 'qrs',
         node: 'pathNodes',
-        blockRef: 'blockInserts'
+        blockRef: 'blockInserts',
+        dimension: 'dimensions'
     };
 
     var _syncingToManager = false;
@@ -35,7 +36,8 @@
             pois: g.pois || [],
             qrs: g.qrs || [],
             pathNodes: g.pathNodes || [],
-            blockInserts: g.blockInserts || []
+            blockInserts: g.blockInserts || [],
+            dimensions: g.dimensions || []
         };
     }
 

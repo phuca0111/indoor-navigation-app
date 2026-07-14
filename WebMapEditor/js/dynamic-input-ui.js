@@ -1,5 +1,6 @@
 // ============================================================
 // DYNAMIC-INPUT-UI.JS — Thanh nhập chiều dài/góc (status bar)
+// Đoạn/Tường đang vẽ: gõ mét (vd 3.5m) hoặc px → Enter
 // ============================================================
 (function () {
     'use strict';
@@ -7,6 +8,7 @@
     var wrap = null;
     var input = null;
     var hint = null;
+    var labelEl = null;
 
     /** Snap chính xác theo số đã gõ — không kéo lại OSNAP/polar. */
     var EXACT_SNAP_OPTS = { objectSnap: false, gridSnap: false, polar: false };
@@ -49,32 +51,45 @@
         return !!getDrawContext();
     }
 
+    function metersOf(px) {
+        if (typeof pixelsToMeters === 'function') return pixelsToMeters(px);
+        return px;
+    }
+
     function updateVisibility() {
         if (!wrap) return;
         var ctx = getDrawContext();
         if (ctx) {
+            var wasHidden = wrap.style.display === 'none' || !wrap.style.display;
             wrap.style.display = 'flex';
+            wrap.classList.add('is-active');
+            if (labelEl) labelEl.textContent = 'Chiều dài';
             if (input && document.activeElement !== input) {
                 input.placeholder = buildPlaceholder(ctx);
             }
             updateHint(ctx);
+            if (wasHidden && input) {
+                // Hiện ô nhập khi vừa bắt đầu vẽ đoạn/tường
+                try { input.focus({ preventScroll: true }); } catch (e) { input.focus(); }
+            }
         } else {
             wrap.style.display = 'none';
+            wrap.classList.remove('is-active');
             if (input) input.value = '';
             if (hint) hint.textContent = '';
+            if (labelEl) labelEl.textContent = 'Nhập';
         }
     }
 
     function buildPlaceholder(ctx) {
         var DI = getDI();
-        if (!DI || !ctx.reference) return '100 | @100<45 | @50,30';
+        if (!DI || !ctx.reference) return 'vd 3.5m  ·  Enter xác nhận';
         var dist = DI.distanceBetween(ctx.anchor, ctx.reference);
-        var ang = DI.angleDegBetween(ctx.anchor, ctx.reference);
-        var parts = [];
-        if (dist > 0.5) parts.push(Math.round(dist) + 'px');
-        if (ang != null) parts.push('<' + Math.round(ang) + '°');
-        if (parts.length) return parts.join(' · ') + ' | 100 | @100<45';
-        return '100 | @100<45 | @50,30';
+        var m = metersOf(dist);
+        if (dist > 0.5 && Number.isFinite(m)) {
+            return m.toFixed(2) + ' m  ·  gõ 3.5m Enter';
+        }
+        return 'vd 3.5m  ·  Enter xác nhận';
     }
 
     function updateHint(ctx) {
@@ -87,7 +102,10 @@
         var dist = DI.distanceBetween(ctx.anchor, ctx.reference);
         var ang = DI.angleDegBetween(ctx.anchor, ctx.reference);
         var bits = [];
-        if (dist > 0.5) bits.push('L≈' + Math.round(dist) + 'px');
+        if (dist > 0.5) {
+            var m = metersOf(dist);
+            bits.push('L≈' + (Number.isFinite(m) ? m.toFixed(2) : '?') + ' m');
+        }
         if (ang != null) bits.push('∠' + Math.round(ang) + '°');
         hint.textContent = bits.join(' ');
     }
@@ -126,10 +144,45 @@
         return input && input.value && input.value.trim().length > 0;
     }
 
+    /**
+     * Khi đang vẽ đoạn/tường: gõ số từ canvas → nhảy vào ô Chiều dài.
+     * @returns {boolean} true nếu đã nhận phím
+     */
+    function captureTypingKey(e) {
+        if (!isActive() || !input) return false;
+        if (e.ctrlKey || e.metaKey || e.altKey) return false;
+        var t = e.target;
+        var tn = t && t.tagName ? t.tagName.toUpperCase() : '';
+        if (tn === 'INPUT' || tn === 'TEXTAREA' || tn === 'SELECT' || (t && t.isContentEditable)) {
+            return false;
+        }
+        var key = e.key;
+        if (key === 'Enter') {
+            e.preventDefault();
+            submit();
+            return true;
+        }
+        if (key === 'Backspace') {
+            e.preventDefault();
+            input.focus();
+            input.value = input.value.slice(0, -1);
+            return true;
+        }
+        // Số / dấu / m / @ / < / ,
+        if (key.length === 1 && /[0-9.,mM@<\-]/.test(key)) {
+            e.preventDefault();
+            input.focus();
+            input.value += key;
+            return true;
+        }
+        return false;
+    }
+
     function init() {
         wrap = document.getElementById('dynamicInputWrap');
         input = document.getElementById('dynamicInput');
         hint = document.getElementById('dynamicInputHint');
+        labelEl = wrap ? wrap.querySelector('.dynamic-input-label') : null;
         if (!wrap || !input) return;
 
         input.addEventListener('keydown', function (e) {
@@ -163,6 +216,7 @@
         updateVisibility: updateVisibility,
         submit: submit,
         hasPendingText: hasPendingText,
-        getDrawContext: getDrawContext
+        getDrawContext: getDrawContext,
+        captureTypingKey: captureTypingKey
     };
 })();
