@@ -228,6 +228,33 @@ body {
     background: #fee2e2;
 }
 
+/* Phase 8 — khóa tầng: nền sáng + chữ tối (tránh trùng với banner đỏ access) */
+.editor-floor-lock-banner {
+    background: #fffbeb;
+    border-bottom: 2px solid #d97706;
+    color: #78350f;
+}
+
+.editor-floor-lock-banner .editor-access-banner__text strong {
+    color: #92400e;
+    font-size: 15px;
+}
+
+.editor-floor-lock-banner .editor-access-banner__text span {
+    color: #78350f;
+}
+
+.editor-floor-lock-banner .editor-access-banner__btn {
+    background: #b45309;
+    color: #fff;
+    border: 1px solid #92400e;
+}
+
+.editor-floor-lock-banner .editor-access-banner__btn:hover {
+    background: #92400e;
+    color: #fff;
+}
+
 .header-right {
     display: flex;
     align-items: center;
@@ -532,10 +559,24 @@ aside {
     margin-right: 4px;
 }
 
+.dynamic-input-wrap.is-active {
+    display: flex;
+    background: rgba(59, 130, 246, 0.12);
+    border-radius: 6px;
+    border: 1px solid rgba(59, 130, 246, 0.45);
+    padding: 2px 8px;
+    margin: 0 6px 0 0;
+}
+
 .dynamic-input-label {
     font-size: 0.7rem;
     color: var(--text-dim);
     white-space: nowrap;
+}
+
+.dynamic-input-wrap.is-active .dynamic-input-label {
+    color: #93c5fd;
+    font-weight: 600;
 }
 
 .dynamic-input-field {
@@ -562,6 +603,10 @@ aside {
     color: #94a3b8;
     white-space: nowrap;
     font-family: ui-monospace, monospace;
+}
+
+.dynamic-input-wrap.is-active .dynamic-input-hint {
+    color: #cbd5e1;
 }
 
 /* PROPERTIES PANEL */

@@ -90,3 +90,20 @@ BAO_CAO_FIX_LOI_4_QR.md
 
 # Roadmap AI — bỏ comment dòng dưới nếu MUỐN đưa SaaS.md lên GitHub
 SaaS.md
+# Local verify / planning docs (do not push)
+TEST_VERIFY_PHASE*.md
+Nang_cap_he_thong_backendserver.md
+
+
+# Untracked local docs (keep on machine, do not re-commit)
+BAOCAO_G1_CHON_DICH.md
+BAOCAO_G1b_DOI_MAP.md
+BAOCAO_G2_XOAY_MAP.md
+SaaS.md
+TEST_CASE_G1_CHON_DICH.md
+TEST_CASE_G1b_DOI_MAP.md
+TEST_CASE_G2_XOAY_MAP.md
+TEST_VERIFY_PHASE7_SECURITY.md
+TEST_VERIFY_PHASE*.md
+Nang_cap_he_thong_backendserver.md
+

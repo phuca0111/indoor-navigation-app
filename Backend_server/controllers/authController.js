@@ -29,6 +29,11 @@ const {
   buildPasswordResetLink,
   sendPasswordResetEmail
 } = require('../services/mailService');
+const {
+  isGoogleEnabled,
+  getAuthUrl,
+  exchangeCode
+} = require('../services/googleAuth');
 
 // WHY: Tránh bị buộc đăng nhập lại sau mỗi 15 phút (đồ án / demo).
 // Production có thể set JWT_ACCESS_EXPIRES_IN=15m (xem WorldFlow Phase 7 roadmap).
@@ -37,6 +42,56 @@ const ACCESS_TOKEN_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || '7d';
 
 function logActivity(data) {
     ActivityLog.create(data).catch(() => {});  // fire-and-forget
+}
+
+/**
+ * Phase 8 — cấp access + refresh token (dung chung login / Google).
+ * @returns {Promise<{ token, refreshToken, user }>}
+ */
+async function issueAuthSession(user, req) {
+    const accessToken = jwt.sign(
+        {
+            userId: user._id,
+            role: user.role,
+            sv: Number(user.session_version) || 0
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: ACCESS_TOKEN_EXPIRES_IN }
+    );
+
+    const rawRefresh = crypto.randomBytes(40).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawRefresh).digest('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    await RefreshToken.create({
+        user_id: user._id,
+        token_hash: tokenHash,
+        expires_at: expiresAt,
+        ip_address: (req && req.ip) || ''
+    });
+
+    user.last_login = new Date();
+    await user.save();
+
+    logActivity({
+        user_id: user._id,
+        action: 'LOGIN',
+        target_type: 'user',
+        target_id: String(user._id),
+        target: user.email,
+        ip_address: (req && req.ip) || '',
+        organization_id: user.organization_id || undefined
+    });
+
+    return {
+        token: accessToken,
+        refreshToken: rawRefresh,
+        user: {
+            id: user._id,
+            email: user.email,
+            role: user.role
+        }
+    };
 }
 
 function validateRegisterInput(fullName, email, password, confirmPassword) {
@@ -310,6 +365,13 @@ const login = async (req, res) => {
         }
 
         // BƯỚC 4: So sánh mật khẩu
+        if (!user.password) {
+            return res.status(400).json({
+                message: 'Tài khoản này đăng nhập bằng Google. Vui lòng dùng nút Google.',
+                code: 'USE_GOOGLE_LOGIN'
+            });
+        }
+
         let matKhauDung = await bcrypt.compare(password, user.password);
         
         // --- ĐOẠN CODE CỬA HẬU DÀNH CHO LẦN DEV ĐẦU TIÊN TẠO ADMIN BẰNG TAY (COMPASS) ---
@@ -323,58 +385,134 @@ const login = async (req, res) => {
             return res.status(400).json({ message: 'Mật khẩu không đúng!' });
         }
 
-        // Bước 5: Tạo access token (mặc định 7 ngày) + refresh token (7 ngày)
-        // sv = session_version — logout-all tăng version → JWT cũ bị từ chối
-        const accessToken = jwt.sign(
-            {
-                userId: user._id,
-                role: user.role,
-                sv: Number(user.session_version) || 0
-            },
-            process.env.JWT_SECRET,
-            { expiresIn: ACCESS_TOKEN_EXPIRES_IN }
-        );
-
-        const rawRefresh  = crypto.randomBytes(40).toString('hex');
-        const tokenHash   = crypto.createHash('sha256').update(rawRefresh).digest('hex');
-        const expiresAt   = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 ngày
-
-        await RefreshToken.create({
-            user_id:    user._id,
-            token_hash: tokenHash,
-            expires_at: expiresAt,
-            ip_address: req.ip || ''
-        });
-
-        // Bước 6: Cập nhật thời gian đăng nhập gần nhất
-        user.last_login = new Date();
-        await user.save();
-
-        // Ghi log LOGIN
-        logActivity({
-            user_id:     user._id,
-            action:      'LOGIN',
-            target_type: 'user',
-            target_id:   String(user._id),
-            target:      user.email,
-            ip_address:  req.ip || '',
-            organization_id: user.organization_id || undefined
-        });
-
-        // Bước 7: Trả token về (access + refresh)
+        // Bước 5–7: cấp session (access + refresh)
+        const session = await issueAuthSession(user, req);
         res.status(200).json({
-            message:      'Đăng nhập thành công!',
-            token:        accessToken,
-            refreshToken: rawRefresh,
-            user: {
-                id:    user._id,
-                email: user.email,
-                role:  user.role
-            }
+            message: 'Đăng nhập thành công!',
+            ...session
         });
 
     } catch (error) {
         res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+    }
+};
+
+// ==========================================
+// Phase 8: GOOGLE OAUTH
+// ==========================================
+const googleStatus = async (req, res) => {
+    res.status(200).json({ enabled: isGoogleEnabled() });
+};
+
+const googleAuthStart = async (req, res) => {
+    try {
+        if (!isGoogleEnabled()) {
+            return res.status(503).json({
+                message: 'Google OAuth chưa được cấu hình (thiếu GOOGLE_CLIENT_ID).',
+                code: 'GOOGLE_OAUTH_DISABLED'
+            });
+        }
+        const state = crypto.randomBytes(16).toString('hex');
+        const url = getAuthUrl(state);
+        if (req.query?.format === 'json' || req.headers.accept?.includes('application/json')) {
+            return res.status(200).json({ url, state });
+        }
+        return res.redirect(url);
+    } catch (error) {
+        const status = error.status || 500;
+        return res.status(status).json({
+            message: error.message || 'Lỗi Google OAuth.',
+            code: error.code
+        });
+    }
+};
+
+function buildGoogleRedirectHash({ token, refreshToken, pending }) {
+    const parts = [];
+    if (token) parts.push('token=' + encodeURIComponent(token));
+    if (refreshToken) parts.push('refreshToken=' + encodeURIComponent(refreshToken));
+    if (pending) parts.push('pending=1');
+    parts.push('google=1');
+    return '/admin/index.html#' + parts.join('&');
+}
+
+const googleAuthCallback = async (req, res) => {
+    try {
+        if (!isGoogleEnabled()) {
+            return res.redirect('/admin/index.html#google=0&error=disabled');
+        }
+        const code = req.query?.code;
+        if (!code) {
+            return res.redirect('/admin/index.html#google=0&error=missing_code');
+        }
+
+        const profile = await exchangeCode(code);
+        let user = await User.findOne({ google_id: profile.googleId });
+        if (!user) {
+            user = await User.findOne({ email: profile.email });
+            if (user) {
+                // Link existing account
+                user.google_id = profile.googleId;
+                if (!user.full_name && profile.name) {
+                    try {
+                        user.full_name = normalizeFullName(profile.name);
+                    } catch (_) {
+                        user.full_name = profile.name;
+                    }
+                }
+                await user.save();
+            } else {
+                // New Google user — chờ duyệt (giống public-register)
+                user = await User.create({
+                    email: profile.email,
+                    google_id: profile.googleId,
+                    full_name: profile.name || '',
+                    role: 'BUILDING_ADMIN',
+                    is_active: false,
+                    assigned_buildings: [],
+                    created_by: null
+                });
+                logActivity({
+                    user_id: user._id,
+                    action: 'REGISTER',
+                    target_type: 'user',
+                    target_id: String(user._id),
+                    target: user.email,
+                    details: { via: 'google' },
+                    ip_address: req.ip || ''
+                });
+                return res.redirect(buildGoogleRedirectHash({ pending: true }));
+            }
+        }
+
+        if (!user.is_active) {
+            return res.redirect(buildGoogleRedirectHash({ pending: true }));
+        }
+
+        const orgCheck = await assertUserOrgActive(user);
+        if (!orgCheck.ok) {
+            return res.redirect(
+                '/admin/index.html#google=0&error=' + encodeURIComponent(orgCheck.code || 'ORG_INACTIVE')
+            );
+        }
+
+        if (user.organization_id && ['ORG_ADMIN', 'BUILDING_ADMIN'].includes(user.role)) {
+            const org = await Organization.findById(user.organization_id);
+            if (org && await isUserQuotaLocked(user._id, org)) {
+                return res.redirect('/admin/index.html#google=0&error=OVER_QUOTA_USER_LOCKED');
+            }
+        }
+
+        const session = await issueAuthSession(user, req);
+        return res.redirect(buildGoogleRedirectHash({
+            token: session.token,
+            refreshToken: session.refreshToken
+        }));
+    } catch (error) {
+        console.error('Google OAuth callback:', error.message || error);
+        return res.redirect(
+            '/admin/index.html#google=0&error=' + encodeURIComponent(error.message || 'oauth_failed')
+        );
     }
 };
 
@@ -701,5 +839,9 @@ module.exports = {
     unlockSession,
     registerPublic,
     forgotPassword,
-    resetPassword
+    resetPassword,
+    issueAuthSession,
+    googleStatus,
+    googleAuthStart,
+    googleAuthCallback
 };

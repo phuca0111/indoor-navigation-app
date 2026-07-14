@@ -63,7 +63,7 @@ const getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId)
       .select('-password')
-      .populate('organization_id', 'name slug is_active plan billing_status grace_ends_at')
+      .populate('organization_id', 'name slug is_active plan billing_status grace_ends_at plan_started_at plan_expires_at contact_phone contact_address')
       .lean();
 
     if (!user) {

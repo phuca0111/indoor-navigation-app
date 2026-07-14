@@ -100,11 +100,63 @@ async function sendPasswordResetEmail(opts) {
   return info;
 }
 
+/**
+ * Phase 8 — nhắc sắp hết hạn gói. Skip quietly nếu chưa cấu hình SMTP.
+ * @param {{ to: string, orgName: string, expiresAt: Date, daysLeft: number }} opts
+ */
+async function sendPlanExpiryReminderEmail(opts) {
+  const { to, orgName, expiresAt, daysLeft } = opts || {};
+  if (!to) return null;
+  if (!isSmtpConfigured() && !_testTransporter) {
+    return null;
+  }
+
+  const transporter = getTransporter();
+  if (!transporter) return null;
+
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const expiresText = expiresAt
+    ? new Date(expiresAt).toLocaleString('vi-VN')
+    : 'sắp tới';
+  const days = Number(daysLeft);
+  const daysText = Number.isFinite(days) ? String(days) : '?';
+  const name = orgName || 'Tổ chức của bạn';
+
+  const subject = `Nhắc hạn gói — ${name} còn khoảng ${daysText} ngày`;
+  const text =
+    `Xin chào,\n\n` +
+    `Gói dịch vụ của tổ chức "${name}" sẽ hết hạn vào ${expiresText} ` +
+    `(còn khoảng ${daysText} ngày).\n\n` +
+    `Vui lòng gia hạn trên trang Billing để tránh gián đoạn.\n`;
+
+  const html =
+    `<p>Xin chào,</p>` +
+    `<p>Gói dịch vụ của tổ chức <strong>${name}</strong> sẽ hết hạn vào ` +
+    `<strong>${expiresText}</strong> (còn khoảng ${daysText} ngày).</p>` +
+    `<p>Vui lòng gia hạn trên trang Billing để tránh gián đoạn.</p>`;
+
+  try {
+    const info = await transporter.sendMail({
+      from,
+      to,
+      subject,
+      text,
+      html
+    });
+    console.log('[Mail] Plan expiry reminder sent to', to, 'messageId=', info && info.messageId);
+    return info;
+  } catch (e) {
+    console.warn('[Mail] Plan expiry reminder failed:', e.message || e);
+    return null;
+  }
+}
+
 module.exports = {
   isSmtpConfigured,
   getPublicBaseUrl,
   buildPasswordResetLink,
   sendPasswordResetEmail,
+  sendPlanExpiryReminderEmail,
   setTestTransporter,
   resetMailServiceCache
 };

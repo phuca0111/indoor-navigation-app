@@ -70,7 +70,7 @@ async function resolveOrgScope(req) {
     }
     return { role, orgId };
   }
-  const err = new Error('Không có quyền xem Analytics.');
+  const err = new Error('Không có quyền xem Phân tích.');
   err.status = 403;
   throw err;
 }

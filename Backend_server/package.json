@@ -32,6 +32,8 @@
     "test:phase6": "jest test/integration/phase6Analytics.test.js --verbose --runInBand",
     "test:floor": "jest test/integration/floorLifecycle.test.js --verbose --runInBand",
     "test:phase7": "jest test/integration/phase7Security.test.js --verbose --runInBand",
+    "test:phase8": "jest test/integration/phase8WebUpgrades.test.js --verbose --runInBand",
+    "test:phase9": "jest test/integration/phase9Finance.test.js --verbose --runInBand",
     "start": "node server.js",
     "migrate:org": "node scripts/migrate-organization-legacy.js",
     "verify:org": "node scripts/verify-org-migration.js"
@@ -46,6 +48,7 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
+    "google-auth-library": "^10.9.0",
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.3.1",

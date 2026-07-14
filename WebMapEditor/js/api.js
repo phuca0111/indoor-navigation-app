@@ -203,6 +203,9 @@ async function initEditor() {
         }
         if (typeof syncActiveFloor === 'function') syncActiveFloor();
         window.editorMapLoadHandled = true;
+        // Phase 8 — floor edit lock
+        await acquireFloorLock(false);
+        startFloorLockHeartbeat();
         // Tự khôi phục nháp nếu khác bản server (không hỏi confirm — F5 không mất việc)
         if (typeof checkAutoSave === 'function') {
             checkAutoSave({ serverLoaded: !!(loadResult && loadResult.loaded) });
@@ -514,6 +517,169 @@ function confirmPublishWarnings(warnings) {
     return confirm('Cảnh báo trước khi xuất bản:\n\n' + lines + '\n\nVẫn xuất bản?');
 }
 
+function getEditSessionId() {
+    var key = 'editorEditSession';
+    var sid = sessionStorage.getItem(key);
+    if (!sid) {
+        sid = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+        sessionStorage.setItem(key, sid);
+    }
+    return sid;
+}
+
+function setFloorLockBanner(opts) {
+    opts = opts || {};
+    var banner = document.getElementById('editorFloorLockBanner');
+    var title = document.getElementById('editorFloorLockTitle');
+    var msg = document.getElementById('editorFloorLockMsg');
+    var forceBtn = document.getElementById('editorFloorLockForceBtn');
+    if (!banner) return;
+    if (!opts.show) {
+        banner.style.display = 'none';
+        return;
+    }
+    banner.style.display = 'flex';
+    if (title) title.textContent = opts.title || 'Khóa tầng';
+    if (msg) msg.textContent = opts.message || '';
+    if (forceBtn) forceBtn.style.display = opts.showForce ? 'inline-block' : 'none';
+}
+
+async function acquireFloorLock(force) {
+    if (!buildingId || window.editorAccessBlocked) return null;
+    var floor = document.getElementById('floorSelect').value;
+    try {
+        var response = await apiFetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/lock`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: getEditSessionId(), force: !!force })
+        });
+        var result = await response.json().catch(function () { return {}; });
+        if (response.ok) {
+            window.editorFloorLockOwned = true;
+            setFloorLockBanner({ show: false });
+            console.log('[FloorLock] acquired', floor, result.lock && result.lock.user_email);
+            return result;
+        }
+        window.editorFloorLockOwned = false;
+        var holder = (result.holder && (result.holder.user_email || result.holder.email)) || 'người khác';
+        var role = localStorage.getItem('userRole') || '';
+        var canForce = role === 'SUPER_ADMIN' || role === 'ORG_ADMIN';
+        setFloorLockBanner({
+            show: true,
+            title: 'Tầng đang bị khóa',
+            message: (result.message || ('Đang chỉnh bởi ' + holder)) + ' — bạn vẫn xem được; xuất bản có thể bị chặn.',
+            showForce: canForce
+        });
+        console.warn('[FloorLock] denied', response.status, result.code, holder);
+        return null;
+    } catch (e) {
+        console.warn('[FloorLock] acquire failed', e);
+        return null;
+    }
+}
+
+async function forceAcquireFloorLock() {
+    if (!confirm('Cướp quyền sửa tầng này? Phiên kia sẽ mất khóa.')) return;
+    await acquireFloorLock(true);
+}
+
+async function heartbeatFloorLock() {
+    if (!buildingId || !window.editorFloorLockOwned) return;
+    var floor = document.getElementById('floorSelect').value;
+    try {
+        await apiFetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/lock/heartbeat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: getEditSessionId() })
+        });
+    } catch (_) { /* ignore */ }
+}
+
+async function releaseFloorLock(floorOverride) {
+    if (!buildingId) return;
+    var floor = floorOverride != null ? floorOverride : (document.getElementById('floorSelect') && document.getElementById('floorSelect').value);
+    if (floor == null || floor === '') return;
+    try {
+        await apiFetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/lock/release`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: getEditSessionId() })
+        });
+    } catch (_) { /* ignore */ }
+    window.editorFloorLockOwned = false;
+}
+
+function startFloorLockHeartbeat() {
+    if (window._floorLockHeartbeat) clearInterval(window._floorLockHeartbeat);
+    window._floorLockHeartbeat = setInterval(function () {
+        heartbeatFloorLock();
+    }, 45000);
+    if (!window._floorLockUnloadBound) {
+        window._floorLockUnloadBound = true;
+        window.addEventListener('beforeunload', function () {
+            try {
+                var floor = document.getElementById('floorSelect') && document.getElementById('floorSelect').value;
+                if (!buildingId || floor == null || floor === '' || !window.editorFloorLockOwned) return;
+                var payload = JSON.stringify({ session_id: getEditSessionId() });
+                navigator.sendBeacon(
+                    `${BASE_API_URL}/maps/${buildingId}/${floor}/lock/release`,
+                    new Blob([payload], { type: 'application/json' })
+                );
+            } catch (_) { /* ignore */ }
+        });
+    }
+}
+
+function buildCurrentMapDataForDraftOrPublish() {
+    var pipelineResult;
+    if (window.EditorCore && EditorCore.ExportPipeline) {
+        pipelineResult = EditorCore.ExportPipeline.run({ skipValidation: true });
+    } else {
+        pipelineResult = {
+            ok: true,
+            mapData: buildPublishPayloadInline(),
+            validation: { ok: true, errors: [], warnings: [] }
+        };
+    }
+    if (!pipelineResult.ok || !pipelineResult.mapData) {
+        return buildPublishPayloadInline();
+    }
+    return attachEditorCadExtras(pipelineResult.mapData);
+}
+
+async function saveDraftToServer() {
+    if (!buildingId) {
+        alert('Lỗi: Không tìm thấy mã tòa nhà! Vui lòng mở từ Bảng điều khiển.');
+        return;
+    }
+    if (window.editorAccessBlocked) {
+        showToast('Không có quyền lưu nháp tòa nhà này.', 'error');
+        return;
+    }
+    const floor = document.getElementById('floorSelect').value;
+    const mapData = buildCurrentMapDataForDraftOrPublish();
+    showLoading('Đang lưu nháp lên máy chủ...');
+    try {
+        const response = await apiFetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/draft`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ map_data: mapData })
+        });
+        const result = await response.json().catch(function () { return {}; });
+        hideLoading();
+        if (response.ok) {
+            showToast('Đã lưu nháp tầng ' + floor + ' (chưa xuất bản lên điện thoại).');
+        } else if (response.status === 401) {
+            showToast('Phiên đăng nhập hết hạn! Vui lòng đăng nhập lại.', 'error');
+        } else {
+            showToast(result.message || ('Lỗi lưu nháp (HTTP ' + response.status + ')'), 'error');
+        }
+    } catch (error) {
+        hideLoading();
+        showToast('Lỗi kết nối máy chủ', 'error');
+    }
+}
+
 async function saveMapToServer() {
     if (!buildingId) {
         alert('Lỗi: Không tìm thấy mã tòa nhà! Vui lòng mở từ Bảng điều khiển.');
@@ -568,9 +734,13 @@ async function saveMapToServer() {
         const response = await apiFetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/publish`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-Edit-Session': getEditSessionId()
             },
-            body: JSON.stringify({ map_data: mapData })
+            body: JSON.stringify({
+                map_data: mapData,
+                edit_session_id: getEditSessionId()
+            })
         });
 
         const result = await response.json().catch(() => ({}));
@@ -587,6 +757,10 @@ async function saveMapToServer() {
             showToast('Phiên đăng nhập hết hạn! Vui lòng đăng nhập lại để lưu.', 'error');
         } else if (response.status === 403) {
             showToast(getEditorForbiddenMessage(result, 'Bạn không có quyền xuất bản bản đồ tòa nhà này.'), 'error');
+        } else if (response.status === 409) {
+            showToast(result.message || 'Tầng đang bị người khác khóa — không xuất bản được.', 'error');
+        } else if (response.status === 429) {
+            showToast(result.message || 'Xuất bản quá nhiều lần — thử lại sau.', 'error');
         } else {
             showToast(result.message || ('Lỗi lưu trữ (HTTP ' + response.status + ')'), 'error');
         }

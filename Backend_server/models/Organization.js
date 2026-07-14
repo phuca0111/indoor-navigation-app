@@ -54,6 +54,30 @@ const organizationSchema = new mongoose.Schema({
         default: null
     },
 
+    // Phase 8 — publish permit (hợp đồng) + hồ sơ liên hệ
+    publish_permit_key: {
+        type: String,
+        default: ''
+    },
+    publish_permit_expires_at: {
+        type: Date,
+        default: null
+    },
+    contact_phone: {
+        type: String,
+        default: ''
+    },
+    contact_address: {
+        type: String,
+        default: ''
+    },
+
+    // Phase 8 — tránh spam mail nhắc hết hạn (1 lần / ngày)
+    plan_expiry_reminded_at: {
+        type: Date,
+        default: null
+    },
+
     // Trạng thái organization
     is_active: {
         type: Boolean,

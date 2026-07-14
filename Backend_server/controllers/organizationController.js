@@ -406,7 +406,7 @@ async function updateOrganization(req, res) {
     const illegal = blocked.filter((k) => body[k] !== undefined);
     if (illegal.length) {
       return res.status(400).json({
-        message: 'Không được sửa các trường: ' + illegal.join(', ') + '. Chỉ cho phép is_active, plan, billing_status, grace_ends_at, plan_started_at, plan_expires_at.'
+        message: 'Không được sửa các trường: ' + illegal.join(', ') + '. Chỉ cho phép is_active, plan, billing_status, grace_ends_at, plan_started_at, plan_expires_at, contact_phone, contact_address.'
       });
     }
 
@@ -416,9 +416,13 @@ async function updateOrganization(req, res) {
       body.billing_status === undefined &&
       body.grace_ends_at === undefined &&
       body.plan_started_at === undefined &&
-      body.plan_expires_at === undefined
+      body.plan_expires_at === undefined &&
+      body.contact_phone === undefined &&
+      body.contact_address === undefined
     ) {
-      return res.status(400).json({ message: 'Cần gửi is_active, plan, billing_status, grace_ends_at, plan_started_at hoặc plan_expires_at để cập nhật.' });
+      return res.status(400).json({
+        message: 'Cần gửi is_active, plan, billing_status, grace_ends_at, plan_started_at, plan_expires_at, contact_phone hoặc contact_address để cập nhật.'
+      });
     }
 
     const org = await Organization.findById(id);
@@ -510,6 +514,22 @@ async function updateOrganization(req, res) {
       if (prev !== next) {
         changes.plan_expires_at = { from: prev, to: next };
         org.plan_expires_at = nextExpires;
+      }
+    }
+
+    if (body.contact_phone !== undefined) {
+      const nextPhone = String(body.contact_phone || '').trim();
+      if (org.contact_phone !== nextPhone) {
+        changes.contact_phone = { from: org.contact_phone || '', to: nextPhone };
+        org.contact_phone = nextPhone;
+      }
+    }
+
+    if (body.contact_address !== undefined) {
+      const nextAddr = String(body.contact_address || '').trim();
+      if (org.contact_address !== nextAddr) {
+        changes.contact_address = { from: org.contact_address || '', to: nextAddr };
+        org.contact_address = nextAddr;
       }
     }
 
@@ -882,6 +902,139 @@ async function expireOrganizationSubscription(req, res) {
  }
 }
 
+// ==========================================
+ // Phase 8 — Publish permit (SUPER_ADMIN)
+ // ==========================================
+async function setOrganizationPublishPermit(req, res) {
+  try {
+    const { setPermit } = require('../services/publishPermit');
+    const { key, expires_at, expiresAt } = req.body || {};
+    const org = await setPermit(req.params.id, {
+      key,
+      expiresAt: expires_at || expiresAt || null
+    });
+
+    logActivity({
+      user_id: req.user.userId,
+      action: 'SET_PUBLISH_PERMIT',
+      target_type: 'organization',
+      target_id: String(org._id),
+      target: org.name || org.slug,
+      details: {
+        has_key: !!org.publish_permit_key,
+        expires_at: org.publish_permit_expires_at
+      },
+      ip_address: req.ip || '',
+      organization_id: org._id
+    });
+
+    res.status(200).json({
+      message: 'Đã cấp publish permit.',
+      organization: {
+        _id: org._id,
+        name: org.name,
+        publish_permit_key: org.publish_permit_key,
+        publish_permit_expires_at: org.publish_permit_expires_at
+      }
+    });
+  } catch (error) {
+    const status = error.status || 500;
+    if (status >= 500) console.error('setOrganizationPublishPermit:', error);
+    res.status(status).json({ message: error.message || 'Lỗi cấp permit.' });
+  }
+}
+
+async function clearOrganizationPublishPermit(req, res) {
+  try {
+    const { clearPermit } = require('../services/publishPermit');
+    const org = await clearPermit(req.params.id);
+
+    logActivity({
+      user_id: req.user.userId,
+      action: 'CLEAR_PUBLISH_PERMIT',
+      target_type: 'organization',
+      target_id: String(org._id),
+      target: org.name || org.slug,
+      ip_address: req.ip || '',
+      organization_id: org._id
+    });
+
+    res.status(200).json({
+      message: 'Đã thu hồi publish permit.',
+      organization: {
+        _id: org._id,
+        name: org.name,
+        publish_permit_key: org.publish_permit_key,
+        publish_permit_expires_at: org.publish_permit_expires_at
+      }
+    });
+  } catch (error) {
+    const status = error.status || 500;
+    if (status >= 500) console.error('clearOrganizationPublishPermit:', error);
+    res.status(status).json({ message: error.message || 'Lỗi thu hồi permit.' });
+  }
+}
+
+// Phase 8 — ORG_ADMIN cập nhật hồ sơ liên hệ org (cho checkout PRO)
+async function updateMyOrganizationContact(req, res) {
+  try {
+    if (!req.user || req.user.role !== 'ORG_ADMIN') {
+      return res.status(403).json({ message: 'Chỉ ORG_ADMIN được cập nhật hồ sơ tổ chức của mình.' });
+    }
+
+    const me = await User.findById(req.user.userId).select('organization_id').lean();
+    if (!me?.organization_id) {
+      return res.status(403).json({ message: 'Tài khoản chưa gắn tổ chức.' });
+    }
+
+    const org = await Organization.findById(me.organization_id);
+    if (!org) {
+      return res.status(404).json({ message: 'Không tìm thấy tổ chức.' });
+    }
+
+    const body = req.body || {};
+    if (body.contact_phone === undefined && body.contact_address === undefined) {
+      return res.status(400).json({ message: 'Cần gửi contact_phone và/hoặc contact_address.' });
+    }
+
+    if (body.contact_phone !== undefined) {
+      org.contact_phone = String(body.contact_phone || '').trim();
+    }
+    if (body.contact_address !== undefined) {
+      org.contact_address = String(body.contact_address || '').trim();
+    }
+
+    await org.save();
+
+    logActivity({
+      user_id: req.user.userId,
+      action: 'UPDATE_ORG_CONTACT',
+      target_type: 'organization',
+      target_id: String(org._id),
+      target: org.name || org.slug,
+      details: {
+        contact_phone: org.contact_phone,
+        contact_address: org.contact_address
+      },
+      ip_address: req.ip || '',
+      organization_id: org._id
+    });
+
+    res.status(200).json({
+      message: 'Đã cập nhật hồ sơ tổ chức.',
+      organization: {
+        _id: org._id,
+        name: org.name,
+        contact_phone: org.contact_phone,
+        contact_address: org.contact_address
+      }
+    });
+  } catch (error) {
+    console.error('updateMyOrganizationContact:', error);
+    res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+  }
+}
+
 module.exports = {
   listOrganizations,
   createWithAdmin,
@@ -891,5 +1044,8 @@ module.exports = {
   getOrganizationSubscription,
   activateOrganizationSubscription,
   cancelOrganizationSubscription,
-  expireOrganizationSubscription
+  expireOrganizationSubscription,
+  setOrganizationPublishPermit,
+  clearOrganizationPublishPermit,
+  updateMyOrganizationContact
 };
