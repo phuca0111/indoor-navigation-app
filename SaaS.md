@@ -65,15 +65,12 @@ Phase 3   [████████████████████] 3.1–3
 Phase 4   [████████████████████] 4.1–4.6 ✅ — **chốt Phase 4 Dashboard**
 Phase 5   [████████████████████] 5.0–5.8 ✅ — **CHỐT Phase 5 Billing + TPTP Sandbox**
 Phase 6   [████████████████████] 6.1–6.5 ✅ — **CHỐT Phase 6 Analytics**
-Phase 7   [████████████████████] 7.0–7.8 + SMTP ✅ — đã merge main
-Phase 8   [████████████░░░░░░░░] đang làm — Web Draft/Lock/Permit/Google (`giai-doan-8-web-upgrade`)
-Phase 9   [░░░░░░░░░░░░░░░░░░░░] đề xuất — Finance FMS
+Phase 7   [████████████████████] 7.0–7.8 + SMTP ✅ — API 17/17 + tay + email thật PASS (chờ merge)
 ```
 
-**Giai đoạn lớn:** Phase 8 — Web Collaboration & Publish Safety **đang làm**  
+**Giai đoạn lớn:** Phase 7 — Enterprise Security ✅ **PASS** (`test:phase7` 17/17 + SMTP mail thật)  
 **Floor lifecycle:** ✅ (PR #17)  
-**Version tiếp theo:** P8 rồi P9 — `Nang_cap_he_thong_backendserver.md` · `Docs/WORLDFLOW_PHASE8_WEB_UPGRADES.md`  
-**Tiếp sau P8:** Phase 9 FMS; Phase 1C (avatar/2FA) ưu tiên thấp
+**Tiếp:** commit/PR nhánh `giai-doan-7-bao-mat` → merge `main` → Phase 1C hoặc production JWT roadmap
 
 **Tạm dừng:** WebMapEditor V4 — không ưu tiên khi đang làm SaaS.
 
@@ -95,9 +92,7 @@ Phase 9   [░░░░░░░░░░░░░░░░░░░░] đề x
 | 4 | Super Admin Dashboard nâng cao | ✅ Xong (4.1–4.6 pass 2026-07-08) |
 | 5 | Billing + Subscription | ✅ **CHỐT** 5.0–5.8 (TPTP Sandbox E2E 2026-07-10) |
 | 6 | Analytics | ✅ **CHỐT** 6.1–6.5 (2026-07-11) |
-| 7 | Enterprise Security | ✅ CHỐT (merge main 2026-07-14) |
-| 8 | Web Collaboration & Publish Safety | 🔄 Đang làm — nhánh `giai-doan-8-web-upgrade` |
-| 9 | Financial Management (FMS) | Đề xuất — sau P8 |
+| 7 | Enterprise Security | ✅ PASS (code + 16/16 + tay 2026-07-13) — chờ merge |
 
 **Nguyên tắc:** Organization lên sớm, không chờ hết avatar/2FA. Multi-tenant: một DB, filter `organization_id`.
 
