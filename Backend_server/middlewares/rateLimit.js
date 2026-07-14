@@ -55,10 +55,31 @@ const resetPasswordLimiter = rateLimit({
     message: { message: 'Quá nhiều lần đặt lại mật khẩu. Vui lòng thử lại sau 15 phút.' }
 });
 
+// Phase 8 — publish: 10 lần / 15 phút / user (hoặc IP); skip trong Jest
+// FORCE_PUBLISH_RATE_LIMIT=true → bật limiter ngay cả khi chạy Jest (dùng để verify K5A)
+const publishLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: () =>
+        !!process.env.JEST_WORKER_ID && process.env.FORCE_PUBLISH_RATE_LIMIT !== 'true',
+    keyGenerator: (req) => {
+        if (req.user?.userId) return String(req.user.userId);
+        return req.ip || 'unknown';
+    },
+    validate: { keyGeneratorIpFallback: false },
+    message: {
+        message: 'Quá nhiều lần xuất bản. Vui lòng thử lại sau 15 phút.',
+        code: 'PUBLISH_RATE_LIMIT'
+    }
+});
+
 module.exports = {
     loginLimiter,
     publicRegisterLimiter,
     refreshLimiter,
     forgotPasswordLimiter,
-    resetPasswordLimiter
+    resetPasswordLimiter,
+    publishLimiter
 };

@@ -80,6 +80,21 @@ async function postCheckout(req, res) {
     const plan = String(req.body?.plan || 'PRO').toUpperCase();
     const action = String(req.body?.action || 'upgrade').toLowerCase();
 
+    // Phase 8.5 — KYC tối thiểu khi nâng PRO/ENTERPRISE
+    if (plan === 'PRO' || plan === 'ENTERPRISE') {
+      const User = require('../models/User');
+      const me = await User.findById(req.user.userId).select('phone').lean();
+      const phone = String(org.contact_phone || me?.phone || '').trim();
+      const address = String(org.contact_address || '').trim();
+      if (!phone || address.length < 5) {
+        return res.status(400).json({
+          message:
+            'Vui lòng bổ sung số điện thoại và địa chỉ tổ chức (≥5 ký tự) trước khi nâng cấp gói trả phí.',
+          code: 'PROFILE_INCOMPLETE'
+        });
+      }
+    }
+
     const session = await createCheckoutSession({
       org,
       plan,

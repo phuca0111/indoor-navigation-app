@@ -139,6 +139,21 @@ const floorSchema = new mongoose.Schema({
         lines: { type: [mongoose.Schema.Types.Mixed], default: [] },
         blocks: { type: [mongoose.Schema.Types.Mixed], default: [] },
         blockInserts: { type: [mongoose.Schema.Types.Mixed], default: [] }
+    },
+
+    // Phase 8 — nháp server (không đẩy public / Android)
+    draft_map_data: {
+        type: mongoose.Schema.Types.Mixed,
+        default: null
+    },
+    draft_updated_at: {
+        type: Date,
+        default: null
+    },
+    draft_updated_by: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
     }
 
 }, {

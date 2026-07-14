@@ -18,9 +18,19 @@ const userSchema = new mongoose.Schema({
     },
 
     // Cột 2: Mật khẩu đã được máy xay bcrypt nghiền nát
+    // Phase 8: không bắt buộc nếu đăng nhập Google (google_id)
     password: {
         type: String,
-        required: true
+        required: function () {
+            return !this.google_id;
+        }
+    },
+
+    // Phase 8 — Google OAuth (sparse unique: chỉ index khi có giá trị)
+    google_id: {
+        type: String,
+        unique: true,
+        sparse: true
     },
 
     // Cột 3: Vai trò của người dùng

@@ -15,7 +15,10 @@ const {
   unlockSession,
   registerPublic,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  googleStatus,
+  googleAuthStart,
+  googleAuthCallback
 } = require('../controllers/authController');
 const { auth, requireAdmin } = require('../middlewares/auth');
 const {
@@ -35,5 +38,10 @@ router.post('/logout-all', auth, logoutAll);
 router.post('/unlock-session', auth, unlockSession);
 router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
 router.post('/reset-password', resetPasswordLimiter, resetPassword);
+
+// Phase 8 — Google OAuth (Admin web)
+router.get('/google/status', googleStatus);
+router.get('/google', googleAuthStart);
+router.get('/google/callback', googleAuthCallback);
 
 module.exports = router;

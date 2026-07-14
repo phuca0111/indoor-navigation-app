@@ -8,7 +8,7 @@ const PAGE_SIZE = 15;
 const LOGS_PAGE_SIZE = 20;
 const PLAN_LIMITS_UI = { FREE: { buildings: 2, users: 5 }, PRO: { buildings: 20, users: 50 } };
 
-const VALID_DASHBOARD_TABS = new Set(['buildings', 'users', 'logs', 'organizations', 'billing', 'analytics', 'registrations', 'profile']);
+const VALID_DASHBOARD_TABS = new Set(['buildings', 'users', 'logs', 'organizations', 'billing', 'finance', 'analytics', 'registrations', 'profile']);
 
 function validatePasswordStrengthClient(password) {
   const errors = [];
@@ -188,7 +188,7 @@ function renderPagination(tabKey, totalItems, currentPage) {
   });
 }
 
-const WIDE_LAYOUT_TABS = new Set(['buildings', 'users', 'logs', 'organizations', 'billing', 'analytics', 'registrations']);
+const WIDE_LAYOUT_TABS = new Set(['buildings', 'users', 'logs', 'organizations', 'billing', 'finance', 'analytics', 'registrations']);
 
 function applyDashboardLayout(tabName) {
   const root = document.querySelector('.dashboard-content');
@@ -921,6 +921,8 @@ function applyCurrentUserToUI(user) {
   if (billingTabBtn) billingTabBtn.style.display = (isSuperAdmin || isOrgAdmin) ? '' : 'none';
   const analyticsTabBtn = document.querySelector('button[onclick*="analytics"]');
   if (analyticsTabBtn) analyticsTabBtn.style.display = (isSuperAdmin || isOrgAdmin) ? '' : 'none';
+  const financeTabBtn = document.querySelector('button[onclick*="finance"]');
+  if (financeTabBtn) financeTabBtn.style.display = isSuperAdmin ? '' : 'none';
 
   const btnAddUser = document.getElementById('btnAddUser');
   const btnAddBuilding = document.getElementById('btnAddBuilding');
@@ -933,7 +935,7 @@ function applyCurrentUserToUI(user) {
   const currentTab = document.querySelector('.tab-btn.active');
   if (currentTab && !isSuperAdmin) {
     const tabName = currentTab.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
-    if (tabName === 'organizations' || tabName === 'registrations') {
+    if (tabName === 'organizations' || tabName === 'registrations' || tabName === 'finance') {
       switchTab('buildings');
     }
   }
@@ -1198,6 +1200,14 @@ async function switchTab(name, options) {
     }
     await loadAnalyticsTab();
   }
+  if (tab === 'finance') {
+    if (currentUser?.role !== 'SUPER_ADMIN') {
+      alert('Chỉ Super Admin được xem tab Thu – Chi.');
+      await switchTab('buildings', { skipHistory: true });
+      return;
+    }
+    await loadFinanceTab();
+  }
 }
 
 // ============================================================
@@ -1429,13 +1439,13 @@ function renderBuildingsFromCache() {
         actions += ' <button class="btn-logout" onclick="deleteBuilding(\'' + b._id + '\')" style="background:#e74c3c;padding:6px 12px;margin-left:6px;">Vô hiệu</button>';
       }
     } else {
-      actions = '<button class="btn-edit" onclick="openEditor(\'' + b._id + '\')" style="margin-right:4px;">Vẽ bản đồ</button>' +
-        '<button class="btn-edit" onclick="openMapVersionModal(\'' + b._id + '\', ' + (b.total_floors || 1) + ')" style="background:#8e44ad;color:white;margin-right:4px;">Phiên bản</button>';
+      actions = '<button class="btn-edit" onclick="openEditor(\'' + b._id + '\')" style="margin-right:4px;" title="Mở trình soạn bản đồ tầng">Vẽ bản đồ</button>' +
+        '<button class="btn-edit" onclick="openMapVersionModal(\'' + b._id + '\', ' + (b.total_floors || 1) + ')" style="background:#8e44ad;color:white;margin-right:4px;" title="Xem lịch sử phiên bản map / rollback">Phiên bản</button>';
       if (canEditMeta) {
-        actions += '<button class="btn-edit" onclick="openEditBuildingModal(\'' + b._id + '\')" style="background:#f39c12;color:white;margin-right:4px;">Sửa</button>';
+        actions += '<button class="btn-edit" onclick="openEditBuildingModal(\'' + b._id + '\')" style="background:#f39c12;color:white;margin-right:4px;" title="Sửa thông tin tòa nhà">Sửa</button>';
       }
       if (canDelete) {
-        actions += '<button class="btn-logout" onclick="deleteBuilding(\'' + b._id + '\')" style="background:#e74c3c;padding:6px 12px;">Xóa</button>';
+        actions += '<button class="btn-logout" onclick="deleteBuilding(\'' + b._id + '\')" style="background:#e74c3c;padding:6px 12px;" title="Vô hiệu hóa tòa nhà (soft delete)">Xóa</button>';
       }
     }
     return '<tr' + rowStyle + '>' +
@@ -2001,11 +2011,11 @@ function renderOrganizationsFromCache() {
       tdEllipsis(adminsCell.plain, adminsCell.html) +
       '<td>' + date + '</td>' +
       '<td class="actions-cell"><div class="building-actions">' +
-        '<button type="button" class="btn-edit org-detail-btn" onclick="openOrgDetailModal(\'' + oid + '\')">Chi tiết</button>' +
-        '<button type="button" class="btn-edit" onclick="openBillingTabForOrg(\'' + oid + '\')" style="background:#2563eb;color:#fff;">Gói & TT</button>' +
+        '<button type="button" class="btn-edit org-detail-btn" onclick="openOrgDetailModal(\'' + oid + '\')" title="Xem chi tiết tổ chức">Chi tiết</button>' +
+        '<button type="button" class="btn-edit" onclick="openBillingTabForOrg(\'' + oid + '\')" style="background:#2563eb;color:#fff;" title="Quản lý gói và thanh toán">Gói & TT</button>' +
         statusBtn +
-        '<button type="button" class="btn-edit" onclick="jumpToBuildings(\'' + oid + '\')">Tòa nhà</button>' +
-        '<button type="button" class="btn-edit" onclick="jumpToUsers(\'' + oid + '\')" style="background:#f39c12;color:#fff;">User</button>' +
+        '<button type="button" class="btn-edit" onclick="jumpToBuildings(\'' + oid + '\')" title="Lọc danh sách tòa nhà theo tổ chức">Tòa nhà</button>' +
+        '<button type="button" class="btn-edit" onclick="jumpToUsers(\'' + oid + '\')" style="background:#f39c12;color:#fff;" title="Lọc tài khoản theo tổ chức">User</button>' +
       '</div></td></tr>';
   }).join('');
   renderPagination('organizations', list.length, page);
@@ -2090,6 +2100,257 @@ async function openBillingTabForOrg(orgId) {
   await switchTab('billing', { billingOrgId: orgId });
 }
 
+// ============================================================
+// FINANCE (Phase 9 — Super only)
+function formatVnd(n) {
+  return Number(n || 0).toLocaleString('vi-VN');
+}
+
+async function loadFinanceTab() {
+  const kpiEl = document.getElementById('financeKpiCards');
+  if (!kpiEl) return;
+  kpiEl.innerHTML = '<p class="analytics-loading">Đang tải Thu – Chi…</p>';
+  const dateEl = document.getElementById('expenseDate');
+  if (dateEl && !dateEl.value) {
+    dateEl.value = new Date().toISOString().slice(0, 10);
+  }
+  try {
+    const res = await apiFetch('/finance/overview');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      kpiEl.innerHTML = '<p class="analytics-error">Lỗi: ' + escapeHtml(data.message || 'HTTP ' + res.status) + '</p>';
+      return;
+    }
+    renderFinanceKpi(data.kpi || {});
+    renderFinanceRevenueMonth(data.charts?.revenue_by_month || []);
+    renderFinanceRevenuePlan(data.charts?.revenue_by_plan || {});
+    renderFinanceExpenseCats(data.charts?.expense_by_category || []);
+    renderFinanceExpiring(data.expiring_soon || []);
+    renderFinanceActivity(data.recent_activity || []);
+    await loadFinanceOrgs();
+    await loadFinanceExpenses();
+  } catch (e) {
+    console.error('loadFinanceTab:', e);
+    kpiEl.innerHTML = '<p class="analytics-error">Lỗi kết nối khi tải Thu – Chi.</p>';
+  }
+}
+
+function renderFinanceKpi(kpi) {
+  const el = document.getElementById('financeKpiCards');
+  if (!el) return;
+  el.innerHTML =
+    '<div class="analytics-summary-meta">Toàn nền tảng · VND</div>' +
+    '<div class="analytics-summary-grid">' +
+      analyticsSummaryCard('Thu hôm nay', formatVnd(kpi.revenue_today), 'amount') +
+      analyticsSummaryCard('Thu tháng này', formatVnd(kpi.revenue_month), 'amount') +
+      analyticsSummaryCard('Thu năm nay', formatVnd(kpi.revenue_year), 'amount') +
+      analyticsSummaryCard('Chi tháng này', formatVnd(kpi.expense_month), 'amount') +
+      analyticsSummaryCard('Lãi tháng (thu−chi)', formatVnd(kpi.profit_month), 'amount') +
+      analyticsSummaryCard('Org / Paid / Expired',
+        (kpi.orgs_total || 0) + ' / ' + (kpi.orgs_paid || 0) + ' / ' + (kpi.orgs_expired || 0), 'invoice') +
+      analyticsSummaryCard('Hóa đơn OPEN', kpi.pending_invoices || 0, 'invoice') +
+      analyticsSummaryCard('FREE / Grace',
+        (kpi.orgs_free || 0) + ' / ' + (kpi.orgs_grace || 0), 'login') +
+    '</div>';
+}
+
+function renderFinanceRevenueMonth(rows) {
+  const el = document.getElementById('financeRevenueMonth');
+  if (!el) return;
+  if (!rows.length) {
+    el.innerHTML = '<p class="analytics-muted">Chưa có doanh thu PAID.</p>';
+    return;
+  }
+  el.innerHTML =
+    '<table class="analytics-paid-table"><thead><tr><th>Tháng</th><th>Số HĐ</th><th>Số tiền</th></tr></thead><tbody>' +
+    rows.map((r) =>
+      '<tr><td>' + escapeHtml(r.month) + '</td><td>' + (r.count || 0) +
+      '</td><td>' + formatVnd(r.amount) + '</td></tr>'
+    ).join('') +
+    '</tbody></table>';
+}
+
+function renderFinanceRevenuePlan(planMap) {
+  const el = document.getElementById('financeRevenuePlan');
+  if (!el) return;
+  const keys = Object.keys(planMap || {});
+  if (!keys.length) {
+    el.innerHTML = '<p class="analytics-muted">Chưa có phân bố gói.</p>';
+    return;
+  }
+  el.innerHTML = keys.map((k) => {
+    const row = planMap[k] || {};
+    return '<div class="analytics-plan-row"><strong>' + escapeHtml(k) +
+      '</strong> · ' + formatVnd(row.amount) + ' (' + (row.count || 0) + ' HĐ)</div>';
+  }).join('');
+}
+
+function renderFinanceExpenseCats(rows) {
+  const el = document.getElementById('financeExpenseCats');
+  if (!el) return;
+  if (!rows.length) {
+    el.innerHTML = '<p class="analytics-muted">Chưa ghi chi phí tháng này.</p>';
+    return;
+  }
+  el.innerHTML = rows.map((r) =>
+    '<div class="analytics-plan-row"><strong>' + escapeHtml(r.category) +
+    '</strong> · ' + formatVnd(r.amount) + ' (' + (r.count || 0) + ')</div>'
+  ).join('');
+}
+
+function renderFinanceExpiring(rows) {
+  const el = document.getElementById('financeExpiring');
+  if (!el) return;
+  if (!rows.length) {
+    el.innerHTML = '<p class="analytics-muted">Không có org sắp hết hạn trong 7 ngày.</p>';
+    return;
+  }
+  el.innerHTML = rows.map((o) =>
+    '<div class="analytics-alert-item"><strong>' + escapeHtml(o.name || '') +
+    '</strong> · ' + escapeHtml(o.plan || '') + ' · hết hạn ' +
+    escapeHtml(o.plan_expires_at ? new Date(o.plan_expires_at).toLocaleString('vi-VN') : '-') +
+    ' <button type="button" class="btn-edit" style="margin-left:8px;padding:4px 8px;font-size:12px;" onclick="openBillingTabForOrg(\'' +
+    escapeHtml(String(o._id)) + '\')">Gói &amp; TT</button></div>'
+  ).join('');
+}
+
+function renderFinanceActivity(rows) {
+  const el = document.getElementById('financeActivity');
+  if (!el) return;
+  if (!rows.length) {
+    el.innerHTML = '<p class="analytics-muted">Chưa có hoạt động.</p>';
+    return;
+  }
+  el.innerHTML = rows.map((ev) =>
+    '<div class="analytics-alert-item"><span class="badge" style="background:#334155;color:#fff;font-size:11px;">' +
+    escapeHtml(ev.type) + '</span> ' + escapeHtml(ev.label || '') +
+    (ev.org_name ? ' · ' + escapeHtml(ev.org_name) : '') +
+    ' · <strong>' + formatVnd(ev.amount) + '</strong> · ' +
+    escapeHtml(ev.at ? new Date(ev.at).toLocaleString('vi-VN') : '-') + '</div>'
+  ).join('');
+}
+
+async function loadFinanceOrgs() {
+  const el = document.getElementById('financeOrgList');
+  if (!el) return;
+  el.innerHTML = '<p class="analytics-loading">Đang tải danh sách org…</p>';
+  const status = document.getElementById('financeOrgStatusFilter')?.value || '';
+  try {
+    const q = status ? ('?status=' + encodeURIComponent(status)) : '';
+    const res = await apiFetch('/finance/orgs' + q);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      el.innerHTML = '<p class="analytics-error">' + escapeHtml(data.message || 'Lỗi') + '</p>';
+      return;
+    }
+    const orgs = data.organizations || [];
+    if (!orgs.length) {
+      el.innerHTML = '<p class="analytics-muted">Không có tổ chức khớp bộ lọc.</p>';
+      return;
+    }
+    el.innerHTML =
+      '<div style="overflow:auto;"><table class="data-table" style="width:100%;font-size:13px;"><thead><tr>' +
+      '<th>Tên</th><th>Gói</th><th>Billing</th><th>Hết hạn</th><th>HĐ</th><th>OPEN</th><th>Đã thu</th><th></th>' +
+      '</tr></thead><tbody>' +
+      orgs.map((o) =>
+        '<tr><td>' + escapeHtml(o.name || '') + '</td><td>' + escapeHtml(o.plan || '') +
+        '</td><td>' + escapeHtml(o.billing_status || '') +
+        '</td><td>' + escapeHtml(o.plan_expires_at ? new Date(o.plan_expires_at).toLocaleDateString('vi-VN') : '-') +
+        '</td><td>' + (o.invoice_count || 0) + '</td><td>' + (o.open_invoices || 0) +
+        '</td><td>' + formatVnd(o.paid_amount) +
+        '</td><td><button type="button" class="btn-edit" style="padding:4px 8px;font-size:12px;" onclick="openBillingTabForOrg(\'' +
+        String(o._id) + '\')">Chi tiết</button></td></tr>'
+      ).join('') +
+      '</tbody></table></div>';
+  } catch (e) {
+    console.error('loadFinanceOrgs:', e);
+    el.innerHTML = '<p class="analytics-error">Lỗi kết nối.</p>';
+  }
+}
+
+async function loadFinanceExpenses() {
+  const el = document.getElementById('financeExpenseList');
+  if (!el) return;
+  try {
+    const res = await apiFetch('/finance/expenses?limit=50');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      el.innerHTML = '<p class="analytics-error">' + escapeHtml(data.message || 'Lỗi') + '</p>';
+      return;
+    }
+    const items = data.expenses || [];
+    if (!items.length) {
+      el.innerHTML = '<p class="analytics-muted">Chưa có khoản chi. Thêm Render/Domain… ở form trên.</p>';
+      return;
+    }
+    el.innerHTML =
+      '<div style="overflow:auto;"><table class="data-table" style="width:100%;font-size:13px;"><thead><tr>' +
+      '<th>Ngày</th><th>Danh mục</th><th>NCC</th><th>Số tiền</th><th>Ghi chú</th><th></th>' +
+      '</tr></thead><tbody>' +
+      items.map((x) =>
+        '<tr><td>' + escapeHtml(x.expense_date ? new Date(x.expense_date).toLocaleDateString('vi-VN') : '-') +
+        '</td><td>' + escapeHtml(x.category) +
+        '</td><td>' + escapeHtml(x.vendor || '-') +
+        '</td><td>' + formatVnd(x.amount) +
+        '</td><td>' + escapeHtml(x.note || '-') +
+        '</td><td><button type="button" class="btn-logout" style="padding:4px 8px;font-size:12px;background:#e74c3c;" onclick="deleteFinanceExpense(\'' +
+        String(x._id) + '\')">Xóa</button></td></tr>'
+      ).join('') +
+      '</tbody></table></div>';
+  } catch (e) {
+    console.error('loadFinanceExpenses:', e);
+    el.innerHTML = '<p class="analytics-error">Lỗi kết nối.</p>';
+  }
+}
+
+async function submitFinanceExpense(ev) {
+  ev.preventDefault();
+  const payload = {
+    expense_date: document.getElementById('expenseDate')?.value,
+    category: document.getElementById('expenseCategory')?.value || 'OTHER',
+    vendor: document.getElementById('expenseVendor')?.value || '',
+    amount: Number(document.getElementById('expenseAmount')?.value),
+    note: document.getElementById('expenseNote')?.value || ''
+  };
+  if (!Number.isFinite(payload.amount) || payload.amount < 0) {
+    alert('Số tiền không hợp lệ.');
+    return false;
+  }
+  try {
+    const res = await apiFetch('/finance/expenses', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.message || 'Không thêm được chi phí');
+      return false;
+    }
+    document.getElementById('expenseAmount').value = '';
+    document.getElementById('expenseNote').value = '';
+    await loadFinanceTab();
+  } catch (e) {
+    alert('Lỗi kết nối');
+  }
+  return false;
+}
+
+async function deleteFinanceExpense(id) {
+  if (!id || !confirm('Xóa khoản chi này?')) return;
+  try {
+    const res = await apiFetch('/finance/expenses/' + encodeURIComponent(id), { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.message || 'Không xóa được');
+      return;
+    }
+    await loadFinanceTab();
+  } catch (e) {
+    alert('Lỗi kết nối');
+  }
+}
+
 async function loadAnalyticsTab() {
   const range = document.getElementById('analyticsRangeSelect')?.value || '30d';
   const cards = document.getElementById('analyticsSummaryCards');
@@ -2100,7 +2361,7 @@ async function loadAnalyticsTab() {
   const alertsEl = document.getElementById('analyticsAlerts');
   if (!cards) return;
 
-  cards.innerHTML = '<p class="analytics-loading">Đang tải Analytics…</p>';
+  cards.innerHTML = '<p class="analytics-loading">Đang tải Phân tích…</p>';
   if (loginEl) loginEl.innerHTML = '';
   if (publishEl) publishEl.innerHTML = '';
   if (planEl) planEl.innerHTML = '';
@@ -2134,7 +2395,7 @@ async function loadAnalyticsTab() {
     }
   } catch (e) {
     console.error('loadAnalyticsTab error:', e);
-    cards.innerHTML = '<p class="analytics-error">Lỗi kết nối khi tải Analytics.</p>';
+    cards.innerHTML = '<p class="analytics-error">Lỗi kết nối khi tải Phân tích.</p>';
   }
 }
 
@@ -2858,7 +3119,7 @@ function renderRegistrationsFromCache() {
     const date = r.createdAt ? new Date(r.createdAt).toLocaleString('vi-VN') : '-';
     let actions = '-';
     if (r.status === 'PENDING') {
-      actions = '<button type="button" class="btn-edit" onclick="approveRegistration(\'' + r._id + '\')" style="margin-right:4px;">Duyệt</button>' +
+      actions = '<button type="button" class="btn-edit" onclick="approveRegistration(\'' + r._id + '\')" style="margin-right:4px;" title="Duyệt hồ sơ và tạo tổ chức + ORG_ADMIN">Duyệt</button>' +
         '<button type="button" class="btn-logout" onclick="rejectRegistration(\'' + r._id + '\')" style="padding:6px 10px;background:#e74c3c;">Từ chối</button>';
     } else if (r.status === 'REJECTED' && r.reject_reason) {
       actions = '<span title="' + escapeHtml(r.reject_reason) + '" style="font-size:12px;color:#888;">' + escapeHtml(r.reject_reason) + '</span>';
@@ -3687,15 +3948,16 @@ function renderUsers(users) {
       const isActive = u.is_active;
       const btnClass = isActive ? 'btn-logout' : 'btn-create';
       const btnText = isActive ? 'Khóa' : 'Duyệt';
-      actionBtn = '<button class="' + btnClass + '" onclick="toggleUserActive(\'' + u._id + '\', ' + isActive + ')" style="padding:6px 12px;">' + btnText + '</button>';
+      const btnTitle = isActive ? 'Khóa tài khoản (không cho đăng nhập)' : 'Mở khóa / duyệt tài khoản';
+      actionBtn = '<button class="' + btnClass + '" onclick="toggleUserActive(\'' + u._id + '\', ' + isActive + ')" style="padding:6px 12px;" title="' + btnTitle + '">' + btnText + '</button>';
     }
     let editBtn = '';
     let pwdBtn = '';
     const canResetPwd = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'ORG_ADMIN';
     if (!isAdminSelf) {
-      editBtn = '<button class="btn-edit" onclick="openUpdateUserModal(\'' + u._id + '\')" style="font-size:13px;padding:6px 10px;">Sửa</button>';
+      editBtn = '<button class="btn-edit" onclick="openUpdateUserModal(\'' + u._id + '\')" style="font-size:13px;padding:6px 10px;" title="Sửa thông tin tài khoản">Sửa</button>';
       if (canResetPwd && !isSuperAdmin) {
-        pwdBtn = '<button class="btn-edit" onclick="promptResetUserPassword(\'' + u._id + '\')" style="font-size:12px;padding:6px 8px;background:#8e44ad;color:#fff;">Cấp MK</button>';
+        pwdBtn = '<button class="btn-edit" onclick="promptResetUserPassword(\'' + u._id + '\')" style="font-size:12px;padding:6px 8px;background:#8e44ad;color:#fff;" title="Cấp mật khẩu mới cho user">Cấp MK</button>';
       }
     }
     const roleClass = isSuperAdmin ? 'role-badge super-admin' : (u.role === 'ORG_ADMIN' ? 'role-badge org-admin' : 'role-badge building-admin');
@@ -4229,6 +4491,50 @@ async function loadProfile() {
     document.getElementById('profileFullName').value = user.full_name || '';
     document.getElementById('profilePhone').value = user.phone || '';
     document.getElementById('profileMessage').style.display = 'none';
+
+    const orgSec = document.getElementById('profileOrgSection');
+    const org = user.organization || null;
+    const contactEdit = document.getElementById('profileOrgContactEdit');
+    if (orgSec && org && typeof org === 'object') {
+      orgSec.style.display = 'block';
+      const nameEl = document.getElementById('profileOrgName');
+      const planEl = document.getElementById('profileOrgPlan');
+      const billEl = document.getElementById('profileOrgBilling');
+      const expEl = document.getElementById('profileOrgExpiry');
+      const hintEl = document.getElementById('profileOrgHint');
+      const orgPhoneEl = document.getElementById('profileOrgContactPhone');
+      const orgAddrEl = document.getElementById('profileOrgContactAddress');
+      if (nameEl) nameEl.value = org.name || '-';
+      if (planEl) planEl.value = org.plan || 'FREE';
+      if (billEl) billEl.value = org.billing_status || 'ACTIVE';
+      let expiry = '-';
+      if (org.plan_expires_at) {
+        expiry = 'Hết hạn: ' + new Date(org.plan_expires_at).toLocaleString('vi-VN');
+      } else if (org.grace_ends_at) {
+        expiry = 'Ân hạn đến: ' + new Date(org.grace_ends_at).toLocaleString('vi-VN');
+      } else if (org.plan === 'FREE') {
+        expiry = 'Gói FREE — không có hạn thanh toán';
+      }
+      if (expEl) expEl.value = expiry;
+      const canEditOrgContact = user.role === 'ORG_ADMIN';
+      if (contactEdit) contactEdit.style.display = canEditOrgContact ? 'block' : 'none';
+      if (orgPhoneEl) orgPhoneEl.value = org.contact_phone || '';
+      if (orgAddrEl) orgAddrEl.value = org.contact_address || '';
+      if (hintEl) {
+        if (canEditOrgContact) {
+          hintEl.textContent = org.plan === 'FREE'
+            ? 'Điền SĐT + địa chỉ tổ chức rồi Lưu — bắt buộc trước khi nâng PRO.'
+            : 'Có thể cập nhật SĐT/địa chỉ tổ chức. Chi tiết gói tại tab Gói & Thanh toán.';
+        } else {
+          hintEl.textContent = org.plan === 'FREE'
+            ? 'Nâng PRO tại tab Gói & Thanh toán. Khi nâng PRO cần đủ SĐT + địa chỉ tổ chức (ORG_ADMIN điền).'
+            : 'Xem chi tiết gia hạn / hóa đơn tại tab Gói & Thanh toán.';
+        }
+      }
+    } else if (orgSec) {
+      orgSec.style.display = 'none';
+      if (contactEdit) contactEdit.style.display = 'none';
+    }
   } catch (e) { console.error('Lỗi tải profile:', e); alert('Lỗi kết nối khi tải profile!'); }
 }
 
@@ -4251,13 +4557,46 @@ document.getElementById('btnSaveProfile').onclick = async () => {
       body: JSON.stringify({ full_name: fullName, phone })
     });
     const data = await res.json();
-    if (res.ok) {
+    if (!res.ok) {
+      msgEl.textContent = 'Lỗi: ' + (data.message || 'Không rõ');
+      msgEl.style.display = 'block';
+      msgEl.className = 'error-msg';
+      return;
+    }
+    if (currentProfile) { currentProfile.full_name = fullName; currentProfile.phone = phone; }
+
+    // Phase 8 — ORG_ADMIN lưu contact org (checkout PRO)
+    let orgContactOk = true;
+    let orgContactMsg = '';
+    const role = (currentProfile && currentProfile.role) || (data && data.role) || '';
+    const contactEdit = document.getElementById('profileOrgContactEdit');
+    if (role === 'ORG_ADMIN' && contactEdit && contactEdit.style.display !== 'none') {
+      const orgPhone = (document.getElementById('profileOrgContactPhone') || {}).value || '';
+      const orgAddr = (document.getElementById('profileOrgContactAddress') || {}).value || '';
+      const orgRes = await apiFetch('/organizations/me/contact', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contact_phone: String(orgPhone).trim(),
+          contact_address: String(orgAddr).trim()
+        })
+      });
+      const orgData = await orgRes.json().catch(() => ({}));
+      if (!orgRes.ok) {
+        orgContactOk = false;
+        orgContactMsg = orgData.message || 'Không lưu được hồ sơ tổ chức';
+      } else if (currentProfile && currentProfile.organization) {
+        currentProfile.organization.contact_phone = String(orgPhone).trim();
+        currentProfile.organization.contact_address = String(orgAddr).trim();
+      }
+    }
+
+    if (orgContactOk) {
       msgEl.textContent = 'Cập nhật thành công!';
       msgEl.style.display = 'block';
       msgEl.className = 'success-msg';
-      if (currentProfile) { currentProfile.full_name = fullName; currentProfile.phone = phone; }
     } else {
-      msgEl.textContent = 'Lỗi: ' + (data.message || 'Không rõ');
+      msgEl.textContent = 'Đã lưu hồ sơ cá nhân, nhưng tổ chức lỗi: ' + orgContactMsg;
       msgEl.style.display = 'block';
       msgEl.className = 'error-msg';
     }

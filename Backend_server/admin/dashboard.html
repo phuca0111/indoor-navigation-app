@@ -11,7 +11,7 @@
         <h2>🗺️ Bảng Điều Khiển Quản Trị</h2>
         <div class="nav-right">
             <span id="userEmail">admin@example.com</span>
-            <button id="btnLogout" class="btn-logout">Đăng Xuất</button>
+            <button id="btnLogout" class="btn-logout" title="Đăng xuất phiên hiện tại trên trình duyệt này">Đăng Xuất</button>
         </div>
     </nav>
 
@@ -41,7 +41,8 @@
             <button class="tab-btn active" onclick="switchTab('buildings')">🏢 Tòa Nhà</button>
             <button class="tab-btn super-admin-only" onclick="switchTab('organizations')">🏛️ Tổ Chức</button>
             <button class="tab-btn billing-tab-btn" onclick="switchTab('billing')">💳 Gói & Thanh toán</button>
-            <button class="tab-btn analytics-tab-btn" onclick="switchTab('analytics')">📊 Analytics</button>
+            <button class="tab-btn super-admin-only" onclick="switchTab('finance')" title="Doanh thu, chi phí, lợi nhuận sàn — chỉ Super Admin">💰 Thu – Chi</button>
+            <button class="tab-btn analytics-tab-btn" onclick="switchTab('analytics')" title="Xu hướng hoạt động, doanh thu và cảnh báo vận hành">📊 Phân tích</button>
             <button class="tab-btn super-admin-only" onclick="switchTab('registrations')">📝 Hồ Sơ ĐK</button>
             <button class="tab-btn" onclick="switchTab('users')">👑 Tài Khoản</button>
             <button class="tab-btn" onclick="switchTab('logs')">📋 Lịch Sử Thao Tác</button>
@@ -364,7 +365,7 @@
   <div class="admin-section analytics-tab-section">
     <div class="section-header analytics-header-row">
       <div>
-        <h3>📊 Analytics</h3>
+        <h3>📊 Phân tích</h3>
         <p class="analytics-tab-intro" id="analyticsIntro">Xu hướng hoạt động và cảnh báo vận hành theo thời gian.</p>
       </div>
       <div class="analytics-toolbar">
@@ -402,6 +403,101 @@
     <div class="analytics-chart-card" style="margin-top:16px;">
       <h4>Cảnh báo</h4>
       <div id="analyticsAlerts" class="analytics-alerts"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: FINANCE (Phase 9 — Super only) ===== -->
+<div id="tab-finance" class="tab-content" style="display:none;">
+  <div class="admin-section analytics-tab-section">
+    <div class="section-header analytics-header-row">
+      <div>
+        <h3>💰 Thu – Chi</h3>
+        <p class="analytics-tab-intro">Doanh thu từ hóa đơn đã thanh toán, chi phí vận hành và lãi ước lượng. Chỉ Super Admin.</p>
+      </div>
+      <div class="analytics-toolbar">
+        <button type="button" class="btn-edit" onclick="loadFinanceTab()" title="Làm mới KPI">Làm mới</button>
+      </div>
+    </div>
+    <div id="financeKpiCards" class="analytics-summary-cards"></div>
+    <div class="analytics-charts-grid">
+      <div class="analytics-chart-card">
+        <h4>Doanh thu theo tháng</h4>
+        <div id="financeRevenueMonth" class="analytics-paid-month"></div>
+      </div>
+      <div class="analytics-chart-card">
+        <h4>Doanh thu theo gói</h4>
+        <div id="financeRevenuePlan" class="analytics-plan-dist"></div>
+      </div>
+    </div>
+    <div class="analytics-bottom-grid">
+      <div class="analytics-chart-card">
+        <h4>Chi phí theo danh mục (tháng này)</h4>
+        <div id="financeExpenseCats" class="analytics-plan-dist"></div>
+      </div>
+      <div class="analytics-chart-card">
+        <h4>Sắp hết hạn (7 ngày)</h4>
+        <div id="financeExpiring" class="analytics-alerts"></div>
+      </div>
+    </div>
+    <div class="analytics-chart-card" style="margin-top:16px;">
+      <h4>Khách hàng / billing</h4>
+      <div style="margin-bottom:10px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <select id="financeOrgStatusFilter" onchange="loadFinanceOrgs()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
+          <option value="">Tất cả</option>
+          <option value="FREE">FREE / Trial</option>
+          <option value="PAID">Gói trả phí</option>
+          <option value="GRACE">Ân hạn</option>
+          <option value="EXPIRED">Hết hạn</option>
+          <option value="INACTIVE">Tạm dừng</option>
+        </select>
+        <button type="button" class="btn-edit" onclick="loadFinanceOrgs()">Lọc</button>
+      </div>
+      <div id="financeOrgList" class="finance-org-list"></div>
+    </div>
+    <div class="analytics-chart-card" style="margin-top:16px;">
+      <h4>Chi phí vận hành</h4>
+      <form id="financeExpenseForm" onsubmit="return submitFinanceExpense(event)" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:14px; align-items:end;">
+        <div>
+          <label class="billing-field-label">Ngày</label>
+          <input type="date" id="expenseDate" required style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+        </div>
+        <div>
+          <label class="billing-field-label">Danh mục</label>
+          <select id="expenseCategory" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+            <option value="RENDER">RENDER</option>
+            <option value="MONGO_ATLAS">MONGO_ATLAS</option>
+            <option value="DOMAIN">DOMAIN</option>
+            <option value="CLOUDFLARE">CLOUDFLARE</option>
+            <option value="EMAIL">EMAIL</option>
+            <option value="SMS">SMS</option>
+            <option value="MAPS">MAPS</option>
+            <option value="OPENAI">OPENAI</option>
+            <option value="AWS">AWS</option>
+            <option value="OTHER">OTHER</option>
+          </select>
+        </div>
+        <div>
+          <label class="billing-field-label">NCC / Vendor</label>
+          <input type="text" id="expenseVendor" placeholder="VD: Render" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+        </div>
+        <div>
+          <label class="billing-field-label">Số tiền (VND)</label>
+          <input type="number" id="expenseAmount" min="0" step="1000" required placeholder="0" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+        </div>
+        <div style="grid-column: 1 / -1;">
+          <label class="billing-field-label">Ghi chú</label>
+          <input type="text" id="expenseNote" placeholder="Ghi chú..." style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+        </div>
+        <div>
+          <button type="submit" class="btn-create" title="Thêm khoản chi">Thêm chi phí</button>
+        </div>
+      </form>
+      <div id="financeExpenseList"></div>
+    </div>
+    <div class="analytics-chart-card" style="margin-top:16px;">
+      <h4>Hoạt động gần đây</h4>
+      <div id="financeActivity" class="analytics-alerts"></div>
     </div>
   </div>
 </div>
@@ -541,7 +637,38 @@
                 <input type="text" id="profilePhone" placeholder="Nhập số điện thoại...">
               </div>
 
-              <button id="btnSaveProfile" class="btn-create">Lưu Thay Đổi</button>
+              <div id="profileOrgSection" style="display:none; margin:18px 0; padding:14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
+                <h4 style="margin:0 0 12px; color:#1e293b;">Tổ chức của bạn</h4>
+                <div class="form-group">
+                  <label>Tên tổ chức:</label>
+                  <input type="text" id="profileOrgName" readonly>
+                </div>
+                <div class="form-group">
+                  <label>Gói:</label>
+                  <input type="text" id="profileOrgPlan" readonly>
+                </div>
+                <div class="form-group">
+                  <label>Trạng thái thanh toán:</label>
+                  <input type="text" id="profileOrgBilling" readonly>
+                </div>
+                <div class="form-group">
+                  <label>Hạn gói / ân hạn:</label>
+                  <input type="text" id="profileOrgExpiry" readonly>
+                </div>
+                <div id="profileOrgContactEdit" style="display:none;">
+                  <div class="form-group">
+                    <label>SĐT tổ chức (checkout PRO):</label>
+                    <input type="text" id="profileOrgContactPhone" placeholder="VD: 0901234567">
+                  </div>
+                  <div class="form-group">
+                    <label>Địa chỉ tổ chức (checkout PRO):</label>
+                    <input type="text" id="profileOrgContactAddress" placeholder="Địa chỉ trụ sở / đơn vị...">
+                  </div>
+                </div>
+                <p id="profileOrgHint" style="font-size:12px; color:#64748b; margin:0;"></p>
+              </div>
+
+              <button id="btnSaveProfile" class="btn-create" title="Lưu họ tên, SĐT cá nhân; ORG_ADMIN thêm SĐT/địa chỉ tổ chức">Lưu Thay Đổi</button>
               <p id="profileMessage" class="error-msg" style="display:none; margin-top:10px;"></p>
             </div>
 
@@ -586,7 +713,7 @@
               Thu hồi <strong>mọi phiên đăng nhập</strong> của tài khoản này (mọi trình duyệt / máy đã login admin).
               Phiên khác sẽ mất hiệu lực ngay khi gọi API tiếp theo (F5 hoặc thao tác). Tab này cũng đăng xuất.
             </p>
-            <button type="button" id="btnLogoutAll" class="btn-logout" style="background:#c0392b;">Thu hồi mọi phiên đăng nhập</button>
+            <button type="button" id="btnLogoutAll" class="btn-logout" style="background:#c0392b;" title="Thu hồi mọi phiên đăng nhập trên mọi thiết bị">Thu hồi mọi phiên đăng nhập</button>
             <p id="logoutAllMessage" class="error-msg" style="display:none; margin-top:10px;"></p>
           </div>
         </div><!-- end tab-profile -->

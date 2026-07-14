@@ -18,7 +18,7 @@ async function getOverview(req, res) {
   } catch (e) {
     const status = e.status || 500;
     if (status >= 500) console.error('analytics overview:', e);
-    res.status(status).json({ message: e.message || 'Lỗi analytics.' });
+    res.status(status).json({ message: e.message || 'Lỗi phân tích.' });
   }
 }
 
@@ -30,7 +30,7 @@ async function getAlerts(req, res) {
   } catch (e) {
     const status = e.status || 500;
     if (status >= 500) console.error('analytics alerts:', e);
-    res.status(status).json({ message: e.message || 'Lỗi analytics.' });
+    res.status(status).json({ message: e.message || 'Lỗi phân tích.' });
   }
 }
 
@@ -47,7 +47,7 @@ async function getTimeseries(req, res) {
   } catch (e) {
     const status = e.status || 500;
     if (status >= 500) console.error('analytics timeseries:', e);
-    res.status(status).json({ message: e.message || 'Lỗi analytics.' });
+    res.status(status).json({ message: e.message || 'Lỗi phân tích.' });
   }
 }
 
