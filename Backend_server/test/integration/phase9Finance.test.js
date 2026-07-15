@@ -1,5 +1,5 @@
 /**
- * Phase 9 Sóng 1 — Finance Dashboard + Expense
+ * Phase 9 — Finance Dashboard + Expense
  * npm run test:phase9
  */
 
@@ -21,7 +21,7 @@ function tokenFor(userId, role, sv = 0) {
   );
 }
 
-describe('Phase 9 — Finance Sóng 1', () => {
+describe('Phase 9 — Finance Dashboard + Expense', () => {
   let superToken;
   let orgToken;
   let createdExpenseIds = [];
@@ -80,8 +80,25 @@ describe('Phase 9 — Finance Sóng 1', () => {
     expect(res.body.kpi).toHaveProperty('expense_month');
     expect(res.body.kpi).toHaveProperty('profit_month');
     expect(res.body.kpi).toHaveProperty('orgs_total');
+    expect(res.body.kpi).toHaveProperty('expense_day');
+    expect(res.body.kpi).toHaveProperty('profit_day');
+    expect(res.body).toHaveProperty('as_of_date');
     expect(res.body.charts).toHaveProperty('revenue_by_month');
     expect(res.body.charts).toHaveProperty('revenue_by_plan');
+  });
+
+  test('TC-9.2b overview?date= trả Thu/Chi/Lãi ngày', async () => {
+    const day = new Date().toISOString().slice(0, 10);
+    const res = await request(app)
+      .get(`${API}/overview?date=${day}`)
+      .set('Authorization', `Bearer ${superToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.as_of_date).toBe(day);
+    expect(typeof res.body.kpi.revenue_day).toBe('number');
+    expect(typeof res.body.kpi.expense_day).toBe('number');
+    expect(res.body.kpi.profit_day).toBe(
+      Number(res.body.kpi.revenue_day) - Number(res.body.kpi.expense_day)
+    );
   });
 
   test('TC-9.3 CRUD expense + profit đổi theo chi', async () => {

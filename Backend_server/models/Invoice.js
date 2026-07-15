@@ -36,6 +36,8 @@ const invoiceSchema = new mongoose.Schema({
     default: null
   },
   amount: { type: Number, default: 0 },
+  tax_amount: { type: Number, default: 0 },
+  discount_amount: { type: Number, default: 0 },
   currency: { type: String, default: 'VND' },
   period_start: { type: Date, default: null },
   period_end: { type: Date, default: null },

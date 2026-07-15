@@ -72,6 +72,17 @@ const requireSuperAdmin = (req, res, next) => {
     next();
 };
 
+/** Phase 9.8 — Super hoặc Finance Admin (chỉ module Thu–Chi) */
+const requireFinanceAccess = (req, res, next) => {
+    if (!req.user || !['SUPER_ADMIN', 'FINANCE_ADMIN'].includes(req.user.role)) {
+        return res.status(403).json({
+            message: 'Chỉ Super Admin hoặc Finance Admin được truy cập Thu – Chi.',
+            code: 'FINANCE_ACCESS_DENIED'
+        });
+    }
+    next();
+};
+
 // Super Admin hoặc Org Admin (quản lý trong phạm vi organization)
 const requireAdmin = (req, res, next) => {
     if (!req.user || !['SUPER_ADMIN', 'ORG_ADMIN'].includes(req.user.role)) {
@@ -80,4 +91,4 @@ const requireAdmin = (req, res, next) => {
     next();
 };
 
-module.exports = { auth, requireSuperAdmin, requireAdmin };
+module.exports = { auth, requireSuperAdmin, requireFinanceAccess, requireAdmin };

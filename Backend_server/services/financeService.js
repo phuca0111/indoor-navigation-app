@@ -1,4 +1,4 @@
-// Phase 9 Sóng 1 — Finance Dashboard KPI (Super only)
+// Finance Dashboard KPI (Super / Finance Admin)
 const Invoice = require('../models/Invoice');
 const Organization = require('../models/Organization');
 const Expense = require('../models/Expense');
@@ -258,17 +258,31 @@ async function recentFinanceActivity(limit = 15) {
   return events.slice(0, limit);
 }
 
-async function getFinanceOverview() {
-  const now = new Date();
-  const todayStart = startOfDay(now);
-  const todayEnd = endOfDay(now);
-  const monthStart = startOfMonth(now);
-  const yearStart = startOfYear(now);
+async function getFinanceOverview(opts = {}) {
+  let asOf = new Date();
+  if (opts.date) {
+    const raw = String(opts.date).trim();
+    // YYYY-MM-DD → local day (tránh lệch UTC)
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+    if (m) {
+      asOf = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0, 0);
+    } else {
+      const parsed = new Date(raw);
+      if (!Number.isNaN(parsed.getTime())) asOf = parsed;
+    }
+  }
+
+  const dayStart = startOfDay(asOf);
+  const dayEnd = endOfDay(asOf);
+  const monthStart = startOfMonth(asOf);
+  const yearStart = startOfYear(asOf);
+  const dateKey = `${asOf.getFullYear()}-${String(asOf.getMonth() + 1).padStart(2, '0')}-${String(asOf.getDate()).padStart(2, '0')}`;
 
   const [
-    revToday,
+    revDay,
     revMonth,
     revYear,
+    expDay,
     expMonth,
     expYear,
     byMonth,
@@ -278,30 +292,38 @@ async function getFinanceOverview() {
     pending,
     activity
   ] = await Promise.all([
-    sumPaidAmount(todayStart, todayEnd),
-    sumPaidAmount(monthStart, todayEnd),
-    sumPaidAmount(yearStart, todayEnd),
-    sumExpenseAmount(monthStart, todayEnd),
-    sumExpenseAmount(yearStart, todayEnd),
+    sumPaidAmount(dayStart, dayEnd),
+    sumPaidAmount(monthStart, dayEnd),
+    sumPaidAmount(yearStart, dayEnd),
+    sumExpenseAmount(dayStart, dayEnd),
+    sumExpenseAmount(monthStart, dayEnd),
+    sumExpenseAmount(yearStart, dayEnd),
     revenueByMonth(12),
     revenueByPlan(),
-    expenseByCategory(monthStart, todayEnd),
+    expenseByCategory(monthStart, dayEnd),
     orgBillingSnapshot(),
     pendingInvoices(15),
     recentFinanceActivity(20)
   ]);
 
+  const profit_day = (revDay.amount || 0) - (expDay.amount || 0);
   const profit_month = (revMonth.amount || 0) - (expMonth.amount || 0);
   const profit_year = (revYear.amount || 0) - (expYear.amount || 0);
 
   return {
     currency: 'VND',
-    generated_at: now.toISOString(),
+    generated_at: new Date().toISOString(),
+    as_of_date: dateKey,
     kpi: {
-      revenue_today: revToday.amount,
+      revenue_day: revDay.amount,
+      revenue_today: revDay.amount,
+      expense_day: expDay.amount,
+      profit_day,
+      paid_invoices_day: revDay.count,
+      expense_count_day: expDay.count,
       revenue_month: revMonth.amount,
       revenue_year: revYear.amount,
-      paid_invoices_today: revToday.count,
+      paid_invoices_today: revDay.count,
       paid_invoices_month: revMonth.count,
       expense_month: expMonth.amount,
       expense_year: expYear.amount,

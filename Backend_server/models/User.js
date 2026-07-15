@@ -36,7 +36,7 @@ const userSchema = new mongoose.Schema({
     // Cột 3: Vai trò của người dùng
     role: {
         type: String,
-        enum: ['SUPER_ADMIN', 'ORG_ADMIN', 'BUILDING_ADMIN'],
+        enum: ['SUPER_ADMIN', 'FINANCE_ADMIN', 'ORG_ADMIN', 'BUILDING_ADMIN'],
         default: 'BUILDING_ADMIN'
     },
 

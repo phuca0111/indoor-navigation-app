@@ -130,6 +130,8 @@ if (require.main === module) {
   connectDB().then(() => {
     const { startBillingScheduler } = require('./services/billingScheduler');
     startBillingScheduler();
+    const { ensureDefaultPlans } = require('./services/planCatalog');
+    ensureDefaultPlans().catch((e) => console.warn('planCatalog seed:', e.message));
 
     const HOST = process.env.HOST || '0.0.0.0';
     const server = app.listen(PORT, HOST, () => {

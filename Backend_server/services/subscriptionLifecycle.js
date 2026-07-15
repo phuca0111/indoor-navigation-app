@@ -237,7 +237,7 @@ async function createOpenInvoice({
   return { invoice, duplicated: false };
 }
 
-async function markInvoicePaid(invoice, { externalRef = '', subscriptionId = null, billingEventId = null } = {}) {
+async function markInvoicePaid(invoice, { externalRef = '', subscriptionId = null, billingEventId = null, provider = 'MANUAL', createdBy = null } = {}) {
   if (!invoice) return null;
   if (invoice.status === 'PAID') return invoice;
   invoice.status = 'PAID';
@@ -246,6 +246,19 @@ async function markInvoicePaid(invoice, { externalRef = '', subscriptionId = nul
   if (subscriptionId) invoice.subscription_id = subscriptionId;
   if (billingEventId) invoice.billing_event_id = billingEventId;
   await invoice.save();
+
+  try {
+    const { recordPaymentFromInvoice } = require('./paymentLedger');
+    await recordPaymentFromInvoice(invoice, {
+      method: provider,
+      external_ref: externalRef || invoice.external_ref || '',
+      created_by: createdBy,
+      note: `Thanh toán ${provider}`
+    });
+  } catch (e) {
+    console.warn('paymentLedger record failed:', e.message);
+  }
+
   return invoice;
 }
 
@@ -290,6 +303,17 @@ async function createPaidInvoice({
     metadata: metadata || {},
     created_by: createdBy
   });
+
+  try {
+    const { recordPaymentFromInvoice } = require('./paymentLedger');
+    await recordPaymentFromInvoice(invoice, {
+      method: (metadata && metadata.provider) || 'MANUAL',
+      created_by: createdBy,
+      note: note || 'Manual paid invoice'
+    });
+  } catch (e) {
+    console.warn('paymentLedger record (paid invoice) failed:', e.message);
+  }
 
   return { invoice, duplicated: false };
 }

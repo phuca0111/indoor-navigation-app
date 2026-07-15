@@ -1,4 +1,10 @@
-// Phase 5.7 — Giá gói mặc định (VND / tháng)
+// Phase 5.7 + 9.3 — Giá gói: catalog DB (fallback hardcode)
+const {
+  getPlanPrice: getPriceFromCatalog,
+  getPlanPeriodDays
+} = require('../services/planCatalog');
+
+/** Fallback hiển thị / test khi cache chưa seed */
 const PLAN_PRICES_VND = {
   PRO: 990000,
   ENTERPRISE: 4990000
@@ -7,6 +13,8 @@ const PLAN_PRICES_VND = {
 const PLAN_PERIOD_DAYS = 30;
 
 function getPlanPrice(plan) {
+  const n = getPriceFromCatalog(plan);
+  if (n != null) return n;
   const p = String(plan || '').toUpperCase();
   return PLAN_PRICES_VND[p] ?? 0;
 }
@@ -14,5 +22,6 @@ function getPlanPrice(plan) {
 module.exports = {
   PLAN_PRICES_VND,
   PLAN_PERIOD_DAYS,
-  getPlanPrice
+  getPlanPrice,
+  getPlanPeriodDays
 };

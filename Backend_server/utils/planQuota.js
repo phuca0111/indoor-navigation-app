@@ -13,13 +13,17 @@ const PLAN_LIMITS = {
   ENTERPRISE: { maxBuildings: null, maxUsers: null }
 };
 
+const {
+  normalizePlanCode,
+  getPlanLimits: getPlanLimitsFromCatalog
+} = require('../services/planCatalog');
+
 function normalizePlan(plan) {
-  const p = String(plan || 'FREE').toUpperCase();
-  return PLAN_LIMITS[p] ? p : 'FREE';
+  return normalizePlanCode(plan);
 }
 
 function getPlanLimits(plan) {
-  return PLAN_LIMITS[normalizePlan(plan)];
+  return getPlanLimitsFromCatalog(plan);
 }
 
 /**

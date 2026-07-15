@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
@@ -413,12 +413,16 @@
     <div class="section-header analytics-header-row">
       <div>
         <h3>💰 Thu – Chi</h3>
-        <p class="analytics-tab-intro">Doanh thu từ hóa đơn đã thanh toán, chi phí vận hành và lãi ước lượng. Chỉ Super Admin.</p>
+        <p class="analytics-tab-intro">Theo dõi tiền vào (thu từ khách), tiền ra (chi vận hành) và lãi. Chỉ quản trị hệ thống / quản trị tài chính.</p>
       </div>
-      <div class="analytics-toolbar">
-        <button type="button" class="btn-edit" onclick="loadFinanceTab()" title="Làm mới KPI">Làm mới</button>
+      <div class="analytics-toolbar" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+        <label class="billing-field-label" for="financeDayPicker" style="margin:0;">Xem ngày</label>
+        <input type="date" id="financeDayPicker" style="padding:8px 10px; border:1px solid #ddd; border-radius:6px;" title="Thu / Chi / Lãi theo ngày">
+        <button type="button" class="btn-create" onclick="loadFinanceDayKpi()" title="Xem Thu–Chi–Lãi ngày đã chọn">Xem ngày</button>
+        <button type="button" class="btn-edit" onclick="loadFinanceTab()" title="Làm mới toàn bộ">Làm mới</button>
       </div>
     </div>
+    <div id="financeDayKpi" class="analytics-summary-cards" style="margin-bottom:12px;"></div>
     <div id="financeKpiCards" class="analytics-summary-cards"></div>
     <div class="analytics-charts-grid">
       <div class="analytics-chart-card">
@@ -455,6 +459,121 @@
       </div>
       <div id="financeOrgList" class="finance-org-list"></div>
     </div>
+    <div class="analytics-chart-card" style="margin-top:16px;">
+      <h4>Danh mục gói dịch vụ</h4>
+      <div id="financePlanList"></div>
+    </div>
+    <div class="analytics-chart-card" style="margin-top:16px;">
+      <h4>Hóa đơn</h4>
+      <form id="financeInvoiceForm" onsubmit="return submitFinanceInvoice(event)" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:14px; align-items:end;">
+        <div>
+          <label class="billing-field-label">Org ID</label>
+          <input type="text" id="invOrgId" required placeholder="Mongo ObjectId org" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+        </div>
+        <div>
+          <label class="billing-field-label">Gói</label>
+          <select id="invPlan" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+            <option value="PRO">PRO</option>
+            <option value="ENTERPRISE">ENTERPRISE</option>
+            <option value="FREE">FREE</option>
+          </select>
+        </div>
+        <div>
+          <label class="billing-field-label">Số tiền (để trống = giá catalog)</label>
+          <input type="number" id="invAmount" min="0" step="1000" placeholder="Tự lấy từ gói" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+        </div>
+        <div>
+          <button type="submit" class="btn-create" title="Tạo hóa đơn OPEN">Tạo hóa đơn</button>
+        </div>
+      </form>
+      <div style="margin-bottom:8px;">
+        <select id="financeInvoiceStatusFilter" onchange="loadFinanceInvoices()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
+          <option value="">Tất cả trạng thái</option>
+          <option value="OPEN">OPEN</option>
+          <option value="PAID">PAID</option>
+          <option value="VOID">VOID</option>
+        </select>
+        <button type="button" class="btn-edit" onclick="loadFinanceInvoices()">Lọc HĐ</button>
+      </div>
+      <div id="financeInvoiceList"></div>
+    </div>
+    <div class="analytics-chart-card" style="margin-top:16px;">
+      <h4>Sổ thu tiền (giao dịch đã nhận)</h4>
+      <div style="margin-bottom:8px;">
+        <select id="financePaymentStatusFilter" onchange="loadFinancePayments()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
+          <option value="">Tất cả</option>
+          <option value="SUCCESS">SUCCESS</option>
+          <option value="PENDING">PENDING</option>
+          <option value="FAILED">FAILED</option>
+          <option value="REFUNDED">REFUNDED</option>
+        </select>
+        <button type="button" class="btn-edit" onclick="loadFinancePayments()">Lọc payment</button>
+      </div>
+      <div id="financePaymentList"></div>
+    </div>
+
+    <div class="analytics-chart-card" style="margin-top:16px;">
+      <h4>Báo cáo thu – chi theo kỳ</h4>
+      <p class="analytics-muted" style="margin-bottom:10px;">Chọn khoảng thời gian để xem tổng thu, tổng chi, lãi và tải file CSV (Excel mở được).</p>
+      <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:end; margin-bottom:12px;">
+        <div>
+          <label class="billing-field-label">Từ ngày</label>
+          <input type="date" id="financeReportFrom" style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+        </div>
+        <div>
+          <label class="billing-field-label">Đến ngày</label>
+          <input type="date" id="financeReportTo" style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+        </div>
+        <button type="button" class="btn-create" onclick="loadFinanceReportSummary()">Xem báo cáo</button>
+        <button type="button" class="btn-edit" onclick="exportFinanceReport('invoices')">Tải danh sách hóa đơn</button>
+        <button type="button" class="btn-edit" onclick="exportFinanceReport('expenses')">Tải danh sách chi phí</button>
+        <button type="button" class="btn-edit" onclick="exportFinanceReport('payments')">Tải sổ thu tiền</button>
+      </div>
+      <div id="financeReportSummary"></div>
+    </div>
+
+    <div class="analytics-chart-card" style="margin-top:16px;">
+      <h4>Cấu hình hóa đơn &amp; công ty</h4>
+      <p class="analytics-muted" style="margin-bottom:10px;">Thông tin in trên hóa đơn (tên công ty, MST, footer…). Tài khoản «Quản trị tài chính» cũng dùng được phần Thu – Chi này.</p>
+      <form id="financeSettingsForm" onsubmit="return saveFinanceSettings(event)" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:10px; align-items:end;">
+        <div>
+          <label class="billing-field-label">Tên công ty</label>
+          <input type="text" id="finSetCompany" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+        </div>
+        <div>
+          <label class="billing-field-label">MST</label>
+          <input type="text" id="finSetTaxCode" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+        </div>
+        <div>
+          <label class="billing-field-label">Địa chỉ</label>
+          <input type="text" id="finSetAddress" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+        </div>
+        <div>
+          <label class="billing-field-label">Tiền tệ</label>
+          <input type="text" id="finSetCurrency" value="VND" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+        </div>
+        <div>
+          <label class="billing-field-label">Thuế % mặc định</label>
+          <input type="number" id="finSetTaxPct" min="0" max="100" step="0.1" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+        </div>
+        <div>
+          <label class="billing-field-label">Prefix HĐ</label>
+          <input type="text" id="finSetPrefix" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+        </div>
+        <div>
+          <label class="billing-field-label">Nhắc hết hạn (ngày)</label>
+          <input type="number" id="finSetReminder" min="1" max="90" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+        </div>
+        <div style="grid-column:1/-1;">
+          <label class="billing-field-label">Footer hóa đơn</label>
+          <input type="text" id="finSetFooter" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+        </div>
+        <div>
+          <button type="submit" class="btn-create">Lưu cấu hình</button>
+        </div>
+      </form>
+    </div>
+
     <div class="analytics-chart-card" style="margin-top:16px;">
       <h4>Chi phí vận hành</h4>
       <form id="financeExpenseForm" onsubmit="return submitFinanceExpense(event)" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:14px; align-items:end;">
@@ -825,6 +944,7 @@
             <option value="BUILDING_ADMIN" selected>BUILDING_ADMIN</option>
             <option value="ORG_ADMIN">ORG_ADMIN</option>
             <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+            <option value="FINANCE_ADMIN">Quản trị tài chính</option>
           </select>
         </div>
 
@@ -879,6 +999,7 @@
             <option value="BUILDING_ADMIN">BUILDING_ADMIN</option>
             <option value="ORG_ADMIN">ORG_ADMIN</option>
             <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+            <option value="FINANCE_ADMIN">Quản trị tài chính</option>
           </select>
         </div>
 
@@ -1008,6 +1129,6 @@
 
     <script src="../js/orgListSort.js?v=20260708l"></script>
     <script src="../js/dashboardTableSort.js?v=20260708l"></script>
-    <script src="../js/dashboard.js?v=20260713p7a"></script>
+    <script src="../js/dashboard.js?v=20260716biz"></script>
 </body>
 </html>

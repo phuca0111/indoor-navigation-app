@@ -13,9 +13,9 @@ const Organization = require('../../models/Organization');
 const Building = require('../../models/Building');
 const { PLAN_LIMITS } = require('../../utils/planQuota');
 
-function tokenFor(userId, role) {
+function tokenFor(userId, role, sv = 0) {
   return jwt.sign(
-    { userId: String(userId), role },
+    { userId: String(userId), role, sv },
     process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
@@ -35,7 +35,7 @@ describe('Phase 5.1 — planQuota enforce', () => {
 
     const superUser = await User.findOne({ role: 'SUPER_ADMIN', is_active: { $ne: false } }).lean();
     if (!superUser) throw new Error('Thiếu SUPER_ADMIN trong DB');
-    superToken = tokenFor(superUser._id, 'SUPER_ADMIN');
+    superToken = tokenFor(superUser._id, 'SUPER_ADMIN', Number(superUser.session_version) || 0);
 
     let org = await Organization.findOne({ slug }).lean();
     if (!org) {
@@ -119,6 +119,7 @@ describe('Phase 5.1 — planQuota enforce', () => {
     await User.deleteMany({ organization_id: quotaOrgId, email: /^phase51_/ });
 
     const max = PLAN_LIMITS.FREE.maxUsers;
+    const labels = ['Mot', 'Hai', 'Ba', 'Bon', 'Nam', 'Sau', 'Bay', 'Tam', 'Chin', 'Muoi'];
     for (let i = 0; i < max; i++) {
       const res = await request(app)
         .post('/api/auth/register')
@@ -126,7 +127,7 @@ describe('Phase 5.1 — planQuota enforce', () => {
         .send({
           email: `phase51_u_${i}@quota.test`,
           password: 'password123',
-          full_name: `Quota User ${i}`,
+          full_name: `Quota User ${labels[i] || 'Extra'}`,
           role: 'BUILDING_ADMIN',
           organization_id: String(quotaOrgId)
         });
@@ -140,7 +141,7 @@ describe('Phase 5.1 — planQuota enforce', () => {
       .send({
         email: 'phase51_u_overflow@quota.test',
         password: 'password123',
-        full_name: 'Overflow',
+        full_name: 'Overflow User',
         role: 'BUILDING_ADMIN',
         organization_id: String(quotaOrgId)
       });
