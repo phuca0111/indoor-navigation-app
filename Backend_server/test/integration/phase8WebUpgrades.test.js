@@ -23,6 +23,8 @@ const MapVersion = require('../../models/MapVersion');
 const ActivityLog = require('../../models/ActivityLog');
 const OrganizationRegistration = require('../../models/OrganizationRegistration');
 const { sendExpiryReminders } = require('../../services/billingScheduler');
+const { clearLocksForBuilding } = require('../../services/floorEditLock');
+const memoryStore = require('../../services/floorLockMemoryStore');
 
 const API = '/api';
 const ROOT = path.join(__dirname, '../..');
@@ -127,6 +129,8 @@ describe('Phase 8 — Web upgrades', () => {
 
   afterAll(async () => {
     for (const id of createdBuildingIds) {
+      await clearLocksForBuilding(id);
+      memoryStore.kvClearAll();
       await FloorEditLock.deleteMany({ building_id: id });
       await MapVersion.deleteMany({ building_id: id });
       await Floor.deleteMany({ building_id: id });
