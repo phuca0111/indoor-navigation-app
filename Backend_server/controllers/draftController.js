@@ -9,6 +9,7 @@ const Organization = require('../models/Organization');
 const { assertFloorInRange } = require('../services/floorLifecycle');
 const { assertBuildingWritable } = require('../utils/overQuotaLock');
 const { loadOrCreate, save } = require('../services/draftService');
+const { assertNoBase64Background } = require('../services/objectStorage');
 
 // GET /api/v1/buildings/:buildingId/floors/:floor/draft
 const getDraft = async (req, res) => {
@@ -75,6 +76,14 @@ const putDraft = async (req, res) => {
     const payload = req.body?.map_data;
     if (payload === undefined || payload === null) {
       return res.status(400).json({ message: 'Thiếu map_data trong body.' });
+    }
+
+    const bgCheck = assertNoBase64Background(payload);
+    if (!bgCheck.ok) {
+      return res.status(400).json({
+        message: bgCheck.message,
+        code: bgCheck.code
+      });
     }
 
     const buildingMeta = await Building.findById(buildingId)

@@ -25,6 +25,9 @@ Backend_server/.env
 Backend_server/coverage/
 **/coverage/
 
+# Phase 2d — uploaded objects (local storage)
+Backend_server/uploads/
+
 # File tạm & dữ liệu test local
 Backend_server/temp_map.json
 Backend_server/test_data.json
