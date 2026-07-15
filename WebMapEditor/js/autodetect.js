@@ -279,3 +279,201 @@ function createRoomsFromRegions(regions, imgW, imgH) {
     }
     return count;
 }
+
+/**
+ * Auto-detect v2 (Phase 4):
+ * - Áp contrast/brightness live trước khi dò
+ * - Dilate mạnh hơn để đóng biên (boundary)
+ * - Douglas-Peucker epsilon thích ứng theo kích thước
+ * - Map pixel ảnh → tọa độ world theo bgX/bgY/bgScale/bgRotation
+ */
+function detectRoomsFromImageV2(img) {
+    if (!img) return 0;
+    isDetecting = true;
+    console.log('🔍 Auto-detect v2…');
+    if (typeof saveState === 'function') saveState();
+
+    var tempCanvas = document.createElement('canvas');
+    var tempCtx = tempCanvas.getContext('2d');
+    tempCanvas.width = img.width;
+    tempCanvas.height = img.height;
+    tempCtx.drawImage(img, 0, 0);
+
+    var imageData = tempCtx.getImageData(0, 0, img.width, img.height);
+
+    // Áp filter live (nếu đang chỉnh contrast/brightness)
+    if (window.EditorCore && EditorCore.ImageTools) {
+        var c = window.bgContrast != null ? window.bgContrast : 1;
+        var b = window.bgBrightness != null ? window.bgBrightness : 0;
+        if (Math.abs(c - 1) > 1e-3 || Math.abs(b) > 1e-3) {
+            EditorCore.ImageTools.applyContrastBrightness(imageData, c, b);
+        }
+    }
+
+    var w = img.width;
+    var h = img.height;
+    var blurredData = boxBlur(imageData.data, w, h, 2);
+    var edges = detectEdgesV2(blurredData, w, h);
+    edges = dilateEdges(edges, w, h, 3);
+    // Erode nhẹ để biên không phình quá
+    edges = erodeEdges(edges, w, h, 1);
+
+    var regions = findRegionsV2(edges, blurredData, w, h);
+    var count = createRoomsFromRegionsV2(regions, w, h);
+
+    console.log('✅ Detect v2: ' + count + ' phòng');
+    if (typeof roomCountSpan !== 'undefined' && roomCountSpan) {
+        roomCountSpan.textContent = 'Phòng: ' + rooms.length;
+    }
+    if (typeof updateObjectList === 'function') updateObjectList();
+    if (typeof draw === 'function') draw();
+    isDetecting = false;
+    return count;
+}
+window.detectRoomsFromImageV2 = detectRoomsFromImageV2;
+
+function detectEdgesV2(data, w, h) {
+    var edges = new Uint8Array(w * h);
+    // Ngưỡng thích ứng theo độ tương phản trung bình vùng
+    var threshold = 28;
+    for (var y = 1; y < h - 1; y++) {
+        for (var x = 1; x < w - 1; x++) {
+            var idx = (y * w + x) * 4;
+            var r = data[idx], g = data[idx + 1], b = data[idx + 2];
+            var idxR = idx + 4;
+            var diffR = Math.abs(r - data[idxR]) + Math.abs(g - data[idxR + 1]) + Math.abs(b - data[idxR + 2]);
+            var idxD = idx + w * 4;
+            var diffD = Math.abs(r - data[idxD]) + Math.abs(g - data[idxD + 1]) + Math.abs(b - data[idxD + 2]);
+            if (diffR > threshold || diffD > threshold) {
+                edges[y * w + x] = 1;
+            }
+            var brightness = (r + g + b) / 3;
+            if (brightness < 55 || brightness > 245) {
+                // Viền đen CAD hoặc giấy trắng sát cạnh chữ
+                if (brightness < 55) edges[y * w + x] = 1;
+            }
+        }
+    }
+    return edges;
+}
+
+function erodeEdges(edges, w, h, radius) {
+    var result = new Uint8Array(w * h);
+    for (var y = 0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+            if (edges[y * w + x] !== 1) continue;
+            var keep = true;
+            for (var dy = -radius; dy <= radius && keep; dy++) {
+                for (var dx = -radius; dx <= radius; dx++) {
+                    var nx = x + dx, ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h || edges[ny * w + nx] !== 1) {
+                        keep = false;
+                        break;
+                    }
+                }
+            }
+            if (keep) result[y * w + x] = 1;
+        }
+    }
+    return result;
+}
+
+function findRegionsV2(edges, data, w, h) {
+    var visited = new Uint8Array(w * h);
+    var regions = [];
+    for (var i = 0; i < edges.length; i++) {
+        if (edges[i] === 1) visited[i] = 1;
+    }
+    var step = Math.max(4, Math.floor(Math.min(w, h) / 120));
+    var minPix = Math.max(400, Math.floor(w * h * 0.0008));
+
+    for (var y = 6; y < h - 6; y += step) {
+        for (var x = 6; x < w - 6; x += step) {
+            if (visited[y * w + x]) continue;
+            var result = getRegionMask(visited, data, w, h, x, y);
+            if (result && result.area > minPix) {
+                var contour = traceMooreNeighbor(result.mask, w, h, result.startIdx);
+                if (contour && contour.length > 4) {
+                    var eps = Math.max(2.5, Math.min(8, Math.sqrt(result.area) * 0.04));
+                    var simplified = simplifyDouglasPeucker(contour, eps);
+                    if (simplified.length >= 3) {
+                        regions.push({
+                            points: simplified, area: result.area,
+                            avgR: result.avgR, avgG: result.avgG, avgB: result.avgB,
+                            minX: result.minX, minY: result.minY,
+                            width: result.maxX - result.minX, height: result.maxY - result.minY
+                        });
+                    }
+                }
+            }
+        }
+    }
+    return regions;
+}
+
+function imagePixelToWorldCoords(px, py) {
+    var scale = window.bgScale != null ? window.bgScale : 1;
+    var bx = window.bgX || 0;
+    var by = window.bgY || 0;
+    var rotDeg = window.bgRotation || 0;
+    var img = window.bgImage;
+    if (!img || Math.abs(rotDeg) < 1e-6) {
+        return { x: bx + px * scale, y: by + py * scale };
+    }
+    var bw = img.width * scale;
+    var bh = img.height * scale;
+    var lx = px * scale - bw / 2;
+    var ly = py * scale - bh / 2;
+    var rad = rotDeg * Math.PI / 180;
+    var cos = Math.cos(rad);
+    var sin = Math.sin(rad);
+    return {
+        x: bx + bw / 2 + lx * cos - ly * sin,
+        y: by + bh / 2 + lx * sin + ly * cos
+    };
+}
+
+function createRoomsFromRegionsV2(regions, imgW, imgH) {
+    var count = 0;
+    var minArea = imgW * imgH * 0.0012;
+    var maxArea = imgW * imgH * 0.45;
+    regions.sort(function (a, b) { return b.area - a.area; });
+
+    for (var i = 0; i < regions.length; i++) {
+        var r = regions[i];
+        if (r.area < minArea || r.area > maxArea) continue;
+        if (r.width < 12 || r.height < 12) continue;
+        if (r.minX < 4 || r.minY < 4 || r.minX + r.width > imgW - 4) continue;
+        var aspect = r.width / r.height;
+        if (aspect > 18 || aspect < 0.055) continue;
+
+        var worldPts = r.points.map(function (p) {
+            return imagePixelToWorldCoords(p.x, p.y);
+        });
+        var minWX = Infinity, minWY = Infinity, maxWX = -Infinity, maxWY = -Infinity;
+        for (var k = 0; k < worldPts.length; k++) {
+            if (worldPts[k].x < minWX) minWX = worldPts[k].x;
+            if (worldPts[k].y < minWY) minWY = worldPts[k].y;
+            if (worldPts[k].x > maxWX) maxWX = worldPts[k].x;
+            if (worldPts[k].y > maxWY) maxWY = worldPts[k].y;
+        }
+
+        var roomColor = 'rgba(' + Math.min(255, r.avgR + 25) + ',' +
+            Math.min(255, r.avgG + 25) + ',' +
+            Math.min(255, r.avgB + 25) + ', 0.5)';
+
+        rooms.push({
+            id: nextRoomId++,
+            name: 'Phòng ' + (rooms.length + 1),
+            shape: 'polygon',
+            layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default',
+            points: worldPts,
+            x: minWX, y: minWY, width: maxWX - minWX, height: maxWY - minWY,
+            color: roomColor,
+            detectedBy: 'v2'
+        });
+        count++;
+        if (count >= 120) break;
+    }
+    return count;
+}

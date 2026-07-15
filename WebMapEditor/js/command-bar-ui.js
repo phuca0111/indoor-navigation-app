@@ -9,7 +9,8 @@
         room: 'Phòng', circle: 'Tròn', door: 'Cửa', poi: 'Điểm POI',
         qr: 'Mốc QR', path: 'Đường đi', ruler: 'Dist',         area: 'Area', polyline: 'Tường',
         hatch: 'Hatch',
-        dimlinear: 'Dimlinear', dimaligned: 'Dimaligned', dimedit: 'DIMEdit', block: 'Block', insert: 'Insert'
+        dimlinear: 'Dimlinear', dimaligned: 'Dimaligned', dimedit: 'DIMEdit', block: 'Block', insert: 'Insert',
+        calibrate: 'Calibrate', 'bg-crop': 'Crop nền', 'bg-adjust': 'Chỉnh nền'
     };
 
     function toolLabel(toolId) {

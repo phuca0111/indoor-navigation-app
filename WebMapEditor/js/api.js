@@ -753,6 +753,23 @@ async function saveMapToServer() {
             if (newVersion != null) updateEditorMapVersion(newVersion);
             window.editorBuildingMeta = Object.assign({}, window.editorBuildingMeta || {}, { status: 'PUBLISHED' });
             renderEditorBuildingContext(window.editorBuildingMeta);
+            if (window.EditorCore && EditorCore.VersionManager &&
+                typeof EditorCore.VersionManager.syncAfterPublish === 'function') {
+                EditorCore.VersionManager.syncAfterPublish(
+                    newVersion,
+                    result.map && result.map.published_at
+                );
+            }
+            if (typeof renderVersionBadge === 'function') renderVersionBadge();
+            if (pipelineResult.navigationPayload && typeof console !== 'undefined' && console.debug) {
+                console.debug('[Publish] Navigation payload (Android):', {
+                    rooms: (pipelineResult.navigationPayload.rooms || []).length,
+                    nodes: (pipelineResult.navigationPayload.nodes || []).length,
+                    edges: (pipelineResult.navigationPayload.edges || []).length,
+                    hasDimensions: 'dimensions' in pipelineResult.navigationPayload,
+                    hasBlocks: 'blocks' in pipelineResult.navigationPayload
+                });
+            }
         } else if (response.status === 401) {
             showToast('Phiên đăng nhập hết hạn! Vui lòng đăng nhập lại để lưu.', 'error');
         } else if (response.status === 403) {
@@ -885,7 +902,17 @@ async function loadMapFromServer() {
             console.log('📥 Đã tải bản đồ từ Server:', result.data);
             applyMapData(result.data.map_data);
             updateEditorFloorLabel();
-            return { loaded: true, version: result.data.version };
+            var ver = result.data.version;
+            if (window.EditorCore && EditorCore.VersionManager &&
+                typeof EditorCore.VersionManager.syncFromServer === 'function') {
+                EditorCore.VersionManager.syncFromServer({
+                    serverVersion: ver,
+                    buildingStatus: (window.editorBuildingMeta && window.editorBuildingMeta.status) || null,
+                    publishedAt: result.data.published_at || null
+                });
+            }
+            if (typeof renderVersionBadge === 'function') renderVersionBadge();
+            return { loaded: true, version: ver };
         }
 
         // Không khớp điều kiện nào ở trên → lỗi server / format lạ

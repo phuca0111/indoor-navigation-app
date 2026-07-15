@@ -99,6 +99,7 @@ function saveState() {
     undoStack.push(state);
     if (undoStack.length > maxHistory) undoStack.shift();
     redoStack = []; // Xóa redo khi có action mới
+    if (typeof markEditorDirty === 'function') markEditorDirty();
 }
 
 // === UNDO (Ctrl+Z) ===

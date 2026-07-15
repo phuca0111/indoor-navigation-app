@@ -39,7 +39,11 @@
         { id: 'insert', name: 'Insert', shortcut: 'i', category: 'block', buttonId: 'btn-insert' },
         { id: 'dimlinear', name: 'Dimlinear', shortcut: 'dli', category: 'annotate', buttonId: 'btn-dimlinear' },
         { id: 'dimaligned', name: 'Dimaligned', shortcut: 'dal', category: 'annotate', buttonId: 'btn-dimaligned' },
-        { id: 'dimedit', name: 'DIMEdit', shortcut: 'ded', category: 'annotate', buttonId: 'btn-dimedit' }
+        { id: 'dimedit', name: 'DIMEdit', shortcut: 'ded', category: 'annotate', buttonId: 'btn-dimedit' },
+        // Phase 4 Image
+        { id: 'calibrate', name: 'Calibrate', shortcut: 'cal', category: 'image', buttonId: 'btn-calibrate' },
+        { id: 'bg-crop', name: 'Crop nền', shortcut: 'crop', category: 'image', buttonId: 'btn-bg-crop' },
+        { id: 'bg-adjust', name: 'Chỉnh nền', shortcut: 'bg', category: 'image' }
     ];
 
     defs.forEach(function (d) {

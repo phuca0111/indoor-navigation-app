@@ -36,7 +36,15 @@
 
         ctx.translate(bx + bw / 2, by + bh / 2);
         ctx.rotate((bg.rotation || 0) * Math.PI / 180);
+        var contrast = bg.contrast != null ? bg.contrast : 1;
+        var brightness = bg.brightness != null ? bg.brightness : 0;
+        if (Math.abs(contrast - 1) > 1e-3 || Math.abs(brightness) > 1e-3) {
+            // CSS filter: contrast(%) brightness(%) — brightness 0→0%, 0 native=100%, +100→200%
+            var bPct = Math.max(0, 100 + brightness);
+            ctx.filter = 'contrast(' + (contrast * 100) + '%) brightness(' + bPct + '%)';
+        }
         ctx.drawImage(bg.image, -bw / 2, -bh / 2, bw, bh);
+        ctx.filter = 'none';
 
         if (options.highlightAdjust) {
             ctx.setLineDash([5, 5]);

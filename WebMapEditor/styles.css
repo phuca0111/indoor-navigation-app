@@ -170,6 +170,53 @@ body {
     font-size: 12px;
 }
 
+.btn-version-history {
+    margin-left: 4px;
+    padding: 2px 10px;
+    font-size: 11px;
+    border-radius: 6px;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    background: rgba(30, 41, 59, 0.85);
+    color: #e2e8f0;
+    cursor: pointer;
+}
+.btn-version-history:hover {
+    border-color: #38bdf8;
+    color: #7dd3fc;
+}
+
+.version-history-panel {
+    margin: 0 16px 8px;
+    padding: 12px 14px;
+    background: #0f172a;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 8px;
+    color: #e2e8f0;
+    max-height: 280px;
+    overflow: auto;
+}
+.version-history-panel__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.version-history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.version-history-table th,
+.version-history-table td {
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    padding: 6px 4px;
+    text-align: left;
+    vertical-align: top;
+}
+.version-row-current {
+    background: rgba(16, 185, 129, 0.12);
+}
+
 .editor-status-badge {
     display: inline-block;
     padding: 2px 10px;
