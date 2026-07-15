@@ -1,7 +1,10 @@
 // ============================================
 // FILE: publishMapValidate.js
 // Phase 2c — Validate map_data trước / trong publish
+// Phase 2d — Cấm Base64 background_image
 // ============================================
+
+const { assertNoBase64Background } = require('./objectStorage');
 
 /**
  * @returns {{ ok: boolean, errors: Array<{ code: string, message: string, path?: string }> }}
@@ -14,6 +17,15 @@ function validateMapData(map_data) {
   }
   if (typeof map_data !== 'object' || Array.isArray(map_data)) {
     return { ok: false, errors: [{ code: 'MAP_TYPE', message: 'map_data phải là object.' }] };
+  }
+
+  const bgCheck = assertNoBase64Background(map_data);
+  if (!bgCheck.ok) {
+    errors.push({
+      code: bgCheck.code,
+      message: bgCheck.message,
+      path: bgCheck.path || 'background_image'
+    });
   }
 
   const nodes = Array.isArray(map_data.nodes) ? map_data.nodes : null;
