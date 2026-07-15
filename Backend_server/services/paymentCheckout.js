@@ -171,7 +171,9 @@ async function completeCheckoutPayment({
         await markInvoicePaid(invoice, {
           externalRef,
           subscriptionId: sub?._id,
-          billingEventId: existed._id
+          billingEventId: existed._id,
+          provider,
+          createdBy: userId
         });
         return { invoice, event: existed, duplicated: true, subscription: sub };
       }
@@ -183,7 +185,9 @@ async function completeCheckoutPayment({
   await markInvoicePaid(invoice, {
     externalRef,
     subscriptionId: result.subscription?._id,
-    billingEventId: event._id
+    billingEventId: event._id,
+    provider,
+    createdBy: userId
   });
 
   return {

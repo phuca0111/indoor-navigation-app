@@ -7,9 +7,9 @@ const {
 } = require('../services/financeService');
 
 function requireSuper(req, res) {
-  if (!req.user || req.user.role !== 'SUPER_ADMIN') {
+  if (!req.user || !['SUPER_ADMIN', 'FINANCE_ADMIN'].includes(req.user.role)) {
     res.status(403).json({
-      message: 'Chỉ Super Admin được truy cập Thu – Chi / chi phí sàn.',
+      message: 'Chỉ Super Admin / Finance Admin được truy cập Thu – Chi / chi phí sàn.',
       code: 'FINANCE_SUPER_ONLY'
     });
     return false;
@@ -20,7 +20,7 @@ function requireSuper(req, res) {
 async function getOverview(req, res) {
   try {
     if (!requireSuper(req, res)) return;
-    const data = await getFinanceOverview();
+    const data = await getFinanceOverview({ date: req.query.date });
     res.status(200).json(data);
   } catch (e) {
     console.error('finance getOverview:', e);

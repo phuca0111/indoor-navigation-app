@@ -237,11 +237,11 @@ const register = async (req, res) => {
                 return res.status(403).json({ message: 'Org Admin không được gán user sang tổ chức khác.' });
             }
         } else if (callerRole === 'SUPER_ADMIN') {
-            const validRoles = ['SUPER_ADMIN', 'ORG_ADMIN', 'BUILDING_ADMIN'];
+            const validRoles = ['SUPER_ADMIN', 'FINANCE_ADMIN', 'ORG_ADMIN', 'BUILDING_ADMIN'];
             if (!validRoles.includes(targetRole)) {
                 return res.status(400).json({ message: `role phải là: ${validRoles.join(', ')}` });
             }
-            if (targetRole === 'SUPER_ADMIN') {
+            if (targetRole === 'SUPER_ADMIN' || targetRole === 'FINANCE_ADMIN') {
                 targetOrgId = null;
                 targetBuildings = [];
             } else if (!targetOrgId) {

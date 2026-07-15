@@ -153,6 +153,7 @@ async function sendPlanExpiryReminderEmail(opts) {
 
 module.exports = {
   isSmtpConfigured,
+  getTransporter,
   getPublicBaseUrl,
   buildPasswordResetLink,
   sendPasswordResetEmail,

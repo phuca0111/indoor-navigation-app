@@ -34,6 +34,10 @@
     "test:phase7": "jest test/integration/phase7Security.test.js --verbose --runInBand",
     "test:phase8": "jest test/integration/phase8WebUpgrades.test.js --verbose --runInBand",
     "test:phase9": "jest test/integration/phase9Finance.test.js --verbose --runInBand",
+    "test:finance-billing": "jest test/integration/financeBilling.test.js --verbose --runInBand",
+    "test:finance-reports": "jest test/integration/financeReportsSettings.test.js --verbose --runInBand",
+    "test:phase9-s2": "npm run test:finance-billing",
+    "test:phase9-s3": "npm run test:finance-reports",
     "start": "node server.js",
     "migrate:org": "node scripts/migrate-organization-legacy.js",
     "verify:org": "node scripts/verify-org-migration.js"

@@ -352,6 +352,10 @@ const updateUser = async (req, res) => {
     }
     if (role !== undefined) {
       updateData.role = role;
+      if (role === 'SUPER_ADMIN' || role === 'FINANCE_ADMIN') {
+        updateData.organization_id = null;
+        updateData.assigned_buildings = [];
+      }
     }
     if (is_active !== undefined) {
       if (typeof is_active !== 'boolean') {
@@ -408,7 +412,7 @@ const updateUser = async (req, res) => {
 
     const validRoles = req.user.role === 'ORG_ADMIN'
       ? ['BUILDING_ADMIN']
-      : ['SUPER_ADMIN', 'ORG_ADMIN', 'BUILDING_ADMIN'];
+      : ['SUPER_ADMIN', 'FINANCE_ADMIN', 'ORG_ADMIN', 'BUILDING_ADMIN'];
     if (role !== undefined && !validRoles.includes(role)) {
       return res.status(400).json({
         message: `role phải là: ${validRoles.join(' hoặc ')}`
@@ -420,11 +424,16 @@ const updateUser = async (req, res) => {
       return res.status(403).json({ message: 'Bạn không thể tự khóa tài khoản chính mình.' });
     }
 
-    // Prevent self-role-reduction: SUPER_ADMIN → BUILDING_ADMIN
+    // Prevent self-role-reduction: SUPER_ADMIN → non-super
     if (req.user.userId === userId) {
       const currentUser = await User.findById(req.user.userId);
-      if (currentUser && currentUser.role === 'SUPER_ADMIN' && role === 'BUILDING_ADMIN') {
-        return res.status(403).json({ message: 'Super Admin không thể hạ role của chính mình xuống BUILDING_ADMIN.' });
+      if (
+        currentUser &&
+        currentUser.role === 'SUPER_ADMIN' &&
+        role &&
+        role !== 'SUPER_ADMIN'
+      ) {
+        return res.status(403).json({ message: 'Super Admin không thể hạ role của chính mình.' });
       }
     }
 
