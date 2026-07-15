@@ -33,6 +33,7 @@
     "test:floor": "jest test/integration/floorLifecycle.test.js --verbose --runInBand",
     "test:phase7": "jest test/integration/phase7Security.test.js --verbose --runInBand",
     "test:phase8": "jest test/integration/phase8WebUpgrades.test.js --verbose --runInBand",
+  "test:phase2a": "jest test/integration/phase2aDraftApi.test.js --verbose --runInBand",
     "test:phase9": "jest test/integration/phase9Finance.test.js --verbose --runInBand",
     "test:finance-billing": "jest test/integration/financeBilling.test.js --verbose --runInBand",
     "test:finance-reports": "jest test/integration/financeReportsSettings.test.js --verbose --runInBand",
