@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Soạn bản đồ trong nhà | WebMapEditor</title>
-    <link rel="stylesheet" href="styles.css?v=20260714f">
+    <link rel="stylesheet" href="styles.css?v=20260716p5">
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -70,8 +70,24 @@
                 <span class="editor-meta-sep">·</span>
                 <span>Phiên bản map: <strong id="editorMapVersion">—</strong></span>
                 <span class="editor-meta-sep">·</span>
+                <span id="editorVersionLifecycle" class="editor-status-badge editor-status-draft" title="Draft / Published (local)">Nháp</span>
+                <button type="button" id="btnVersionHistory" class="btn-version-history" title="Lịch sử phiên bản / Rollback">Lịch sử</button>
+                <span class="editor-meta-sep">·</span>
                 <span id="editorPublishHint" class="editor-publish-hint">Lưu nháp ≠ xuất bản. Chỉ «Xuất bản» mới đẩy ra điện thoại.</span>
             </div>
+        </div>
+
+        <div id="versionHistoryPanel" class="version-history-panel" style="display:none;">
+            <div class="version-history-panel__head">
+                <strong>Lịch sử phiên bản</strong>
+                <div>
+                    <button type="button" id="btnRefreshVersions" class="btn btn-sm btn-outline">Làm mới</button>
+                    <button type="button" id="btnCloseVersionPanel" class="btn btn-sm btn-outline">Đóng</button>
+                </div>
+            </div>
+            <p id="versionHistoryMeta" class="hint-text" style="margin:6px 0;"></p>
+            <div id="versionHistoryList"></div>
+            <p class="hint-text">Rollback gọi API Backend có sẵn — tạo bản mới từ snapshot cũ. Không sửa Backend trong Phase 5 editor.</p>
         </div>
 
         <!-- MAIN -->
@@ -198,6 +214,22 @@
                 </div>
 
                 <div class="tool-section">
+                    <h3>Ảnh nền</h3>
+                    <button class="tool-btn" id="btn-calibrate" onclick="selectTool('calibrate')" title="Căn tỷ lệ 2 điểm — lệnh CAL">
+                        <i data-lucide="ruler"></i> Calibrate <span class="tool-kbd">CAL</span>
+                    </button>
+                    <button class="tool-btn" id="btn-bg-crop" onclick="selectTool('bg-crop')" title="Cắt ảnh nền — lệnh CROP">
+                        <i data-lucide="crop"></i> Crop <span class="tool-kbd">CROP</span>
+                    </button>
+                    <button class="tool-btn" id="btn-deskew" type="button" onclick="autoDeskewBackground()" title="Tự xoay thẳng ảnh nghiêng">
+                        <i data-lucide="rotate-ccw"></i> Deskew
+                    </button>
+                    <button class="tool-btn" id="btn-detect" type="button" onclick="runAutoDetectV2()" title="Phát hiện phòng từ ảnh nền (v2)">
+                        <i data-lucide="scan"></i> Detect v2
+                    </button>
+                </div>
+
+                <div class="tool-section">
                     <h3>Cấu hình</h3>
                     <div class="prop-group" style="margin-top: 10px;">
                         <div class="prop-row">
@@ -235,6 +267,19 @@
                             <label>Độ mờ ảnh nền: <span id="bgOpacityVal">50%</span></label>
                             <input type="range" id="bgOpacitySlider" min="0" max="100" value="50" style="width: 100%;">
                         </div>
+                        <div class="prop-row" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+                            <label>Contrast: <span id="bgContrastVal">1.00</span></label>
+                            <input type="range" id="bgContrastSlider" min="0.2" max="3" step="0.05" value="1" style="width: 100%;"
+                                   oninput="setBgContrast(this.value)">
+                        </div>
+                        <div class="prop-row" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+                            <label>Brightness: <span id="bgBrightnessVal">0</span></label>
+                            <input type="range" id="bgBrightnessSlider" min="-100" max="100" step="1" value="0" style="width: 100%;"
+                                   oninput="setBgBrightness(this.value)">
+                        </div>
+                        <button class="tool-btn" type="button" style="width:100%;margin-top:4px;" onclick="applyBgFiltersPermanent()" title="Ghi contrast/brightness vào file ảnh">
+                            Áp filter vào ảnh
+                        </button>
                     </div>
                     <div style="display: flex; gap: 4px;">
                         <button class="tool-btn" style="flex:1" id="btnImportBg" title="Thay ảnh nền">
@@ -326,10 +371,10 @@
     <script src="core/crash-recovery.js?v=20260713p7f"></script>
     <script src="core/perf-monitor.js?v=20260709f"></script>
     <script src="core/project-manager.js?v=20260710n"></script>
-    <script src="core/version-manager.js?v=20260709f"></script>
+    <script src="core/version-manager.js?v=20260716p5"></script>
     <script src="core/asset-manager.js?v=20260712b"></script>
     <script src="core/plugin-api.js?v=20260709f"></script>
-    <script src="core/map-adapter.js?v=20260713g"></script>
+    <script src="core/map-adapter.js?v=20260716p5"></script>
     <script src="core/validation-engine.js?v=20260709f"></script>
     <script src="core/legacy-bridge.js?v=20260712b"></script>
     <script src="core/spatial-index.js?v=20260709f"></script>
@@ -340,7 +385,7 @@
     <script src="core/dynamic-input.js?v=20260709f"></script>
     <script src="core/layer-manager.js?v=20260710b"></script>
     <script src="core/command-manager.js?v=20260709f"></script>
-    <script src="core/tool-command-manager.js?v=20260714p"></script>
+    <script src="core/tool-command-manager.js?v=20260716a"></script>
     <script src="core/tool-registry.js?v=20260709f"></script>
     <script src="core/object-transform.js?v=20260713c"></script>
     <script src="core/block-manager.js?v=20260713d"></script>
@@ -348,11 +393,12 @@
     <script src="core/dist-measure.js?v=20260714e"></script>
     <script src="core/area-calc.js?v=20260714k"></script>
     <script src="core/hatch.js?v=20260714p"></script>
+    <script src="core/image-tools.js?v=20260716a"></script>
     <script src="core/modify-session.js?v=20260714q"></script>
     <script src="core/tools/polyline-tool.js?v=20260709f"></script>
     <script src="core/tools/line-tool.js?v=20260709f"></script>
-    <script src="core/tools-bootstrap.js?v=20260714p"></script>
-    <script src="core/rendering/background-renderer.js?v=20260710e"></script>
+    <script src="core/tools-bootstrap.js?v=20260716a"></script>
+    <script src="core/rendering/background-renderer.js?v=20260716a"></script>
     <script src="core/rendering/grid-renderer.js?v=20260710e"></script>
     <script src="core/rendering/room-renderer.js?v=20260710e"></script>
     <script src="core/rendering/wall-renderer.js?v=20260710e"></script>
@@ -360,16 +406,17 @@
     <script src="core/rendering/path-renderer.js?v=20260710e"></script>
     <script src="core/rendering/poi-renderer.js?v=20260710e"></script>
     <script src="core/rendering/qr-renderer.js?v=20260710e"></script>
-    <script src="core/rendering/rendering-engine.js?v=20260710e"></script>
+    <script src="core/rendering/rendering-engine.js?v=20260716a"></script>
     <script src="core/index.js?v=20260709f"></script>
 
     <!-- Script Scripts -->
-    <script src="js/state.js?v=20260714p"></script>
+    <script src="js/state.js?v=20260716a"></script>
     <script src="js/selection-bridge-ui.js?v=20260710d"></script>
-    <script src="js/history.js?v=20260714d"></script>
+    <script src="js/history.js?v=20260716p5"></script>
     <script src="js/utils.js?v=20260709d"></script>
     <script src="js/layers.js?v=20260710e"></script>
-    <script src="js/autodetect.js?v=2"></script>
+    <script src="js/autodetect.js?v=20260716a"></script>
+    <script src="js/image-phase4.js?v=20260716a"></script>
     <script src="js/rooms.js?v=20260713c"></script>
     <script src="js/doors.js?v=20260713c"></script>
     <script src="js/walls.js?v=20260713c"></script>
@@ -378,22 +425,23 @@
     <script src="js/blocks.js?v=20260713f"></script>
     <script src="js/dimensions.js?v=20260714d"></script>
     <script src="js/paths.js?v=2"></script>
-    <script src="js/tools.js?v=20260714p"></script>
-    <script src="js/canvas.js?v=20260714q"></script>
-    <script src="js/io.js?v=20260714p"></script>
-    <script src="js/api.js?v=20260714p8k4"></script>
-    <script src="core/export-pipeline.js?v=20260713g"></script>
+    <script src="js/tools.js?v=20260716a"></script>
+    <script src="js/canvas.js?v=20260716a"></script>
+    <script src="js/io.js?v=20260716a"></script>
+    <script src="js/api.js?v=20260716p5"></script>
+    <script src="core/export-pipeline.js?v=20260716p5"></script>
     <script src="js/secure-lock.js?v=20260710b"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
     <script src="js/property-inspector-ui.js?v=20260714d"></script>
-    <script src="js/properties.js?v=20260714q"></script>
+    <script src="js/properties.js?v=20260716a"></script>
     <script src="js/qrs.js?v=2"></script>
     <script src="js/autosave.js?v=20260713p7f"></script>
-    <script src="js/events.js?v=20260714p"></script>
+    <script src="js/version-ui.js?v=20260716p5"></script>
+    <script src="js/events.js?v=20260716a"></script>
     <script src="js/dynamic-input-ui.js?v=20260714f"></script>
-    <script src="js/command-bar-ui.js?v=20260714p"></script>
+    <script src="js/command-bar-ui.js?v=20260716a"></script>
     <script src="js/layers-ui.js?v=20260710e"></script>
-    <script src="editor.js?v=20260714p8k4"></script>
+    <script src="editor.js?v=20260716a"></script>
     <script>
         // Khởi tạo Lucide Icons
         lucide.createIcons();

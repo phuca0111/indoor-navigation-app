@@ -99,15 +99,27 @@ if (bInp) {
                 window.bgScale = 1.0;
                 window.bgRotation = 0;
                 window.bgOpacity = 0.5;
+                window.bgContrast = 1;
+                window.bgBrightness = 0;
                 
                 var bSli = document.getElementById('bgOpacitySlider');
                 if (bSli) bSli.value = 50;
                 var bVal = document.getElementById('bgOpacityVal');
                 if (bVal) bVal.textContent = '50%';
+                var cSli = document.getElementById('bgContrastSlider');
+                if (cSli) cSli.value = '1';
+                var brSli = document.getElementById('bgBrightnessSlider');
+                if (brSli) brSli.value = '0';
+                if (typeof setBgContrast === 'function') setBgContrast(1);
+                if (typeof setBgBrightness === 'function') setBgBrightness(0);
                 if (zoomLevelSpan) zoomLevelSpan.textContent = Math.round(zoom * 100) + '%';
 
                 draw();
-                detectRoomsFromImage(img);
+                if (typeof detectRoomsFromImageV2 === 'function') {
+                    detectRoomsFromImageV2(img);
+                } else if (typeof detectRoomsFromImage === 'function') {
+                    detectRoomsFromImage(img);
+                }
             };
             img.src = event.target.result;
         };

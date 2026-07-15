@@ -250,6 +250,36 @@ function updatePropertiesPanel() {
                 '<button class="btn btn-sm btn-outline" type="button" onclick="clearHatchFromSelectedRoom()">Xóa hatch phòng đang chọn</button>' +
                 '<p class="hint-text">Bật «Theo loại phòng» = pattern mặc định theo Loại (WC / thang / VP…).</p>' +
                 '</div>';
+        } else if (currentTool === 'calibrate') {
+            propertiesDiv.innerHTML =
+                '<div class="tool-guide">' +
+                '<p>📐 <b>Calibrate (CAL):</b></p>' +
+                '<p>Click <b>điểm 1</b> → <b>điểm 2</b> trên cạnh đã biết chiều dài thật.</p>' +
+                '<p>Nhập khoảng cách (m) → <b>Áp dụng tỷ lệ</b> → cập nhật <code>metersPerGrid</code>.</p>' +
+                '<p>Khác Dist (DI): Dist chỉ đo, Calibrate <b>đổi tỷ lệ map</b>.</p>' +
+                '<p><b>Esc</b> hủy phiên.</p>' +
+                '</div>' +
+                '<div class="prop-group">' +
+                '<div class="prop-group-title">Khoảng cách thật</div>' +
+                '<div class="prop-row"><label>Mét:</label>' +
+                '<input type="number" id="calibrateMetersInput" min="0.01" step="0.01" value="1" style="width:80px;">' +
+                '<span class="unit">m</span></div>' +
+                '<button class="btn btn-sm btn-primary" type="button" onclick="applyCalibrateFromPanel()">Áp dụng tỷ lệ</button>' +
+                '<p class="hint-text">Tỷ lệ hiện tại: <b>' +
+                (typeof metersPerGrid !== 'undefined' ? Number(metersPerGrid).toFixed(4) : '—') +
+                '</b> m/ô</p>' +
+                '</div>';
+        } else if (currentTool === 'bg-crop') {
+            propertiesDiv.innerHTML =
+                '<div class="tool-guide">' +
+                '<p>✂️ <b>Crop ảnh nền (CROP):</b></p>' +
+                '<p>Kéo khung trên vùng giữ lại → <b>Enter</b> hoặc nút Áp dụng.</p>' +
+                '<p>Sau crop: ảnh nền reset vị trí/xoay về gốc (scale=1).</p>' +
+                '<p><b>Esc</b> hủy khung.</p>' +
+                '</div>' +
+                '<div class="prop-group">' +
+                '<button class="btn btn-sm btn-primary" type="button" onclick="applyCropBackground()">Áp dụng crop</button>' +
+                '</div>';
         } else {
             var bgHtml = '';
             if (window.bgImage) {
@@ -291,7 +321,15 @@ function updatePropertiesPanel() {
                         <label>Độ mờ:</label>
                         <input type="range" min="0" max="1" step="0.1" value="${window.bgOpacity}" oninput="updateBgProp('bgOpacity', Number(this.value))">
                     </div>
-                    <p class="hint-text">💡 Bật "Kéo thả" để di chuyển ảnh trực tiếp trên vùng vẽ.</p>
+                    <div class="prop-row">
+                        <label>Deskew:</label>
+                        <button class="btn btn-sm btn-outline" type="button" onclick="autoDeskewBackground()">Tự thẳng góc</button>
+                    </div>
+                    <div class="prop-row">
+                        <label>Detect:</label>
+                        <button class="btn btn-sm btn-outline" type="button" onclick="runAutoDetectV2()">Detect v2</button>
+                    </div>
+                    <p class="hint-text">💡 Bật "Kéo thả" để di chuyển ảnh. Contrast/Brightness: panel trái Cấu hình.</p>
                 </div>`;
             }
             propertiesDiv.innerHTML = bgHtml + '<p class="hint-text">Chọn một đối tượng để xem thuộc tính hoặc chọn công cụ để bắt đầu vẽ</p>';

@@ -46,7 +46,11 @@
         dimaligned: 'dimaligned', dal: 'dimaligned', dimal: 'dimaligned',
         dimedit: 'dimedit', ded: 'dimedit', dimed: 'dimedit',
         area: 'area', aa: 'area',
-        hatch: 'hatch', h: 'hatch', bhatch: 'hatch'
+        hatch: 'hatch', h: 'hatch', bhatch: 'hatch',
+        // Phase 4 Image
+        calibrate: 'calibrate', cal: 'calibrate',
+        'bg-crop': 'bg-crop', crop: 'bg-crop', bgcrop: 'bg-crop',
+        'bg-adjust': 'bg-adjust', bg: 'bg-adjust'
     };
 
     function createToolCommandManager(options) {

@@ -5,9 +5,14 @@
   "description": "Indoor Navigation Web Map Editor — Phase 1 tests",
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:phase4": "vitest run tests/image-tools.test.js tests/phase4-scenarios.test.js tests/phase4-ui-smoke.test.js tests/tool-command-manager.test.js",
+    "test:phase4-ui": "vitest run tests/phase4-ui-smoke.test.js",
+    "test:phase5": "vitest run tests/phase5-publish.test.js tests/phase5-scenarios.test.js tests/phase5-ui-smoke.test.js tests/map-adapter.test.js tests/version-manager.test.js",
+    "test:phase5-ui": "vitest run tests/phase5-ui-smoke.test.js"
   },
   "devDependencies": {
+    "happy-dom": "^20.10.6",
     "vitest": "^3.2.4"
   }
 }

@@ -16,8 +16,12 @@
         return Math.round(n || 0);
     }
 
+    function isPlainItem(v) {
+        return v != null && typeof v === 'object';
+    }
+
     function mapRooms(rooms) {
-        return (rooms || []).filter(function (r) { return typeof r === 'object'; }).map(function (r) {
+        return (rooms || []).filter(isPlainItem).map(function (r) {
             return {
                 id: r.id,
                 name: r.name || 'Phòng mới',
@@ -36,13 +40,15 @@
                     : [],
                 cx: r.cx ? roundCoord(r.cx) : undefined,
                 cy: r.cy ? roundCoord(r.cy) : undefined,
-                radius: r.radius ? roundCoord(r.radius) : undefined
+                radius: r.radius ? roundCoord(r.radius) : undefined,
+                // Editor-only (Android bỏ qua) — Hatch Phase 3
+                hatch: r.hatch && typeof r.hatch === 'object' ? r.hatch : undefined
             };
         });
     }
 
     function mapDoors(doors) {
-        return (doors || []).filter(function (d) { return typeof d === 'object'; }).map(function (d) {
+        return (doors || []).filter(isPlainItem).map(function (d) {
             return {
                 id: d.id,
                 name: d.name || 'Cửa',
@@ -56,7 +62,7 @@
     }
 
     function mapPois(pois) {
-        return (pois || []).filter(function (p) { return typeof p === 'object'; }).map(function (p) {
+        return (pois || []).filter(isPlainItem).map(function (p) {
             return {
                 id: p.id,
                 name: p.name || 'P.O.I',
@@ -69,7 +75,7 @@
     }
 
     function mapNodes(pathNodes) {
-        return (pathNodes || []).filter(function (n) { return typeof n === 'object'; }).map(function (n) {
+        return (pathNodes || []).filter(isPlainItem).map(function (n) {
             return {
                 id: n.id,
                 x: roundCoord(n.x),
@@ -82,7 +88,7 @@
     }
 
     function mapEdges(pathEdges) {
-        return (pathEdges || []).filter(function (e) { return typeof e === 'object'; }).map(function (e) {
+        return (pathEdges || []).filter(isPlainItem).map(function (e) {
             return {
                 source: String(e.from),
                 target: String(e.to),
@@ -92,7 +98,7 @@
     }
 
     function mapWalls(walls) {
-        return (walls || []).filter(function (w) { return typeof w === 'object'; }).map(function (w) {
+        return (walls || []).filter(isPlainItem).map(function (w) {
             return {
                 id: w.id,
                 type: w.type || 'segment',
@@ -106,7 +112,7 @@
     }
 
     function mapQrAnchors(qrs) {
-        return (qrs || []).filter(function (q) { return typeof q === 'object'; }).map(function (q) {
+        return (qrs || []).filter(isPlainItem).map(function (q) {
             return {
                 qr_id: q.serial || String(q.id),
                 x: roundCoord(q.x),
@@ -175,6 +181,9 @@
         'rooms', 'doors', 'pois', 'nodes', 'edges', 'walls', 'qr_anchors'
     ];
 
+    /** Field chỉ editor — Android bỏ qua (round-trip Web) */
+    var EDITOR_ONLY_KEYS = ['blocks', 'blockInserts', 'lines', 'dimensions'];
+
     function assertPublishSchema(mapData) {
         var missing = PUBLISH_SCHEMA_KEYS.filter(function (k) { return !(k in mapData); });
         if (missing.length) {
@@ -183,10 +192,57 @@
         return true;
     }
 
+    /**
+     * Payload «thuần navigation» cho Android / kiểm thử A* —
+     * bỏ blocks, blockInserts, lines, dimensions; rooms không mang hatch.
+     */
+    function toNavigationPayload(mapData) {
+        if (!mapData || typeof mapData !== 'object') {
+            throw new Error('Map Adapter: mapData invalid');
+        }
+        assertPublishSchema(mapData);
+        var rooms = (mapData.rooms || []).map(function (r) {
+            var copy = Object.assign({}, r);
+            delete copy.hatch;
+            return copy;
+        });
+        var out = {
+            scale_ratio: mapData.scale_ratio,
+            map_bearing_offset: mapData.map_bearing_offset,
+            background_image: mapData.background_image || '',
+            rooms: rooms,
+            doors: mapData.doors || [],
+            pois: mapData.pois || [],
+            nodes: mapData.nodes || [],
+            edges: mapData.edges || [],
+            walls: mapData.walls || [],
+            qr_anchors: mapData.qr_anchors || []
+        };
+        assertPublishSchema(out);
+        EDITOR_ONLY_KEYS.forEach(function (k) {
+            if (k in out) delete out[k];
+        });
+        return out;
+    }
+
+    /** Kiểm editor-only còn trên payload đầy đủ (round-trip Web). */
+    function extractEditorExtras(mapData) {
+        mapData = mapData || {};
+        return {
+            blocks: Array.isArray(mapData.blocks) ? mapData.blocks : [],
+            blockInserts: Array.isArray(mapData.blockInserts) ? mapData.blockInserts : [],
+            lines: Array.isArray(mapData.lines) ? mapData.lines : [],
+            dimensions: Array.isArray(mapData.dimensions) ? mapData.dimensions : []
+        };
+    }
+
     return {
         buildPublishPayload: buildPublishPayload,
         buildPublishPayloadFromDocument: buildPublishPayloadFromDocument,
         assertPublishSchema: assertPublishSchema,
-        PUBLISH_SCHEMA_KEYS: PUBLISH_SCHEMA_KEYS
+        toNavigationPayload: toNavigationPayload,
+        extractEditorExtras: extractEditorExtras,
+        PUBLISH_SCHEMA_KEYS: PUBLISH_SCHEMA_KEYS,
+        EDITOR_ONLY_KEYS: EDITOR_ONLY_KEYS
     };
 });

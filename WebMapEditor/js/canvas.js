@@ -204,6 +204,14 @@ function draw() {
         if (currentTool === 'dimaligned' && typeof drawDimalignedPreview === 'function') {
             drawDimalignedPreview();
         }
+        if ((currentTool === 'calibrate' || (typeof isCalibrating === 'function' && isCalibrating()))
+            && typeof drawCalibratePreview === 'function') {
+            drawCalibratePreview();
+        }
+        if ((currentTool === 'bg-crop' || (typeof isCroppingBg === 'function' && isCroppingBg()))
+            && typeof drawCropPreview === 'function') {
+            drawCropPreview();
+        }
     } catch (errPrev) {
         console.error('Lỗi preview trong draw():', errPrev);
     }

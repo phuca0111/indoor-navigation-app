@@ -101,6 +101,8 @@ function getMapSnapshot() {
         bgScale: window.bgScale || 1.0,
         bgRotation: window.bgRotation || 0,
         bgOpacity: window.bgOpacity || 0.5,
+        bgContrast: window.bgContrast != null ? window.bgContrast : 1,
+        bgBrightness: window.bgBrightness != null ? window.bgBrightness : 0,
         bgImageBase64: window.bgImageBase64 || ''
     };
 }
@@ -169,6 +171,8 @@ function applyMapSnapshot(data) {
     window.bgScale = data.bgScale || 1.0;
     window.bgRotation = data.bgRotation || 0;
     window.bgOpacity = data.bgOpacity || 0.5;
+    window.bgContrast = data.bgContrast != null ? data.bgContrast : 1;
+    window.bgBrightness = data.bgBrightness != null ? data.bgBrightness : 0;
     window.bgImageBase64 = data.bgImageBase64 || '';
     
     if (window.bgImageBase64) {
@@ -320,6 +324,8 @@ function exportJSON() {
         bgScale: window.bgScale,
         bgRotation: window.bgRotation,
         bgOpacity: window.bgOpacity,
+        bgContrast: window.bgContrast != null ? window.bgContrast : 1,
+        bgBrightness: window.bgBrightness != null ? window.bgBrightness : 0,
         bgImageBase64: window.bgImageBase64
     };
 
@@ -404,6 +410,8 @@ function importJSON(file) {
             window.bgScale = data.bgScale || 1.0;
             window.bgRotation = data.bgRotation || 0;
             window.bgOpacity = data.bgOpacity || 0.5;
+            window.bgContrast = data.bgContrast != null ? data.bgContrast : 1;
+            window.bgBrightness = data.bgBrightness != null ? data.bgBrightness : 0;
             window.bgImageBase64 = data.bgImageBase64 || '';
             
             if (window.bgImageBase64) {

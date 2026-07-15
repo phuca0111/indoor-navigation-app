@@ -42,19 +42,40 @@
             root.EditorCore.assertPublishSchema(mapData);
         }
 
+        var navigationPayload = null;
+        if (root.EditorCore && typeof root.EditorCore.toNavigationPayload === 'function') {
+            try {
+                navigationPayload = root.EditorCore.toNavigationPayload(mapData);
+            } catch (eNav) {
+                if (typeof console !== 'undefined' && console.warn) {
+                    console.warn('[ExportPipeline] toNavigationPayload:', eNav.message);
+                }
+            }
+        }
+
         if (options.skipValidation) {
-            return { ok: true, mapData: mapData, validation: { ok: true, errors: [], warnings: [] } };
+            return {
+                ok: true,
+                mapData: mapData,
+                navigationPayload: navigationPayload,
+                validation: { ok: true, errors: [], warnings: [] }
+            };
         }
 
         if (!root.EditorCore || typeof root.EditorCore.validateMapData !== 'function') {
-            return { ok: true, mapData: mapData, validation: { ok: true, errors: [], warnings: [] } };
+            return {
+                ok: true,
+                mapData: mapData,
+                navigationPayload: navigationPayload,
+                validation: { ok: true, errors: [], warnings: [] }
+            };
         }
 
         var validation = root.EditorCore.validateMapData(mapData);
         if (!validation.ok) {
-            return { ok: false, mapData: mapData, validation: validation };
+            return { ok: false, mapData: mapData, navigationPayload: navigationPayload, validation: validation };
         }
-        return { ok: true, mapData: mapData, validation: validation };
+        return { ok: true, mapData: mapData, navigationPayload: navigationPayload, validation: validation };
     }
 
     root.EditorCore = root.EditorCore || {};

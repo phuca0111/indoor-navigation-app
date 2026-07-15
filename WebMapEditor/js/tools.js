@@ -12,7 +12,8 @@ var toolNames = {
     'pedit': 'Sửa đỉnh', 'array': 'Hàng loạt', 'matchprop': 'Matchprop',
     'block': 'Block', 'insert': 'Insert',
     'dimlinear': 'Dimlinear', 'dimaligned': 'Dimaligned', 'dimedit': 'DIMEdit',
-    'area': 'Area', 'hatch': 'Hatch'
+    'area': 'Area', 'hatch': 'Hatch',
+    'calibrate': 'Calibrate', 'bg-crop': 'Crop nền', 'bg-adjust': 'Chỉnh nền'
 };
 
 function isModifyTool(tool) {
@@ -63,6 +64,18 @@ function cancelActiveCommand() {
         lastAreaMeasure = null;
         areaPoints = [];
         areaPreview = null;
+        if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+        draw();
+        return;
+    }
+    if (typeof clearCalibrateSession === 'function' && (currentTool === 'calibrate' || typeof isCalibrating === 'function' && isCalibrating())) {
+        clearCalibrateSession();
+        if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+        draw();
+        return;
+    }
+    if (typeof clearCropSession === 'function' && (currentTool === 'bg-crop' || typeof isCroppingBg === 'function' && isCroppingBg())) {
+        clearCropSession();
         if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
         draw();
         return;
@@ -228,6 +241,14 @@ function selectTool(tool) {
         areaPreview = null;
     }
 
+    // Rời Calibrate / Crop
+    if (currentTool === 'calibrate' && tool !== 'calibrate' && typeof clearCalibrateSession === 'function') {
+        clearCalibrateSession();
+    }
+    if (currentTool === 'bg-crop' && tool !== 'bg-crop' && typeof clearCropSession === 'function') {
+        clearCropSession();
+    }
+
     currentTool = tool;
 
     if (typeof clearSnapHint === 'function') {
@@ -381,6 +402,10 @@ document.addEventListener('keydown', function (e) {
             if (currentTool === 'area' && typeof finishAreaFromPoints === 'function') {
                 e.preventDefault();
                 finishAreaFromPoints();
+            }
+            if (currentTool === 'bg-crop' && typeof applyCropBackground === 'function') {
+                e.preventDefault();
+                applyCropBackground();
             }
             break;
         case 'escape':

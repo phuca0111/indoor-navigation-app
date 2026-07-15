@@ -352,6 +352,20 @@ function handleLeftMouseDown(e) {
         handleHatchPointerDown(snappedX, snappedY, world.x, world.y);
     }
 
+    // --- TOOL: CALIBRATE (CAL) ---
+    else if (currentTool === 'calibrate') {
+        if (typeof handleCalibratePointerDown === 'function') {
+            handleCalibratePointerDown(snappedX, snappedY);
+        }
+    }
+
+    // --- TOOL: CROP NỀN ---
+    else if (currentTool === 'bg-crop') {
+        if (typeof handleCropPointerDown === 'function') {
+            handleCropPointerDown(snappedX, snappedY);
+        }
+    }
+
     // --- TOOL: CHỈNH ẢNH NỀN ---
     else if (currentTool === 'bg-adjust') {
         window.isDraggingBg = true;
@@ -821,6 +835,22 @@ function handleMouseMove(e, world) {
         return;
     }
 
+    // Preview Calibrate
+    if (currentTool === 'calibrate' && typeof handleCalibratePointerMove === 'function'
+        && typeof isCalibrating === 'function' && isCalibrating()) {
+        handleCalibratePointerMove(snappedX, snappedY);
+        draw();
+        return;
+    }
+
+    // Preview Crop
+    if (currentTool === 'bg-crop' && typeof handleCropPointerMove === 'function'
+        && typeof isCropDragging === 'function' && isCropDragging()) {
+        handleCropPointerMove(snappedX, snappedY);
+        draw();
+        return;
+    }
+
     // Preview Dimlinear / Dimaligned
     if (currentTool === 'dimlinear' && typeof updateDimlinearPreview === 'function') {
         updateDimlinearPreview(snappedX, snappedY);
@@ -927,7 +957,8 @@ function handleMouseMove(e, world) {
 
     // Repaint OSNAP marker khi rê chuột (tool vẽ + Chọn)
     var snapRepaintTools = ['select', 'wall', 'line', 'room', 'circle', 'door', 'poi', 'path', 'ruler', 'area', 'polygon', 'dimlinear', 'dimaligned', 'dimedit',
-        'move', 'copy', 'rotate', 'scale', 'mirror', 'trim', 'extend', 'pedit', 'mline', 'array', 'matchprop'];
+        'move', 'copy', 'rotate', 'scale', 'mirror', 'trim', 'extend', 'pedit', 'mline', 'array', 'matchprop',
+        'calibrate', 'bg-crop', 'bg-adjust'];
     if (snapRepaintTools.indexOf(currentTool) >= 0) {
         if (currentTool === 'polygon' && isDrawingPolygon && typeof updatePropertiesPanel === 'function') {
             updatePropertiesPanel();
@@ -951,6 +982,23 @@ function handleLeftMouseUp(e) {
         EditorCore.ModifySession.onPointerUp();
         if (typeof updateModifyHint === 'function') updateModifyHint();
         draw();
+    }
+
+    if (currentTool === 'bg-crop' && typeof handleCropPointerUp === 'function'
+        && typeof isCropDragging === 'function' && isCropDragging()) {
+        var wx = (window.lastMouseWorld && window.lastMouseWorld.x != null) ? window.lastMouseWorld.x : null;
+        var wy = (window.lastMouseWorld && window.lastMouseWorld.y != null) ? window.lastMouseWorld.y : null;
+        if (wx == null || wy == null) {
+            var worldUp = screenToWorld(
+                e.offsetX != null ? e.offsetX : 0,
+                e.offsetY != null ? e.offsetY : 0
+            );
+            wx = worldUp.x;
+            wy = worldUp.y;
+        }
+        var snapOptsUp = typeof getSnapOpts === 'function' ? getSnapOpts(e) : undefined;
+        var snappedUp = snapWorldPoint(wx, wy, snapOptsUp);
+        handleCropPointerUp(snappedUp.x, snappedUp.y);
     }
 
     // Kết thúc vẽ rect
