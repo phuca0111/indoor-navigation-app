@@ -7,15 +7,17 @@
 const Floor      = require('../models/Floor');
 const Building   = require('../models/Building');
 const Organization = require('../models/Organization');
-const MapVersion = require('../models/MapVersion');
-const QrCode     = require('../models/QrCode');
 const ActivityLog = require('../models/ActivityLog');
-const { buildMapSnapshot } = require('../utils/mapSnapshot');
-const { applyRetentionForFloor } = require('../utils/mapVersionRetention');
 const { assertBuildingWritable, isBuildingQuotaLocked } = require('../utils/overQuotaLock');
 const { assertFloorInRange } = require('../services/floorLifecycle');
 const { assertOrgCanPublish } = require('../services/publishPermit');
 const { assertCanPublish } = require('../services/floorEditLock');
+const {
+    validateMapData,
+    resolvePublishMapData,
+    applyPublish,
+    syncQrCodes
+} = require('../services/publishService');
 
 function logActivity(data) {
     return ActivityLog.create(data).catch(() => {});
@@ -40,35 +42,8 @@ async function assertPublicBuildingAccess(buildingId, res) {
     return true;
 }
 
-// Sync qr_anchors từ floor document sang collection QrCode riêng (fire-and-forget)
-async function syncQrCodes(floorDoc) {
-    const anchors = floorDoc.map_data?.qr_anchors || [];
-    for (const anchor of anchors) {
-        // Web Editor hiện lưu mã ngắn ở qr_id (VD: QR-001).
-        // Bảng qrcodes cần qr_code đúng chuỗi in trong QR để Android scan tra được.
-        const qrId = anchor.qr_id || anchor.serial || anchor.qr_code;
-        if (!qrId) continue;
-
-        const x = Math.round(anchor.x || 0);
-        const y = Math.round(anchor.y || 0);
-        const qrCode = anchor.qr_code || `MAP_NAV|${floorDoc.building_id}|${floorDoc.floor_number}|${x}|${y}|${qrId}`;
-
-        await QrCode.updateOne(
-            { qr_code: qrCode },
-            {
-                $set: {
-                    building_id:  floorDoc.building_id,
-                    floor_number: floorDoc.floor_number,
-                    x:            x,
-                    y:            y,
-                    node_id:      anchor.node_id || '',
-                    label:        anchor.label || anchor.room_name || ''
-                }
-            },
-            { upsert: true }
-        );
-    }
-}
+// Sync qr_anchors — re-export từ publishService (giữ tương thích import nội bộ)
+// (logic chính nằm trong services/publishService.js)
 
 function resolveEditSessionId(req) {
     const header = req.headers['x-edit-session'];
@@ -277,128 +252,44 @@ const saveMap = async (req, res) => {
             });
         }
 
-        // Phase 8.2 — map_data từ body hoặc từ draft
-        let map_data = req.body?.map_data;
-        if (req.body?.use_draft === true) {
-            const existingForDraft = await Floor.findOne({
-                building_id: buildingId,
-                floor_number: floorNum
-            }).select('draft_map_data');
-            if (!existingForDraft?.draft_map_data) {
-                return res.status(400).json({
-                    message: 'Không có bản nháp để xuất bản.',
-                    code: 'DRAFT_EMPTY'
-                });
-            }
-            map_data = existingForDraft.draft_map_data;
+        // Phase 8.2 — map_data từ body hoặc từ draft (+ Draft collection 2a)
+        const resolved = await resolvePublishMapData(buildingId, floorNum, req.body || {});
+        if (!resolved.ok) {
+            return res.status(400).json({
+                message: resolved.message,
+                code: resolved.code
+            });
         }
+        const map_data = resolved.map_data;
 
-        if (map_data === undefined || map_data === null) {
-            return res.status(400).json({ message: 'Thiếu map_data (hoặc use_draft=true).' });
+        const validation = validateMapData(map_data);
+        if (!validation.ok) {
+            return res.status(400).json({
+                message: 'Validate map thất bại.',
+                code: 'VALIDATE_FAILED',
+                errors: validation.errors
+            });
         }
-
-        // Tìm xem bản đồ tầng này đã tồn tại chưa
-        let existingMap = await Floor.findOne({
-            building_id: buildingId,
-            floor_number: floorNum
-        });
 
         const userId = req.user ? req.user.userId : null;
+        const result = await applyPublish({
+            buildingId,
+            floorNum,
+            map_data,
+            userId,
+            ip: req.ip || ''
+        });
 
-        if (existingMap) {
-            existingMap.map_data         = map_data;
-            existingMap.version          = (existingMap.version || 0) + 1;
-            existingMap.published_at     = new Date();
-            existingMap.last_modified_by = userId;
-            // leave draft (không xóa draft_map_data)
-            await existingMap.save();
+        const status = result.created ? 201 : 200;
+        const message = result.created
+            ? 'Tạo bản đồ Tầng ' + floor + ' thành công!'
+            : 'Cập nhật bản đồ Tầng ' + floor + ' thành công! (Version ' + result.version + ')';
 
-            await Building.findByIdAndUpdate(buildingId, { status: 'PUBLISHED' });
-
-            // Lưu snapshot version (không lưu ảnh nền để tiết kiệm dung lượng)
-            await MapVersion.create({
-                building_id:    buildingId,
-                floor_number:   floorNum,
-                version:        existingMap.version,
-                rooms_count:    map_data.rooms?.length  || 0,
-                nodes_count:    map_data.nodes?.length  || 0,
-                edges_count:    map_data.edges?.length  || 0,
-                graph_snapshot: { nodes: map_data.nodes, edges: map_data.edges },
-                map_snapshot:   buildMapSnapshot(map_data),
-                published_by:   userId,
-                published_at:   new Date()
-            });
-
-            await applyRetentionForFloor(buildingId, floorNum, {
-                userId,
-                ip: req.ip || ''
-            });
-
-            // Sync QR codes sang collection riêng
-            syncQrCodes(existingMap).catch(() => {});
-
-            logActivity({
-                user_id:     userId,
-                action:      'PUBLISH_MAP',
-                target_type: 'floor',
-                target_id:   String(existingMap._id),
-                target:      `Building ${buildingId} - Tầng ${floor}`,
-                details:     `Phiên bản ${existingMap.version}`,
-                ip_address:  req.ip || ''
-            });
-
-            res.status(200).json({
-                message: 'Cập nhật bản đồ Tầng ' + floor + ' thành công! (Version ' + existingMap.version + ')',
-                map: existingMap
-            });
-        } else {
-            const newMap = await Floor.create({
-                building_id:      buildingId,
-                floor_number:     floorNum,
-                floor_name:       'Tầng ' + floorNum,
-                version:          1,
-                map_data:         map_data,
-                published_at:     new Date(),
-                last_modified_by: userId
-            });
-
-            await Building.findByIdAndUpdate(buildingId, { status: 'PUBLISHED' });
-
-            await MapVersion.create({
-                building_id:    buildingId,
-                floor_number:   floorNum,
-                version:        1,
-                rooms_count:    map_data.rooms?.length  || 0,
-                nodes_count:    map_data.nodes?.length  || 0,
-                edges_count:    map_data.edges?.length  || 0,
-                graph_snapshot: { nodes: map_data.nodes, edges: map_data.edges },
-                map_snapshot:   buildMapSnapshot(map_data),
-                published_by:   userId,
-                published_at:   new Date()
-            });
-
-            await applyRetentionForFloor(buildingId, floorNum, {
-                userId,
-                ip: req.ip || ''
-            });
-
-            syncQrCodes(newMap).catch(() => {});
-
-            logActivity({
-                user_id:     userId,
-                action:      'PUBLISH_MAP',
-                target_type: 'floor',
-                target_id:   String(newMap._id),
-                target:      `Building ${buildingId} - Tầng ${floor}`,
-                details:     'Phiên bản 1 (tạo mới)',
-                ip_address:  req.ip || ''
-            });
-
-            res.status(201).json({
-                message: 'Tạo bản đồ Tầng ' + floor + ' thành công!',
-                map: newMap
-            });
-        }
+        res.status(status).json({
+            message,
+            map: result.floor,
+            version: result.version
+        });
     } catch (error) {
         res.status(500).json({ message: 'Lỗi lưu bản đồ: ' + error.message });
     }
