@@ -99,11 +99,13 @@ const analyticsRoutes = require('./routes/analyticsRoutes');
 const financeRoutes = require('./routes/financeRoutes');
 const draftRoutes = require('./routes/draftRoutes');
 const floorLockRoutes = require('./routes/floorLockRoutes');
+const publishRoutes = require('./routes/publishRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/buildings', buildingRoutes);
 app.use('/api/v1', draftRoutes);
 app.use('/api/v1', floorLockRoutes);
+app.use('/api/v1', publishRoutes);
 app.use('/api/maps', mapRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/qr', qrRoutes);
