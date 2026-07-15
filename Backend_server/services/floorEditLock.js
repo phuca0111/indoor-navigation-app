@@ -1,5 +1,13 @@
-// Phase 8 — Floor edit lock (advisory soft lock, TTL Mongo)
+// ============================================
+// FILE: floorEditLock.js
+// Phase 8 + Phase 2b — Floor edit lock
+// Backend: redis (REDIS_URL) | memory (Jest/dev) | mongo (fallback legacy)
+// ============================================
+
 const FloorEditLock = require('../models/FloorEditLock');
+const memoryStore = require('./floorLockMemoryStore');
+const redisStore = require('./floorLockRedisStore');
+const { getRedisUrl } = require('../utils/redisClient');
 
 function getTtlSec() {
   const n = Number(process.env.FLOOR_EDIT_LOCK_TTL_SEC);
@@ -8,6 +16,25 @@ function getTtlSec() {
 
 function ttlMs() {
   return getTtlSec() * 1000;
+}
+
+function resolveBackendName() {
+  const forced = (process.env.FLOOR_LOCK_BACKEND || '').trim().toLowerCase();
+  if (forced === 'redis' || forced === 'memory' || forced === 'mongo') return forced;
+  if (getRedisUrl()) return 'redis';
+  if (process.env.JEST_WORKER_ID || process.env.NODE_ENV === 'test') return 'memory';
+  return 'mongo';
+}
+
+function getKvStore() {
+  const name = resolveBackendName();
+  if (name === 'redis') return redisStore;
+  if (name === 'memory') return memoryStore;
+  return null; // mongo path
+}
+
+function getBackendName() {
+  return resolveBackendName();
 }
 
 function isExpired(lock) {
@@ -26,19 +53,107 @@ function holderPayload(lock) {
 }
 
 function deny(code, message, lock) {
-  const err = {
+  return {
     ok: false,
     code,
     message,
     holder: holderPayload(lock)
   };
-  return err;
 }
 
-/**
- * @param {{ buildingId, floor, userId, email, sessionId, force?, callerRole? }} opts
- */
-async function acquire(opts) {
+function sameOwner(lock, userId, sessionId) {
+  return (
+    String(lock.user_id) === String(userId) &&
+    String(lock.session_id) === String(sessionId)
+  );
+}
+
+// ---------- KV (redis / memory) ----------
+
+async function acquireKv(store, opts) {
+  const {
+    buildingId,
+    floor,
+    userId,
+    email = '',
+    sessionId,
+    force = false,
+    callerRole = null
+  } = opts;
+
+  const floorNum = Number(floor);
+  const ttl = getTtlSec();
+  const canForce = force && ['SUPER_ADMIN', 'ORG_ADMIN'].includes(callerRole);
+  const payload = { user_id: userId, user_email: email, session_id: sessionId };
+
+  let lock = await store.kvGet(buildingId, floorNum);
+
+  if (lock) {
+    if (sameOwner(lock, userId, sessionId)) {
+      await store.kvExpire(buildingId, floorNum, ttl);
+      lock = await store.kvGet(buildingId, floorNum);
+      return { ok: true, lock, renewed: true };
+    }
+
+    if (String(lock.user_id) === String(userId) && String(lock.session_id) !== String(sessionId)) {
+      if (!canForce && !force) {
+        return deny('LOCK_OTHER_SESSION', 'Bạn đang giữ lock tầng này ở phiên khác.', lock);
+      }
+    } else if (String(lock.user_id) !== String(userId)) {
+      if (!canForce) {
+        return deny('LOCK_HELD', 'Tầng đang được người khác chỉnh sửa.', lock);
+      }
+    }
+
+    lock = await store.kvSet(buildingId, floorNum, payload, ttl);
+    return { ok: true, lock, forced: true };
+  }
+
+  lock = await store.kvSetNx(buildingId, floorNum, payload, ttl);
+  if (!lock) {
+    // race: ai đó vừa set
+    lock = await store.kvGet(buildingId, floorNum);
+    return deny('LOCK_HELD', 'Tầng đang được người khác chỉnh sửa.', lock);
+  }
+  return { ok: true, lock, created: true };
+}
+
+async function heartbeatKv(store, { buildingId, floor, userId, sessionId }) {
+  const floorNum = Number(floor);
+  const lock = await store.kvGet(buildingId, floorNum);
+  if (!lock) return deny('LOCK_NOT_HELD', 'Không có lock hợp lệ để heartbeat.');
+  if (!sameOwner(lock, userId, sessionId)) {
+    return deny('LOCK_NOT_OWNER', 'Bạn không sở hữu lock tầng này.', lock);
+  }
+  await store.kvExpire(buildingId, floorNum, getTtlSec());
+  const renewed = await store.kvGet(buildingId, floorNum);
+  return { ok: true, lock: renewed };
+}
+
+async function releaseKv(store, { buildingId, floor, userId, sessionId, force = false, callerRole = null }) {
+  const floorNum = Number(floor);
+  const lock = await store.kvGet(buildingId, floorNum);
+  if (!lock) return { ok: true, released: false };
+
+  const isOwner = sameOwner(lock, userId, sessionId);
+  const canForce = force && ['SUPER_ADMIN', 'ORG_ADMIN'].includes(callerRole);
+  if (!isOwner && !canForce) {
+    return deny('LOCK_NOT_OWNER', 'Bạn không sở hữu lock tầng này.', lock);
+  }
+
+  await store.kvDel(buildingId, floorNum);
+  return { ok: true, released: true };
+}
+
+async function getStatusKv(store, buildingId, floor) {
+  const lock = await store.kvGet(buildingId, Number(floor));
+  if (!lock) return { held: false, lock: null };
+  return { held: true, lock, holder: holderPayload(lock) };
+}
+
+// ---------- Mongo (legacy Phase 8) ----------
+
+async function acquireMongo(opts) {
   const {
     buildingId,
     floor,
@@ -54,7 +169,6 @@ async function acquire(opts) {
   }
 
   const floorNum = Number(floor);
-  const now = new Date();
   const expiresAt = new Date(Date.now() + ttlMs());
   const canForce = force && ['SUPER_ADMIN', 'ORG_ADMIN'].includes(callerRole);
 
@@ -80,7 +194,6 @@ async function acquire(opts) {
       if (!canForce && !force) {
         return deny('LOCK_OTHER_SESSION', 'Bạn đang giữ lock tầng này ở phiên khác.', lock);
       }
-      // force: cướp quyền cùng user (hoặc admin)
     } else if (String(lock.user_id) !== String(userId)) {
       if (!canForce) {
         return deny('LOCK_HELD', 'Tầng đang được người khác chỉnh sửa.', lock);
@@ -115,7 +228,7 @@ async function acquire(opts) {
   return { ok: true, lock, created: true };
 }
 
-async function heartbeat({ buildingId, floor, userId, sessionId }) {
+async function heartbeatMongo({ buildingId, floor, userId, sessionId }) {
   const floorNum = Number(floor);
   const lock = await FloorEditLock.findOne({
     building_id: buildingId,
@@ -136,7 +249,7 @@ async function heartbeat({ buildingId, floor, userId, sessionId }) {
   return { ok: true, lock };
 }
 
-async function release({ buildingId, floor, userId, sessionId, force = false, callerRole = null }) {
+async function releaseMongo({ buildingId, floor, userId, sessionId, force = false, callerRole = null }) {
   const floorNum = Number(floor);
   const lock = await FloorEditLock.findOne({
     building_id: buildingId,
@@ -161,7 +274,7 @@ async function release({ buildingId, floor, userId, sessionId, force = false, ca
   return { ok: true, released: true };
 }
 
-async function getStatus(buildingId, floor) {
+async function getStatusMongo(buildingId, floor) {
   const floorNum = Number(floor);
   const lock = await FloorEditLock.findOne({
     building_id: buildingId,
@@ -176,10 +289,77 @@ async function getStatus(buildingId, floor) {
   return { held: true, lock, holder: holderPayload(lock) };
 }
 
+// ---------- Public API ----------
+
 /**
- * Soft lock: chỉ chặn publish khi người khác (khác user hoặc khác session) đang giữ.
- * Không có lock → cho phép publish.
+ * @param {{ buildingId, floor, userId, email, sessionId, force?, callerRole? }} opts
  */
+async function acquire(opts) {
+  const {
+    buildingId,
+    floor,
+    userId,
+    sessionId
+  } = opts || {};
+
+  if (!buildingId || floor === undefined || floor === null || !userId || !sessionId) {
+    return deny('LOCK_BAD_REQUEST', 'Thiếu buildingId, floor, userId hoặc session_id.');
+  }
+
+  const store = getKvStore();
+  if (store) {
+    try {
+      return await acquireKv(store, opts);
+    } catch (e) {
+      if (store.name === 'redis') {
+        console.warn('[floorEditLock] redis fail → memory:', e.message);
+        return acquireKv(memoryStore, opts);
+      }
+      throw e;
+    }
+  }
+  return acquireMongo(opts);
+}
+
+async function heartbeat(opts) {
+  const store = getKvStore();
+  if (store) {
+    try {
+      return await heartbeatKv(store, opts);
+    } catch (e) {
+      if (store.name === 'redis') return heartbeatKv(memoryStore, opts);
+      throw e;
+    }
+  }
+  return heartbeatMongo(opts);
+}
+
+async function release(opts) {
+  const store = getKvStore();
+  if (store) {
+    try {
+      return await releaseKv(store, opts);
+    } catch (e) {
+      if (store.name === 'redis') return releaseKv(memoryStore, opts);
+      throw e;
+    }
+  }
+  return releaseMongo(opts);
+}
+
+async function getStatus(buildingId, floor) {
+  const store = getKvStore();
+  if (store) {
+    try {
+      return await getStatusKv(store, buildingId, floor);
+    } catch (e) {
+      if (store.name === 'redis') return getStatusKv(memoryStore, buildingId, floor);
+      throw e;
+    }
+  }
+  return getStatusMongo(buildingId, floor);
+}
+
 async function assertCanPublish(buildingId, floor, userId, sessionId) {
   const status = await getStatus(buildingId, floor);
   if (!status.held) {
@@ -201,6 +381,15 @@ async function assertCanPublish(buildingId, floor, userId, sessionId) {
   return deny('LOCK_HELD', 'Tầng đang được người khác chỉnh sửa — không thể xuất bản.', lock);
 }
 
+/** Dọn lock theo building (test) */
+async function clearLocksForBuilding(buildingId) {
+  const store = getKvStore();
+  if (store?.kvClearBuilding) {
+    await store.kvClearBuilding(buildingId);
+  }
+  await FloorEditLock.deleteMany({ building_id: buildingId });
+}
+
 module.exports = {
   getTtlSec,
   acquire,
@@ -209,5 +398,7 @@ module.exports = {
   getStatus,
   assertCanPublish,
   isExpired,
-  holderPayload
+  holderPayload,
+  getBackendName,
+  clearLocksForBuilding
 };

@@ -6,7 +6,8 @@ const {
   heartbeat,
   release,
   getStatus,
-  getTtlSec
+  getTtlSec,
+  getBackendName
 } = require('../services/floorEditLock');
 
 function parseFloor(params) {
@@ -61,6 +62,7 @@ async function acquireLock(req, res) {
     res.status(200).json({
       message: result.renewed ? 'Gia hạn lock thành công.' : 'Giữ lock tầng thành công.',
       ttl_sec: getTtlSec(),
+      backend: getBackendName(),
       lock: {
         building_id: result.lock.building_id,
         floor_number: result.lock.floor_number,
@@ -157,6 +159,7 @@ async function getLockStatus(req, res) {
     res.status(200).json({
       held: status.held,
       ttl_sec: getTtlSec(),
+      backend: getBackendName(),
       holder: status.holder || null,
       lock: status.held
         ? {
