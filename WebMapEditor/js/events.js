@@ -7,6 +7,12 @@ function editorLocked() {
     return (typeof isEditorLocked === 'function') && isEditorLocked();
 }
 
+function isWriteBlocked() {
+    if (editorLocked()) return true;
+    if (window.editorFloorLockReadOnly) return true;
+    return false;
+}
+
 canvas.addEventListener('wheel', function (e) {
     if (editorLocked()) {
         e.preventDefault();
@@ -39,6 +45,10 @@ canvas.addEventListener('mousedown', function (e) {
         panStartX = e.clientX - panX;
         panStartY = e.clientY - panY;
         wrapper.style.cursor = 'grabbing';
+        return;
+    }
+    if (isWriteBlocked() && e.button === 0) {
+        e.preventDefault();
         return;
     }
     if (e.button === 0) handleLeftMouseDown(e);
