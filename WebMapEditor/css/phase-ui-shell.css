@@ -292,6 +292,117 @@ body.phase-ui .editor-status-publish-failed {
     border: 1px solid #ff8182;
 }
 
+/* --- WE5 Validation panel --- */
+body.phase-ui .validation-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    margin-left: 4px;
+    padding: 0 4px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    background: #d0d7de;
+    color: #24292f;
+}
+
+body.phase-ui .validation-badge--error {
+    background: #cf222e;
+    color: #fff;
+}
+
+body.phase-ui .validation-badge--warn {
+    background: #bf8700;
+    color: #fff;
+}
+
+body.phase-ui .validation-badge--ok {
+    background: #1a7f37;
+    color: #fff;
+}
+
+body.phase-ui .validation-panel .validation-summary {
+    margin: 8px 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    background: #f6f8fa;
+    border: 1px solid var(--border);
+}
+
+body.phase-ui .validation-summary--error {
+    background: #ffebe9;
+    border-color: #ff8182;
+    color: #82071e;
+}
+
+body.phase-ui .validation-summary--warn {
+    background: #fff8c5;
+    border-color: #d4a72c;
+    color: #7d4e00;
+}
+
+body.phase-ui .validation-summary--ok {
+    background: #dafbe1;
+    border-color: #4ac26b;
+    color: #116329;
+}
+
+body.phase-ui .validation-actions {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+body.phase-ui .validation-heading {
+    margin: 12px 0 6px;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+}
+
+body.phase-ui .validation-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+body.phase-ui .validation-item {
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    font-size: 0.78rem;
+    line-height: 1.35;
+    background: #fff;
+}
+
+body.phase-ui .validation-item--error {
+    border-color: #ff8182;
+    background: #fff8f8;
+}
+
+body.phase-ui .validation-item--warning {
+    border-color: #d4a72c;
+    background: #fffdf5;
+}
+
+body.phase-ui .validation-code {
+    display: inline-block;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.68rem;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: #eaeef2;
+    color: #57606a;
+    margin-right: 4px;
+}
+
 body.phase-ui .editor-publish-hint {
     display: none;
 }

@@ -246,9 +246,17 @@
     function wireProjectBarActions() {
         var draftBtn = qs('#btnProjectDraft');
         var pubBtn = qs('#btnProjectPublish');
+        var validateBtn = qs('#btnProjectValidate');
         if (draftBtn) {
             draftBtn.addEventListener('click', function () {
                 if (typeof saveDraftToServer === 'function') saveDraftToServer();
+            });
+        }
+        if (validateBtn) {
+            validateBtn.addEventListener('click', function () {
+                if (window.ValidationUI && typeof ValidationUI.runFull === 'function') {
+                    ValidationUI.runFull();
+                }
             });
         }
         if (pubBtn) {

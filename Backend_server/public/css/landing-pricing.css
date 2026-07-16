@@ -1,4 +1,4 @@
-/* WL0 — pricing page */
+/* WL2 — pricing from Billing catalog */
 .pricing-section { padding: 60px 0 40px; }
 .pricing-grid {
     display: grid;
@@ -12,13 +12,45 @@
     border: 1px solid rgba(0, 0, 0, 0.06);
     padding: 22px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+    display: flex;
+    flex-direction: column;
+}
+.plan-card.plan-featured {
+    border-color: #0077ff;
+    box-shadow: 0 12px 28px rgba(0, 119, 255, 0.12);
 }
 .plan-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
-.plan-price { font-size: 34px; font-weight: 800; color: #0a192f; margin: 10px 0; }
-.plan-desc { color: #6b7280; min-height: 42px; }
-.plan-features { margin-top: 14px; list-style: none; color: #374151; padding: 0; }
+.plan-code {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #0077ff;
+    background: #e6f1ff;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-bottom: 8px;
+}
+.plan-price { font-size: 34px; font-weight: 800; color: #0a192f; margin: 10px 0 4px; }
+.plan-period { font-size: 13px; color: #6b7280; margin-bottom: 8px; }
+.plan-desc { color: #6b7280; min-height: 42px; flex: 0 0 auto; }
+.plan-features { margin-top: 14px; list-style: none; color: #374151; padding: 0; flex: 1 1 auto; }
 .plan-features li { margin: 8px 0; }
+.plan-features li::before {
+    content: "✓ ";
+    color: #0077ff;
+    font-weight: 700;
+}
 .plan-cta { margin-top: 18px; }
+.pricing-status {
+    text-align: center;
+    color: #6b7280;
+    font-size: 14px;
+    margin-top: 12px;
+    min-height: 1.4em;
+}
+.pricing-status.is-error { color: #b91c1c; }
+.pricing-status.is-ok { color: #047857; }
 @media (max-width: 900px) {
     .pricing-grid { grid-template-columns: 1fr; }
 }

@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Giá | Indoor Navigation</title>
+    <title>Giá | IndoorNav</title>
+    <meta name="description" content="Bảng giá IndoorNav đồng bộ từ catalog Billing (FREE / PRO / ENTERPRISE).">
     <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="/css/landing-layout.css">
     <link rel="stylesheet" href="/css/landing-pricing.css">
@@ -35,51 +36,14 @@
 
 <section class="pricing-section" id="pricing">
     <div class="container">
-        <h2 class="section-title">Gói dịch vụ (tham khảo)</h2>
+        <h2 class="section-title">Gói dịch vụ</h2>
         <p class="landing-muted" style="margin-top: 10px; text-align: center;">
-            Giá demo cho luận văn. Gói thật sẽ đồng bộ từ Billing API ở WL2.
+            Giá và hạn mức lấy từ catalog Billing của hệ thống — không chỉnh tay trên CMS.
         </p>
-        <div class="pricing-grid">
-            <div class="plan-card">
-                <div class="plan-title">Free / Trial</div>
-                <div class="plan-price">0 <span style="font-size:14px;font-weight:600;color:#6b7280;">VND</span></div>
-                <div class="plan-desc">Gói dùng thử phù hợp để demo hệ thống.</div>
-                <ul class="plan-features">
-                    <li>2 tòa nhà</li>
-                    <li>5 tài khoản</li>
-                    <li>Draft + Publish</li>
-                </ul>
-                <div class="plan-cta">
-                    <a class="btn btn-primary btn-large" href="/org-trial.html">Dùng thử</a>
-                </div>
-            </div>
-            <div class="plan-card">
-                <div class="plan-title">Professional</div>
-                <div class="plan-price">990.000 <span style="font-size:14px;font-weight:600;color:#6b7280;">VND</span></div>
-                <div class="plan-desc">Gói chuyên nghiệp cho vận hành nhiều tòa nhà.</div>
-                <ul class="plan-features">
-                    <li>20 tòa nhà</li>
-                    <li>50 tài khoản</li>
-                    <li>Hỗ trợ triển khai cơ bản</li>
-                </ul>
-                <div class="plan-cta">
-                    <a class="btn btn-secondary btn-large" href="/contact">Hỏi thêm</a>
-                </div>
-            </div>
-            <div class="plan-card">
-                <div class="plan-title">Enterprise</div>
-                <div class="plan-price">4.990.000 <span style="font-size:14px;font-weight:600;color:#6b7280;">VND</span></div>
-                <div class="plan-desc">Gói doanh nghiệp, mở rộng linh hoạt theo nhu cầu.</div>
-                <ul class="plan-features">
-                    <li>Không giới hạn cơ bản</li>
-                    <li>Chính sách theo gói</li>
-                    <li>Tùy chỉnh onboarding</li>
-                </ul>
-                <div class="plan-cta">
-                    <a class="btn btn-secondary btn-large" href="/contact">Liên hệ</a>
-                </div>
-            </div>
+        <div id="pricingGrid" class="pricing-grid" aria-live="polite">
+            <!-- JS fill từ /api/billing/plans -->
         </div>
+        <p id="pricingStatus" class="pricing-status" aria-live="polite"></p>
     </div>
 </section>
 
@@ -91,5 +55,6 @@
 </footer>
 
 <script src="/landing.js"></script>
+<script src="/pricing.js"></script>
 </body>
 </html>

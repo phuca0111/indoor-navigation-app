@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Soạn bản đồ trong nhà | WebMapEditor</title>
     <link rel="stylesheet" href="styles.css?v=20260716p5">
-    <link rel="stylesheet" href="css/phase-ui-shell.css?v=20260716focus2">
+    <link rel="stylesheet" href="css/phase-ui-shell.css?v=20260716we5">
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -162,6 +162,7 @@
                 <span id="editorVersionLifecycle" class="editor-status-badge editor-status-draft" title="Draft / Published">Nháp</span>
                 <button type="button" id="btnVersionHistory" class="btn-project" title="Lịch sử / Rollback">Lịch sử</button>
                 <button type="button" id="btnProjectDraft" class="btn-project" title="Lưu nháp server">Lưu nháp</button>
+                <button type="button" id="btnProjectValidate" class="btn-project" title="Kiểm tra lỗi trước khi xuất bản">Kiểm tra</button>
                 <button type="button" id="btnProjectPublish" class="btn-project btn-primary" title="Xuất bản Android">Xuất bản</button>
                 <button type="button" class="btn-project btn-slot" disabled title="Should — sau sprint">Preview</button>
                 <button type="button" class="btn-project btn-slot" disabled title="Should — sau sprint">Android</button>
@@ -264,8 +265,12 @@
 
             <aside class="shell-right properties-panel" id="shellRight">
                 <div class="right-tabs">
-                    <button type="button" class="right-tab active" data-rtab="properties">Properties</button>
-                    <button type="button" class="right-tab" data-rtab="objects">Objects</button>
+                    <button type="button" class="right-tab active" data-rtab="properties">Thuộc tính</button>
+                    <button type="button" class="right-tab" data-rtab="objects">Đối tượng</button>
+                    <button type="button" class="right-tab" data-rtab="validate">
+                        Kiểm tra
+                        <span id="validationBadge" class="validation-badge" style="display:none;">0</span>
+                    </button>
                 </div>
                 <div class="right-body">
                     <div class="right-panel active" data-rtab="properties">
@@ -280,6 +285,21 @@
                         <div class="panel-section" style="margin-top: 16px;">
                             <h3><i data-lucide="list"></i> Đối tượng</h3>
                             <div id="object-list" class="object-list" style="overflow-y: auto;"></div>
+                        </div>
+                    </div>
+                    <div class="right-panel" data-rtab="validate">
+                        <div class="panel-section validation-panel">
+                            <h3 id="validationPanelTitle"><i data-lucide="shield-check"></i> Kiểm tra bản đồ</h3>
+                            <p class="hint-text">Nguồn: <strong id="validationSource">—</strong></p>
+                            <p id="validationSummary" class="validation-summary">Chưa chạy kiểm tra.</p>
+                            <div class="validation-actions">
+                                <button type="button" id="btnValidationRerun" class="btn-project">Chạy lại</button>
+                                <button type="button" id="btnValidationClear" class="btn-project">Xóa kết quả</button>
+                            </div>
+                            <h4 class="validation-heading">Lỗi (chặn xuất bản)</h4>
+                            <ul id="validationErrorList" class="validation-list"></ul>
+                            <h4 class="validation-heading">Cảnh báo</h4>
+                            <ul id="validationWarningList" class="validation-list"></ul>
                         </div>
                     </div>
                 </div>
@@ -411,7 +431,8 @@
     <script src="js/lock-api.js?v=20260716we3"></script>
     <script src="js/draft-api.js?v=20260716we2"></script>
     <script src="js/publish-api.js?v=20260716we4"></script>
-    <script src="js/api.js?v=20260716we4"></script>
+    <script src="js/validation-ui.js?v=20260716we5"></script>
+    <script src="js/api.js?v=20260716we5"></script>
     <script src="core/export-pipeline.js?v=20260716p5"></script>
 
     <script src="js/secure-lock.js?v=20260710b"></script>
@@ -427,7 +448,7 @@
     <script src="js/layers-ui.js?v=20260710e"></script>
 
     <!-- Phase UI shell -->
-    <script src="js/ui-shell.js?v=20260716focus2"></script>
+    <script src="js/ui-shell.js?v=20260716we5"></script>
 
     <script src="editor.js?v=20260716a"></script>
     <script>
