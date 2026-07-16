@@ -964,16 +964,24 @@ function applyCurrentUserToUI(user) {
 // WHY: Kiểm tra token và fetch user info từ server để đảm bảo UI đúng.
 // reason: 'initial-load' | 'storage-change' | 'tab-visible' | 'pageshow'
 // ============================================================
-async function syncCurrentSession(reason) {
+async function syncCurrentSession(reason, depth) {
+  depth = depth || 0;
+  const tokenAtStart = localStorage.getItem('token');
   try {
-    const token = localStorage.getItem('token');
-    if (!token) {
+    if (!tokenAtStart) {
       clearAuthStorage();
       window.location.replace('/admin/index.html');
       return null;
     }
     const res = await apiFetch('/users/me');
     if (!res.ok) {
+      if (localStorage.getItem('token') !== tokenAtStart) {
+        if (depth < 2) {
+          console.warn('[SessionSync] Bỏ qua 401 cũ — token đã đổi ở tab khác');
+          return syncCurrentSession(reason, depth + 1);
+        }
+        return null;
+      }
       clearAuthStorage();
       window.location.replace('/admin/index.html');
       return null;
@@ -1002,6 +1010,10 @@ async function syncCurrentSession(reason) {
     return currentUser;
   } catch (e) {
     console.error('[SessionSync] Failed:', e);
+    if (localStorage.getItem('token') !== tokenAtStart) {
+      if (depth < 2) return syncCurrentSession(reason, depth + 1);
+      return null;
+    }
     clearAuthStorage();
     window.location.replace('/admin/index.html');
     return null;
@@ -3800,7 +3812,19 @@ async function saveNewUser() {
 document.getElementById('btnSaveNewUser')?.addEventListener('click', saveNewUser);
 
 
-function openEditor(id) { window.location.href = '/editor/index.html?buildingId=' + id; }
+function openEditor(id) {
+  try {
+    sessionStorage.setItem('editorAuthHandoff', JSON.stringify({
+      token: localStorage.getItem('token'),
+      refreshToken: localStorage.getItem('refreshToken'),
+      userEmail: localStorage.getItem('userEmail'),
+      userRole: localStorage.getItem('userRole'),
+      userId: localStorage.getItem('userId'),
+      ts: Date.now()
+    }));
+  } catch (_) { /* ignore */ }
+  window.location.href = '/editor/index.html?buildingId=' + id;
+}
 
 function openAddBuildingModal() {
   // Nếu là Super Admin và chưa load organizations, load ngay
