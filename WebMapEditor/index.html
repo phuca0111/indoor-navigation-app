@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Soạn bản đồ trong nhà | WebMapEditor</title>
     <link rel="stylesheet" href="styles.css?v=20260716p5">
-    <link rel="stylesheet" href="css/phase-ui-shell.css?v=20260716ui2">
+    <link rel="stylesheet" href="css/phase-ui-shell.css?v=20260716focus2">
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -250,8 +250,8 @@
 
             <section class="canvas-container">
                 <div class="canvas-chrome">
-                    <button type="button" id="btnFocusCanvas" title="Ẩn panel — canvas full">Focus canvas</button>
-                    <button type="button" id="btnCollapseRibbon" title="Thu ribbon">Thu ribbon</button>
+                    <button type="button" id="btnFocusCanvas" title="Ẩn panel hai bên — bản vẽ rộng hết">Toàn màn hình bản vẽ</button>
+                    <button type="button" id="btnCollapseRibbon" title="Thu gọn dải lệnh">Thu dải lệnh</button>
                     <button type="button" id="btnCollapseLeft" title="Ẩn panel trái">‹</button>
                     <button type="button" id="btnCollapseRight" title="Ẩn panel phải">›</button>
                     <span class="spacer"></span>
@@ -407,10 +407,11 @@
     <script src="js/canvas.js?v=20260716a"></script>
     <script src="js/io.js?v=20260716a"></script>
 
-    <!-- WE2 Draft + WE3 Floor Lock -->
+    <!-- WE2 Draft + WE3 Lock + WE4 Publish -->
     <script src="js/lock-api.js?v=20260716we3"></script>
     <script src="js/draft-api.js?v=20260716we2"></script>
-    <script src="js/api.js?v=20260716we3"></script>
+    <script src="js/publish-api.js?v=20260716we4"></script>
+    <script src="js/api.js?v=20260716we4"></script>
     <script src="core/export-pipeline.js?v=20260716p5"></script>
 
     <script src="js/secure-lock.js?v=20260710b"></script>
@@ -426,7 +427,7 @@
     <script src="js/layers-ui.js?v=20260710e"></script>
 
     <!-- Phase UI shell -->
-    <script src="js/ui-shell.js?v=20260716ui2"></script>
+    <script src="js/ui-shell.js?v=20260716focus2"></script>
 
     <script src="editor.js?v=20260716a"></script>
     <script>

@@ -280,6 +280,18 @@ body.phase-ui .editor-status-published {
     border: 1px solid #4ac26b;
 }
 
+body.phase-ui .editor-status-publishing {
+    background: #ddf4ff;
+    color: #0550ae;
+    border: 1px solid #54aeff;
+}
+
+body.phase-ui .editor-status-publish-failed {
+    background: #ffebe9;
+    color: #cf222e;
+    border: 1px solid #ff8182;
+}
+
 body.phase-ui .editor-publish-hint {
     display: none;
 }
@@ -671,13 +683,23 @@ body.phase-ui .layer-row__btn {
     border: 1px solid var(--border);
 }
 
-/* --- Focus mode --- */
+/* --- Focus mode: ẩn panel hai bên + nhường hết chỗ cho bản vẽ --- */
 body.phase-ui.focus-mode .shell-left,
 body.phase-ui.focus-mode .shell-right {
-    width: 0;
+    flex: 0 0 0 !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
     opacity: 0;
     border: none;
     pointer-events: none;
+    overflow: hidden;
+}
+
+body.phase-ui.focus-mode .shell-workspace .canvas-container {
+    flex: 1 1 100%;
+    min-width: 0;
+    width: 100%;
 }
 
 body.phase-ui.focus-mode .shell-ribbon {

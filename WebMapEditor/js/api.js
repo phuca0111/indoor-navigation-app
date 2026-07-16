@@ -955,6 +955,209 @@ async function saveDraftToServer() {
     }
 }
 
+window._publishJobInFlight = false;
+
+function setPublishPipelineUi(phase, detail) {
+    var el = document.getElementById('editorVersionLifecycle');
+    var btn = document.getElementById('btnProjectPublish');
+    var label = (window.PublishApi && typeof PublishApi.statusLabelVi === 'function')
+        ? PublishApi.statusLabelVi(phase)
+        : (phase || '');
+
+    if (el) {
+        if (phase === 'SUCCESS' || phase === 'published') {
+            el.textContent = 'Đã xuất bản';
+            el.className = 'editor-status-badge editor-status-published';
+        } else if (phase === 'FAILED') {
+            el.textContent = 'Xuất bản lỗi';
+            el.className = 'editor-status-badge editor-status-draft editor-status-publish-failed';
+            el.title = detail || 'Thử lại Xuất bản';
+        } else if (phase === 'QUEUED' || phase === 'RUNNING' || phase === 'publishing') {
+            el.textContent = label || 'Đang xuất bản…';
+            el.className = 'editor-status-badge editor-status-publishing';
+            el.title = detail || 'Job đang chạy trên máy chủ';
+        }
+    }
+    if (btn) {
+        var busy = phase === 'QUEUED' || phase === 'RUNNING' || phase === 'publishing';
+        btn.disabled = busy || isFloorLockReadOnly();
+        if (!btn.dataset.titleDefault) btn.dataset.titleDefault = btn.title || 'Xuất bản Android';
+        btn.title = busy ? 'Đang xuất bản…' : btn.dataset.titleDefault;
+        btn.textContent = busy ? 'Đang XB…' : 'Xuất bản';
+    }
+}
+
+function applyPublishSuccessUi(floor, newVersion, publishedAt, pipelineResult) {
+    showToast('Đã xuất bản bản đồ tầng ' + floor + ' thành công!');
+    if (typeof clearAutoSave === 'function') clearAutoSave();
+    if (newVersion != null) updateEditorMapVersion(newVersion);
+    window.editorBuildingMeta = Object.assign({}, window.editorBuildingMeta || {}, { status: 'PUBLISHED' });
+    renderEditorBuildingContext(window.editorBuildingMeta);
+    if (window.EditorCore && EditorCore.VersionManager &&
+        typeof EditorCore.VersionManager.syncAfterPublish === 'function') {
+        EditorCore.VersionManager.syncAfterPublish(newVersion, publishedAt);
+    }
+    setPublishPipelineUi('SUCCESS');
+    if (typeof renderVersionBadge === 'function') renderVersionBadge();
+    if (pipelineResult && pipelineResult.navigationPayload && typeof console !== 'undefined' && console.debug) {
+        console.debug('[Publish] Navigation payload (Android):', {
+            rooms: (pipelineResult.navigationPayload.rooms || []).length,
+            nodes: (pipelineResult.navigationPayload.nodes || []).length,
+            edges: (pipelineResult.navigationPayload.edges || []).length
+        });
+    }
+}
+
+function formatPublishJobError(jobRes) {
+    var err = jobRes && jobRes.error;
+    if (!err) return (jobRes && jobRes.message) || 'Xuất bản thất bại.';
+    var msg = err.message || 'Xuất bản thất bại.';
+    if (err.code) msg = '[' + err.code + '] ' + msg;
+    return msg;
+}
+
+async function publishViaV1Async(floor, mapData, pipelineResult) {
+    if (!window.PublishApi || typeof PublishApi.enqueuePublish !== 'function') {
+        return { used: false };
+    }
+
+    setPublishPipelineUi('QUEUED');
+    showLoading('Đang xếp hàng xuất bản…');
+
+    var enq = await PublishApi.enqueuePublish(buildingId, floor, mapData, apiFetch, {
+        editSessionId: getEditSessionId()
+    });
+
+    if (enq.unauthorized) {
+        hideLoading();
+        setPublishPipelineUi('FAILED', 'Phiên hết hạn');
+        showToast('Phiên đăng nhập hết hạn! Vui lòng đăng nhập lại để lưu.', 'error');
+        return { used: true };
+    }
+    if (enq.forbidden) {
+        hideLoading();
+        setPublishPipelineUi('FAILED');
+        showToast(getEditorForbiddenMessage(enq.data, 'Bạn không có quyền xuất bản bản đồ tòa nhà này.'), 'error');
+        return { used: true };
+    }
+    if (enq.conflict) {
+        hideLoading();
+        setPublishPipelineUi('FAILED');
+        showToast(enq.message || 'Tầng đang bị người khác khóa — không xuất bản được.', 'error');
+        return { used: true };
+    }
+    if (enq.validateFailed) {
+        hideLoading();
+        setPublishPipelineUi('FAILED');
+        var lines = (enq.errors || []).map(function (e) {
+            return '• ' + (e.message || e.code || JSON.stringify(e));
+        }).join('\n');
+        showToast(enq.message || 'Validate map thất bại.', 'error');
+        if (lines) alert('Không thể xuất bản — sửa các lỗi sau:\n\n' + lines);
+        return { used: true };
+    }
+    if (enq.rateLimited) {
+        hideLoading();
+        setPublishPipelineUi('FAILED');
+        showToast(enq.message || 'Xuất bản quá nhiều lần — thử lại sau.', 'error');
+        return { used: true };
+    }
+    if (!enq.ok || !enq.jobId) {
+        hideLoading();
+        console.warn('[Publish] v1 enqueue không 202 — fallback legacy', enq.status, enq.data);
+        return { used: false, enqueue: enq };
+    }
+
+    if (enq.bgStripped) {
+        showToast('Ảnh nền Base64 đã bỏ trước khi xuất bản — hãy upload qua Storage.', 'warning');
+    }
+
+    showLoading('Đang xuất bản (job ' + enq.jobId.slice(-6) + ')…');
+    var job = await PublishApi.pollPublishJob(enq.jobId, apiFetch, {
+        onProgress: function (status) {
+            setPublishPipelineUi(status);
+            if (typeof showLoading === 'function') {
+                showLoading((PublishApi.statusLabelVi(status) || 'Đang xuất bản…') +
+                    ' (job …' + enq.jobId.slice(-6) + ')');
+            }
+        }
+    });
+
+    hideLoading();
+
+    if (job.timeout) {
+        setPublishPipelineUi('RUNNING', 'Timeout — job có thể vẫn chạy');
+        showToast(job.message || 'Hết thời gian chờ. Kiểm tra lại sau hoặc thử Xuất bản lại.', 'error');
+        return { used: true, jobId: enq.jobId, timeout: true };
+    }
+    if (!job.ok) {
+        setPublishPipelineUi('FAILED');
+        showToast(job.message || 'Không lấy được trạng thái job.', 'error');
+        return { used: true, jobId: enq.jobId };
+    }
+    if (job.status === 'SUCCESS') {
+        applyPublishSuccessUi(floor, job.version, job.finishedAt, pipelineResult);
+        return { used: true, success: true, jobId: enq.jobId, version: job.version };
+    }
+
+    setPublishPipelineUi('FAILED', formatPublishJobError(job));
+    showToast(formatPublishJobError(job), 'error');
+    return { used: true, failed: true, jobId: enq.jobId };
+}
+
+async function publishViaLegacySync(floor, mapData, pipelineResult) {
+    showLoading('Đang lưu bản đồ lên máy chủ (sync)…');
+    setPublishPipelineUi('publishing');
+    try {
+        const response = await apiFetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/publish`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Edit-Session': getEditSessionId()
+            },
+            body: JSON.stringify({
+                map_data: mapData,
+                edit_session_id: getEditSessionId()
+            })
+        });
+
+        const result = await response.json().catch(() => ({}));
+        hideLoading();
+
+        if (response.ok) {
+            const newVersion = result.map && result.map.version != null
+                ? result.map.version
+                : (result.version != null ? result.version : null);
+            applyPublishSuccessUi(
+                floor,
+                newVersion,
+                result.map && result.map.published_at,
+                pipelineResult
+            );
+        } else if (response.status === 401) {
+            setPublishPipelineUi('FAILED');
+            showToast('Phiên đăng nhập hết hạn! Vui lòng đăng nhập lại để lưu.', 'error');
+        } else if (response.status === 403) {
+            setPublishPipelineUi('FAILED');
+            showToast(getEditorForbiddenMessage(result, 'Bạn không có quyền xuất bản bản đồ tòa nhà này.'), 'error');
+        } else if (response.status === 409) {
+            setPublishPipelineUi('FAILED');
+            showToast(result.message || 'Tầng đang bị người khác khóa — không xuất bản được.', 'error');
+        } else if (response.status === 429) {
+            setPublishPipelineUi('FAILED');
+            showToast(result.message || 'Xuất bản quá nhiều lần — thử lại sau.', 'error');
+        } else {
+            setPublishPipelineUi('FAILED');
+            showToast(result.message || ('Lỗi lưu trữ (HTTP ' + response.status + ')'), 'error');
+        }
+    } catch (error) {
+        hideLoading();
+        setPublishPipelineUi('FAILED');
+        console.error('API Error:', error);
+        showToast('Lỗi kết nối máy chủ', 'error');
+    }
+}
+
 async function saveMapToServer() {
     if (!buildingId) {
         alert('Lỗi: Không tìm thấy mã tòa nhà! Vui lòng mở từ Bảng điều khiển.');
@@ -964,10 +1167,13 @@ async function saveMapToServer() {
         showToast('Tầng đang bị khóa — chỉ xem, không xuất bản.', 'error');
         return;
     }
+    if (window._publishJobInFlight) {
+        showToast('Đang xuất bản — vui lòng chờ.', 'warning');
+        return;
+    }
 
     const floor = document.getElementById('floorSelect').value;
 
-    // Export Pipeline: Validation → map_data (Phase 0)
     var pipelineResult;
     try {
         if (window.EditorCore && EditorCore.ExportPipeline) {
@@ -998,72 +1204,27 @@ async function saveMapToServer() {
 
     const mapData = attachEditorCadExtras(pipelineResult.mapData);
 
-    console.log(`📤 SENDING: Đang gửi bản đồ lên Server...`, {
+    console.log('📤 SENDING publish…', {
         buildingId: buildingId,
         floor: floor,
-        rooms: mapData.rooms.length,
-        nodes: mapData.nodes.length,
-        blocks: (mapData.blocks || []).length,
-        blockInserts: (mapData.blockInserts || []).length
+        rooms: (mapData.rooms || []).length,
+        nodes: (mapData.nodes || []).length
     });
 
-    showLoading('Đang lưu bản đồ lên máy chủ...');
-
+    window._publishJobInFlight = true;
     try {
-        const response = await apiFetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/publish`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Edit-Session': getEditSessionId()
-            },
-            body: JSON.stringify({
-                map_data: mapData,
-                edit_session_id: getEditSessionId()
-            })
-        });
-
-        const result = await response.json().catch(() => ({}));
-        hideLoading();
-
-        if (response.ok) {
-            const newVersion = result.map && result.map.version != null ? result.map.version : null;
-            showToast('Đã xuất bản bản đồ tầng ' + floor + ' thành công!');
-            if (typeof clearAutoSave === 'function') clearAutoSave();
-            if (newVersion != null) updateEditorMapVersion(newVersion);
-            window.editorBuildingMeta = Object.assign({}, window.editorBuildingMeta || {}, { status: 'PUBLISHED' });
-            renderEditorBuildingContext(window.editorBuildingMeta);
-            if (window.EditorCore && EditorCore.VersionManager &&
-                typeof EditorCore.VersionManager.syncAfterPublish === 'function') {
-                EditorCore.VersionManager.syncAfterPublish(
-                    newVersion,
-                    result.map && result.map.published_at
-                );
-            }
-            if (typeof renderVersionBadge === 'function') renderVersionBadge();
-            if (pipelineResult.navigationPayload && typeof console !== 'undefined' && console.debug) {
-                console.debug('[Publish] Navigation payload (Android):', {
-                    rooms: (pipelineResult.navigationPayload.rooms || []).length,
-                    nodes: (pipelineResult.navigationPayload.nodes || []).length,
-                    edges: (pipelineResult.navigationPayload.edges || []).length,
-                    hasDimensions: 'dimensions' in pipelineResult.navigationPayload,
-                    hasBlocks: 'blocks' in pipelineResult.navigationPayload
-                });
-            }
-        } else if (response.status === 401) {
-            showToast('Phiên đăng nhập hết hạn! Vui lòng đăng nhập lại để lưu.', 'error');
-        } else if (response.status === 403) {
-            showToast(getEditorForbiddenMessage(result, 'Bạn không có quyền xuất bản bản đồ tòa nhà này.'), 'error');
-        } else if (response.status === 409) {
-            showToast(result.message || 'Tầng đang bị người khác khóa — không xuất bản được.', 'error');
-        } else if (response.status === 429) {
-            showToast(result.message || 'Xuất bản quá nhiều lần — thử lại sau.', 'error');
-        } else {
-            showToast(result.message || ('Lỗi lưu trữ (HTTP ' + response.status + ')'), 'error');
+        var v1 = await publishViaV1Async(floor, mapData, pipelineResult);
+        if (!v1.used) {
+            await publishViaLegacySync(floor, mapData, pipelineResult);
         }
-    } catch (error) {
-        hideLoading();
-        console.error('API Error:', error);
-        showToast('Lỗi kết nối máy chủ', 'error');
+    } finally {
+        window._publishJobInFlight = false;
+        var btn = document.getElementById('btnProjectPublish');
+        if (btn && !isFloorLockReadOnly()) {
+            btn.disabled = false;
+            btn.textContent = 'Xuất bản';
+            if (btn.dataset.titleDefault) btn.title = btn.dataset.titleDefault;
+        }
     }
 }
 
