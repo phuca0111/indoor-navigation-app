@@ -31,7 +31,7 @@ function applyAuthTokens(data) {
     }
 }
 
-// Google OAuth callback: /admin/index.html#token=...&refreshToken=...&google=1
+// Google OAuth callback (Landing WL4): /login#token=... — Admin page vẫn giữ form cũ nếu mở trực tiếp
 (function consumeGoogleCallback() {
     const hash = (window.location.hash || '').replace(/^#/, '');
     if (!hash) return;

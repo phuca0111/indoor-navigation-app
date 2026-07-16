@@ -36,6 +36,15 @@ document.getElementById('orgTrialForm').addEventListener('submit', async functio
     password: document.getElementById('password').value
   };
 
+  const pwdErrors = (window.PasswordPolicy && window.PasswordPolicy.validatePasswordStrength)
+    ? window.PasswordPolicy.validatePasswordStrength(body.password)
+    : [];
+  if (pwdErrors.length) {
+    msgErr.textContent = pwdErrors[0];
+    msgErr.style.display = 'block';
+    return;
+  }
+
   try {
     const res = await fetch('/api/org-registrations/self-service', {
       method: 'POST',
@@ -45,12 +54,12 @@ document.getElementById('orgTrialForm').addEventListener('submit', async functio
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
       msgOk.innerHTML = (data.message || 'Đăng ký thành công!') +
-        ' <a href="' + (data.login_url || '/admin/index.html') + '">Đăng nhập ngay →</a>';
+        ' <a href="' + (data.login_url || '/login') + '">Đăng nhập ngay →</a>';
       msgOk.style.display = 'block';
       document.getElementById('orgTrialForm').reset();
       delete document.getElementById('slug').dataset.manual;
       setTimeout(function () {
-        window.location.href = data.login_url || '/admin/index.html';
+        window.location.href = data.login_url || '/login';
       }, 2500);
     } else {
       msgErr.textContent = data.message || 'Đăng ký thất bại (HTTP ' + res.status + ')';

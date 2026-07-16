@@ -970,7 +970,7 @@ async function syncCurrentSession(reason, depth) {
   try {
     if (!tokenAtStart) {
       clearAuthStorage();
-      window.location.replace('/admin/index.html');
+      window.location.replace('/login');
       return null;
     }
     const res = await apiFetch('/users/me');
@@ -983,7 +983,7 @@ async function syncCurrentSession(reason, depth) {
         return null;
       }
       clearAuthStorage();
-      window.location.replace('/admin/index.html');
+      window.location.replace('/login');
       return null;
     }
     currentUser = await res.json();
@@ -1015,7 +1015,7 @@ async function syncCurrentSession(reason, depth) {
       return null;
     }
     clearAuthStorage();
-    window.location.replace('/admin/index.html');
+    window.location.replace('/login');
     return null;
   }
 }
@@ -1040,7 +1040,7 @@ async function handleLogout() {
     clearAuthStorage();
     // Set authEvent để các tab khác biết logout xảy ra
     try { localStorage.setItem('authEvent', String(Date.now())); } catch (_) {}
-    window.location.replace('/admin/index.html');
+    window.location.replace('/login');
   }
 }
 
@@ -1071,7 +1071,7 @@ async function handleLogoutAll() {
   } finally {
     clearAuthStorage();
     try { localStorage.setItem('authEvent', String(Date.now())); } catch (_) {}
-    window.location.replace('/admin/index.html');
+    window.location.replace('/login');
   }
 }
 
@@ -5090,7 +5090,7 @@ document.getElementById('btnChangePassword').onclick = async () => {
       document.getElementById('currentPassword').value = '';
       document.getElementById('newPassword').value = '';
       document.getElementById('confirmPassword').value = '';
-      setTimeout(() => { clearAuthStorage(); window.location.replace('/admin/index.html'); }, 1500);
+      setTimeout(() => { clearAuthStorage(); window.location.replace('/login'); }, 1500);
     } else {
       msgEl.textContent = 'Lỗi: ' + (data.message || 'Không rõ'); msgEl.style.display = 'block'; msgEl.className = 'error-msg';
     }

@@ -169,7 +169,9 @@ describe('Phase 8 — Web upgrades', () => {
     const dashHtml = read('admin/dashboard.html');
     const dashJs = read('js/dashboard.js');
     const loginHtml = read('admin/index.html');
+    const landingLoginHtml = read('public/login/index.html');
     const loginJs = read('js/login.js');
+    const landingLoginJs = read('public/login.js');
     const editorHtml = readRepo('WebMapEditor/index.html');
     const editorApi = readRepo('WebMapEditor/js/api.js');
     const editorCss = readRepo('WebMapEditor/styles.css');
@@ -197,7 +199,13 @@ describe('Phase 8 — Web upgrades', () => {
     expect(trialHtml).toMatch(/id="contactPhone"/);
     expect(trialHtml).not.toMatch(/id="contactPhone"[^>]*required/);
 
+    // WL4 — entry login là Landing; /admin/index.html chỉ redirect
     expect(loginHtml).toMatch(/id="googleLoginWrap"[^>]*display:none/);
+    expect(loginHtml).toMatch(/\/login/);
+    expect(landingLoginHtml).toMatch(/id="loginForm"/);
+    expect(landingLoginHtml).toMatch(/id="googleLoginWrap"/);
+    expect(landingLoginJs).toMatch(/\/auth\/google\/status/);
+    expect(landingLoginJs).toMatch(/wrap\.style\.display = 'block'/);
     expect(loginJs).toMatch(/\/auth\/google\/status/);
     expect(loginJs).toMatch(/wrap\.style\.display = 'block'/);
   });

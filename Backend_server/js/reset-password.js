@@ -33,7 +33,7 @@ document.getElementById('resetForm').addEventListener('submit', async function (
       msg.textContent = data.message || 'Đặt lại mật khẩu thành công.';
       msg.style.display = 'block';
       setTimeout(function () {
-        window.location.replace('/admin/index.html');
+        window.location.replace('/login');
       }, 1500);
     } else {
       msg.style.color = '#e74c3c';
