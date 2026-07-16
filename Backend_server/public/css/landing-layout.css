@@ -1,0 +1,100 @@
+/* WL0 — shared landing layout (header, auth, mobile) */
+.auth-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.auth-btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.login-btn {
+    background-color: #f0f0f0;
+    color: #333;
+    border: 1px solid #ddd;
+}
+
+.login-btn:hover {
+    background-color: #e0e0e0;
+}
+
+.register-btn {
+    background-color: #007AFF;
+    color: white;
+    border: 1px solid #0062cc;
+}
+
+.register-btn:hover {
+    background-color: #0062cc;
+}
+
+.org-register-btn {
+    background: #8e44ad !important;
+    border-color: #732d91 !important;
+}
+
+.header-inner {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.logo a {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    color: inherit;
+}
+
+.nav a.active {
+    color: #007AFF;
+    font-weight: 600;
+}
+
+.landing-page-section {
+    padding: 60px 0 40px;
+}
+
+.landing-card {
+    max-width: 720px;
+    margin: 0 auto;
+    background: #fff;
+    padding: 22px;
+    border-radius: 12px;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+}
+
+.landing-card--narrow {
+    max-width: 520px;
+}
+
+.landing-muted {
+    color: #6b7280;
+}
+
+@media (max-width: 768px) {
+    .auth-actions {
+        display: none;
+        width: 100%;
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 10px;
+    }
+
+    .auth-actions.show-mobile {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+}
