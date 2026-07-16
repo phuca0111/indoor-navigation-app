@@ -888,7 +888,8 @@ function drawPolygonRoom(room, isSelected) {
     var cy = room.y + room.height / 2;
     drawRoomLabel(room, cx, cy, room.width, room.height);
 
-    drawPolygonMeasures(room.points, { showArea: true });
+    // Nhãn cạnh phòng (từ quét ảnh nền) — tôn trọng checkbox «Hiện kích thước»
+    drawPolygonMeasures(room.points, { showArea: true, requireDimCheck: true });
 
     // Vẽ các đỉnh nếu đang chọn
     if (isSelected) {
@@ -961,6 +962,10 @@ function drawPolygonMeasures(points, opts) {
     if (typeof getPolygonMetrics !== 'function') return;
 
     opts = opts || {};
+    if (opts.requireDimCheck) {
+        var dc = typeof document !== 'undefined' ? document.getElementById('dimCheck') : null;
+        if (dc && !dc.checked) return;
+    }
     var metrics = getPolygonMetrics(points, {
         previewPoint: opts.previewPoint,
         includeClosingEdge: opts.includeClosingEdge !== false

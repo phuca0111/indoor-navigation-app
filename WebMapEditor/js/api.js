@@ -1278,6 +1278,7 @@ function clearCanvasData(opts) {
     qrs = [];
     bgImage = null;
     bgImageBase64 = '';
+    if (typeof window !== 'undefined') window.bgStorageKey = '';
     blocks = [];
     blockInserts = [];
     dimensions = [];

@@ -155,33 +155,60 @@ window.applyBgFiltersPermanent = applyBgFiltersPermanent;
 function replaceBackgroundFromDataUrl(dataUrl, opts) {
     opts = opts || {};
     var keep = !!opts.keepTransform;
-    var img = new Image();
-    img.onload = function () {
-        window.bgImage = img;
-        window.bgImageBase64 = dataUrl;
-        if (window.EditorCore && EditorCore.AssetManager) {
-            EditorCore.AssetManager.setBackgroundFromDataUrl(dataUrl);
-        }
-        if (!keep) {
-            window.bgX = 0;
-            window.bgY = 0;
-            window.bgScale = 1;
-            window.bgRotation = 0;
-        }
-        if (opts.resetFilters) {
-            window.bgContrast = 1;
-            window.bgBrightness = 0;
-            var cs = document.getElementById('bgContrastSlider');
-            var bs = document.getElementById('bgBrightnessSlider');
-            if (cs) cs.value = '1';
-            if (bs) bs.value = '0';
-            setBgContrast(1);
-            setBgBrightness(0);
-        }
-        if (typeof draw === 'function') draw();
-        if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
-    };
-    img.src = dataUrl;
+
+    function finishWithUrl(src, storageKey) {
+        var img = new Image();
+        img.onload = function () {
+            window.bgImage = img;
+            window.bgImageBase64 = src;
+            window.bgStorageKey = storageKey || '';
+            if (window.EditorCore && EditorCore.AssetManager) {
+                if (storageKey && typeof EditorCore.AssetManager.setBackgroundFromUrl === 'function') {
+                    EditorCore.AssetManager.setBackgroundFromUrl(src, storageKey);
+                } else {
+                    EditorCore.AssetManager.setBackgroundFromDataUrl(src);
+                }
+            }
+            if (!keep) {
+                window.bgX = 0;
+                window.bgY = 0;
+                window.bgScale = 1;
+                window.bgRotation = 0;
+            }
+            if (opts.resetFilters) {
+                window.bgContrast = 1;
+                window.bgBrightness = 0;
+                var cs = document.getElementById('bgContrastSlider');
+                var bs = document.getElementById('bgBrightnessSlider');
+                if (cs) cs.value = '1';
+                if (bs) bs.value = '0';
+                setBgContrast(1);
+                setBgBrightness(0);
+            }
+            if (typeof draw === 'function') draw();
+            if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+        };
+        img.onerror = function () {
+            if (typeof showToast === 'function') showToast('Không tải được ảnh nền sau chỉnh sửa', 'error');
+        };
+        img.src = src;
+    }
+
+    finishWithUrl(dataUrl, '');
+
+    var bid = window.buildingId;
+    var floorEl = document.getElementById('floorSelect');
+    var floor = floorEl ? floorEl.value : '0';
+    if (bid && window.StorageApi && typeof StorageApi.uploadBackgroundDataUrl === 'function' &&
+        typeof apiFetch === 'function') {
+        StorageApi.uploadBackgroundDataUrl(bid, floor, dataUrl, apiFetch).then(function (result) {
+            if (result && result.ok && result.url) {
+                finishWithUrl(result.url, result.key || '');
+            }
+        }).catch(function (err) {
+            console.warn('[WE6] re-upload after edit', err);
+        });
+    }
 }
 
 function handleCropPointerDown(x, y) {
@@ -243,10 +270,10 @@ function runAutoDetectV2() {
     if (!requireBgImage()) return;
     if (typeof detectRoomsFromImageV2 === 'function') {
         var n = detectRoomsFromImageV2(window.bgImage);
-        if (typeof showToast === 'function') showToast('Auto-detect v2: ' + n + ' phòng', 'success');
+        if (typeof showToast === 'function') showToast('Đã quét: ' + n + ' phòng', 'success');
     } else if (typeof detectRoomsFromImage === 'function') {
         var n1 = detectRoomsFromImage(window.bgImage);
-        if (typeof showToast === 'function') showToast('Detect: ' + n1 + ' phòng', 'success');
+        if (typeof showToast === 'function') showToast('Đã quét: ' + n1 + ' phòng', 'success');
     }
 }
 window.runAutoDetectV2 = runAutoDetectV2;
