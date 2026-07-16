@@ -8,6 +8,35 @@ const {
 } = require('../utils/overQuotaLock');
 const { getCurrentSubscription } = require('../services/subscriptionLifecycle');
 const { createCheckoutSession } = require('../services/paymentCheckout');
+const { listPlans, DEFAULT_SEED } = require('../services/planCatalog');
+
+/** GET /api/billing/plans — public catalog cho Landing (WL2), không cần auth */
+async function listPublicPlans(req, res) {
+  try {
+    let plans = await listPlans({ activeOnly: true });
+    if (!plans || !plans.length) {
+      plans = DEFAULT_SEED.map((p) => ({ ...p, is_active: true }));
+    }
+    const publicPlans = plans.map((p) => ({
+      code: p.code,
+      name: p.name,
+      description: p.description || '',
+      price_vnd: Number(p.price_vnd) || 0,
+      period_days: Number(p.period_days) || 30,
+      max_buildings: p.max_buildings == null ? null : Number(p.max_buildings),
+      max_users: p.max_users == null ? null : Number(p.max_users),
+      features: Array.isArray(p.features) ? p.features : [],
+      sort_order: Number(p.sort_order) || 0
+    }));
+    res.status(200).json({
+      source: 'planCatalog',
+      plans: publicPlans
+    });
+  } catch (e) {
+    console.error('listPublicPlans:', e);
+    res.status(500).json({ message: 'Không tải được bảng giá.' });
+  }
+}
 
 async function resolveOrgForBilling(req, orgIdParam) {
   const role = req.user?.role;
@@ -124,6 +153,7 @@ async function postCheckout(req, res) {
 }
 
 module.exports = {
+  listPublicPlans,
   getMyBilling,
   postCheckout,
   resolveOrgForBilling
