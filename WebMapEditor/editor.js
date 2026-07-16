@@ -191,13 +191,21 @@ if (bSli) {
                 updateEditorMapVersion(result && result.version != null ? result.version : null);
             }
             if (typeof acquireFloorLock === 'function') {
-                Promise.resolve(acquireFloorLock(false)).catch(function () { /* ignore */ });
+                Promise.resolve(acquireFloorLock(false)).then(function () {
+                    if (typeof checkAutoSave === 'function') {
+                        checkAutoSave({ serverLoaded: !!(result && result.loaded) });
+                    }
+                    if (window.editorFloorLockReadOnly) return;
+                    if (typeof resumeAutoSave === 'function') resumeAutoSave({ clean: true });
+                    if (typeof startAutoSave === 'function') startAutoSave(true, { cleanStart: true });
+                }).catch(function () { /* ignore */ });
+            } else {
+                if (typeof checkAutoSave === 'function') {
+                    checkAutoSave({ serverLoaded: !!(result && result.loaded) });
+                }
+                if (typeof resumeAutoSave === 'function') resumeAutoSave({ clean: true });
+                if (typeof startAutoSave === 'function') startAutoSave(true, { cleanStart: true });
             }
-            if (typeof checkAutoSave === 'function') {
-                checkAutoSave({ serverLoaded: !!(result && result.loaded) });
-            }
-            if (typeof resumeAutoSave === 'function') resumeAutoSave({ clean: true });
-            if (typeof startAutoSave === 'function') startAutoSave(true, { cleanStart: true });
         });
     });
 

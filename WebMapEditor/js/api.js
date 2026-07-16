@@ -280,9 +280,12 @@ async function initEditor() {
         }
     }
 
-    if (typeof resumeAutoSave === 'function') resumeAutoSave({ clean: true });
-    // cleanStart: không ghi đè nháp bằng bản vừa load cho đến khi user sửa
-    if (typeof startAutoSave === 'function') startAutoSave(true, { cleanStart: true });
+    if (typeof resumeAutoSave === 'function' && !isFloorLockReadOnly()) {
+        resumeAutoSave({ clean: true });
+    }
+    if (typeof startAutoSave === 'function' && !isFloorLockReadOnly()) {
+        startAutoSave(true, { cleanStart: true });
+    }
 }
 
 // ==========================================
@@ -616,9 +619,111 @@ function setFloorLockBanner(opts) {
     if (forceBtn) forceBtn.style.display = opts.showForce ? 'inline-block' : 'none';
 }
 
+window.editorFloorLockOwned = false;
+window.editorFloorLockReadOnly = false;
+window.editorFloorLockHolder = null;
+
+function isFloorLockReadOnly() {
+    return !!window.editorFloorLockReadOnly;
+}
+window.isFloorLockReadOnly = isFloorLockReadOnly;
+
+function canForceFloorLock() {
+    var role = localStorage.getItem('userRole') || '';
+    return role === 'SUPER_ADMIN' || role === 'ORG_ADMIN';
+}
+
+function formatFloorLockHolder(holder) {
+    if (window.LockApi && typeof LockApi.formatHolder === 'function') {
+        return LockApi.formatHolder(holder);
+    }
+    if (!holder) return 'người khác';
+    return holder.user_email || holder.email || holder.full_name || holder.name || 'người khác';
+}
+
+function updateFloorLockWriteControls(writeEnabled) {
+    ['btnProjectDraft', 'btnProjectPublish'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        if (!el.dataset.titleDefault) el.dataset.titleDefault = el.title || '';
+        el.disabled = !writeEnabled;
+        el.title = writeEnabled ? el.dataset.titleDefault : 'Tầng đang bị khóa — chỉ xem';
+    });
+    document.querySelectorAll('.tool-btn[data-tool]').forEach(function (btn) {
+        var isSelect = btn.dataset.tool === 'select';
+        btn.disabled = !writeEnabled && !isSelect;
+        btn.classList.toggle('tool-readonly-disabled', !writeEnabled && !isSelect);
+    });
+    var statusEl = document.getElementById('editorFloorLockStatus');
+    if (statusEl) {
+        statusEl.textContent = writeEnabled ? 'Đang sửa' : 'Chỉ xem';
+        statusEl.className = 'editor-floor-lock-status ' +
+            (writeEnabled ? 'editor-floor-lock-status--write' : 'editor-floor-lock-status--readonly');
+    }
+}
+
+function applyFloorLockWriteMode() {
+    window.editorFloorLockOwned = true;
+    window.editorFloorLockReadOnly = false;
+    window.editorFloorLockHolder = null;
+    setFloorLockBanner({ show: false });
+    document.body.classList.remove('editor-floor-readonly');
+    updateFloorLockWriteControls(true);
+    if (typeof resumeAutoSave === 'function') resumeAutoSave({ clean: false });
+}
+
+function applyFloorLockReadOnlyMode(holder, opts) {
+    opts = opts || {};
+    window.editorFloorLockOwned = false;
+    window.editorFloorLockReadOnly = true;
+    window.editorFloorLockHolder = holder || null;
+    var holderLabel = formatFloorLockHolder(holder);
+    setFloorLockBanner({
+        show: true,
+        title: opts.title || 'Chế độ chỉ xem — tầng đang bị khóa',
+        message: opts.message || ('Đang chỉnh bởi ' + holderLabel + '. Bạn xem được bản đồ; không lưu nháp / xuất bản.'),
+        showForce: opts.showForce != null ? opts.showForce : canForceFloorLock()
+    });
+    document.body.classList.add('editor-floor-readonly');
+    updateFloorLockWriteControls(false);
+    if (typeof pauseAutoSave === 'function') pauseAutoSave('floor-lock-readonly');
+    if (_draftServerSyncTimer != null) {
+        clearTimeout(_draftServerSyncTimer);
+        _draftServerSyncTimer = null;
+    }
+    if (typeof selectTool === 'function') selectTool('select');
+}
+
+function getCurrentEditorFloor() {
+    var el = document.getElementById('floorSelect');
+    return el ? el.value : '0';
+}
+
 async function acquireFloorLock(force) {
     if (!buildingId || window.editorAccessBlocked) return null;
-    var floor = document.getElementById('floorSelect').value;
+    var floor = getCurrentEditorFloor();
+
+    if (window.LockApi && typeof LockApi.acquireLock === 'function') {
+        try {
+            var v1 = await LockApi.acquireLock(buildingId, floor, getEditSessionId(), !!force, apiFetch);
+            if (v1.ok) {
+                applyFloorLockWriteMode();
+                console.log('[FloorLock] acquired v1', floor, v1.lock && v1.lock.user_email);
+                return v1;
+            }
+            if (v1.conflict) {
+                applyFloorLockReadOnlyMode(v1.holder, {
+                    message: (v1.message || ('Đang chỉnh bởi ' + formatFloorLockHolder(v1.holder))) +
+                        ' — bạn xem được; không lưu nháp / xuất bản.'
+                });
+                console.warn('[FloorLock] denied v1', v1.code, formatFloorLockHolder(v1.holder));
+                return null;
+            }
+        } catch (e) {
+            console.warn('[FloorLock] acquire v1 failed, thử legacy', e);
+        }
+    }
+
     try {
         var response = await apiFetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/lock`, {
             method: 'POST',
@@ -627,22 +732,15 @@ async function acquireFloorLock(force) {
         });
         var result = await response.json().catch(function () { return {}; });
         if (response.ok) {
-            window.editorFloorLockOwned = true;
-            setFloorLockBanner({ show: false });
-            console.log('[FloorLock] acquired', floor, result.lock && result.lock.user_email);
+            applyFloorLockWriteMode();
+            console.log('[FloorLock] acquired legacy', floor, result.lock && result.lock.user_email);
             return result;
         }
-        window.editorFloorLockOwned = false;
-        var holder = (result.holder && (result.holder.user_email || result.holder.email)) || 'người khác';
-        var role = localStorage.getItem('userRole') || '';
-        var canForce = role === 'SUPER_ADMIN' || role === 'ORG_ADMIN';
-        setFloorLockBanner({
-            show: true,
-            title: 'Tầng đang bị khóa',
-            message: (result.message || ('Đang chỉnh bởi ' + holder)) + ' — bạn vẫn xem được; xuất bản có thể bị chặn.',
-            showForce: canForce
+        applyFloorLockReadOnlyMode(result.holder, {
+            message: (result.message || ('Đang chỉnh bởi ' + formatFloorLockHolder(result.holder))) +
+                ' — bạn xem được; xuất bản có thể bị chặn.'
         });
-        console.warn('[FloorLock] denied', response.status, result.code, holder);
+        console.warn('[FloorLock] denied legacy', response.status, result.code);
         return null;
     } catch (e) {
         console.warn('[FloorLock] acquire failed', e);
@@ -652,32 +750,65 @@ async function acquireFloorLock(force) {
 
 async function forceAcquireFloorLock() {
     if (!confirm('Cướp quyền sửa tầng này? Phiên kia sẽ mất khóa.')) return;
-    await acquireFloorLock(true);
+    var result = await acquireFloorLock(true);
+    if (result) showToast('Đã giữ quyền sửa tầng này.', 'success');
 }
+window.forceAcquireFloorLock = forceAcquireFloorLock;
 
 async function heartbeatFloorLock() {
     if (!buildingId || !window.editorFloorLockOwned) return;
-    var floor = document.getElementById('floorSelect').value;
+    var floor = getCurrentEditorFloor();
+
+    if (window.LockApi && typeof LockApi.heartbeatLock === 'function') {
+        try {
+            var v1 = await LockApi.heartbeatLock(buildingId, floor, getEditSessionId(), apiFetch);
+            if (v1.ok) return;
+            if (v1.conflict) {
+                applyFloorLockReadOnlyMode(v1.holder, {
+                    title: 'Mất quyền sửa',
+                    message: (v1.message || 'Khóa đã hết hạn hoặc bị người khác giữ') + ' — chuyển sang chỉ xem.'
+                });
+            }
+            return;
+        } catch (e) {
+            console.warn('[FloorLock] heartbeat v1 failed', e);
+        }
+    }
+
     try {
-        await apiFetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/lock/heartbeat`, {
+        var response = await apiFetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/lock/heartbeat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_id: getEditSessionId() })
         });
+        if (response.status === 409) {
+            var result = await response.json().catch(function () { return {}; });
+            applyFloorLockReadOnlyMode(result.holder, {
+                title: 'Mất quyền sửa',
+                message: 'Khóa đã hết hạn hoặc bị người khác giữ — chuyển sang chỉ xem.'
+            });
+        }
     } catch (_) { /* ignore */ }
 }
 
 async function releaseFloorLock(floorOverride) {
     if (!buildingId) return;
-    var floor = floorOverride != null ? floorOverride : (document.getElementById('floorSelect') && document.getElementById('floorSelect').value);
+    var floor = floorOverride != null ? floorOverride : getCurrentEditorFloor();
     if (floor == null || floor === '') return;
-    try {
-        await apiFetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/lock/release`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: getEditSessionId() })
-        });
-    } catch (_) { /* ignore */ }
+
+    if (window.LockApi && typeof LockApi.releaseLock === 'function') {
+        try {
+            await LockApi.releaseLock(buildingId, floor, getEditSessionId(), apiFetch);
+        } catch (_) { /* ignore */ }
+    } else {
+        try {
+            await apiFetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/lock/release`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: getEditSessionId() })
+            });
+        } catch (_) { /* ignore */ }
+    }
     window.editorFloorLockOwned = false;
 }
 
@@ -690,13 +821,13 @@ function startFloorLockHeartbeat() {
         window._floorLockUnloadBound = true;
         window.addEventListener('beforeunload', function () {
             try {
-                var floor = document.getElementById('floorSelect') && document.getElementById('floorSelect').value;
+                var floor = getCurrentEditorFloor();
                 if (!buildingId || floor == null || floor === '' || !window.editorFloorLockOwned) return;
                 var payload = JSON.stringify({ session_id: getEditSessionId() });
-                navigator.sendBeacon(
-                    `${BASE_API_URL}/maps/${buildingId}/${floor}/lock/release`,
-                    new Blob([payload], { type: 'application/json' })
-                );
+                var releaseUrl = (window.LockApi && typeof LockApi.buildLockUrl === 'function')
+                    ? LockApi.buildLockUrl(buildingId, floor, '/release')
+                    : `${BASE_API_URL}/maps/${buildingId}/${floor}/lock/release`;
+                navigator.sendBeacon(releaseUrl, new Blob([payload], { type: 'application/json' }));
             } catch (_) { /* ignore */ }
         });
     }
@@ -723,7 +854,7 @@ var _draftServerSyncTimer = null;
 var DRAFT_SERVER_SYNC_DELAY_MS = 8000;
 
 function scheduleDraftServerSync() {
-    if (!buildingId || !getCurrentAccessToken() || window.editorAccessBlocked) return;
+    if (!buildingId || !getCurrentAccessToken() || window.editorAccessBlocked || isFloorLockReadOnly()) return;
     if (_draftServerSyncTimer != null) clearTimeout(_draftServerSyncTimer);
     _draftServerSyncTimer = setTimeout(syncDraftToServerQuiet, DRAFT_SERVER_SYNC_DELAY_MS);
 }
@@ -731,7 +862,7 @@ window.scheduleDraftServerSync = scheduleDraftServerSync;
 
 async function syncDraftToServerQuiet() {
     _draftServerSyncTimer = null;
-    if (!buildingId || !getCurrentAccessToken() || window.editorAccessBlocked) return;
+    if (!buildingId || !getCurrentAccessToken() || window.editorAccessBlocked || isFloorLockReadOnly()) return;
     if (!window.DraftApi || typeof DraftApi.putDraft !== 'function') return;
     var floorEl = document.getElementById('floorSelect');
     var floor = floorEl ? floorEl.value : '0';
@@ -773,6 +904,10 @@ async function saveDraftToServer() {
     }
     if (window.editorAccessBlocked) {
         showToast('Không có quyền lưu nháp tòa nhà này.', 'error');
+        return;
+    }
+    if (isFloorLockReadOnly()) {
+        showToast('Tầng đang bị khóa — chỉ xem, không lưu nháp.', 'error');
         return;
     }
     const floor = document.getElementById('floorSelect').value;
@@ -823,6 +958,10 @@ async function saveDraftToServer() {
 async function saveMapToServer() {
     if (!buildingId) {
         alert('Lỗi: Không tìm thấy mã tòa nhà! Vui lòng mở từ Bảng điều khiển.');
+        return;
+    }
+    if (isFloorLockReadOnly()) {
+        showToast('Tầng đang bị khóa — chỉ xem, không xuất bản.', 'error');
         return;
     }
 

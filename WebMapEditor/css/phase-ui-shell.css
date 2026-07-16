@@ -716,6 +716,34 @@ body.phase-ui .editor-floor-lock-banner {
     color: #7d4e00;
 }
 
+body.phase-ui .editor-floor-lock-status {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: 4px;
+}
+
+body.phase-ui .editor-floor-lock-status--write {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+body.phase-ui .editor-floor-lock-status--readonly {
+    background: #fff3cd;
+    color: #856404;
+}
+
+body.phase-ui.editor-floor-readonly .ribbon-panel .tool-btn.tool-readonly-disabled,
+body.phase-ui.editor-floor-readonly .tool-palette .tool-btn:disabled {
+    opacity: 0.45;
+    pointer-events: none;
+}
+
+body.phase-ui.editor-floor-readonly .project-actions .btn-project:disabled {
+    opacity: 0.55;
+}
+
 /* Hide old toolbar layout */
 body.phase-ui .toolbar.legacy-hidden {
     display: none !important;

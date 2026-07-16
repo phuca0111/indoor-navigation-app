@@ -90,9 +90,9 @@ function setAutosaveStatus(text, isError) {
 }
 
 function markAutosaveDirty() {
+    if (window.editorFloorLockReadOnly) return;
     _autosaveDirty = true;
-    // Nếu map đã load xong mà vẫn bị pause nhầm → tự mở lại
-    if (_autosavePaused && window.editorMapLoadHandled) {
+    if (_autosavePaused && window.editorMapLoadHandled && _autosavePauseReason !== 'floor-lock-readonly') {
         console.warn('[Autosave] dirty khi vẫn pause (' + _autosavePauseReason + ') — tự resume');
         _autosavePaused = false;
         _autosavePauseReason = '';
@@ -266,6 +266,10 @@ function stopAutoSave() {
  */
 function startAutoSave(forceRestart, options) {
     options = options || {};
+    if (window.editorFloorLockReadOnly) {
+        pauseAutoSave('floor-lock-readonly');
+        return;
+    }
     syncAutosaveProjectContext();
     var key = getAutosaveKey();
 

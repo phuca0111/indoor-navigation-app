@@ -129,6 +129,7 @@ function runToolShortcut(alias) {
 
 function selectTool(tool) {
     if ((typeof isEditorLocked === 'function') && isEditorLocked()) return;
+    if (window.editorFloorLockReadOnly && tool !== 'select') return;
 
     // Alias: polyline → wall (đã hợp nhất)
     if (tool === 'polyline') tool = 'wall';
@@ -281,6 +282,7 @@ document.querySelectorAll('.tool-btn[data-tool]').forEach(function (btn) {
 
 document.addEventListener('keydown', function (e) {
     if ((typeof isEditorLocked === 'function') && isEditorLocked()) return;
+    if (window.editorFloorLockReadOnly) return;
     var t = e.target;
     var tn = t && t.tagName ? t.tagName.toUpperCase() : '';
     if (tn === 'INPUT' || tn === 'SELECT' || tn === 'TEXTAREA' || (t && t.isContentEditable)) return;
