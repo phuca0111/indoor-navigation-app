@@ -142,14 +142,20 @@ function writeAutosaveSnapshot(snapshot) {
         return { ok: true, bytes: json.length };
     } catch (e) {
         if (e && (e.name === 'QuotaExceededError' || /quota/i.test(String(e.message)))) {
+            var keptUrl = (snapshot && snapshot.bgLastPersistedUrl) || '';
+            if (!keptUrl && snapshot && snapshot.bgImageBase64 &&
+                typeof snapshot.bgImageBase64 === 'string' &&
+                snapshot.bgImageBase64.indexOf('/uploads/') === 0) {
+                keptUrl = snapshot.bgImageBase64;
+            }
             var lite = Object.assign({}, snapshot, {
-                bgImageBase64: '',
+                bgImageBase64: keptUrl,
                 autosaveBgStripped: true
             });
             try {
                 var liteJson = JSON.stringify(lite);
                 localStorage.setItem(key, liteJson);
-                return { ok: true, strippedBg: true, bytes: liteJson.length };
+                return { ok: true, strippedBg: !keptUrl, bytes: liteJson.length };
             } catch (e2) {
                 return { ok: false, error: e2 };
             }
@@ -326,7 +332,9 @@ function contentFingerprint(data) {
             qrs: data.qrs || [],
             blocks: data.blocks || [],
             blockInserts: data.blockInserts || [],
-            dimensions: data.dimensions || []
+            dimensions: data.dimensions || [],
+            // WE6: fingerprint gồm nền — tránh bỏ qua restore khi chỉ đổi ảnh nền
+            bg: data.bgImageBase64 || data.background_image || ''
         });
     } catch (e) {
         return '';
@@ -345,7 +353,8 @@ function getCanvasContentFingerprint() {
         qrs: typeof qrs !== 'undefined' ? qrs : [],
         blocks: typeof blocks !== 'undefined' ? blocks : [],
         blockInserts: typeof blockInserts !== 'undefined' ? blockInserts : [],
-        dimensions: typeof dimensions !== 'undefined' ? dimensions : []
+        dimensions: typeof dimensions !== 'undefined' ? dimensions : [],
+        bgImageBase64: (typeof window !== 'undefined' && window.bgImageBase64) ? window.bgImageBase64 : ''
     });
 }
 
@@ -490,9 +499,12 @@ function checkAutoSave(opts) {
             || (typeof blocks !== 'undefined' && blocks.length);
         var draftHasDims = data.dimensions && data.dimensions.length;
         var canvasHasDims = typeof dimensions !== 'undefined' && dimensions.length;
-        // Nếu nháp có Block/Insert/Dim mà canvas không → luôn khôi phục (tránh mất sau F5)
+        var draftBg = data.bgImageBase64 || data.background_image || '';
+        var canvasBg = (typeof window !== 'undefined' && window.bgImageBase64) ? window.bgImageBase64 : '';
+        // Nếu nháp có Block/Insert/Dim/ảnh nền mà canvas không → luôn khôi phục (tránh mất sau F5)
         var forceBlockRestore = !!(draftHasBlocks && !canvasHasBlocks)
-            || !!(draftHasDims && !canvasHasDims);
+            || !!(draftHasDims && !canvasHasDims)
+            || !!(draftBg && !canvasBg);
         if (draftFp && draftFp === canvasFp && !forceBlockRestore) {
             console.log('[Autosave] Nháp trùng bản đang mở — không cần khôi phục');
             return false;

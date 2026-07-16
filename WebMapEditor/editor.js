@@ -110,6 +110,9 @@ function applyBackgroundImageSrc(src, opts) {
         window.bgImage = img;
         window.bgImageBase64 = src || '';
         window.bgStorageKey = opts.storageKey || '';
+        if (opts.storageKey || (window.StorageApi && StorageApi.isHttpOrUploadUrl && StorageApi.isHttpOrUploadUrl(src))) {
+            window.bgLastPersistedUrl = src;
+        }
         if (window.EditorCore && EditorCore.AssetManager) {
             if (opts.storageKey && typeof EditorCore.AssetManager.setBackgroundFromUrl === 'function') {
                 EditorCore.AssetManager.setBackgroundFromUrl(src, opts.storageKey);
@@ -120,6 +123,9 @@ function applyBackgroundImageSrc(src, opts) {
         if (opts.fitViewport !== false) fitViewportToBackgroundImage(img);
         if (typeof draw === 'function') draw();
         if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+        // Persist nháp local ngay (URL ngắn) — tránh F5 mất nền
+        if (typeof flushAutosaveNow === 'function') flushAutosaveNow();
+        else if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
         if (typeof opts.onDone === 'function') opts.onDone(img);
     };
     img.onerror = function () {
@@ -156,9 +162,18 @@ async function persistBackgroundFileToStorage(file) {
         }
         return result;
     }
+    window.bgLastPersistedUrl = result.url || '';
     applyBackgroundImageSrc(result.url, {
         storageKey: result.key || '',
-        fitViewport: false
+        fitViewport: false,
+        onDone: function () {
+            // Đẩy draft server ngay — không đợi 8s
+            if (typeof syncDraftToServerQuiet === 'function') {
+                syncDraftToServerQuiet();
+            } else if (typeof scheduleDraftServerSync === 'function') {
+                scheduleDraftServerSync();
+            }
+        }
     });
     if (typeof showToast === 'function') {
         showToast('Đã lưu ảnh nền lên Storage', 'success');
@@ -209,6 +224,7 @@ if (bRem) {
         window.bgImage = null;
         window.bgImageBase64 = '';
         window.bgStorageKey = '';
+        window.bgLastPersistedUrl = '';
         draw();
     });
 }

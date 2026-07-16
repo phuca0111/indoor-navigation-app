@@ -882,10 +882,20 @@ async function syncDraftToServerQuiet() {
     var floorEl = document.getElementById('floorSelect');
     var floor = floorEl ? floorEl.value : '0';
     var mapData = buildCurrentMapDataForDraftOrPublish();
+    // Chưa upload Storage xong — hoãn PUT để tránh ghi background_image rỗng
+    if (DraftApi.isBase64DataUrl && DraftApi.isBase64DataUrl(mapData.background_image)) {
+        console.log('[Draft] Autosync hoãn — ảnh nền còn Base64, chờ Storage');
+        scheduleDraftServerSync();
+        return;
+    }
     try {
         var result = await DraftApi.putDraft(buildingId, floor, mapData, apiFetch);
         if (result.ok) {
             console.log('[Draft] Autosync OK — v' + (result.version != null ? result.version : '?'));
+            if (mapData.background_image && DraftApi.isPersistedBackgroundUrl &&
+                DraftApi.isPersistedBackgroundUrl(mapData.background_image)) {
+                window.bgLastPersistedUrl = mapData.background_image;
+            }
         } else if (result.unauthorized) {
             console.warn('[Draft] Autosync — phiên hết hạn');
         } else {
@@ -895,6 +905,7 @@ async function syncDraftToServerQuiet() {
         console.warn('[Draft] Autosync lỗi:', e.message || e);
     }
 }
+window.syncDraftToServerQuiet = syncDraftToServerQuiet;
 
 async function loadDraftOverlay(floor) {
     if (!window.DraftApi || typeof DraftApi.fetchDraft !== 'function') {
@@ -907,7 +918,26 @@ async function loadDraftOverlay(floor) {
     if (!DraftApi.isDraftPayloadMeaningful(draftRes.payload)) {
         return { draftLoaded: false, empty: true };
     }
+    // Draft cũ có thể background_image='' do strip Base64 — giữ nền đã load từ published nếu có
+    var prevBg = (typeof window !== 'undefined' && window.bgImageBase64) ? window.bgImageBase64 : '';
+    var prevImg = (typeof window !== 'undefined') ? window.bgImage : null;
     applyMapData(draftRes.payload);
+    if (!draftRes.payload.background_image && prevBg) {
+        window.bgImageBase64 = prevBg;
+        bgImageBase64 = prevBg;
+        if (prevImg) {
+            window.bgImage = prevImg;
+            bgImage = prevImg;
+        } else {
+            var imgKeep = new Image();
+            imgKeep.onload = function () {
+                window.bgImage = imgKeep;
+                bgImage = imgKeep;
+                draw();
+            };
+            imgKeep.src = prevBg;
+        }
+    }
     updateEditorFloorLabel();
     return { draftLoaded: true, version: draftRes.version, updatedAt: draftRes.updatedAt };
 }
@@ -1443,15 +1473,33 @@ function applyMapData(data) {
     // 2. Khôi phục Ảnh nền
     if (data.background_image) {
         bgImageBase64 = data.background_image;
+        if (typeof window !== 'undefined') {
+            window.bgImageBase64 = data.background_image;
+            if (window.DraftApi && DraftApi.isPersistedBackgroundUrl &&
+                DraftApi.isPersistedBackgroundUrl(data.background_image)) {
+                window.bgLastPersistedUrl = data.background_image;
+            }
+        }
         var img = new Image();
         img.onload = function () {
             bgImage = img;
+            if (typeof window !== 'undefined') window.bgImage = img;
             draw();
+        };
+        img.onerror = function () {
+            console.warn('[Map] Không tải được ảnh nền:', data.background_image);
+            if (typeof showToast === 'function') {
+                showToast('Không tải được ảnh nền từ server', 'error');
+            }
         };
         img.src = bgImageBase64;
     } else {
         bgImage = null;
         bgImageBase64 = '';
+        if (typeof window !== 'undefined') {
+            window.bgImage = null;
+            window.bgImageBase64 = '';
+        }
     }
 
     rooms = data.rooms || [];

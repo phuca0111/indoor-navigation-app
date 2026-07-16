@@ -15,13 +15,32 @@ function isBase64DataUrl(value) {
         /^data:image\/[a-zA-Z0-9.+-]+;base64,/i.test(value.trim());
 }
 
-/** Phase 2d: server từ chối Base64 trong background_image — bỏ trước khi PUT. */
+function isPersistedBackgroundUrl(value) {
+    if (!value || typeof value !== 'string') return false;
+    var v = value.trim();
+    if (isBase64DataUrl(v)) return false;
+    return /^https?:\/\//i.test(v) || v.indexOf('/uploads/') === 0;
+}
+
+/**
+ * Phase 2d: server từ chối Base64 trong background_image.
+ * Không ghi '' khi đang strip — giữ URL Storage đã persist (tránh F5 mất nền).
+ */
 function stripBase64BackgroundForServer(mapData) {
     if (!mapData || typeof mapData !== 'object') return mapData;
     var copy = Object.assign({}, mapData);
     if (isBase64DataUrl(copy.background_image)) {
-        copy.background_image = '';
-        copy._bgStrippedForServer = true;
+        var fallback = '';
+        if (typeof window !== 'undefined') {
+            if (isPersistedBackgroundUrl(window.bgLastPersistedUrl)) {
+                fallback = window.bgLastPersistedUrl;
+            } else if (isPersistedBackgroundUrl(window.bgImageBase64)) {
+                fallback = window.bgImageBase64;
+            }
+        }
+        copy.background_image = fallback;
+        copy._bgStrippedForServer = !fallback;
+        copy._bgKeptPersistedUrl = !!fallback;
     }
     return copy;
 }
@@ -133,6 +152,7 @@ async function putDraft(buildingId, floor, mapData, apiFetchFn) {
         updatedAt: data.updatedAt,
         message: data.message,
         bgStripped: !!body._bgStrippedForServer,
+        bgKeptPersistedUrl: !!body._bgKeptPersistedUrl,
         resp: resp
     };
 }
@@ -141,6 +161,7 @@ var DraftApi = {
     DRAFT_V1_PREFIX: DRAFT_V1_PREFIX,
     buildDraftUrl: buildDraftUrl,
     isBase64DataUrl: isBase64DataUrl,
+    isPersistedBackgroundUrl: isPersistedBackgroundUrl,
     stripBase64BackgroundForServer: stripBase64BackgroundForServer,
     isDraftPayloadMeaningful: isDraftPayloadMeaningful,
     fetchDraft: fetchDraft,
