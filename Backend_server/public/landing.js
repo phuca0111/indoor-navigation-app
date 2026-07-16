@@ -56,4 +56,15 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     });
+
+    // WL1: mở /features#editor (hoặc #dashboard / #android) → cuộn tới section
+    if (window.location.hash) {
+        var hashId = window.location.hash.replace(/^#/, '');
+        var hashEl = hashId ? document.getElementById(hashId) : null;
+        if (hashEl) {
+            setTimeout(function () {
+                hashEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 80);
+        }
+    }
 });
