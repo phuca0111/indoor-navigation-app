@@ -427,23 +427,24 @@ const googleAuthStart = async (req, res) => {
     }
 };
 
+// WL4 — Google OAuth về Landing /login (không embed Admin chrome)
 function buildGoogleRedirectHash({ token, refreshToken, pending }) {
     const parts = [];
     if (token) parts.push('token=' + encodeURIComponent(token));
     if (refreshToken) parts.push('refreshToken=' + encodeURIComponent(refreshToken));
     if (pending) parts.push('pending=1');
     parts.push('google=1');
-    return '/admin/index.html#' + parts.join('&');
+    return '/login#' + parts.join('&');
 }
 
 const googleAuthCallback = async (req, res) => {
     try {
         if (!isGoogleEnabled()) {
-            return res.redirect('/admin/index.html#google=0&error=disabled');
+            return res.redirect('/login#google=0&error=disabled');
         }
         const code = req.query?.code;
         if (!code) {
-            return res.redirect('/admin/index.html#google=0&error=missing_code');
+            return res.redirect('/login#google=0&error=missing_code');
         }
 
         const profile = await exchangeCode(code);
@@ -492,14 +493,14 @@ const googleAuthCallback = async (req, res) => {
         const orgCheck = await assertUserOrgActive(user);
         if (!orgCheck.ok) {
             return res.redirect(
-                '/admin/index.html#google=0&error=' + encodeURIComponent(orgCheck.code || 'ORG_INACTIVE')
+                '/login#google=0&error=' + encodeURIComponent(orgCheck.code || 'ORG_INACTIVE')
             );
         }
 
         if (user.organization_id && ['ORG_ADMIN', 'BUILDING_ADMIN'].includes(user.role)) {
             const org = await Organization.findById(user.organization_id);
             if (org && await isUserQuotaLocked(user._id, org)) {
-                return res.redirect('/admin/index.html#google=0&error=OVER_QUOTA_USER_LOCKED');
+                return res.redirect('/login#google=0&error=OVER_QUOTA_USER_LOCKED');
             }
         }
 
@@ -511,7 +512,7 @@ const googleAuthCallback = async (req, res) => {
     } catch (error) {
         console.error('Google OAuth callback:', error.message || error);
         return res.redirect(
-            '/admin/index.html#google=0&error=' + encodeURIComponent(error.message || 'oauth_failed')
+            '/login#google=0&error=' + encodeURIComponent(error.message || 'oauth_failed')
         );
     }
 };

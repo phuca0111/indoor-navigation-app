@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Đăng nhập | Indoor Navigation</title>
+    <title>Đăng nhập | IndoorNav</title>
+    <meta name="description" content="Đăng nhập IndoorNav để quản lý tòa nhà và Web Map Editor.">
     <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="/css/landing-layout.css">
+    <link rel="stylesheet" href="/css/landing-auth.css">
 </head>
 <body>
 <header class="header">
@@ -36,9 +38,34 @@
     <div class="container">
         <div class="landing-card landing-card--narrow">
             <h2>Đăng nhập</h2>
-            <p class="landing-muted">Đăng nhập để quản lý tòa nhà, xuất bản bản đồ và dùng Web Map Editor.</p>
-            <a class="btn btn-primary btn-large" href="/admin/index.html">Đi tới Admin Login</a>
-            <p style="margin-top: 14px;">Chưa có tài khoản? <a href="/register">Đăng ký tổ chức</a> hoặc <a href="/org-trial.html">dùng thử</a>.</p>
+            <p class="landing-muted">Đăng nhập để vào bảng điều khiển — quản lý tòa nhà, xuất bản bản đồ và Web Map Editor.</p>
+
+            <form id="loginForm" class="auth-form" novalidate>
+                <label for="email">Email</label>
+                <input id="email" name="email" type="email" required autocomplete="username" placeholder="admin@congty.com">
+
+                <label for="password">Mật khẩu</label>
+                <input id="password" name="password" type="password" required autocomplete="current-password" placeholder="••••••••">
+
+                <button class="btn btn-primary btn-large btn-block" type="submit">Đăng nhập</button>
+
+                <div id="googleLoginWrap" style="display:none;">
+                    <div class="auth-divider">hoặc</div>
+                    <a id="btnGoogleLogin" class="btn-google" href="/api/auth/google">Tiếp tục với Google</a>
+                </div>
+
+                <p class="auth-links">
+                    <a href="/admin/forgot-password.html">Quên mật khẩu?</a>
+                </p>
+                <p class="auth-links">
+                    Chưa có tài khoản?
+                    <a href="/register">Đăng ký tổ chức</a>
+                    ·
+                    <a href="/org-trial.html">Dùng thử miễn phí</a>
+                </p>
+
+                <p id="errorMessage" class="error-msg" role="alert"></p>
+            </form>
         </div>
     </div>
 </section>
@@ -51,5 +78,6 @@
 </footer>
 
 <script src="/landing.js"></script>
+<script src="/login.js"></script>
 </body>
 </html>

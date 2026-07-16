@@ -1,4 +1,27 @@
 /* WL0 — shared landing layout (header, auth, mobile) */
+
+/* Sticky footer: tránh khoảng trắng / “lệch” dưới chân trang khi nội dung ngắn */
+html {
+    height: 100%;
+}
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+body > section,
+body > main {
+    flex: 1 0 auto;
+}
+
+body > .footer {
+    flex-shrink: 0;
+    margin-top: auto;
+    width: 100%;
+}
+
 .auth-actions {
     display: flex;
     gap: 10px;

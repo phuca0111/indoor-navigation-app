@@ -9,6 +9,7 @@ const Organization = require('../models/Organization');
 const User = require('../models/User');
 const ActivityLog = require('../models/ActivityLog');
 const { createOrganizationWithAdmin } = require('../services/organizationOnboarding');
+const { validatePasswordStrength } = require('../utils/passwordPolicy');
 
 function slugify(name) {
   return String(name || '')
@@ -43,8 +44,9 @@ async function submitPublicRegistration(req, res) {
     if (!contactEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
       return res.status(400).json({ message: 'Email không hợp lệ.' });
     }
-    if (!password || password.length < 8) {
-      return res.status(400).json({ message: 'Mật khẩu phải có ít nhất 8 ký tự.' });
+    const passwordErrors = validatePasswordStrength(password);
+    if (passwordErrors.length) {
+      return res.status(400).json({ message: passwordErrors[0], errors: passwordErrors });
     }
 
     if (!slug) slug = slugify(organizationName);
@@ -118,8 +120,9 @@ async function submitSelfServiceTrial(req, res) {
     if (!contactEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
       return res.status(400).json({ message: 'Email không hợp lệ.' });
     }
-    if (!password || password.length < 8) {
-      return res.status(400).json({ message: 'Mật khẩu phải có ít nhất 8 ký tự.' });
+    const passwordErrors = validatePasswordStrength(password);
+    if (passwordErrors.length) {
+      return res.status(400).json({ message: passwordErrors[0], errors: passwordErrors });
     }
 
     if (!slug) slug = slugify(organizationName);
@@ -180,7 +183,7 @@ async function submitSelfServiceTrial(req, res) {
       message: 'Đăng ký trial thành công! Bạn có thể đăng nhập ngay.',
       organization: result.organization,
       adminUser: { email: result.adminUser.email, full_name: result.adminUser.full_name },
-      login_url: '/admin/index.html'
+      login_url: '/login'
     });
   } catch (error) {
     console.error('submitSelfServiceTrial error:', error);

@@ -1,0 +1,106 @@
+/* WL4 — Login / Register forms on Landing */
+.auth-form label {
+    display: block;
+    font-size: 13px;
+    color: #374151;
+    margin: 12px 0 6px;
+}
+
+.auth-form input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-sizing: border-box;
+    font-family: inherit;
+    font-size: 15px;
+}
+
+.auth-form .btn-block {
+    width: 100%;
+    margin-top: 18px;
+}
+
+.auth-form .auth-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 16px 0;
+    color: #9ca3af;
+    font-size: 12px;
+}
+
+.auth-form .auth-divider::before,
+.auth-form .auth-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #e5e7eb;
+}
+
+.auth-form .btn-google {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #dadce0;
+    background: #fff;
+    color: #333;
+    text-decoration: none;
+    font-weight: 500;
+    box-sizing: border-box;
+}
+
+.auth-form .btn-google:hover {
+    background: #f8f9fa;
+}
+
+.auth-form .auth-links {
+    margin-top: 14px;
+    font-size: 14px;
+    color: #4b5563;
+}
+
+.auth-form .auth-links a {
+    color: #007AFF;
+}
+
+.auth-form .error-msg {
+    display: none;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #fef2f2;
+    color: #b91c1c;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.auth-form .ok-msg {
+    display: none;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #ecfdf5;
+    color: #047857;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.auth-form .field-hint {
+    color: #9ca3af;
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+.auth-alt-actions {
+    margin-top: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.auth-alt-actions .btn {
+    text-align: center;
+}

@@ -46,7 +46,8 @@
       <input type="text" id="contactPhone" placeholder="0901234567">
 
       <label>Mật khẩu *</label>
-      <input type="password" id="password" required minlength="8" placeholder="Ít nhất 8 ký tự">
+      <input type="password" id="password" required minlength="8" placeholder="Vd: Demo@1234" autocomplete="new-password">
+      <small>Ít nhất 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt.</small>
 
       <button type="submit">Bắt đầu dùng thử</button>
     </form>
@@ -54,9 +55,10 @@
     <div id="msgOk" class="msg ok"></div>
     <div id="msgErr" class="msg err"></div>
     <a class="back" href="/">← Về trang chủ</a>
-    <a class="back" href="/org-register.html" style="margin-left:12px;">Đăng ký chờ duyệt</a>
+    <a class="back" href="/register" style="margin-left:12px;">Đăng ký chờ duyệt</a>
   </div>
 
+  <script src="password-policy.js"></script>
   <script src="org-trial.js"></script>
 </body>
 </html>
