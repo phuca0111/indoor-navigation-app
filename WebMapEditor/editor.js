@@ -70,7 +70,104 @@ if (bImport) {
     });
 }
 
-// Upload ảnh → hiện nền
+/** Fit viewport + reset transform ảnh nền (sau khi img đã load). */
+function fitViewportToBackgroundImage(img) {
+    if (!img || !canvas) return;
+    var scaleX = canvas.width / img.width;
+    var scaleY = canvas.height / img.height;
+    zoom = Math.min(scaleX, scaleY) * 0.9;
+    panX = (canvas.width - img.width * zoom) / 2;
+    panY = (canvas.height - img.height * zoom) / 2;
+    window.bgX = 0;
+    window.bgY = 0;
+    window.bgScale = 1.0;
+    window.bgRotation = 0;
+    window.bgOpacity = 0.5;
+    window.bgContrast = 1;
+    window.bgBrightness = 0;
+
+    var bSli = document.getElementById('bgOpacitySlider');
+    if (bSli) bSli.value = 50;
+    var bVal = document.getElementById('bgOpacityVal');
+    if (bVal) bVal.textContent = '50%';
+    var cSli = document.getElementById('bgContrastSlider');
+    if (cSli) cSli.value = '1';
+    var brSli = document.getElementById('bgBrightnessSlider');
+    if (brSli) brSli.value = '0';
+    if (typeof setBgContrast === 'function') setBgContrast(1);
+    if (typeof setBgBrightness === 'function') setBgBrightness(0);
+    if (zoomLevelSpan) zoomLevelSpan.textContent = Math.round(zoom * 100) + '%';
+}
+
+/**
+ * Gắn ảnh nền vào canvas — LUÔN set window.bgImage (AssetManager chỉ đồng bộ URL/data).
+ * Không tự quét phòng: dùng nút «Quét phòng».
+ */
+function applyBackgroundImageSrc(src, opts) {
+    opts = opts || {};
+    var img = new Image();
+    img.onload = function () {
+        window.bgImage = img;
+        window.bgImageBase64 = src || '';
+        window.bgStorageKey = opts.storageKey || '';
+        if (window.EditorCore && EditorCore.AssetManager) {
+            if (opts.storageKey && typeof EditorCore.AssetManager.setBackgroundFromUrl === 'function') {
+                EditorCore.AssetManager.setBackgroundFromUrl(src, opts.storageKey);
+            } else {
+                EditorCore.AssetManager.setBackgroundFromDataUrl(src);
+            }
+        }
+        if (opts.fitViewport !== false) fitViewportToBackgroundImage(img);
+        if (typeof draw === 'function') draw();
+        if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+        if (typeof opts.onDone === 'function') opts.onDone(img);
+    };
+    img.onerror = function () {
+        if (typeof showToast === 'function') {
+            showToast('Không tải được ảnh nền', 'error');
+        }
+    };
+    img.src = src;
+}
+window.applyBackgroundImageSrc = applyBackgroundImageSrc;
+
+/** WE6: upload Storage → map_data giữ URL (không Base64). */
+async function persistBackgroundFileToStorage(file) {
+    var bid = window.buildingId;
+    var floorEl = document.getElementById('floorSelect');
+    var floor = floorEl ? floorEl.value : '0';
+    if (!bid || !window.StorageApi || typeof StorageApi.uploadBackground !== 'function') {
+        if (typeof showToast === 'function') {
+            showToast(bid
+                ? 'Ảnh nền tạm (local) — thiếu Storage API'
+                : 'Ảnh nền tạm local — mở từ Dashboard (có tòa) để lưu Storage', 'info');
+        }
+        return { ok: false, skipped: true };
+    }
+    if (typeof showToast === 'function') showToast('Đang upload ảnh nền…', 'info');
+    var result = await StorageApi.uploadBackground(bid, floor, file, apiFetch);
+    if (result.unauthorized) {
+        if (typeof showToast === 'function') showToast('Hết phiên — đăng nhập lại', 'error');
+        return result;
+    }
+    if (!result.ok) {
+        if (typeof showToast === 'function') {
+            showToast(result.message || 'Upload ảnh nền thất bại — giữ bản tạm', 'error');
+        }
+        return result;
+    }
+    applyBackgroundImageSrc(result.url, {
+        storageKey: result.key || '',
+        fitViewport: false
+    });
+    if (typeof showToast === 'function') {
+        showToast('Đã lưu ảnh nền lên Storage', 'success');
+    }
+    return result;
+}
+window.persistBackgroundFileToStorage = persistBackgroundFileToStorage;
+
+// Upload ảnh → hiện nền ngay; upload Storage nếu có tòa; KHÔNG tự quét phòng
 var bInp = document.getElementById('bgInput');
 if (bInp) {
     bInp.addEventListener('change', function (e) {
@@ -79,51 +176,18 @@ if (bInp) {
 
         var reader = new FileReader();
         reader.onload = function (event) {
-            if (window.EditorCore && EditorCore.AssetManager) {
-                EditorCore.AssetManager.setBackgroundFromDataUrl(event.target.result);
-            } else {
-                window.bgImageBase64 = event.target.result;
-            }
-            var img = new Image();
-            img.onload = function () {
-                if (!window.EditorCore || !EditorCore.AssetManager) {
-                    window.bgImage = img;
+            var dataUrl = event.target.result;
+            applyBackgroundImageSrc(dataUrl, {
+                fitViewport: true,
+                onDone: function () {
+                    persistBackgroundFileToStorage(file).catch(function (err) {
+                        console.warn('[WE6] upload background', err);
+                    });
                 }
-                var scaleX = canvas.width / img.width;
-                var scaleY = canvas.height / img.height;
-                zoom = Math.min(scaleX, scaleY) * 0.9;
-                panX = (canvas.width - img.width * zoom) / 2;
-                panY = (canvas.height - img.height * zoom) / 2;
-                window.bgX = 0; // Reset vị trí nền khi load ảnh mới
-                window.bgY = 0;
-                window.bgScale = 1.0;
-                window.bgRotation = 0;
-                window.bgOpacity = 0.5;
-                window.bgContrast = 1;
-                window.bgBrightness = 0;
-                
-                var bSli = document.getElementById('bgOpacitySlider');
-                if (bSli) bSli.value = 50;
-                var bVal = document.getElementById('bgOpacityVal');
-                if (bVal) bVal.textContent = '50%';
-                var cSli = document.getElementById('bgContrastSlider');
-                if (cSli) cSli.value = '1';
-                var brSli = document.getElementById('bgBrightnessSlider');
-                if (brSli) brSli.value = '0';
-                if (typeof setBgContrast === 'function') setBgContrast(1);
-                if (typeof setBgBrightness === 'function') setBgBrightness(0);
-                if (zoomLevelSpan) zoomLevelSpan.textContent = Math.round(zoom * 100) + '%';
-
-                draw();
-                if (typeof detectRoomsFromImageV2 === 'function') {
-                    detectRoomsFromImageV2(img);
-                } else if (typeof detectRoomsFromImage === 'function') {
-                    detectRoomsFromImage(img);
-                }
-            };
-            img.src = event.target.result;
+            });
         };
         reader.readAsDataURL(file);
+        e.target.value = '';
     });
 }
 
@@ -132,12 +196,19 @@ var bRem = document.getElementById('btnRemoveBg');
 if (bRem) {
     bRem.addEventListener('click', function () {
         saveState();
+        var bid = window.buildingId;
+        var floorEl = document.getElementById('floorSelect');
+        var floor = floorEl ? floorEl.value : '0';
+        var key = window.bgStorageKey;
+        if (bid && key && window.StorageApi && typeof StorageApi.deleteBackground === 'function') {
+            StorageApi.deleteBackground(bid, floor, key, apiFetch).catch(function () { /* ignore */ });
+        }
         if (window.EditorCore && EditorCore.AssetManager) {
             EditorCore.AssetManager.clearBackground();
-        } else {
-            window.bgImage = null;
-            window.bgImageBase64 = '';
         }
+        window.bgImage = null;
+        window.bgImageBase64 = '';
+        window.bgStorageKey = '';
         draw();
     });
 }
