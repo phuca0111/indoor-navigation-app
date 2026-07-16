@@ -101,6 +101,7 @@ const draftRoutes = require('./routes/draftRoutes');
 const floorLockRoutes = require('./routes/floorLockRoutes');
 const publishRoutes = require('./routes/publishRoutes');
 const storageRoutes = require('./routes/storageRoutes');
+const contactRoutes = require('./routes/contactRoutes');
 const { getLocalRoot } = require('./services/objectStorage');
 
 app.use('/api/auth', authRoutes);
@@ -120,6 +121,7 @@ app.use('/api/organizations', organizationRoutes);
 app.use('/api/org-registrations', orgRegistrationRoutes);
 app.use('/api/platform', platformStatsRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/contact', contactRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/tptp-pay', tptpPayRoutes);
 app.use('/api/tptp-bank', tptpBankRoutes);

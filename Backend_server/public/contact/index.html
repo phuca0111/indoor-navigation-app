@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Liên hệ | Indoor Navigation</title>
+    <title>Liên hệ | IndoorNav</title>
+    <meta name="description" content="Gửi yêu cầu tư vấn triển khai hệ thống Indoor Navigation.">
     <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="/css/landing-layout.css">
     <link rel="stylesheet" href="/css/landing-contact.css">
@@ -37,26 +38,35 @@
     <div class="container">
         <div class="landing-card">
             <h2 class="section-title">Liên hệ</h2>
-            <p class="landing-muted" style="margin-top: 10px;">Gửi yêu cầu tư vấn triển khai hệ thống dẫn đường trong nhà.</p>
-            <form id="contactForm">
+            <p class="landing-muted" style="margin-top: 10px;">
+                Gửi yêu cầu tư vấn triển khai hệ thống dẫn đường trong nhà.
+                Tin nhắn được lưu vào inbox hệ thống (API).
+            </p>
+            <form id="contactForm" novalidate>
                 <div class="form-grid">
                     <div>
                         <label for="contactName">Họ tên</label>
-                        <input id="contactName" name="name" type="text" required placeholder="Nguyễn Văn A">
+                        <input id="contactName" name="name" type="text" required minlength="2" maxlength="120" placeholder="Nguyễn Văn A" autocomplete="name">
                     </div>
                     <div>
                         <label for="contactEmail">Email</label>
-                        <input id="contactEmail" name="email" type="email" required placeholder="admin@congty.com">
+                        <input id="contactEmail" name="email" type="email" required maxlength="200" placeholder="admin@congty.com" autocomplete="email">
                     </div>
                 </div>
+                <label for="contactPhone">Số điện thoại (tuỳ chọn)</label>
+                <input id="contactPhone" name="phone" type="tel" maxlength="40" placeholder="0901234567" autocomplete="tel">
+
                 <label for="contactMessage">Nội dung</label>
-                <textarea id="contactMessage" name="message" required placeholder="VD: Cần tư vấn triển khai cho bệnh viện / tòa nhà ..."></textarea>
+                <textarea id="contactMessage" name="message" required minlength="10" maxlength="4000" placeholder="VD: Cần tư vấn triển khai cho bệnh viện / tòa nhà ..."></textarea>
+
                 <div class="contact-actions">
                     <button class="btn btn-primary btn-large" type="submit">Gửi liên hệ</button>
                     <a class="btn btn-secondary btn-large" href="/pricing">Xem gói</a>
                 </div>
                 <div id="contactStatus" class="status" aria-live="polite"></div>
-                <p class="contact-note">Demo: form mở ứng dụng email (mailto). WL3+ có thể nối API/CMS.</p>
+                <p class="contact-note">
+                    Tin nhắn được lưu vào hệ thống. Nếu máy chủ tạm lỗi, form sẽ mở email dự phòng.
+                </p>
             </form>
         </div>
     </div>
@@ -70,23 +80,6 @@
 </footer>
 
 <script src="/landing.js"></script>
-<script>
-(function () {
-    var form = document.getElementById('contactForm');
-    var statusEl = document.getElementById('contactStatus');
-    if (!form) return;
-    form.addEventListener('submit', function (e) {
-        e.preventDefault();
-        var name = form.querySelector('input[name="name"]').value || '';
-        var email = form.querySelector('input[name="email"]').value || '';
-        var message = form.querySelector('textarea[name="message"]').value || '';
-        var mailto = 'mailto:contact@example.com' +
-            '?subject=' + encodeURIComponent('Indoor Navigation - Liên hệ: ' + name) +
-            '&body=' + encodeURIComponent('Họ tên: ' + name + '\nEmail: ' + email + '\n\nNội dung:\n' + message);
-        if (statusEl) statusEl.textContent = 'Đang mở email...';
-        window.location.href = mailto;
-    });
-})();
-</script>
+<script src="/contact.js"></script>
 </body>
 </html>

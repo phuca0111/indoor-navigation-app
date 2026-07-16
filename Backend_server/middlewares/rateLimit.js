@@ -75,11 +75,22 @@ const publishLimiter = rateLimit({
     }
 });
 
+// WL3 — Contact form: 8 lần / 1 giờ / IP
+const contactLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 8,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: () => !!process.env.JEST_WORKER_ID,
+    message: { message: 'Bạn đã gửi quá nhiều liên hệ. Vui lòng thử lại sau 1 giờ.' }
+});
+
 module.exports = {
     loginLimiter,
     publicRegisterLimiter,
     refreshLimiter,
     forgotPasswordLimiter,
     resetPasswordLimiter,
-    publishLimiter
+    publishLimiter,
+    contactLimiter
 };
