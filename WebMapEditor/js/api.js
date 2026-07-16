@@ -5,6 +5,25 @@
 // Dùng relative URL để editor chạy được cả local và Render cùng domain.
 const BASE_API_URL = '/api';
 
+/** Khôi phục token từ dashboard (sessionStorage) khi localStorage trống — tránh logout giả khi đổi trang. */
+(function restoreAuthHandoffFromDashboard() {
+    try {
+        var raw = sessionStorage.getItem('editorAuthHandoff');
+        if (!raw) return;
+        sessionStorage.removeItem('editorAuthHandoff');
+        var handoff = JSON.parse(raw);
+        if (!handoff || !handoff.token) return;
+        if (handoff.ts && Date.now() - handoff.ts > 60000) return;
+        if (!localStorage.getItem('token')) {
+            localStorage.setItem('token', handoff.token);
+            if (handoff.refreshToken) localStorage.setItem('refreshToken', handoff.refreshToken);
+            if (handoff.userEmail) localStorage.setItem('userEmail', handoff.userEmail);
+            if (handoff.userRole) localStorage.setItem('userRole', handoff.userRole);
+            if (handoff.userId) localStorage.setItem('userId', handoff.userId);
+        }
+    } catch (_) { /* ignore */ }
+})();
+
 // 1. Lấy thông tin từ URL và LocalStorage
 const urlParams = new URLSearchParams(window.location.search);
 const buildingId = urlParams.get('buildingId') || urlParams.get('building'); // Chấp nhận cả 2 cách gọi cho chắc chắn
@@ -12,6 +31,16 @@ let token = localStorage.getItem('token');   // WHY: dùng let để có thể c
 window.buildingId = buildingId;
 window.editorBuildingMeta = null;
 window.editorAccessBlocked = false;
+
+function getCurrentAccessToken() {
+    try {
+        const latest = localStorage.getItem('token');
+        token = latest || '';
+        return token;
+    } catch (_) {
+        return token || '';
+    }
+}
 
 // Đồng bộ tầng từ URL (?floor=0) — chạy sớm; rebuildFloorSelect sẽ ưu tiên lại sau khi có đủ option
 (function syncFloorFromUrl() {
@@ -75,6 +104,18 @@ function clearEditorAuthStorage() {
     localStorage.removeItem('activeDashboardTab');
 }
 
+/** Chỉ logout khi token hiện tại vẫn là token đã verify — tránh tab cũ xóa session tab mới (race đa tab). */
+function shouldInvalidateEditorSession(tokenAtStart) {
+    return getCurrentAccessToken() === tokenAtStart;
+}
+
+function redirectEditorToLogin() {
+    window.location.replace('/admin/index.html');
+}
+
+var _editorVerifyPromise = null;
+var _editorInitDone = false;
+
 function isNetworkFetchError(error) {
     if (!error) return false;
     if (error instanceof TypeError) return true;
@@ -92,12 +133,13 @@ function getOfflineEditorUser() {
     };
 }
 
-async function verifyEditorSession() {
-    const token = localStorage.getItem('token');
-    if (!token) {
+async function verifyEditorSessionCore(depth) {
+    depth = depth || 0;
+    const tokenAtStart = getCurrentAccessToken();
+    if (!tokenAtStart) {
         console.warn('🔒 Editor: Không có token - redirect đến login');
         clearEditorAuthStorage();
-        window.location.replace('/admin/index.html');
+        redirectEditorToLogin();
         return null;
     }
 
@@ -109,9 +151,16 @@ async function verifyEditorSession() {
 
         if (!response.ok) {
             if (response.status === 401 || response.status === 403) {
+                if (!shouldInvalidateEditorSession(tokenAtStart)) {
+                    if (depth < 2) {
+                        console.warn('🔒 Editor: Bỏ qua 401 cũ — token đã đổi ở tab khác');
+                        return verifyEditorSessionCore(depth + 1);
+                    }
+                    return null;
+                }
                 console.warn('🔒 Editor: Token không hợp lệ - redirect đến login');
                 clearEditorAuthStorage();
-                window.location.replace('/admin/index.html');
+                redirectEditorToLogin();
                 return null;
             }
             console.warn('🔒 Editor: verify session HTTP', response.status);
@@ -146,11 +195,26 @@ async function verifyEditorSession() {
                 return offlineUser;
             }
         }
+        if (!shouldInvalidateEditorSession(tokenAtStart)) {
+            if (depth < 2) {
+                console.warn('🔒 Editor: Bỏ qua lỗi verify cũ — token đã đổi');
+                return verifyEditorSessionCore(depth + 1);
+            }
+            return null;
+        }
         console.error('🔒 Editor: Lỗi verify session:', error);
         clearEditorAuthStorage();
-        window.location.replace('/admin/index.html');
+        redirectEditorToLogin();
         return null;
     }
+}
+
+function verifyEditorSession() {
+    if (_editorVerifyPromise) return _editorVerifyPromise;
+    _editorVerifyPromise = verifyEditorSessionCore().finally(function () {
+        _editorVerifyPromise = null;
+    });
+    return _editorVerifyPromise;
 }
 
 async function initEditor() {
@@ -163,6 +227,7 @@ async function initEditor() {
         console.log('🛑 Editor: Dừng init - không có session hợp lệ');
         return;
     }
+    _editorInitDone = true;
 
     // Đồng bộ userId sớm — key autosave phải khớp trước khi đọc nháp
     try {
@@ -208,7 +273,10 @@ async function initEditor() {
         startFloorLockHeartbeat();
         // Tự khôi phục nháp nếu khác bản server (không hỏi confirm — F5 không mất việc)
         if (typeof checkAutoSave === 'function') {
-            checkAutoSave({ serverLoaded: !!(loadResult && loadResult.loaded) });
+            checkAutoSave({
+                serverLoaded: !!(loadResult && loadResult.loaded),
+                serverDraftLoaded: !!(loadResult && loadResult.draftLoaded)
+            });
         }
     }
 
@@ -384,12 +452,15 @@ function escapeHtml(text) {
 // ==========================================
 window.addEventListener('storage', event => {
     if (['token', 'refreshToken', 'userEmail', 'userRole', 'userId', 'authEvent'].includes(event.key)) {
+        // Đồng bộ biến token giữa nhiều tab trước khi verify (tránh dùng token cũ -> 401 giả).
+        getCurrentAccessToken();
         console.log('🔄 Editor: Phát hiện thay đổi storage - kiểm tra session...');
         verifyEditorSession();
     }
 });
 
 window.addEventListener('focus', () => {
+    if (!_editorInitDone) return;
     verifyEditorSession();
 });
 
@@ -424,11 +495,12 @@ async function tryRefreshToken() {
 }
 
 async function apiFetch(url, options = {}) {
+    const activeToken = getCurrentAccessToken();
     const opts = {
         ...options,
         headers: {
             ...(options.headers || {}),
-            'Authorization': 'Bearer ' + token
+            'Authorization': 'Bearer ' + activeToken
         }
     };
     let res = await fetch(url, opts);
@@ -437,7 +509,7 @@ async function apiFetch(url, options = {}) {
         console.warn('🔑 Access Token hết hạn, đang thử refresh...');
         const ok = await tryRefreshToken();
         if (ok) {
-            opts.headers['Authorization'] = 'Bearer ' + token;
+            opts.headers['Authorization'] = 'Bearer ' + getCurrentAccessToken();
             res = await fetch(url, opts); // Thử lại lần 2 với token mới
         }
     }
@@ -647,6 +719,53 @@ function buildCurrentMapDataForDraftOrPublish() {
     return attachEditorCadExtras(pipelineResult.mapData);
 }
 
+var _draftServerSyncTimer = null;
+var DRAFT_SERVER_SYNC_DELAY_MS = 8000;
+
+function scheduleDraftServerSync() {
+    if (!buildingId || !getCurrentAccessToken() || window.editorAccessBlocked) return;
+    if (_draftServerSyncTimer != null) clearTimeout(_draftServerSyncTimer);
+    _draftServerSyncTimer = setTimeout(syncDraftToServerQuiet, DRAFT_SERVER_SYNC_DELAY_MS);
+}
+window.scheduleDraftServerSync = scheduleDraftServerSync;
+
+async function syncDraftToServerQuiet() {
+    _draftServerSyncTimer = null;
+    if (!buildingId || !getCurrentAccessToken() || window.editorAccessBlocked) return;
+    if (!window.DraftApi || typeof DraftApi.putDraft !== 'function') return;
+    var floorEl = document.getElementById('floorSelect');
+    var floor = floorEl ? floorEl.value : '0';
+    var mapData = buildCurrentMapDataForDraftOrPublish();
+    try {
+        var result = await DraftApi.putDraft(buildingId, floor, mapData, apiFetch);
+        if (result.ok) {
+            console.log('[Draft] Autosync OK — v' + (result.version != null ? result.version : '?'));
+        } else if (result.unauthorized) {
+            console.warn('[Draft] Autosync — phiên hết hạn');
+        } else {
+            console.warn('[Draft] Autosync thất bại:', result.status, result.data);
+        }
+    } catch (e) {
+        console.warn('[Draft] Autosync lỗi:', e.message || e);
+    }
+}
+
+async function loadDraftOverlay(floor) {
+    if (!window.DraftApi || typeof DraftApi.fetchDraft !== 'function') {
+        return { draftLoaded: false, skipped: true };
+    }
+    var draftRes = await DraftApi.fetchDraft(buildingId, floor, apiFetch);
+    if (draftRes.unauthorized) return { unauthorized: true };
+    if (draftRes.forbidden) return { forbidden: true, data: draftRes.data };
+    if (!draftRes.ok || !draftRes.payload) return { draftLoaded: false };
+    if (!DraftApi.isDraftPayloadMeaningful(draftRes.payload)) {
+        return { draftLoaded: false, empty: true };
+    }
+    applyMapData(draftRes.payload);
+    updateEditorFloorLabel();
+    return { draftLoaded: true, version: draftRes.version, updatedAt: draftRes.updatedAt };
+}
+
 async function saveDraftToServer() {
     if (!buildingId) {
         alert('Lỗi: Không tìm thấy mã tòa nhà! Vui lòng mở từ Bảng điều khiển.');
@@ -660,19 +779,40 @@ async function saveDraftToServer() {
     const mapData = buildCurrentMapDataForDraftOrPublish();
     showLoading('Đang lưu nháp lên máy chủ...');
     try {
+        if (window.DraftApi && typeof DraftApi.putDraft === 'function') {
+            const result = await DraftApi.putDraft(buildingId, floor, mapData, apiFetch);
+            hideLoading();
+            if (result.ok) {
+                var verMsg = result.version != null ? ' (v' + result.version + ')' : '';
+                showToast('Đã lưu nháp tầng ' + floor + verMsg + ' — chưa xuất bản lên điện thoại.');
+                if (result.bgStripped && typeof showToast === 'function') {
+                    showToast('Ảnh nền Base64 đã bỏ trước khi gửi server — hãy upload qua Storage.', 'warning');
+                }
+                return;
+            }
+            if (result.unauthorized) {
+                showToast('Phiên đăng nhập hết hạn! Vui lòng đăng nhập lại.', 'error');
+                return;
+            }
+            const errMsg = (result.data && result.data.message) ||
+                ('Lỗi lưu nháp (HTTP ' + (result.status || '?') + ')');
+            showToast(errMsg, 'error');
+            return;
+        }
+
         const response = await apiFetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/draft`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ map_data: mapData })
         });
-        const result = await response.json().catch(function () { return {}; });
+        const legacyResult = await response.json().catch(function () { return {}; });
         hideLoading();
         if (response.ok) {
-            showToast('Đã lưu nháp tầng ' + floor + ' (chưa xuất bản lên điện thoại).');
+            showToast('Đã lưu nháp tầng ' + floor + ' (legacy API).');
         } else if (response.status === 401) {
             showToast('Phiên đăng nhập hết hạn! Vui lòng đăng nhập lại.', 'error');
         } else {
-            showToast(result.message || ('Lỗi lưu nháp (HTTP ' + response.status + ')'), 'error');
+            showToast(legacyResult.message || ('Lỗi lưu nháp (HTTP ' + response.status + ')'), 'error');
         }
     } catch (error) {
         hideLoading();
@@ -872,14 +1012,17 @@ async function loadMapFromServer() {
     try {
         const privateUrl = `${BASE_API_URL}/maps/${buildingId}/${floor}`;
 
-        let result = token
+        const mapToken = getCurrentAccessToken();
+        let result = mapToken
             ? await tryFetch(privateUrl, true)
             : { unauthorized: true };
 
         if (result.unauthorized) {
             console.warn('🔒 Editor: Token không hợp lệ - redirect login');
-            clearEditorAuthStorage();
-            window.location.replace('/admin/index.html');
+            if (shouldInvalidateEditorSession(mapToken)) {
+                clearEditorAuthStorage();
+                redirectEditorToLogin();
+            }
             return { loaded: false, unauthorized: true };
         }
 
@@ -892,33 +1035,55 @@ async function loadMapFromServer() {
             return { loaded: false, forbidden: true };
         }
 
-        if (result.notFound) {
-            console.warn('Tầng này chưa có bản đồ trên Server.');
-            updateEditorMapVersion(null);
-            return { loaded: false, notFound: true };
-        }
+        var publishedLoaded = false;
+        var publishedVersion = null;
 
-        if (result.ok && result.data && result.data.map_data) {
-            console.log('📥 Đã tải bản đồ từ Server:', result.data);
+        if (result.notFound) {
+            console.warn('Tầng này chưa có bản đồ published trên Server.');
+            updateEditorMapVersion(null);
+        } else if (result.ok && result.data && result.data.map_data) {
+            console.log('📥 Đã tải bản đồ published từ Server:', result.data);
             applyMapData(result.data.map_data);
             updateEditorFloorLabel();
-            var ver = result.data.version;
+            publishedVersion = result.data.version;
+            publishedLoaded = true;
             if (window.EditorCore && EditorCore.VersionManager &&
                 typeof EditorCore.VersionManager.syncFromServer === 'function') {
                 EditorCore.VersionManager.syncFromServer({
-                    serverVersion: ver,
+                    serverVersion: publishedVersion,
                     buildingStatus: (window.editorBuildingMeta && window.editorBuildingMeta.status) || null,
                     publishedAt: result.data.published_at || null
                 });
             }
             if (typeof renderVersionBadge === 'function') renderVersionBadge();
-            return { loaded: true, version: ver };
+        } else if (!result.notFound) {
+            const msg = (result.data && result.data.message) || 'Không tải được bản đồ (HTTP ' + (result.resp && result.resp.status) + ')';
+            showToast(msg, 'error');
+            return { loaded: false };
         }
 
-        // Không khớp điều kiện nào ở trên → lỗi server / format lạ
-        const msg = (result.data && result.data.message) || 'Không tải được bản đồ (HTTP ' + (result.resp && result.resp.status) + ')';
-        showToast(msg, 'error');
-        return { loaded: false };
+        var draftOverlay = await loadDraftOverlay(floor);
+        if (draftOverlay.unauthorized) {
+            console.warn('🔒 Editor: Draft API 401');
+            if (shouldInvalidateEditorSession(mapToken)) {
+                clearEditorAuthStorage();
+                redirectEditorToLogin();
+            }
+            return { loaded: publishedLoaded, unauthorized: true };
+        }
+        if (draftOverlay.forbidden) {
+            console.warn('Draft API forbidden — giữ bản published');
+        } else if (draftOverlay.draftLoaded) {
+            console.log('📥 Đã áp draft v1 lên canvas (ưu tiên hơn published)');
+            if (typeof renderVersionBadge === 'function') renderVersionBadge();
+        }
+
+        return {
+            loaded: publishedLoaded,
+            draftLoaded: !!draftOverlay.draftLoaded,
+            notFound: !!result.notFound && !draftOverlay.draftLoaded,
+            version: publishedVersion
+        };
     } catch (error) {
         hideLoading();
         console.error('Load Error:', error);

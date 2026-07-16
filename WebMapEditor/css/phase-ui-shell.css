@@ -1,0 +1,764 @@
+/* Phase UI — AutoCAD-like shell (theme sáng, layout 5 vùng) */
+
+body.phase-ui {
+    --bg-main: #F4F6F8;
+    --bg-sidebar: #FFFFFF;
+    --bg-card: #FFFFFF;
+    --bg-canvas: #EEF1F4;
+    --accent: #0969DA;
+    --accent-hover: #0550AE;
+    --accent-soft: #DDF4FF;
+    --primary: #0969DA;
+    --primary-hover: #0550AE;
+    --text-main: #1F2328;
+    --text-dim: #656D76;
+    --border: #D0D7DE;
+    --shadow: 0 1px 3px rgba(31, 35, 40, 0.08);
+
+    --shell-header-h: 44px;
+    --ribbon-h: 72px;
+    --project-bar-h: 40px;
+    --command-h: 36px;
+    --status-h: 28px;
+    --sidebar-width: 260px;
+    --header-height: var(--shell-header-h);
+}
+
+body.phase-ui {
+    background: var(--bg-main);
+    color: var(--text-main);
+}
+
+body.phase-ui ::-webkit-scrollbar-thumb {
+    background: #c8d1da;
+}
+
+body.phase-ui .app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* --- Compact header --- */
+body.phase-ui .shell-header {
+    height: var(--shell-header-h);
+    padding: 0 12px;
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    z-index: 100;
+}
+
+body.phase-ui .shell-header h1 {
+    font-size: 0.95rem;
+    font-weight: 700;
+    background: none;
+    -webkit-text-fill-color: var(--text-main);
+    color: var(--text-main);
+}
+
+body.phase-ui .shell-header .header-left,
+body.phase-ui .shell-header .header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+body.phase-ui .shell-header button {
+    font-size: 0.78rem;
+    padding: 5px 10px;
+    border-radius: 6px;
+}
+
+body.phase-ui .shell-header .btn-new-map {
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+}
+
+body.phase-ui .header-right button:not(.btn-primary) {
+    background: var(--bg-main);
+    color: var(--text-main);
+    border: 1px solid var(--border);
+}
+
+body.phase-ui .btn-primary {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+body.phase-ui .btn-lock {
+    background: var(--accent-soft);
+    color: var(--primary);
+    border: 1px solid #9cd7ff;
+}
+
+/* --- Ribbon --- */
+body.phase-ui .shell-ribbon {
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    min-height: var(--ribbon-h);
+    transition: min-height 0.2s ease;
+}
+
+body.phase-ui.ribbon-collapsed .shell-ribbon {
+    min-height: 32px;
+}
+
+body.phase-ui.ribbon-collapsed .ribbon-body {
+    display: none;
+}
+
+body.phase-ui .ribbon-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 4px 8px 0;
+    flex-shrink: 0;
+}
+
+body.phase-ui .ribbon-tab {
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    padding: 6px 12px;
+    border-radius: 6px 6px 0 0;
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+body.phase-ui .ribbon-tab:hover {
+    background: var(--bg-main);
+    color: var(--text-main);
+}
+
+body.phase-ui .ribbon-tab.active {
+    background: var(--accent-soft);
+    color: var(--primary);
+    font-weight: 600;
+}
+
+body.phase-ui .ribbon-body {
+    flex: 1;
+    padding: 6px 10px 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+body.phase-ui .ribbon-panel {
+    display: none;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+}
+
+body.phase-ui .ribbon-panel.active {
+    display: flex;
+}
+
+body.phase-ui .ribbon-panel .tool-btn {
+    width: auto;
+    min-width: auto;
+    padding: 6px 10px;
+    font-size: 0.75rem;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+body.phase-ui .ribbon-panel .tool-btn:hover {
+    background: var(--bg-main);
+    border-color: var(--border);
+    color: var(--text-main);
+}
+
+body.phase-ui .ribbon-panel .tool-btn.active {
+    background: var(--accent-soft);
+    color: var(--primary);
+    border-color: #9cd7ff;
+    box-shadow: none;
+}
+
+body.phase-ui .ribbon-hint {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    padding: 4px 8px;
+}
+
+/* --- Project bar --- */
+body.phase-ui .project-bar,
+body.phase-ui #editorBuildingBar.project-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    padding: 6px 12px;
+    min-height: var(--project-bar-h);
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+body.phase-ui .project-crumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+}
+
+body.phase-ui .crumb-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+}
+
+body.phase-ui .crumb-sep {
+    color: #afb8c1;
+    margin: 0 2px;
+}
+
+body.phase-ui .project-crumb strong,
+body.phase-ui #editorBuildingName {
+    color: var(--text-main);
+    font-weight: 600;
+    font-size: 13px;
+}
+
+body.phase-ui .project-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+body.phase-ui .btn-project {
+    padding: 4px 10px;
+    font-size: 11px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-main);
+    color: var(--text-main);
+    cursor: pointer;
+    font-family: inherit;
+}
+
+body.phase-ui .btn-project.btn-primary {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+}
+
+body.phase-ui .btn-project.btn-slot {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+body.phase-ui .editor-status-badge {
+    font-size: 11px;
+}
+
+body.phase-ui .editor-status-draft {
+    background: #fff8c5;
+    color: #7d4e00;
+    border: 1px solid #d4a72c;
+}
+
+body.phase-ui .editor-status-published {
+    background: #dafbe1;
+    color: #116329;
+    border: 1px solid #4ac26b;
+}
+
+body.phase-ui .editor-publish-hint {
+    display: none;
+}
+
+body.phase-ui .version-history-panel {
+    margin: 0 12px 6px;
+    background: #fff;
+    border: 1px solid var(--border);
+    color: var(--text-main);
+}
+
+/* --- Workspace --- */
+body.phase-ui .shell-workspace {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--bg-main);
+}
+
+body.phase-ui .shell-left {
+    flex: 0 0 var(--sidebar-width);
+    width: var(--sidebar-width);
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    transition: width 0.2s ease, opacity 0.2s ease, border 0.2s ease, flex-basis 0.2s ease;
+    overflow: hidden;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+}
+
+body.phase-ui .shell-right {
+    flex: 0 0 var(--sidebar-width);
+    width: var(--sidebar-width);
+    background: var(--bg-sidebar);
+    border-right: none;
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    transition: width 0.2s ease, opacity 0.2s ease, border 0.2s ease, flex-basis 0.2s ease;
+    overflow: hidden;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+}
+
+body.phase-ui.left-collapsed .shell-left {
+    flex: 0 0 0;
+    width: 0;
+    opacity: 0;
+    border: none;
+    pointer-events: none;
+}
+
+body.phase-ui.right-collapsed .shell-right {
+    flex: 0 0 0;
+    width: 0;
+    opacity: 0;
+    border: none;
+    pointer-events: none;
+}
+
+body.phase-ui .sidebar-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+body.phase-ui .sidebar-tab {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 8px 4px;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: inherit;
+    border-bottom: 2px solid transparent;
+}
+
+body.phase-ui .sidebar-tab:hover {
+    color: var(--text-main);
+    background: var(--bg-main);
+}
+
+body.phase-ui .sidebar-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+    font-weight: 600;
+}
+
+body.phase-ui .sidebar-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    min-height: 0;
+}
+
+body.phase-ui .sidebar-panel {
+    display: none;
+}
+
+body.phase-ui .sidebar-panel.active {
+    display: block;
+}
+
+body.phase-ui .explorer-tree .tree-item {
+    padding: 6px 8px;
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    margin-bottom: 4px;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    background: var(--bg-main);
+}
+
+body.phase-ui .explorer-tree .tree-item strong {
+    color: var(--text-main);
+}
+
+/* --- Canvas --- */
+body.phase-ui .shell-workspace .canvas-container {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    gap: 0;
+    height: auto;
+    overflow: hidden;
+    position: relative;
+    order: 0;
+}
+
+body.phase-ui .canvas-chrome {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+body.phase-ui .canvas-chrome button {
+    font-size: 0.72rem;
+    padding: 4px 8px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--bg-main);
+    color: var(--text-main);
+    cursor: pointer;
+    font-family: inherit;
+}
+
+body.phase-ui .canvas-chrome button.active,
+body.phase-ui .canvas-chrome button:focus-visible {
+    border-color: var(--primary);
+    background: var(--accent-soft);
+    color: var(--primary);
+    outline: none;
+}
+
+body.phase-ui .canvas-chrome .spacer {
+    flex: 1;
+}
+
+body.phase-ui .canvas-wrapper {
+    flex: 1;
+    background: var(--bg-canvas);
+    border-radius: 0;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    min-height: 120px;
+    position: relative;
+}
+
+body.phase-ui .canvas-wrapper::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(rgba(31, 35, 40, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(31, 35, 40, 0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.6;
+}
+
+body.phase-ui #mapCanvas {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+}
+
+body.phase-ui .edge-collapse-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 5;
+    width: 20px;
+    height: 44px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--primary);
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 12px;
+    padding: 0;
+    box-shadow: var(--shadow);
+}
+
+body.phase-ui .edge-collapse-btn.left-edge {
+    left: 4px;
+}
+
+body.phase-ui .edge-collapse-btn.right-edge {
+    right: 4px;
+}
+
+/* --- Command + Status (tách hàng) --- */
+body.phase-ui .shell-command-row {
+    height: var(--command-h);
+    background: var(--bg-sidebar);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+body.phase-ui .shell-command-row .command-bar-wrap {
+    flex: 1;
+    max-width: none;
+    border-right: none;
+    margin: 0;
+    padding: 0;
+}
+
+body.phase-ui .shell-command-row .command-bar-field,
+body.phase-ui .shell-command-row .dynamic-input-field {
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+}
+
+body.phase-ui .shell-status-bar {
+    height: var(--status-h);
+    background: #eaeef2;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px;
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    flex-shrink: 0;
+}
+
+body.phase-ui .shell-status-bar .status-pill {
+    border: 1px solid var(--border);
+    padding: 1px 7px;
+    border-radius: 4px;
+    background: #fff;
+    white-space: nowrap;
+}
+
+body.phase-ui .shell-status-bar .status-pill.on {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--accent-soft);
+}
+
+body.phase-ui .shell-status-bar .status-grow {
+    flex: 1;
+}
+
+body.phase-ui .shell-status-bar #autosaveStatus {
+    margin-left: 0;
+}
+
+/* --- Right panel --- */
+body.phase-ui .properties-panel,
+body.phase-ui .shell-right.properties-panel {
+    flex: 0 0 var(--sidebar-width);
+    width: var(--sidebar-width);
+    max-width: var(--sidebar-width);
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    overflow: hidden;
+}
+
+body.phase-ui .right-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+}
+
+body.phase-ui .right-tab {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 8px 4px;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: inherit;
+    border-bottom: 2px solid transparent;
+}
+
+body.phase-ui .right-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+    font-weight: 600;
+}
+
+body.phase-ui .right-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    min-height: 0;
+}
+
+body.phase-ui .right-panel {
+    display: none;
+}
+
+body.phase-ui .right-panel.active {
+    display: block;
+}
+
+body.phase-ui .panel-section h3 {
+    color: var(--text-main);
+    font-size: 0.82rem;
+}
+
+body.phase-ui .prop-group {
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+}
+
+body.phase-ui .prop-group-title {
+    color: var(--primary);
+}
+
+body.phase-ui .prop-row input,
+body.phase-ui .prop-row select {
+    background: #fff;
+    border: 1px solid var(--border);
+    color: var(--text-main);
+}
+
+body.phase-ui .obj-item {
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+}
+
+body.phase-ui .obj-item:hover {
+    background: var(--accent-soft);
+}
+
+body.phase-ui .obj-item.selected {
+    background: var(--accent-soft);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+/* --- Layers in sidebar --- */
+body.phase-ui .layer-row {
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+}
+
+body.phase-ui .layer-row.is-active {
+    border-color: var(--primary);
+    background: var(--accent-soft);
+}
+
+body.phase-ui .layer-row__btn {
+    background: #fff;
+    border: 1px solid var(--border);
+}
+
+/* --- Focus mode --- */
+body.phase-ui.focus-mode .shell-left,
+body.phase-ui.focus-mode .shell-right {
+    width: 0;
+    opacity: 0;
+    border: none;
+    pointer-events: none;
+}
+
+body.phase-ui.focus-mode .shell-ribbon {
+    min-height: 32px;
+}
+
+body.phase-ui.focus-mode .ribbon-body {
+    display: none;
+}
+
+body.phase-ui.focus-mode .project-bar {
+    display: none;
+}
+
+body.phase-ui.focus-mode .canvas-chrome {
+    background: #1f2328;
+    border-color: #30363d;
+}
+
+body.phase-ui.focus-mode .canvas-chrome button {
+    background: #21262d;
+    border-color: #30363d;
+    color: #e6edf3;
+}
+
+/* --- Banners --- */
+body.phase-ui .editor-access-banner {
+    background: #fff5f5;
+    border-bottom: 1px solid #ffc1c1;
+    color: #82071e;
+}
+
+body.phase-ui .editor-floor-lock-banner {
+    background: #fff8c5;
+    border-bottom: 1px solid #d4a72c;
+    color: #7d4e00;
+}
+
+/* Hide old toolbar layout */
+body.phase-ui .toolbar.legacy-hidden {
+    display: none !important;
+}
+
+body.phase-ui .main-content.legacy-layout {
+    display: none !important;
+}
+
+/* Config panel in sidebar */
+body.phase-ui .config-panel .prop-row {
+    margin-bottom: 8px;
+}
+
+body.phase-ui #loadingOverlay {
+    background: rgba(244, 246, 248, 0.92);
+    color: var(--text-main);
+}
+
+body.phase-ui .hint-text {
+    color: var(--text-dim);
+    font-size: 0.78rem;
+}
+
+body.phase-ui .secure-lock-modal {
+    background: #fff;
+    border: 1px solid var(--border);
+    color: var(--text-main);
+}
+
+body.phase-ui .secure-lock-subtitle {
+    color: var(--text-dim);
+}
+
+body.phase-ui .secure-lock-input {
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+}
+
+@media (max-width: 1100px) {
+    body.phase-ui {
+        --sidebar-width: 220px;
+        --ribbon-h: 64px;
+    }
+}
