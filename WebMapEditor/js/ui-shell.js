@@ -7,12 +7,17 @@
     var STORAGE_KEY = 'wme_ui_shell_v2';
 
     function layoutReflow() {
-        if (typeof resizeCanvas === 'function') {
-            requestAnimationFrame(function () {
+        function run() {
+            if (typeof resizeCanvas === 'function') {
                 resizeCanvas();
                 if (typeof draw === 'function') draw();
-            });
+            }
         }
+        requestAnimationFrame(function () {
+            run();
+            /* Chờ CSS transition panel (0.2s) rồi resize lại để canvas đầy ngang */
+            setTimeout(run, 220);
+        });
     }
 
     function loadPrefs() {
@@ -123,7 +128,12 @@
         var focusBtn = qs('#btnFocusCanvas');
         if (focusBtn) {
             focusBtn.classList.toggle('active', body.classList.contains('focus-mode'));
-            focusBtn.textContent = body.classList.contains('focus-mode') ? 'Thoát Focus' : 'Focus canvas';
+            focusBtn.textContent = body.classList.contains('focus-mode')
+                ? 'Thoát toàn màn hình'
+                : 'Toàn màn hình bản vẽ';
+            focusBtn.title = body.classList.contains('focus-mode')
+                ? 'Hiện lại panel trái/phải'
+                : 'Ẩn panel hai bên — bản vẽ rộng hết';
         }
     }
 
