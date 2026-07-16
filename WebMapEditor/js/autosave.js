@@ -216,6 +216,7 @@ function runAutoSaveTick() {
         if (result.strippedBg) msg += ' (bỏ ảnh nền — quá lớn)';
         setAutosaveStatus(msg, false);
         console.log('[Autosave] OK', getAutosaveKey(), result.bytes != null ? (result.bytes + ' bytes') : '');
+        if (typeof scheduleDraftServerSync === 'function') scheduleDraftServerSync();
     } catch (e) {
         _autosaveLastError = e;
         console.error('[Autosave] Lỗi:', e);

@@ -273,7 +273,10 @@ async function initEditor() {
         startFloorLockHeartbeat();
         // Tự khôi phục nháp nếu khác bản server (không hỏi confirm — F5 không mất việc)
         if (typeof checkAutoSave === 'function') {
-            checkAutoSave({ serverLoaded: !!(loadResult && loadResult.loaded) });
+            checkAutoSave({
+                serverLoaded: !!(loadResult && loadResult.loaded),
+                serverDraftLoaded: !!(loadResult && loadResult.draftLoaded)
+            });
         }
     }
 
@@ -716,6 +719,53 @@ function buildCurrentMapDataForDraftOrPublish() {
     return attachEditorCadExtras(pipelineResult.mapData);
 }
 
+var _draftServerSyncTimer = null;
+var DRAFT_SERVER_SYNC_DELAY_MS = 8000;
+
+function scheduleDraftServerSync() {
+    if (!buildingId || !getCurrentAccessToken() || window.editorAccessBlocked) return;
+    if (_draftServerSyncTimer != null) clearTimeout(_draftServerSyncTimer);
+    _draftServerSyncTimer = setTimeout(syncDraftToServerQuiet, DRAFT_SERVER_SYNC_DELAY_MS);
+}
+window.scheduleDraftServerSync = scheduleDraftServerSync;
+
+async function syncDraftToServerQuiet() {
+    _draftServerSyncTimer = null;
+    if (!buildingId || !getCurrentAccessToken() || window.editorAccessBlocked) return;
+    if (!window.DraftApi || typeof DraftApi.putDraft !== 'function') return;
+    var floorEl = document.getElementById('floorSelect');
+    var floor = floorEl ? floorEl.value : '0';
+    var mapData = buildCurrentMapDataForDraftOrPublish();
+    try {
+        var result = await DraftApi.putDraft(buildingId, floor, mapData, apiFetch);
+        if (result.ok) {
+            console.log('[Draft] Autosync OK — v' + (result.version != null ? result.version : '?'));
+        } else if (result.unauthorized) {
+            console.warn('[Draft] Autosync — phiên hết hạn');
+        } else {
+            console.warn('[Draft] Autosync thất bại:', result.status, result.data);
+        }
+    } catch (e) {
+        console.warn('[Draft] Autosync lỗi:', e.message || e);
+    }
+}
+
+async function loadDraftOverlay(floor) {
+    if (!window.DraftApi || typeof DraftApi.fetchDraft !== 'function') {
+        return { draftLoaded: false, skipped: true };
+    }
+    var draftRes = await DraftApi.fetchDraft(buildingId, floor, apiFetch);
+    if (draftRes.unauthorized) return { unauthorized: true };
+    if (draftRes.forbidden) return { forbidden: true, data: draftRes.data };
+    if (!draftRes.ok || !draftRes.payload) return { draftLoaded: false };
+    if (!DraftApi.isDraftPayloadMeaningful(draftRes.payload)) {
+        return { draftLoaded: false, empty: true };
+    }
+    applyMapData(draftRes.payload);
+    updateEditorFloorLabel();
+    return { draftLoaded: true, version: draftRes.version, updatedAt: draftRes.updatedAt };
+}
+
 async function saveDraftToServer() {
     if (!buildingId) {
         alert('Lỗi: Không tìm thấy mã tòa nhà! Vui lòng mở từ Bảng điều khiển.');
@@ -729,19 +779,40 @@ async function saveDraftToServer() {
     const mapData = buildCurrentMapDataForDraftOrPublish();
     showLoading('Đang lưu nháp lên máy chủ...');
     try {
+        if (window.DraftApi && typeof DraftApi.putDraft === 'function') {
+            const result = await DraftApi.putDraft(buildingId, floor, mapData, apiFetch);
+            hideLoading();
+            if (result.ok) {
+                var verMsg = result.version != null ? ' (v' + result.version + ')' : '';
+                showToast('Đã lưu nháp tầng ' + floor + verMsg + ' — chưa xuất bản lên điện thoại.');
+                if (result.bgStripped && typeof showToast === 'function') {
+                    showToast('Ảnh nền Base64 đã bỏ trước khi gửi server — hãy upload qua Storage.', 'warning');
+                }
+                return;
+            }
+            if (result.unauthorized) {
+                showToast('Phiên đăng nhập hết hạn! Vui lòng đăng nhập lại.', 'error');
+                return;
+            }
+            const errMsg = (result.data && result.data.message) ||
+                ('Lỗi lưu nháp (HTTP ' + (result.status || '?') + ')');
+            showToast(errMsg, 'error');
+            return;
+        }
+
         const response = await apiFetch(`${BASE_API_URL}/maps/${buildingId}/${floor}/draft`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ map_data: mapData })
         });
-        const result = await response.json().catch(function () { return {}; });
+        const legacyResult = await response.json().catch(function () { return {}; });
         hideLoading();
         if (response.ok) {
-            showToast('Đã lưu nháp tầng ' + floor + ' (chưa xuất bản lên điện thoại).');
+            showToast('Đã lưu nháp tầng ' + floor + ' (legacy API).');
         } else if (response.status === 401) {
             showToast('Phiên đăng nhập hết hạn! Vui lòng đăng nhập lại.', 'error');
         } else {
-            showToast(result.message || ('Lỗi lưu nháp (HTTP ' + response.status + ')'), 'error');
+            showToast(legacyResult.message || ('Lỗi lưu nháp (HTTP ' + response.status + ')'), 'error');
         }
     } catch (error) {
         hideLoading();
@@ -964,33 +1035,55 @@ async function loadMapFromServer() {
             return { loaded: false, forbidden: true };
         }
 
-        if (result.notFound) {
-            console.warn('Tầng này chưa có bản đồ trên Server.');
-            updateEditorMapVersion(null);
-            return { loaded: false, notFound: true };
-        }
+        var publishedLoaded = false;
+        var publishedVersion = null;
 
-        if (result.ok && result.data && result.data.map_data) {
-            console.log('📥 Đã tải bản đồ từ Server:', result.data);
+        if (result.notFound) {
+            console.warn('Tầng này chưa có bản đồ published trên Server.');
+            updateEditorMapVersion(null);
+        } else if (result.ok && result.data && result.data.map_data) {
+            console.log('📥 Đã tải bản đồ published từ Server:', result.data);
             applyMapData(result.data.map_data);
             updateEditorFloorLabel();
-            var ver = result.data.version;
+            publishedVersion = result.data.version;
+            publishedLoaded = true;
             if (window.EditorCore && EditorCore.VersionManager &&
                 typeof EditorCore.VersionManager.syncFromServer === 'function') {
                 EditorCore.VersionManager.syncFromServer({
-                    serverVersion: ver,
+                    serverVersion: publishedVersion,
                     buildingStatus: (window.editorBuildingMeta && window.editorBuildingMeta.status) || null,
                     publishedAt: result.data.published_at || null
                 });
             }
             if (typeof renderVersionBadge === 'function') renderVersionBadge();
-            return { loaded: true, version: ver };
+        } else if (!result.notFound) {
+            const msg = (result.data && result.data.message) || 'Không tải được bản đồ (HTTP ' + (result.resp && result.resp.status) + ')';
+            showToast(msg, 'error');
+            return { loaded: false };
         }
 
-        // Không khớp điều kiện nào ở trên → lỗi server / format lạ
-        const msg = (result.data && result.data.message) || 'Không tải được bản đồ (HTTP ' + (result.resp && result.resp.status) + ')';
-        showToast(msg, 'error');
-        return { loaded: false };
+        var draftOverlay = await loadDraftOverlay(floor);
+        if (draftOverlay.unauthorized) {
+            console.warn('🔒 Editor: Draft API 401');
+            if (shouldInvalidateEditorSession(mapToken)) {
+                clearEditorAuthStorage();
+                redirectEditorToLogin();
+            }
+            return { loaded: publishedLoaded, unauthorized: true };
+        }
+        if (draftOverlay.forbidden) {
+            console.warn('Draft API forbidden — giữ bản published');
+        } else if (draftOverlay.draftLoaded) {
+            console.log('📥 Đã áp draft v1 lên canvas (ưu tiên hơn published)');
+            if (typeof renderVersionBadge === 'function') renderVersionBadge();
+        }
+
+        return {
+            loaded: publishedLoaded,
+            draftLoaded: !!draftOverlay.draftLoaded,
+            notFound: !!result.notFound && !draftOverlay.draftLoaded,
+            version: publishedVersion
+        };
     } catch (error) {
         hideLoading();
         console.error('Load Error:', error);
