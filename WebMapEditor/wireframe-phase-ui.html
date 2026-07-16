@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wireframe Phase UI — mock HTML (chưa code thật)</title>
+  <style>
+    :root {
+      --bg-app: #F4F6F8;
+      --bg-panel: #FFFFFF;
+      --bg-canvas: #EEF1F4;
+      --border: #D0D7DE;
+      --text: #1F2328;
+      --text-muted: #656D76;
+      --accent: #0969DA;
+      --accent-soft: #DDF4FF;
+      --ribbon-h: 56px;
+      --cmd-h: 36px;
+      --status-h: 28px;
+      --left-w: 72px;
+      --right-w: 260px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-size: 13px;
+      color: var(--text);
+      background: var(--bg-app);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .banner {
+      background: #fff8c5;
+      border-bottom: 1px solid #d4a72c;
+      color: #7d4e00;
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+    .banner code { background: #fff; padding: 1px 4px; border-radius: 3px; }
+
+    /* Building bar (giữ slot — Phần 17) */
+    .building-bar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 6px 10px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .building-bar .chip {
+      border: 1px dashed var(--border);
+      padding: 4px 10px;
+      border-radius: 4px;
+      color: var(--text-muted);
+      background: var(--bg-app);
+    }
+    .building-bar .spacer { flex: 1; }
+    .building-bar .btn {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      padding: 4px 12px;
+      border-radius: 4px;
+      cursor: default;
+    }
+    .building-bar .btn.ghost {
+      background: var(--bg-panel);
+      color: var(--accent);
+    }
+
+    /* Ribbon */
+    .ribbon {
+      height: var(--ribbon-h);
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 0 8px;
+    }
+    .ribbon-tabs {
+      display: flex;
+      gap: 2px;
+      padding-top: 4px;
+    }
+    .ribbon-tabs span {
+      padding: 4px 12px;
+      border-radius: 4px 4px 0 0;
+      color: var(--text-muted);
+      cursor: default;
+    }
+    .ribbon-tabs span.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .ribbon-tools {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex: 1;
+      padding-bottom: 4px;
+    }
+    .tool {
+      min-width: 48px;
+      height: 28px;
+      border: 1px dashed var(--border);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      background: var(--bg-app);
+      font-size: 11px;
+    }
+    .tool.on {
+      border-style: solid;
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    /* Main row */
+    .main {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+      position: relative;
+    }
+
+    .panel-left, .panel-right {
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      transition: width 0.2s ease, opacity 0.2s ease;
+      overflow: hidden;
+    }
+    .panel-right {
+      border-right: none;
+      border-left: 1px solid var(--border);
+      width: var(--right-w);
+    }
+    .panel-left { width: var(--left-w); }
+
+    body.left-collapsed .panel-left { width: 0; border: none; opacity: 0; pointer-events: none; }
+    body.right-collapsed .panel-right { width: 0; border: none; opacity: 0; pointer-events: none; }
+
+    .panel-title {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 8px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .palette {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 8px;
+      align-items: center;
+    }
+    .palette .icon {
+      width: 40px;
+      height: 40px;
+      border: 1px dashed var(--border);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: var(--text-muted);
+      background: var(--bg-app);
+    }
+    .palette .icon.on {
+      border-style: solid;
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .layer-list, .prop-box {
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex: 1;
+    }
+    .row {
+      border: 1px dashed var(--border);
+      padding: 6px 8px;
+      border-radius: 4px;
+      color: var(--text-muted);
+      background: var(--bg-app);
+      white-space: nowrap;
+    }
+    .split { border-top: 1px solid var(--border); }
+    .split .panel-title { border-bottom: none; }
+
+    .canvas-wrap {
+      flex: 1;
+      min-width: 0;
+      background: var(--bg-canvas);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .canvas-label {
+      text-align: center;
+      color: var(--text-muted);
+      border: 2px dashed var(--border);
+      padding: 24px 40px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.5);
+      line-height: 1.6;
+    }
+    .canvas-label strong { color: var(--text); display: block; margin-bottom: 4px; }
+
+    /* Collapse toggles */
+    .edge-btn {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 2;
+      width: 22px;
+      height: 48px;
+      border: 1px solid var(--border);
+      background: var(--bg-panel);
+      color: var(--accent);
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 12px;
+      padding: 0;
+    }
+    .edge-btn.left { left: 4px; }
+    .edge-btn.right { right: 4px; }
+    body.left-collapsed .edge-btn.left { left: 4px; }
+    body.right-collapsed .edge-btn.right { right: 4px; }
+
+    /* Command + status */
+    .command {
+      height: var(--cmd-h);
+      background: var(--bg-panel);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      gap: 8px;
+      color: var(--text-muted);
+    }
+    .command .prompt { color: var(--accent); font-weight: 600; }
+    .command .input {
+      flex: 1;
+      border: 1px dashed var(--border);
+      background: var(--bg-app);
+      padding: 4px 8px;
+      border-radius: 4px;
+      color: var(--text-muted);
+    }
+
+    .status {
+      height: var(--status-h);
+      background: #eaeef2;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 10px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .status .pill {
+      border: 1px solid var(--border);
+      padding: 1px 8px;
+      border-radius: 3px;
+      background: var(--bg-panel);
+    }
+    .status .pill.on {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .status .grow { flex: 1; }
+
+    .hint {
+      padding: 6px 12px;
+      font-size: 11px;
+      color: var(--text-muted);
+      background: var(--bg-panel);
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+  <div class="banner">
+    <strong>WIREFRAME / MOCK</strong> — không gắn EditorCore.
+    Mở file này trong trình duyệt để review bố cục.
+    Đã chốt: layout AutoCAD-like · UI sáng · ẩn/hiện panel trái+phải.
+    File: <code>WebMapEditor/wireframe-phase-ui.html</code>
+  </div>
+
+  <div class="building-bar">
+    <span class="chip">Building ▼</span>
+    <span class="chip">Tầng 0</span>
+    <span class="chip">Role: editor</span>
+    <span class="spacer"></span>
+    <span class="btn ghost">Lịch sử version</span>
+    <span class="btn">Xuất bản</span>
+  </div>
+
+  <div class="ribbon">
+    <div class="ribbon-tabs">
+      <span class="active">Home</span>
+      <span>Insert</span>
+      <span>Annotate</span>
+      <span>Layer</span>
+      <span>Publish</span>
+    </div>
+    <div class="ribbon-tools">
+      <div class="tool on">Select</div>
+      <div class="tool">Wall</div>
+      <div class="tool">Room</div>
+      <div class="tool">Path</div>
+      <div class="tool">Node</div>
+      <div class="tool">Dim</div>
+      <div class="tool">Dist</div>
+      <div class="tool">CAL</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <aside class="panel-left" id="panelLeft">
+      <div class="panel-title">Tools</div>
+      <div class="palette">
+        <div class="icon on">L</div>
+        <div class="icon">PL</div>
+        <div class="icon">CO</div>
+        <div class="icon">TR</div>
+        <div class="icon">DI</div>
+        <div class="icon">W</div>
+      </div>
+    </aside>
+
+    <div class="canvas-wrap">
+      <button type="button" class="edge-btn left" id="btnLeft" title="Ẩn/hiện palette">‹</button>
+      <div class="canvas-label">
+        <strong>CANVAS (model space)</strong>
+        mapCanvas · grid · OSNAP<br />
+        <small>Ẩn panel trái/phải → vùng này rộng hơn</small>
+      </div>
+      <button type="button" class="edge-btn right" id="btnRight" title="Ẩn/hiện Layer+Property">›</button>
+    </div>
+
+    <aside class="panel-right" id="panelRight">
+      <div class="panel-title">Layer</div>
+      <div class="layer-list">
+        <div class="row">☑ Walls</div>
+        <div class="row">☑ Rooms</div>
+        <div class="row">☑ Paths</div>
+        <div class="row">☑ Nodes / QR</div>
+        <div class="row">☐ Dimensions</div>
+      </div>
+      <div class="split">
+        <div class="panel-title">Property</div>
+        <div class="prop-box">
+          <div class="row">Type: room</div>
+          <div class="row">Name: …</div>
+          <div class="row">Color: …</div>
+          <div class="row">Layer: Rooms</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="command">
+    <span class="prompt">Command:</span>
+    <span class="input">_ wall ↵ &nbsp; (alias → CommandManager)</span>
+  </div>
+
+  <div class="status">
+    <span class="pill on">SNAP</span>
+    <span class="pill">ORTHO</span>
+    <span class="pill">0.5 m/ô</span>
+    <span class="pill">Tầng 0</span>
+    <span class="pill">v Draft</span>
+    <span class="grow"></span>
+    <span id="collapseState">Panel: trái hiện · phải hiện</span>
+  </div>
+
+  <div class="hint">
+    Demo ẩn/hiện: bấm nút ‹ › cạnh canvas.
+    Wireframe chỉ mô tả chỗ — sprint thật mới gắn tool / API.
+  </div>
+
+  <script>
+    var leftBtn = document.getElementById('btnLeft');
+    var rightBtn = document.getElementById('btnRight');
+    var stateEl = document.getElementById('collapseState');
+
+    function refresh() {
+      var l = document.body.classList.contains('left-collapsed');
+      var r = document.body.classList.contains('right-collapsed');
+      leftBtn.textContent = l ? '›' : '‹';
+      rightBtn.textContent = r ? '‹' : '›';
+      stateEl.textContent = 'Panel: trái ' + (l ? 'ẩn' : 'hiện') + ' · phải ' + (r ? 'ẩn' : 'hiện');
+    }
+
+    leftBtn.addEventListener('click', function () {
+      document.body.classList.toggle('left-collapsed');
+      refresh();
+    });
+    rightBtn.addEventListener('click', function () {
+      document.body.classList.toggle('right-collapsed');
+      refresh();
+    });
+  </script>
+</body>
+</html>

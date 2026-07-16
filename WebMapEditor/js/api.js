@@ -5,6 +5,25 @@
 // Dùng relative URL để editor chạy được cả local và Render cùng domain.
 const BASE_API_URL = '/api';
 
+/** Khôi phục token từ dashboard (sessionStorage) khi localStorage trống — tránh logout giả khi đổi trang. */
+(function restoreAuthHandoffFromDashboard() {
+    try {
+        var raw = sessionStorage.getItem('editorAuthHandoff');
+        if (!raw) return;
+        sessionStorage.removeItem('editorAuthHandoff');
+        var handoff = JSON.parse(raw);
+        if (!handoff || !handoff.token) return;
+        if (handoff.ts && Date.now() - handoff.ts > 60000) return;
+        if (!localStorage.getItem('token')) {
+            localStorage.setItem('token', handoff.token);
+            if (handoff.refreshToken) localStorage.setItem('refreshToken', handoff.refreshToken);
+            if (handoff.userEmail) localStorage.setItem('userEmail', handoff.userEmail);
+            if (handoff.userRole) localStorage.setItem('userRole', handoff.userRole);
+            if (handoff.userId) localStorage.setItem('userId', handoff.userId);
+        }
+    } catch (_) { /* ignore */ }
+})();
+
 // 1. Lấy thông tin từ URL và LocalStorage
 const urlParams = new URLSearchParams(window.location.search);
 const buildingId = urlParams.get('buildingId') || urlParams.get('building'); // Chấp nhận cả 2 cách gọi cho chắc chắn
@@ -12,6 +31,16 @@ let token = localStorage.getItem('token');   // WHY: dùng let để có thể c
 window.buildingId = buildingId;
 window.editorBuildingMeta = null;
 window.editorAccessBlocked = false;
+
+function getCurrentAccessToken() {
+    try {
+        const latest = localStorage.getItem('token');
+        token = latest || '';
+        return token;
+    } catch (_) {
+        return token || '';
+    }
+}
 
 // Đồng bộ tầng từ URL (?floor=0) — chạy sớm; rebuildFloorSelect sẽ ưu tiên lại sau khi có đủ option
 (function syncFloorFromUrl() {
@@ -75,6 +104,18 @@ function clearEditorAuthStorage() {
     localStorage.removeItem('activeDashboardTab');
 }
 
+/** Chỉ logout khi token hiện tại vẫn là token đã verify — tránh tab cũ xóa session tab mới (race đa tab). */
+function shouldInvalidateEditorSession(tokenAtStart) {
+    return getCurrentAccessToken() === tokenAtStart;
+}
+
+function redirectEditorToLogin() {
+    window.location.replace('/admin/index.html');
+}
+
+var _editorVerifyPromise = null;
+var _editorInitDone = false;
+
 function isNetworkFetchError(error) {
     if (!error) return false;
     if (error instanceof TypeError) return true;
@@ -92,12 +133,13 @@ function getOfflineEditorUser() {
     };
 }
 
-async function verifyEditorSession() {
-    const token = localStorage.getItem('token');
-    if (!token) {
+async function verifyEditorSessionCore(depth) {
+    depth = depth || 0;
+    const tokenAtStart = getCurrentAccessToken();
+    if (!tokenAtStart) {
         console.warn('🔒 Editor: Không có token - redirect đến login');
         clearEditorAuthStorage();
-        window.location.replace('/admin/index.html');
+        redirectEditorToLogin();
         return null;
     }
 
@@ -109,9 +151,16 @@ async function verifyEditorSession() {
 
         if (!response.ok) {
             if (response.status === 401 || response.status === 403) {
+                if (!shouldInvalidateEditorSession(tokenAtStart)) {
+                    if (depth < 2) {
+                        console.warn('🔒 Editor: Bỏ qua 401 cũ — token đã đổi ở tab khác');
+                        return verifyEditorSessionCore(depth + 1);
+                    }
+                    return null;
+                }
                 console.warn('🔒 Editor: Token không hợp lệ - redirect đến login');
                 clearEditorAuthStorage();
-                window.location.replace('/admin/index.html');
+                redirectEditorToLogin();
                 return null;
             }
             console.warn('🔒 Editor: verify session HTTP', response.status);
@@ -146,11 +195,26 @@ async function verifyEditorSession() {
                 return offlineUser;
             }
         }
+        if (!shouldInvalidateEditorSession(tokenAtStart)) {
+            if (depth < 2) {
+                console.warn('🔒 Editor: Bỏ qua lỗi verify cũ — token đã đổi');
+                return verifyEditorSessionCore(depth + 1);
+            }
+            return null;
+        }
         console.error('🔒 Editor: Lỗi verify session:', error);
         clearEditorAuthStorage();
-        window.location.replace('/admin/index.html');
+        redirectEditorToLogin();
         return null;
     }
+}
+
+function verifyEditorSession() {
+    if (_editorVerifyPromise) return _editorVerifyPromise;
+    _editorVerifyPromise = verifyEditorSessionCore().finally(function () {
+        _editorVerifyPromise = null;
+    });
+    return _editorVerifyPromise;
 }
 
 async function initEditor() {
@@ -163,6 +227,7 @@ async function initEditor() {
         console.log('🛑 Editor: Dừng init - không có session hợp lệ');
         return;
     }
+    _editorInitDone = true;
 
     // Đồng bộ userId sớm — key autosave phải khớp trước khi đọc nháp
     try {
@@ -384,12 +449,15 @@ function escapeHtml(text) {
 // ==========================================
 window.addEventListener('storage', event => {
     if (['token', 'refreshToken', 'userEmail', 'userRole', 'userId', 'authEvent'].includes(event.key)) {
+        // Đồng bộ biến token giữa nhiều tab trước khi verify (tránh dùng token cũ -> 401 giả).
+        getCurrentAccessToken();
         console.log('🔄 Editor: Phát hiện thay đổi storage - kiểm tra session...');
         verifyEditorSession();
     }
 });
 
 window.addEventListener('focus', () => {
+    if (!_editorInitDone) return;
     verifyEditorSession();
 });
 
@@ -424,11 +492,12 @@ async function tryRefreshToken() {
 }
 
 async function apiFetch(url, options = {}) {
+    const activeToken = getCurrentAccessToken();
     const opts = {
         ...options,
         headers: {
             ...(options.headers || {}),
-            'Authorization': 'Bearer ' + token
+            'Authorization': 'Bearer ' + activeToken
         }
     };
     let res = await fetch(url, opts);
@@ -437,7 +506,7 @@ async function apiFetch(url, options = {}) {
         console.warn('🔑 Access Token hết hạn, đang thử refresh...');
         const ok = await tryRefreshToken();
         if (ok) {
-            opts.headers['Authorization'] = 'Bearer ' + token;
+            opts.headers['Authorization'] = 'Bearer ' + getCurrentAccessToken();
             res = await fetch(url, opts); // Thử lại lần 2 với token mới
         }
     }
@@ -872,14 +941,17 @@ async function loadMapFromServer() {
     try {
         const privateUrl = `${BASE_API_URL}/maps/${buildingId}/${floor}`;
 
-        let result = token
+        const mapToken = getCurrentAccessToken();
+        let result = mapToken
             ? await tryFetch(privateUrl, true)
             : { unauthorized: true };
 
         if (result.unauthorized) {
             console.warn('🔒 Editor: Token không hợp lệ - redirect login');
-            clearEditorAuthStorage();
-            window.location.replace('/admin/index.html');
+            if (shouldInvalidateEditorSession(mapToken)) {
+                clearEditorAuthStorage();
+                redirectEditorToLogin();
+            }
             return { loaded: false, unauthorized: true };
         }
 
