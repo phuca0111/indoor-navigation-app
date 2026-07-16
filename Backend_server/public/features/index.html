@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tính năng | Indoor Navigation</title>
+    <title>Tính năng | IndoorNav</title>
+    <meta name="description" content="Chi tiết Dashboard, Web Map Editor và App Android của hệ thống Indoor Navigation.">
     <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="/css/landing-layout.css">
+    <link rel="stylesheet" href="/css/landing-wl1.css">
 </head>
 <body>
 <header class="header">
@@ -32,47 +34,113 @@
     </div>
 </header>
 
-<section class="features landing-page-section" id="features">
+<section class="features-page-hero">
     <div class="container">
-        <h2 class="section-title">Tính năng chính</h2>
-        <p class="landing-muted" style="margin-top: 10px; text-align: center;">
-            Nền tảng SaaS indoor navigation: Dashboard quản trị, Web Map Editor, Android app và backend Node.js.
+        <h1>Tính năng hệ thống</h1>
+        <p>
+            IndoorNav gồm Dashboard vận hành, Web Map Editor soạn bản đồ,
+            và ứng dụng Android dẫn đường trong nhà.
         </p>
-        <div class="features-grid">
-            <div class="feature-card">
-                <div class="feature-icon">🏢</div>
-                <h3>Quản lý tòa nhà</h3>
-                <p>Tạo và quản lý nhiều tòa nhà, từng tầng, thông tin metadata.</p>
+    </div>
+</section>
+
+<section class="feature-detail" id="dashboard">
+    <div class="container">
+        <div class="feature-detail-inner">
+            <div class="feature-detail-copy">
+                <h2>Dashboard &amp; quản trị tổ chức</h2>
+                <p>
+                    Lớp vận hành SaaS: đăng nhập theo vai trò (Super Admin, Org Admin, Building Admin),
+                    quản lý tòa nhà và người dùng trong phạm vi tổ chức.
+                </p>
+                <ul>
+                    <li>Đăng nhập / quên mật khẩu / đăng xuất đa thiết bị</li>
+                    <li>Tòa nhà, số tầng, trạng thái bản đồ</li>
+                    <li>Gói FREE / PRO / ENTERPRISE và hạn mức</li>
+                    <li>Đăng ký tổ chức &amp; dùng thử self-service</li>
+                </ul>
+                <a href="/login" class="btn btn-primary">Đăng nhập Dashboard</a>
             </div>
-            <div class="feature-card">
-                <div class="feature-icon">🛠️</div>
-                <h3>Web Map Editor</h3>
-                <p>Công cụ vẽ bản đồ indoor: phòng, tường, node, edge, POI, xuất bản.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">📷</div>
-                <h3>QR Anchor</h3>
-                <p>Đặt điểm QR để xác định vị trí tuyệt đối khi vào nhà.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🧭</div>
-                <h3>Tìm đường A*</h3>
-                <p>Thuật toán A* tìm đường đi ngắn nhất trên đồ thị topology.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">📡</div>
-                <h3>PDR / TPF</h3>
-                <p>Theo dõi vị trí realtime bằng cảm biến và bộ lọc particle.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">📱</div>
-                <h3>App Android</h3>
-                <p>Jetpack Compose — quét QR, định vị, chỉ đường trong nhà.</p>
-            </div>
+            <aside class="feature-detail-panel">
+                <h4>Luồng quản trị</h4>
+                <ol>
+                    <li>Đăng nhập Admin</li>
+                    <li>Chọn / tạo tòa nhà</li>
+                    <li>Mở 「Vẽ bản đồ」 → Editor</li>
+                    <li>Xuất bản → Android thấy bản mới</li>
+                </ol>
+            </aside>
         </div>
-        <div style="text-align: center; margin-top: 32px;">
-            <a href="/login" class="btn btn-primary btn-large">Đăng nhập để dùng Dashboard</a>
+    </div>
+</section>
+
+<section class="feature-detail" id="editor">
+    <div class="container">
+        <div class="feature-detail-inner reverse">
+            <div class="feature-detail-copy">
+                <h2>Web Map Editor</h2>
+                <p>
+                    Công cụ soạn bản đồ indoor trên trình duyệt: phòng, tường, đường đi, POI, điểm QR.
+                    Lưu nháp (Draft) tách với xuất bản (Publish) — điện thoại chỉ đọc bản đã publish.
+                </p>
+                <ul>
+                    <li>Autosave nháp lên server (Draft API)</li>
+                    <li>Khóa tầng khi hai người mở cùng lúc (read-only + banner)</li>
+                    <li>Lịch sử phiên bản / rollback (theo Backend)</li>
+                    <li>Ảnh nền calibrate / crop (không gửi Base64 lớn khi lưu server)</li>
+                </ul>
+                <a href="/login" class="btn btn-primary">Mở qua Dashboard</a>
+                <a href="/pricing" class="btn btn-secondary" style="margin-left:8px;">Xem gói</a>
+            </div>
+            <aside class="feature-detail-panel">
+                <h4>Draft → Publish</h4>
+                <ol>
+                    <li>Vẽ / chỉnh trên Editor</li>
+                    <li>Lưu nháp (chưa đẩy Android)</li>
+                    <li>Xuất bản khi sẵn sàng</li>
+                    <li>App tải map published</li>
+                </ol>
+            </aside>
         </div>
+    </div>
+</section>
+
+<section class="feature-detail" id="android">
+    <div class="container">
+        <div class="feature-detail-inner">
+            <div class="feature-detail-copy">
+                <h2>Ứng dụng Android</h2>
+                <p>
+                    Trải nghiệm người dùng cuối: quét QR để neo vị trí, theo dõi chuyển động trong nhà,
+                    và chỉ đường tới phòng / POI theo bản đồ đã xuất bản từ Editor.
+                </p>
+                <ul>
+                    <li>QR Anchor — vị trí tuyệt đối theo tầng</li>
+                    <li>PDR — ước lượng bước &amp; hướng từ cảm biến</li>
+                    <li>TPF — lọc particle giảm nhiễu</li>
+                    <li>A* — đường đi ngắn trên topology</li>
+                </ul>
+                <a href="/contact" class="btn btn-primary">Liên hệ demo</a>
+            </div>
+            <aside class="feature-detail-panel">
+                <h4>Trên điện thoại</h4>
+                <ol>
+                    <li>Mở app, chọn tòa / tầng</li>
+                    <li>Quét QR tại lối vào</li>
+                    <li>Chọn điểm đến</li>
+                    <li>Đi theo hướng dẫn trên map</li>
+                </ol>
+            </aside>
+        </div>
+    </div>
+</section>
+
+<section class="features-page-cta">
+    <div class="container">
+        <h2 class="section-title" style="margin-bottom: 16px;">Sẵn sàng dùng thử?</h2>
+        <p class="landing-muted" style="margin-bottom: 24px;">Tạo tổ chức trial hoặc đăng nhập nếu đã có tài khoản.</p>
+        <a href="/org-trial.html" class="btn btn-primary btn-large">Dùng thử miễn phí</a>
+        <a href="/login" class="btn btn-secondary btn-large" style="margin-left: 10px;">Đăng nhập</a>
     </div>
 </section>
 
