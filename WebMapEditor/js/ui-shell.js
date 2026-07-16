@@ -215,11 +215,11 @@
 
         function refreshSnapGrid() {
             if (snapPill && snapCheck) {
-                snapPill.textContent = 'SNAP ' + (snapCheck.checked ? 'ON' : 'OFF');
+                snapPill.textContent = 'Hút lưới: ' + (snapCheck.checked ? 'Bật' : 'Tắt');
                 snapPill.classList.toggle('on', snapCheck.checked);
             }
             if (gridPill && gridCheck) {
-                gridPill.textContent = 'GRID ' + (gridCheck.checked ? 'ON' : 'OFF');
+                gridPill.textContent = 'Lưới: ' + (gridCheck.checked ? 'Bật' : 'Tắt');
                 gridPill.classList.toggle('on', gridCheck.checked);
             }
         }
