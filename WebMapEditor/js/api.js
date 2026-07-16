@@ -576,18 +576,33 @@ function showToast(message, type = 'success') {
 
 function showPublishValidationErrors(validation) {
     var errors = (validation && validation.errors) || [];
+    var warnings = (validation && validation.warnings) || [];
+    console.warn('[Validation]', validation);
+    if (window.ValidationUI && typeof ValidationUI.show === 'function') {
+        ValidationUI.show({
+            errors: errors,
+            warnings: warnings,
+            source: 'client',
+            title: 'Không thể xuất bản — lỗi máy khách'
+        });
+    }
     if (!errors.length) {
         showToast('Không thể xuất bản — dữ liệu chưa hợp lệ.', 'error');
         return;
     }
-    var lines = errors.map(function (e) { return '• ' + e.message; }).join('\n');
-    console.warn('[Validation]', validation);
     showToast(errors[0].message, 'error');
-    alert('Không thể xuất bản — sửa các lỗi sau:\n\n' + lines);
 }
 
 function confirmPublishWarnings(warnings) {
     if (!warnings || !warnings.length) return true;
+    if (window.ValidationUI && typeof ValidationUI.show === 'function') {
+        ValidationUI.show({
+            errors: [],
+            warnings: warnings,
+            source: 'client',
+            title: 'Cảnh báo trước xuất bản'
+        });
+    }
     var lines = warnings.map(function (w) { return '• ' + w.message; }).join('\n');
     return confirm('Cảnh báo trước khi xuất bản:\n\n' + lines + '\n\nVẫn xuất bản?');
 }
@@ -1049,11 +1064,10 @@ async function publishViaV1Async(floor, mapData, pipelineResult) {
     if (enq.validateFailed) {
         hideLoading();
         setPublishPipelineUi('FAILED');
-        var lines = (enq.errors || []).map(function (e) {
-            return '• ' + (e.message || e.code || JSON.stringify(e));
-        }).join('\n');
+        if (window.ValidationUI && typeof ValidationUI.showServerErrors === 'function') {
+            ValidationUI.showServerErrors(enq.errors || [], enq.message || 'Validate map thất bại.');
+        }
         showToast(enq.message || 'Validate map thất bại.', 'error');
-        if (lines) alert('Không thể xuất bản — sửa các lỗi sau:\n\n' + lines);
         return { used: true };
     }
     if (enq.rateLimited) {
@@ -1102,6 +1116,20 @@ async function publishViaV1Async(floor, mapData, pipelineResult) {
 
     setPublishPipelineUi('FAILED', formatPublishJobError(job));
     showToast(formatPublishJobError(job), 'error');
+    if (window.ValidationUI && typeof ValidationUI.showServerErrors === 'function') {
+        var jobErrs = [];
+        if (job.error) {
+            if (Array.isArray(job.error.details) && job.error.details.length) {
+                jobErrs = job.error.details;
+            } else {
+                jobErrs = [{
+                    code: job.error.code || 'JOB_FAILED',
+                    message: job.error.message || formatPublishJobError(job)
+                }];
+            }
+        }
+        ValidationUI.showServerErrors(jobErrs, formatPublishJobError(job));
+    }
     return { used: true, failed: true, jobId: enq.jobId };
 }
 
