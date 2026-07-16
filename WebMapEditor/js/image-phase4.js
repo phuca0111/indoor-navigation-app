@@ -203,7 +203,10 @@ function replaceBackgroundFromDataUrl(dataUrl, opts) {
         typeof apiFetch === 'function') {
         StorageApi.uploadBackgroundDataUrl(bid, floor, dataUrl, apiFetch).then(function (result) {
             if (result && result.ok && result.url) {
+                window.bgLastPersistedUrl = result.url;
                 finishWithUrl(result.url, result.key || '');
+                if (typeof flushAutosaveNow === 'function') flushAutosaveNow();
+                if (typeof syncDraftToServerQuiet === 'function') syncDraftToServerQuiet();
             }
         }).catch(function (err) {
             console.warn('[WE6] re-upload after edit', err);

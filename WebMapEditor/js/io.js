@@ -103,7 +103,9 @@ function getMapSnapshot() {
         bgOpacity: window.bgOpacity || 0.5,
         bgContrast: window.bgContrast != null ? window.bgContrast : 1,
         bgBrightness: window.bgBrightness != null ? window.bgBrightness : 0,
-        bgImageBase64: window.bgImageBase64 || ''
+        bgImageBase64: window.bgImageBase64 || '',
+        bgStorageKey: window.bgStorageKey || '',
+        bgLastPersistedUrl: window.bgLastPersistedUrl || ''
     };
 }
 
@@ -174,12 +176,22 @@ function applyMapSnapshot(data) {
     window.bgContrast = data.bgContrast != null ? data.bgContrast : 1;
     window.bgBrightness = data.bgBrightness != null ? data.bgBrightness : 0;
     window.bgImageBase64 = data.bgImageBase64 || '';
+    if (data.bgLastPersistedUrl) {
+        window.bgLastPersistedUrl = data.bgLastPersistedUrl;
+    } else if (window.bgImageBase64 &&
+        window.StorageApi && StorageApi.isHttpOrUploadUrl &&
+        StorageApi.isHttpOrUploadUrl(window.bgImageBase64)) {
+        window.bgLastPersistedUrl = window.bgImageBase64;
+    }
     
     if (window.bgImageBase64) {
         var img = new Image();
         img.onload = function() {
             window.bgImage = img;
             draw();
+        };
+        img.onerror = function () {
+            console.warn('[IO] Không tải được ảnh nền nháp:', window.bgImageBase64);
         };
         img.src = window.bgImageBase64;
     } else {

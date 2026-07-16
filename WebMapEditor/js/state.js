@@ -157,6 +157,7 @@ window.bgContrast = 1;       // Phase 4 — contrast live
 window.bgBrightness = 0;     // Phase 4 — brightness live (-100…100)
 window.mapBearingOffset = 0; // Góc lệch Bắc địa lý so với trục map (độ) — Android la bàn
 window.bgStorageKey = '';    // WE6: key Object Storage (xoá khi gỡ nền)
+window.bgLastPersistedUrl = ''; // WE6: URL Storage gần nhất — tránh PUT draft xóa nền khi còn Base64 tạm
 window.bgImageBase64 = '';   // URL /uploads/... hoặc data URL tạm (local)
 window.isBgAdjustMode = false; // Chế độ điều chỉnh ảnh nền
 window.bgLastX = 0;          // Vị trí chuột X cuối cùng khi kéo nền
