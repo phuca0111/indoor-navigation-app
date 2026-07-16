@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Liên hệ | Indoor Navigation</title>
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/css/landing-layout.css">
+    <link rel="stylesheet" href="/css/landing-contact.css">
+</head>
+<body>
+<header class="header">
+    <div class="container header-inner">
+        <div class="logo">
+            <a href="/" aria-label="IndoorNav — Trang chủ">
+                <span class="logo-icon">📍</span>
+                <span class="logo-text">IndoorNav</span>
+            </a>
+        </div>
+        <nav class="nav" id="mainNav">
+            <a href="/">Tổng quan</a>
+            <a href="/features">Tính năng</a>
+            <a href="/pricing">Giá</a>
+            <a href="/contact">Liên hệ</a>
+            <a href="/#demo">Demo</a>
+        </nav>
+        <div class="auth-actions" id="authActions">
+            <a href="/login" class="auth-btn login-btn">Đăng nhập</a>
+            <a href="/org-trial.html" class="auth-btn register-btn">Dùng thử</a>
+            <a href="/register" class="auth-btn register-btn org-register-btn">Đăng ký tổ chức</a>
+        </div>
+        <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">☰</button>
+    </div>
+</header>
+
+<section class="contact-section" id="contact">
+    <div class="container">
+        <div class="landing-card">
+            <h2 class="section-title">Liên hệ</h2>
+            <p class="landing-muted" style="margin-top: 10px;">Gửi yêu cầu tư vấn triển khai hệ thống dẫn đường trong nhà.</p>
+            <form id="contactForm">
+                <div class="form-grid">
+                    <div>
+                        <label for="contactName">Họ tên</label>
+                        <input id="contactName" name="name" type="text" required placeholder="Nguyễn Văn A">
+                    </div>
+                    <div>
+                        <label for="contactEmail">Email</label>
+                        <input id="contactEmail" name="email" type="email" required placeholder="admin@congty.com">
+                    </div>
+                </div>
+                <label for="contactMessage">Nội dung</label>
+                <textarea id="contactMessage" name="message" required placeholder="VD: Cần tư vấn triển khai cho bệnh viện / tòa nhà ..."></textarea>
+                <div class="contact-actions">
+                    <button class="btn btn-primary btn-large" type="submit">Gửi liên hệ</button>
+                    <a class="btn btn-secondary btn-large" href="/pricing">Xem gói</a>
+                </div>
+                <div id="contactStatus" class="status" aria-live="polite"></div>
+                <p class="contact-note">Demo: form mở ứng dụng email (mailto). WL3+ có thể nối API/CMS.</p>
+            </form>
+        </div>
+    </div>
+</section>
+
+<footer class="footer">
+    <div class="container">
+        <p>&copy; 2025 - Hệ thống Bản đồ và Dẫn đường Trong nhà</p>
+        <p>Đồ án/Luận văn tốt nghiệp - Trình độ Đại học</p>
+    </div>
+</footer>
+
+<script src="/landing.js"></script>
+<script>
+(function () {
+    var form = document.getElementById('contactForm');
+    var statusEl = document.getElementById('contactStatus');
+    if (!form) return;
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var name = form.querySelector('input[name="name"]').value || '';
+        var email = form.querySelector('input[name="email"]').value || '';
+        var message = form.querySelector('textarea[name="message"]').value || '';
+        var mailto = 'mailto:contact@example.com' +
+            '?subject=' + encodeURIComponent('Indoor Navigation - Liên hệ: ' + name) +
+            '&body=' + encodeURIComponent('Họ tên: ' + name + '\nEmail: ' + email + '\n\nNội dung:\n' + message);
+        if (statusEl) statusEl.textContent = 'Đang mở email...';
+        window.location.href = mailto;
+    });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tính năng | Indoor Navigation</title>
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/css/landing-layout.css">
+</head>
+<body>
+<header class="header">
+    <div class="container header-inner">
+        <div class="logo">
+            <a href="/" aria-label="IndoorNav — Trang chủ">
+                <span class="logo-icon">📍</span>
+                <span class="logo-text">IndoorNav</span>
+            </a>
+        </div>
+        <nav class="nav" id="mainNav">
+            <a href="/">Tổng quan</a>
+            <a href="/features">Tính năng</a>
+            <a href="/pricing">Giá</a>
+            <a href="/contact">Liên hệ</a>
+            <a href="/#demo">Demo</a>
+        </nav>
+        <div class="auth-actions" id="authActions">
+            <a href="/login" class="auth-btn login-btn">Đăng nhập</a>
+            <a href="/org-trial.html" class="auth-btn register-btn">Dùng thử</a>
+            <a href="/register" class="auth-btn register-btn org-register-btn">Đăng ký tổ chức</a>
+        </div>
+        <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">☰</button>
+    </div>
+</header>
+
+<section class="features landing-page-section" id="features">
+    <div class="container">
+        <h2 class="section-title">Tính năng chính</h2>
+        <p class="landing-muted" style="margin-top: 10px; text-align: center;">
+            Nền tảng SaaS indoor navigation: Dashboard quản trị, Web Map Editor, Android app và backend Node.js.
+        </p>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🏢</div>
+                <h3>Quản lý tòa nhà</h3>
+                <p>Tạo và quản lý nhiều tòa nhà, từng tầng, thông tin metadata.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🛠️</div>
+                <h3>Web Map Editor</h3>
+                <p>Công cụ vẽ bản đồ indoor: phòng, tường, node, edge, POI, xuất bản.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📷</div>
+                <h3>QR Anchor</h3>
+                <p>Đặt điểm QR để xác định vị trí tuyệt đối khi vào nhà.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🧭</div>
+                <h3>Tìm đường A*</h3>
+                <p>Thuật toán A* tìm đường đi ngắn nhất trên đồ thị topology.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📡</div>
+                <h3>PDR / TPF</h3>
+                <p>Theo dõi vị trí realtime bằng cảm biến và bộ lọc particle.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📱</div>
+                <h3>App Android</h3>
+                <p>Jetpack Compose — quét QR, định vị, chỉ đường trong nhà.</p>
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 32px;">
+            <a href="/login" class="btn btn-primary btn-large">Đăng nhập để dùng Dashboard</a>
+        </div>
+    </div>
+</section>
+
+<footer class="footer">
+    <div class="container">
+        <p>&copy; 2025 - Hệ thống Bản đồ và Dẫn đường Trong nhà</p>
+        <p>Đồ án/Luận văn tốt nghiệp - Trình độ Đại học</p>
+    </div>
+</footer>
+
+<script src="/landing.js"></script>
+</body>
+</html>

@@ -5,91 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Indoor Navigation System - Hệ thống dẫn đường trong nhà</title>
 <link rel="stylesheet" href="styles.css">
-<style>
-/* Add minimal inline styles for auth buttons to ensure visibility */
-.auth-actions {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-}
-
-.auth-btn {
-    padding: 8px 16px;
-    border-radius: 6px;
-    text-decoration: none;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    font-size: 14px;
-}
-
-.login-btn {
-    background-color: #f0f0f0;
-    color: #333;
-    border: 1px solid #ddd;
-}
-
-.login-btn:hover {
-    background-color: #e0e0e0;
-}
-
-.register-btn {
-    background-color: #007AFF;
-    color: white;
-    border: 1px solid #0062cc;
-}
-
-.register-btn:hover {
-    background-color: #0062cc;
-}
-
-/* Make sure header-inner can accommodate new buttons */
-.header-inner {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    flex-wrap: wrap;
-}
-
-/* Hide buttons on mobile initially, show in mobile menu */
-@media (max-width: 768px) {
-    .auth-actions {
-        display: none;
-        width: 100%;
-        background: #f8f9fa;
-        padding: 15px;
-        border-radius: 8px;
-        margin-top: 10px;
-    }
-
-    .auth-actions.show-mobile {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-}
-</style>
+<link rel="stylesheet" href="css/landing-layout.css">
 </head>
 <body>
-<!-- Header -->
 <header class="header">
 <div class="container header-inner">
 <div class="logo">
+<a href="/" aria-label="IndoorNav — Trang chủ">
 <span class="logo-icon">📍</span>
 <span class="logo-text">IndoorNav</span>
+</a>
 </div>
 <nav class="nav" id="mainNav">
-<a href="#overview">Tổng quan</a>
-<a href="#features">Tính năng</a>
-<a href="#process">Quy trình</a>
-<a href="#tech">Công nghệ</a>
+<a href="/">Tổng quan</a>
+<a href="/features">Tính năng</a>
+<a href="/pricing">Giá</a>
+<a href="/contact">Liên hệ</a>
 <a href="#demo">Demo</a>
 </nav>
 <div class="auth-actions" id="authActions">
-<a href="/admin/index.html" class="auth-btn login-btn" id="loginBtn">Đăng nhập</a>
+<a href="/login" class="auth-btn login-btn" id="loginBtn">Đăng nhập</a>
 <a href="/org-trial.html" class="auth-btn register-btn" id="trialBtn">Dùng thử</a>
-<a href="/org-register.html" class="auth-btn register-btn" style="background:#8e44ad;border-color:#732d91;" id="orgRegisterBtn">Đăng ký tổ chức</a>
-</div>
-<button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">☰</button>
+<a href="/register" class="auth-btn register-btn org-register-btn" id="orgRegisterBtn">Đăng ký tổ chức</a>
+</div><button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">☰</button>
 </div>
 </header>
 
@@ -102,8 +40,11 @@
 Giải pháp định vị và chỉ đường trong nhà bằng QR, PDR, TPF và thuật toán A*.
 Ứng dụng Android kết nối backend Node.js, quản lý bản đồ qua Web Editor.
 </p>
+<div class="cta-buttons" style="margin-top: 20px;">
+<a href="/login" class="btn btn-primary">Đăng nhập Admin</a>
+<a href="/org-trial.html" class="btn btn-secondary">Dùng thử miễn phí</a>
 </div>
-<div class="hero-visual">
+</div><div class="hero-visual">
 <!-- CSS-only mockup: phone + map -->
 <div class="phone-mockup">
 <div class="phone-screen">
