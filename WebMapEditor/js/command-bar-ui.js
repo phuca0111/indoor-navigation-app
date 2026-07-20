@@ -6,9 +6,9 @@
 
     var TOOL_LABELS_VI = {
         select: 'Chọn', wall: 'Tường', line: 'Đoạn thẳng', polygon: 'Đa giác',
-        room: 'Phòng', circle: 'Tròn', door: 'Cửa', poi: 'Điểm POI',
+        room: 'Phòng', circle: 'Tròn', door: 'Cửa', poi: 'Điểm POI', point: 'Điểm mốc',
         qr: 'Mốc QR', path: 'Đường đi', ruler: 'Dist',         area: 'Area', polyline: 'Tường',
-        hatch: 'Hatch',
+        hatch: 'Hatch', ellipse: 'Elip', arc: 'Cung',
         dimlinear: 'Dimlinear', dimaligned: 'Dimaligned', dimedit: 'DIMEdit', block: 'Block', insert: 'Insert',
         calibrate: 'Calibrate', 'bg-crop': 'Crop nền', 'bg-adjust': 'Chỉnh nền'
     };

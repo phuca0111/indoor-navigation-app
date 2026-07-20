@@ -23,11 +23,18 @@
         NODE_ISOLATED: { enabled: true, severity: 'error' },
         GRAPH_DISCONNECTED: { enabled: true, severity: 'warning' },
         QR_NO_NODE: { enabled: true, severity: 'warning' },
-        POI_OUTSIDE_ROOM: { enabled: true, severity: 'warning' }
+        POI_OUTSIDE_ROOM: { enabled: true, severity: 'warning' },
+        DOOR_OFF_WALL: { enabled: true, severity: 'warning' },
+        WALL_OVERLAP: { enabled: true, severity: 'warning' },
+        EDGE_DANGLING: { enabled: true, severity: 'error' },
+        NODE_NEIGHBOR_MISSING: { enabled: true, severity: 'warning' },
+        QR_NODE_MISSING: { enabled: true, severity: 'warning' }
     };
 
     var DEFAULT_THRESHOLDS = {
-        polygonMinVertices: 3
+        polygonMinVertices: 3,
+        doorWallMaxDistPx: 20,
+        wallOverlapMinPx: 4
     };
 
     var state = {

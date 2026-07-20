@@ -15,17 +15,19 @@
     var MODE = {
         MOVE: 'move', COPY: 'copy', ROTATE: 'rotate', SCALE: 'scale',
         MIRROR: 'mirror', TRIM: 'trim', EXTEND: 'extend', PEDIT: 'pedit',
-        MLINE: 'mline', ARRAY: 'array', MATCHPROP: 'matchprop'
+        MLINE: 'mline', ARRAY: 'array', MATCHPROP: 'matchprop',
+        FILLET: 'fillet', CHAMFER: 'chamfer', BREAK: 'break', DIVIDE: 'divide'
     };
 
     var MODIFY_TOOL_IDS = [
         'move', 'copy', 'rotate', 'scale', 'mirror',
-        'trim', 'extend', 'pedit', 'mline', 'array', 'matchprop'
+        'trim', 'extend', 'pedit', 'mline', 'array', 'matchprop',
+        'fillet', 'chamfer', 'break', 'divide'
     ];
 
     var state = {
         mode: null,
-        stage: 'idle', // idle | base | dest | axis | cutting | target | pedit | mline | source | match
+        stage: 'idle', // idle | base | dest | axis | cutting | target | pedit | mline | source | match | first | second
         base: null,
         dest: null,
         axisA: null,
@@ -35,6 +37,10 @@
         mlineThickness: 12,
         arrayCount: 4,
         matchSource: null, // { type, props }
+        firstPick: null, // Fillet/Chamfer: cạnh đầu tiên { type, data, segIndex }
+        filletRadius: 20,
+        chamferDist: 20,
+        divideCount: 4,
         preview: null,
         message: ''
     };
@@ -71,6 +77,7 @@
         state.peditVertex = -1;
         state.mlinePoints = [];
         state.matchSource = null;
+        state.firstPick = null;
         state.preview = null;
         state.message = '';
     }
@@ -118,6 +125,49 @@
         if (mode === MODE.EXTEND) {
             state.stage = 'cutting';
             state.message = 'Kéo dài: B1 click biên đích → B2 click đoạn ngắn cần kéo tới biên.';
+            return getSnapshot();
+        }
+        if (mode === MODE.BREAK) {
+            state.stage = 'target';
+            state.message = 'Cắt tại điểm (Break): click lên tường/đoạn tại vị trí muốn tách đôi.';
+            return getSnapshot();
+        }
+        if (mode === MODE.DIVIDE) {
+            if (typeof prompt === 'function') {
+                var rawN = prompt('Chia đều — số phần (2..100):', String(state.divideCount));
+                if (rawN != null && rawN !== '') {
+                    var nn = parseInt(rawN, 10);
+                    if (nn >= 2 && nn <= 100) state.divideCount = nn;
+                }
+            }
+            state.stage = 'target';
+            state.message = 'Chia đều ×' + state.divideCount + ': click lên tường/đoạn để đặt điểm mốc đều nhau.';
+            return getSnapshot();
+        }
+        if (mode === MODE.FILLET) {
+            if (typeof prompt === 'function') {
+                var rawR = prompt('Bo góc (Fillet) — bán kính (px, 0 = góc nhọn):', String(state.filletRadius));
+                if (rawR != null && rawR !== '') {
+                    var rr = parseFloat(rawR);
+                    if (!isNaN(rr) && rr >= 0) state.filletRadius = rr;
+                }
+            }
+            state.stage = 'first';
+            state.firstPick = null;
+            state.message = 'Bo góc R=' + state.filletRadius + ': click cạnh thứ NHẤT (tường/đoạn).';
+            return getSnapshot();
+        }
+        if (mode === MODE.CHAMFER) {
+            if (typeof prompt === 'function') {
+                var rawD = prompt('Vát góc (Chamfer) — khoảng vát mỗi cạnh (px):', String(state.chamferDist));
+                if (rawD != null && rawD !== '') {
+                    var dd = parseFloat(rawD);
+                    if (!isNaN(dd) && dd >= 0) state.chamferDist = dd;
+                }
+            }
+            state.stage = 'first';
+            state.firstPick = null;
+            state.message = 'Vát góc D=' + state.chamferDist + ': click cạnh thứ NHẤT (tường/đoạn).';
             return getSnapshot();
         }
         if (mode === MODE.MATCHPROP) {
@@ -207,6 +257,7 @@
         if (type === 'line' && typeof nextLineId !== 'undefined') return nextLineId++;
         if (type === 'door' && typeof nextDoorId !== 'undefined') return nextDoorId++;
         if (type === 'poi' && typeof nextPoiId !== 'undefined') return nextPoiId++;
+        if (type === 'point' && typeof nextCadPointId !== 'undefined') return nextCadPointId++;
         if (type === 'qr' && typeof nextQrId !== 'undefined') return nextQrId++;
         if (type === 'node' && typeof nextNodeId !== 'undefined') return nextNodeId++;
         return Date.now();
@@ -222,6 +273,7 @@
         else if (type === 'line' && typeof lines !== 'undefined') lines.push(data);
         else if (type === 'door' && typeof doors !== 'undefined') doors.push(data);
         else if (type === 'poi' && typeof pois !== 'undefined') pois.push(data);
+        else if (type === 'point' && typeof cadPoints !== 'undefined') cadPoints.push(data);
         else if (type === 'qr' && typeof qrs !== 'undefined') qrs.push(data);
         else if (type === 'node' && typeof pathNodes !== 'undefined') pathNodes.push(data);
     }
@@ -415,6 +467,231 @@
         return true;
     }
 
+    // ============================================================
+    // BREAK / FILLET / CHAMFER
+    // ============================================================
+
+    /** Cắt đôi một đối tượng tại điểm click (giữ CẢ HAI nửa thành 2 đối tượng). */
+    function applyBreakAt(targetHit, clickPt) {
+        var ge = GE();
+        if (!ge || !targetHit || !targetHit.data.points) return { ok: false };
+        var pts = targetHit.data.points;
+        var j = targetHit.segIndex;
+        var ta = pts[j], tb = pts[j + 1];
+        var br = ge.breakSegmentAt(ta, tb, clickPt);
+        if (!br) return { ok: false };
+        var mid = br.mid;
+
+        if (pts.length === 2) {
+            replaceSegmentPoints(targetHit, br.left.a, br.left.b);
+            pushBrokenOtherHalf(targetHit, br.right.a, br.right.b);
+            return { ok: true, mid: mid };
+        }
+
+        // Polyline: tách tại điểm cắt → 2 polyline
+        var leftPts = pts.slice(0, j + 1).concat([{ x: mid.x, y: mid.y }]);
+        var rightPts = [{ x: mid.x, y: mid.y }].concat(pts.slice(j + 1));
+        var T = OT();
+        if (T) {
+            var copy = T.cloneObject(targetHit.type, targetHit.data, nextIdFor);
+            copy.points = rightPts;
+            if (targetHit.type === 'wall' && copy.thickness == null) copy.thickness = 4;
+            pushClone(targetHit.type, copy);
+        }
+        targetHit.data.points = leftPts;
+        if (targetHit.type === 'room' && T) T.updatePolygonBBox(targetHit.data);
+        return { ok: true, mid: mid };
+    }
+
+    /** Chia đều một polyline/đoạn thành N phần → đặt (N-1) điểm mốc (pathNode). */
+    function applyDivide(obj, count) {
+        if (!obj || !obj.points || obj.points.length < 2) return 0;
+        var n = Math.max(2, count | 0);
+        var pts = obj.points;
+        var segs = [], total = 0;
+        for (var i = 0; i < pts.length - 1; i++) {
+            var L = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+            segs.push({ a: pts[i], b: pts[i + 1], L: L, acc: total });
+            total += L;
+        }
+        if (total < 1e-6) return 0;
+        var created = 0;
+        for (var k = 1; k < n; k++) {
+            var target = total * k / n;
+            var seg = segs[segs.length - 1];
+            for (var s = 0; s < segs.length; s++) {
+                if (target <= segs[s].acc + segs[s].L || s === segs.length - 1) { seg = segs[s]; break; }
+            }
+            var t = seg.L > 1e-6 ? (target - seg.acc) / seg.L : 0;
+            var x = seg.a.x + t * (seg.b.x - seg.a.x);
+            var y = seg.a.y + t * (seg.b.y - seg.a.y);
+            if (typeof pathNodes !== 'undefined') {
+                pathNodes.push({
+                    id: nextIdFor('node'),
+                    x: x, y: y,
+                    layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default',
+                    nodeType: 'normal',
+                    neighbors: []
+                });
+                created++;
+            }
+        }
+        return created;
+    }
+
+    function vlen(x, y) { return Math.hypot(x, y); }
+
+    /**
+     * Tính kết quả bo/vát góc giữa 2 cạnh — thuần túy (không đột biến dữ liệu).
+     * @returns {{move1:{pt,to}, move2:{pt,to}, connector:[{a,b}], far1, far2}|null}
+     */
+    function computeCorner(hit1, hit2, mode) {
+        var ge = GE();
+        if (!ge || !hit1 || !hit2) return null;
+        if (hit1.data === hit2.data && hit1.segIndex === hit2.segIndex) return null;
+        var p1a = hit1.data.points[hit1.segIndex], p1b = hit1.data.points[hit1.segIndex + 1];
+        var p2a = hit2.data.points[hit2.segIndex], p2b = hit2.data.points[hit2.segIndex + 1];
+        if (!p1a || !p1b || !p2a || !p2b) return null;
+
+        var I = ge.lineIntersection(p1a, p1b, p2a, p2b);
+        if (!I) return null; // song song
+
+        // Đầu mút gần giao (sẽ bị dời), đầu mút xa (giữ nguyên)
+        var near1 = (Math.hypot(p1a.x - I.x, p1a.y - I.y) <= Math.hypot(p1b.x - I.x, p1b.y - I.y)) ? p1a : p1b;
+        var far1 = (near1 === p1a) ? p1b : p1a;
+        var near2 = (Math.hypot(p2a.x - I.x, p2a.y - I.y) <= Math.hypot(p2b.x - I.x, p2b.y - I.y)) ? p2a : p2b;
+        var far2 = (near2 === p2a) ? p2b : p2a;
+
+        // Hướng đơn vị từ giao HƯỚNG RA đầu xa (dọc mỗi cạnh)
+        var d1x = far1.x - I.x, d1y = far1.y - I.y;
+        var d2x = far2.x - I.x, d2y = far2.y - I.y;
+        var l1 = vlen(d1x, d1y), l2 = vlen(d2x, d2y);
+        if (l1 < 1e-6 || l2 < 1e-6) return null;
+        var u1x = d1x / l1, u1y = d1y / l1;
+        var u2x = d2x / l2, u2y = d2y / l2;
+
+        if (mode === MODE.CHAMFER) {
+            var D = Math.min(state.chamferDist, l1, l2);
+            var c1 = { x: I.x + u1x * D, y: I.y + u1y * D };
+            var c2 = { x: I.x + u2x * D, y: I.y + u2y * D };
+            return {
+                move1: { pt: near1, to: c1 }, move2: { pt: near2, to: c2 },
+                connector: [{ a: c1, b: c2 }], far1: far1, far2: far2
+            };
+        }
+
+        // FILLET
+        var R = state.filletRadius;
+        var cosT = u1x * u2x + u1y * u2y;
+        cosT = Math.max(-1, Math.min(1, cosT));
+        var theta = Math.acos(cosT);
+        // R=0 hoặc gần thẳng hàng/trùng phương → nối thành góc nhọn tại giao
+        if (R <= 0 || theta < 1e-3 || Math.abs(theta - Math.PI) < 1e-3) {
+            return {
+                move1: { pt: near1, to: { x: I.x, y: I.y } },
+                move2: { pt: near2, to: { x: I.x, y: I.y } },
+                connector: [], far1: far1, far2: far2
+            };
+        }
+        var tanHalf = Math.tan(theta / 2);
+        var trimLen = R / tanHalf;
+        if (trimLen > l1 || trimLen > l2) {
+            // Bán kính quá lớn so với cạnh → kẹp lại
+            trimLen = Math.min(trimLen, l1, l2);
+        }
+        var t1 = { x: I.x + u1x * trimLen, y: I.y + u1y * trimLen };
+        var t2 = { x: I.x + u2x * trimLen, y: I.y + u2y * trimLen };
+
+        // Tâm cung: dọc phân giác, cách giao R/sin(θ/2)
+        var bx = u1x + u2x, by = u1y + u2y;
+        var bl = vlen(bx, by) || 1;
+        var sinHalf = Math.sin(theta / 2) || 1e-6;
+        var centerDist = R / sinHalf;
+        var C = { x: I.x + (bx / bl) * centerDist, y: I.y + (by / bl) * centerDist };
+
+        var a0 = Math.atan2(t1.y - C.y, t1.x - C.x);
+        var a1 = Math.atan2(t2.y - C.y, t2.x - C.x);
+        var da = a1 - a0;
+        while (da > Math.PI) da -= 2 * Math.PI;
+        while (da < -Math.PI) da += 2 * Math.PI;
+        var N = Math.max(4, Math.ceil(Math.abs(da) / (Math.PI / 12)));
+        var arc = [];
+        var prev = t1;
+        for (var i = 1; i <= N; i++) {
+            var ang = a0 + da * (i / N);
+            var pt = { x: C.x + R * Math.cos(ang), y: C.y + R * Math.sin(ang) };
+            arc.push({ a: prev, b: pt });
+            prev = pt;
+        }
+        return {
+            move1: { pt: near1, to: t1 }, move2: { pt: near2, to: t2 },
+            connector: arc, far1: far1, far2: far2
+        };
+    }
+
+    /** Tạo đoạn nối (cung/chamfer) cùng kiểu với cạnh nguồn. */
+    function createConnector(refType, refData, a, b) {
+        if (refType === 'wall' && typeof createWallSegment === 'function') {
+            return createWallSegment(a, b, {
+                thickness: refData.thickness || (typeof defaultWallThickness !== 'undefined' ? defaultWallThickness : 12),
+                is_outer: !!refData.is_outer
+            });
+        }
+        if (typeof createLineSegment === 'function') {
+            return createLineSegment(a, b, {
+                color: refData.color,
+                lineWeight: refData.lineWeight || refData.thickness
+            });
+        }
+        // Fallback: đẩy trực tiếp vào lines[]
+        if (typeof lines !== 'undefined') {
+            var obj = { id: nextIdFor('line'), points: [a, b], color: refData.color || '#3b82f6' };
+            lines.push(obj);
+            return obj;
+        }
+        return null;
+    }
+
+    /** Áp dụng bo/vát góc: dời 2 đầu mút + tạo đoạn nối. */
+    function applyCorner(hit1, hit2, mode) {
+        var res = computeCorner(hit1, hit2, mode);
+        if (!res) return { ok: false };
+
+        var sharedVertex = (res.move1.pt === res.move2.pt);
+        // Trường hợp bo/vát góc TRÊN CÙNG một polyline (2 cạnh kề chung đỉnh) → chèn đỉnh
+        if (sharedVertex && hit1.data === hit2.data && hit1.data.points) {
+            var pts = hit1.data.points;
+            var idx1 = [hit1.segIndex, hit1.segIndex + 1];
+            var idx2 = [hit2.segIndex, hit2.segIndex + 1];
+            var shared = null;
+            for (var s = 0; s < idx1.length; s++) {
+                if (idx2.indexOf(idx1[s]) >= 0) { shared = idx1[s]; break; }
+            }
+            if (shared != null) {
+                var beforeIsHit1 = (hit1.segIndex + 1 === shared);
+                var seq = [res.move1.to];
+                for (var c = 0; c < res.connector.length; c++) seq.push(res.connector[c].b);
+                if (!beforeIsHit1) seq.reverse();
+                // Dedupe điểm trùng nhau (fillet R=0)
+                var clean = [];
+                for (var q = 0; q < seq.length; q++) {
+                    var last = clean[clean.length - 1];
+                    if (!last || Math.hypot(last.x - seq[q].x, last.y - seq[q].y) > 0.5) clean.push(seq[q]);
+                }
+                Array.prototype.splice.apply(pts, [shared, 1].concat(clean));
+                return { ok: true };
+            }
+        }
+
+        // Trường hợp 2 đối tượng riêng → dời đầu mút + tạo đoạn nối rời
+        res.move1.pt.x = res.move1.to.x; res.move1.pt.y = res.move1.to.y;
+        res.move2.pt.x = res.move2.to.x; res.move2.pt.y = res.move2.to.y;
+        for (var i = 0; i < res.connector.length; i++) {
+            createConnector(hit1.type, hit1.data, res.connector[i].a, res.connector[i].b);
+        }
+        return { ok: true };
+    }
+
     function finishMline() {
         if (state.mlinePoints.length < 2) return false;
         var created = 0;
@@ -459,6 +736,9 @@
         }
         if (typeof findPoiAt === 'function') {
             var p = findPoiAt(wx, wy); if (p) return { type: 'poi', data: p };
+        }
+        if (typeof findCadPointAt === 'function') {
+            var cp = findCadPointAt(wx, wy); if (cp) return { type: 'point', data: cp };
         }
         if (typeof findDoorAt === 'function') {
             var d = findDoorAt(wx, wy); if (d) return { type: 'door', data: d };
@@ -577,6 +857,79 @@
             }
         }
 
+        if (state.mode === MODE.BREAK) {
+            var tgtBr = findSegmentHit(pt.x, pt.y);
+            if (!tgtBr) {
+                state.message = 'Click lên tường hoặc đoạn thẳng để cắt tại điểm';
+                return getSnapshot();
+            }
+            if (typeof saveState === 'function') saveState();
+            var brRes = applyBreakAt(tgtBr, pt);
+            if (brRes.ok) {
+                commitSave();
+                state.message = 'Đã cắt đôi tại điểm · click chỗ khác để cắt tiếp hoặc Esc';
+                if (typeof showToast === 'function') showToast('Cắt tại điểm OK', 'success');
+            } else {
+                state.message = 'Không cắt được (điểm quá sát đầu mút)';
+                if (typeof showToast === 'function') showToast(state.message, 'error');
+            }
+            return getSnapshot();
+        }
+
+        if (state.mode === MODE.DIVIDE) {
+            var tgtDiv = findSegmentHit(pt.x, pt.y);
+            if (!tgtDiv) {
+                state.message = 'Click lên tường hoặc đoạn thẳng cần chia đều';
+                return getSnapshot();
+            }
+            if (typeof saveState === 'function') saveState();
+            var made = applyDivide(tgtDiv.data, state.divideCount);
+            if (made > 0) {
+                commitSave();
+                state.message = 'Đã đặt ' + made + ' điểm mốc đều · click đối tượng khác hoặc Esc';
+                if (typeof showToast === 'function') showToast('Chia đều: +' + made + ' điểm mốc', 'success');
+            } else {
+                state.message = 'Không chia được đối tượng này';
+                if (typeof showToast === 'function') showToast(state.message, 'error');
+            }
+            return getSnapshot();
+        }
+
+        if (state.mode === MODE.FILLET || state.mode === MODE.CHAMFER) {
+            var hit = findSegmentHit(pt.x, pt.y);
+            var label = state.mode === MODE.FILLET ? 'Bo góc' : 'Vát góc';
+            if (state.stage === 'first') {
+                if (!hit) {
+                    state.message = label + ': click đúng cạnh thứ nhất (tường/đoạn)';
+                    return getSnapshot();
+                }
+                state.firstPick = hit;
+                state.stage = 'second';
+                state.message = label + ': click cạnh thứ HAI để nối góc';
+                return getSnapshot();
+            }
+            if (state.stage === 'second' && state.firstPick) {
+                if (!hit) {
+                    state.message = label + ': click đúng cạnh thứ hai';
+                    return getSnapshot();
+                }
+                if (typeof saveState === 'function') saveState();
+                var cornerRes = applyCorner(state.firstPick, hit, state.mode);
+                if (cornerRes.ok) {
+                    commitSave();
+                    state.message = label + ' OK · chọn cặp cạnh mới hoặc Esc';
+                    if (typeof showToast === 'function') showToast(label + ' OK', 'success');
+                } else {
+                    state.message = label + ' không được: 2 cạnh song song hoặc quá ngắn';
+                    if (typeof showToast === 'function') showToast(state.message, 'error');
+                }
+                state.stage = 'first';
+                state.firstPick = null;
+                state.preview = null;
+                return getSnapshot();
+            }
+        }
+
         if (state.mode === MODE.PEDIT && state.stage === 'pedit' && sel) {
             var pts = sel.data.points;
             if (!pts) return getSnapshot();
@@ -681,6 +1034,29 @@
                 mline: state.mlinePoints.concat([pt]),
                 thickness: state.mlineThickness
             };
+        } else if (state.mode === MODE.BREAK) {
+            var hb = findSegmentHit(pt.x, pt.y);
+            var geB = GE();
+            var bp = null;
+            if (hb && geB) {
+                var ba = hb.data.points[hb.segIndex], bb = hb.data.points[hb.segIndex + 1];
+                var brk = geB.breakSegmentAt(ba, bb, pt);
+                if (brk) bp = brk.mid;
+            }
+            state.preview = { breakSeg: hb, breakPoint: bp };
+        } else if (state.mode === MODE.FILLET || state.mode === MODE.CHAMFER) {
+            var hc = findSegmentHit(pt.x, pt.y);
+            var hi = [];
+            function segAB(h) {
+                return { a: h.data.points[h.segIndex], b: h.data.points[h.segIndex + 1] };
+            }
+            if (state.firstPick) hi.push(segAB(state.firstPick));
+            if (hc) hi.push(segAB(hc));
+            var cornerPrev = null;
+            if (state.stage === 'second' && state.firstPick && hc) {
+                cornerPrev = computeCorner(state.firstPick, hc, state.mode);
+            }
+            state.preview = { pickHighlight: hi, cornerResult: cornerPrev };
         } else if ((state.mode === MODE.TRIM || state.mode === MODE.EXTEND)
             && state.stage === 'target') {
             var hover = findSegmentHit(pt.x, pt.y);

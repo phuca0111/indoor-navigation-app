@@ -13,6 +13,7 @@ function snapshotPayload() {
         lines: lines,
         doors: doors,
         pois: pois,
+        cadPoints: typeof cadPoints !== 'undefined' ? cadPoints : [],
         pathNodes: pathNodes,
         pathEdges: pathEdges,
         qrs: qrs,
@@ -29,6 +30,7 @@ function cloneSnapshotPayload(src) {
         lines: JSON.parse(JSON.stringify(src.lines || [])),
         doors: JSON.parse(JSON.stringify(src.doors)),
         pois: JSON.parse(JSON.stringify(src.pois)),
+        cadPoints: JSON.parse(JSON.stringify(src.cadPoints || [])),
         pathNodes: JSON.parse(JSON.stringify(src.pathNodes)),
         pathEdges: JSON.parse(JSON.stringify(src.pathEdges)),
         qrs: JSON.parse(JSON.stringify(src.qrs || [])),
@@ -40,6 +42,7 @@ function cloneSnapshotPayload(src) {
         nextLineId: src.nextLineId,
         nextDoorId: src.nextDoorId,
         nextPoiId: src.nextPoiId,
+        nextCadPointId: src.nextCadPointId != null ? src.nextCadPointId : 1,
         nextNodeId: src.nextNodeId,
         nextQrId: src.nextQrId != null ? src.nextQrId : 1,
         nextBlockDefId: src.nextBlockDefId != null ? src.nextBlockDefId : 1,
@@ -63,6 +66,7 @@ function saveState() {
             lines: lastState.lines || [],
             doors: lastState.doors,
             pois: lastState.pois,
+            cadPoints: lastState.cadPoints || [],
             pathNodes: lastState.pathNodes,
             pathEdges: lastState.pathEdges,
             qrs: lastState.qrs || [],
@@ -79,6 +83,7 @@ function saveState() {
         lines: lines,
         doors: doors,
         pois: pois,
+        cadPoints: typeof cadPoints !== 'undefined' ? cadPoints : [],
         pathNodes: pathNodes,
         pathEdges: pathEdges,
         qrs: qrs,
@@ -90,6 +95,7 @@ function saveState() {
         nextLineId: nextLineId,
         nextDoorId: nextDoorId,
         nextPoiId: nextPoiId,
+        nextCadPointId: typeof nextCadPointId !== 'undefined' ? nextCadPointId : 1,
         nextNodeId: nextNodeId,
         nextQrId: nextQrId,
         nextBlockDefId: typeof nextBlockDefId !== 'undefined' ? nextBlockDefId : 1,
@@ -115,6 +121,7 @@ function undo() {
         lines: lines,
         doors: doors,
         pois: pois,
+        cadPoints: typeof cadPoints !== 'undefined' ? cadPoints : [],
         pathNodes: pathNodes,
         pathEdges: pathEdges,
         qrs: qrs,
@@ -126,6 +133,7 @@ function undo() {
         nextLineId: nextLineId,
         nextDoorId: nextDoorId,
         nextPoiId: nextPoiId,
+        nextCadPointId: typeof nextCadPointId !== 'undefined' ? nextCadPointId : 1,
         nextNodeId: nextNodeId,
         nextQrId: nextQrId,
         nextBlockDefId: typeof nextBlockDefId !== 'undefined' ? nextBlockDefId : 1,
@@ -151,6 +159,7 @@ function redo() {
         lines: lines,
         doors: doors,
         pois: pois,
+        cadPoints: typeof cadPoints !== 'undefined' ? cadPoints : [],
         pathNodes: pathNodes,
         pathEdges: pathEdges,
         qrs: qrs,
@@ -162,6 +171,7 @@ function redo() {
         nextLineId: nextLineId,
         nextDoorId: nextDoorId,
         nextPoiId: nextPoiId,
+        nextCadPointId: typeof nextCadPointId !== 'undefined' ? nextCadPointId : 1,
         nextNodeId: nextNodeId,
         nextQrId: nextQrId,
         nextBlockDefId: typeof nextBlockDefId !== 'undefined' ? nextBlockDefId : 1,
@@ -181,6 +191,7 @@ function restoreState(state) {
     lines = state.lines || [];
     doors = state.doors;
     pois = state.pois;
+    cadPoints = state.cadPoints || [];
     pathNodes = state.pathNodes;
     pathEdges = state.pathEdges;
     qrs = state.qrs || [];
@@ -192,6 +203,7 @@ function restoreState(state) {
     nextLineId = state.nextLineId || 1;
     nextDoorId = state.nextDoorId;
     nextPoiId = state.nextPoiId;
+    nextCadPointId = state.nextCadPointId || 1;
     nextNodeId = state.nextNodeId;
     nextQrId = state.nextQrId != null ? state.nextQrId : 1;
     nextBlockDefId = state.nextBlockDefId || 1;

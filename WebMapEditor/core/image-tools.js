@@ -192,6 +192,140 @@
         return c.toDataURL('image/png');
     }
 
+    // ---- Perspective warp (nắn phối cảnh 4 điểm) ----
+
+    /** Giải hệ tuyến tính n×n bằng khử Gauss có pivot. Trả mảng nghiệm hoặc null. */
+    function solveLinear(A, b, n) {
+        var M = [];
+        for (var i = 0; i < n; i++) M.push(A[i].slice().concat([b[i]]));
+        for (var col = 0; col < n; col++) {
+            var piv = col;
+            for (var r = col + 1; r < n; r++) {
+                if (Math.abs(M[r][col]) > Math.abs(M[piv][col])) piv = r;
+            }
+            if (Math.abs(M[piv][col]) < 1e-12) return null; // suy biến
+            var tmp = M[col]; M[col] = M[piv]; M[piv] = tmp;
+            var pivVal = M[col][col];
+            for (var c2 = col; c2 <= n; c2++) M[col][c2] /= pivVal;
+            for (var r2 = 0; r2 < n; r2++) {
+                if (r2 === col) continue;
+                var f = M[r2][col];
+                if (f === 0) continue;
+                for (var c3 = col; c3 <= n; c3++) M[r2][c3] -= f * M[col][c3];
+            }
+        }
+        var x = [];
+        for (var k = 0; k < n; k++) x.push(M[k][n]);
+        return x;
+    }
+
+    /**
+     * Tính ma trận homography (3×3, flat 9 phần tử, phần tử cuối = 1)
+     * map src[i] → dst[i] với 4 cặp điểm.
+     */
+    function computeHomography(src, dst) {
+        if (!src || !dst || src.length < 4 || dst.length < 4) return null;
+        var A = [], b = [];
+        for (var i = 0; i < 4; i++) {
+            var x = src[i].x, y = src[i].y, u = dst[i].x, v = dst[i].y;
+            A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+            A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+        }
+        var h = solveLinear(A, b, 8);
+        if (!h) return null;
+        return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+    }
+
+    /** Áp homography (flat 9) lên 1 điểm. */
+    function applyHomography(H, pt) {
+        if (!H) return null;
+        var x = pt.x, y = pt.y;
+        var den = H[6] * x + H[7] * y + H[8];
+        if (Math.abs(den) < 1e-12) return null;
+        return {
+            x: (H[0] * x + H[1] * y + H[2]) / den,
+            y: (H[3] * x + H[4] * y + H[5]) / den
+        };
+    }
+
+    function sampleBilinear(src, fx, fy) {
+        var w = src.width, h = src.height, d = src.data;
+        if (fx < 0 || fy < 0 || fx > w - 1 || fy > h - 1) return null;
+        var x0 = Math.floor(fx), y0 = Math.floor(fy);
+        var x1 = Math.min(x0 + 1, w - 1), y1 = Math.min(y0 + 1, h - 1);
+        var tx = fx - x0, ty = fy - y0;
+        var out = [0, 0, 0, 0];
+        for (var ch = 0; ch < 4; ch++) {
+            var i00 = (y0 * w + x0) * 4 + ch;
+            var i10 = (y0 * w + x1) * 4 + ch;
+            var i01 = (y1 * w + x0) * 4 + ch;
+            var i11 = (y1 * w + x1) * 4 + ch;
+            var top = d[i00] * (1 - tx) + d[i10] * tx;
+            var bot = d[i01] * (1 - tx) + d[i11] * tx;
+            out[ch] = top * (1 - ty) + bot * ty;
+        }
+        return out;
+    }
+
+    /**
+     * Nắn phối cảnh: srcQuad (4 điểm ảnh gốc, thứ tự TL,TR,BR,BL) → chữ nhật outW×outH.
+     * Pure: nhận/trả ImageData-like {width,height,data:Uint8ClampedArray}.
+     */
+    function warpImageData(src, srcQuad, outW, outH) {
+        if (!src || !src.data || !srcQuad || srcQuad.length < 4) return null;
+        outW = Math.max(1, Math.round(outW));
+        outH = Math.max(1, Math.round(outH));
+        var dstCorners = [
+            { x: 0, y: 0 }, { x: outW, y: 0 }, { x: outW, y: outH }, { x: 0, y: outH }
+        ];
+        // H map toạ độ ảnh ra (output) → toạ độ ảnh nguồn (inverse mapping, không lỗ hổng)
+        var H = computeHomography(dstCorners, srcQuad);
+        if (!H) return null;
+        var out = new Uint8ClampedArray(outW * outH * 4);
+        for (var oy = 0; oy < outH; oy++) {
+            for (var ox = 0; ox < outW; ox++) {
+                var s = applyHomography(H, { x: ox + 0.5, y: oy + 0.5 });
+                var o = (oy * outW + ox) * 4;
+                var px = s ? sampleBilinear(src, s.x - 0.5, s.y - 0.5) : null;
+                if (px) {
+                    out[o] = px[0]; out[o + 1] = px[1]; out[o + 2] = px[2]; out[o + 3] = px[3];
+                } else {
+                    out[o] = 255; out[o + 1] = 255; out[o + 2] = 255; out[o + 3] = 255; // ngoài biên → trắng
+                }
+            }
+        }
+        return { width: outW, height: outH, data: out };
+    }
+
+    /** Gợi ý kích thước output từ độ dài cạnh trung bình của quad (TL,TR,BR,BL). */
+    function suggestWarpSize(quad) {
+        if (!quad || quad.length < 4) return { width: 1, height: 1 };
+        function d(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+        var wTop = d(quad[0], quad[1]), wBot = d(quad[3], quad[2]);
+        var hLeft = d(quad[0], quad[3]), hRight = d(quad[1], quad[2]);
+        return {
+            width: Math.max(2, Math.round((wTop + wBot) / 2)),
+            height: Math.max(2, Math.round((hLeft + hRight) / 2))
+        };
+    }
+
+    /** Nắn phối cảnh 1 ảnh → dataURL PNG (glue DOM). */
+    function warpPerspectiveToDataUrl(img, srcQuad, outW, outH) {
+        if (!img) return null;
+        var srcData = getImageDataFromImg(img);
+        if (!srcData) return null;
+        var warped = warpImageData(srcData, srcQuad, outW, outH);
+        if (!warped) return null;
+        var c = document.createElement('canvas');
+        c.width = warped.width;
+        c.height = warped.height;
+        var cx = c.getContext('2d');
+        var idata = cx.createImageData(warped.width, warped.height);
+        idata.data.set(warped.data);
+        cx.putImageData(idata, 0, 0);
+        return { dataUrl: c.toDataURL('image/png'), width: warped.width, height: warped.height };
+    }
+
     /** Đọc ImageData từ HTMLImageElement. */
     function getImageDataFromImg(img) {
         if (!img) return null;
@@ -211,6 +345,11 @@
         getBackgroundTransform: getBackgroundTransform,
         cropImageToDataUrl: cropImageToDataUrl,
         processImageToDataUrl: processImageToDataUrl,
-        getImageDataFromImg: getImageDataFromImg
+        getImageDataFromImg: getImageDataFromImg,
+        computeHomography: computeHomography,
+        applyHomography: applyHomography,
+        warpImageData: warpImageData,
+        suggestWarpSize: suggestWarpSize,
+        warpPerspectiveToDataUrl: warpPerspectiveToDataUrl
     };
 });

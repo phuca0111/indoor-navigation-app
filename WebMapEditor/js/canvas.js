@@ -159,6 +159,14 @@ function draw() {
             drawPoi(poi, sel);
         });
 
+        if (typeof cadPoints !== 'undefined' && cadPoints) {
+            cadPoints.forEach(function (cp) {
+                if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(cp)) return;
+                var selPt = (selectedObject && selectedObject.type === 'point' && selectedObject.data === cp);
+                if (typeof drawCadPoint === 'function') drawCadPoint(cp, selPt);
+            });
+        }
+
         qrs.forEach(function (qr) {
             if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(qr)) return;
             var sel = (selectedObject && selectedObject.type === 'qr' && selectedObject.data === qr);
@@ -185,6 +193,21 @@ function draw() {
         if (currentTool === 'line' && window.EditorCore && EditorCore.LineTool) {
             drawLineToolPreview();
         }
+        if (currentTool === 'arc' && typeof drawArcPreview === 'function') {
+            drawArcPreview();
+        }
+        if (currentTool === 'ellipse' && typeof drawEllipsePreview === 'function') {
+            drawEllipsePreview();
+        }
+        if (currentTool === 'align' && typeof drawAlignPreview === 'function') {
+            drawAlignPreview();
+        }
+        if (currentTool === 'offset' && typeof drawOffsetPreview === 'function') {
+            drawOffsetPreview();
+        }
+        if (currentTool === 'join' && typeof drawJoinPreview === 'function') {
+            drawJoinPreview();
+        }
         if (typeof isModifyTool === 'function' && isModifyTool(currentTool)
             && window.EditorCore && EditorCore.ModifySession) {
             drawModifyPreview();
@@ -204,6 +227,11 @@ function draw() {
         if (currentTool === 'dimaligned' && typeof drawDimalignedPreview === 'function') {
             drawDimalignedPreview();
         }
+        if ((currentTool === 'dimcontinue' || currentTool === 'dimangular'
+            || currentTool === 'dimradius' || currentTool === 'dimdiameter')
+            && typeof drawDimGenericPreview === 'function') {
+            drawDimGenericPreview();
+        }
         if ((currentTool === 'calibrate' || (typeof isCalibrating === 'function' && isCalibrating()))
             && typeof drawCalibratePreview === 'function') {
             drawCalibratePreview();
@@ -212,6 +240,13 @@ function draw() {
             && typeof drawCropPreview === 'function') {
             drawCropPreview();
         }
+        if ((currentTool === 'bg-warp' || (typeof isWarping === 'function' && isWarping()))
+            && typeof drawWarpPreview === 'function') {
+            drawWarpPreview();
+        }
+        // Đợt 3 — highlight tập chọn nhiều + khung quét chọn (marquee)
+        if (typeof drawMultiSelectOverlay === 'function') drawMultiSelectOverlay();
+        if (typeof drawMarquee === 'function') drawMarquee();
     } catch (errPrev) {
         console.error('Lỗi preview trong draw():', errPrev);
     }
@@ -389,28 +424,37 @@ function drawWall(wall, isSelected) {
     // thickness = px world (ctx đã scale zoom) — tường dày ML giữ đúng độ dày khi zoom
     var thickness = Math.max(1, wall.thickness || 4);
     var isOuter = !!wall.is_outer;
+    var wallStyle = (typeof normalizeLineStyle === 'function') ? normalizeLineStyle(wall.lineStyle) : 'solid';
+    var wallDashed = wallStyle !== 'solid';
+    var wallDash = (typeof getLineDashPattern === 'function') ? getLineDashPattern(wallStyle, zoom) : [];
 
-    // Viền phát sáng nhẹ
-    ctx.strokeStyle = isOuter ? 'rgba(239, 68, 68, 0.25)' : 'rgba(17, 24, 39, 0.2)';
-    ctx.lineWidth = thickness + (isOuter ? 3 : 2);
-    ctx.lineCap = wall.isMline ? 'butt' : 'round';
-    ctx.lineJoin = wall.isMline ? 'miter' : 'round';
-    ctx.beginPath();
-    ctx.moveTo(wall.points[0].x, wall.points[0].y);
-    for (var i = 1; i < wall.points.length; i++) {
-        ctx.lineTo(wall.points[i].x, wall.points[i].y);
+    // Viền phát sáng nhẹ — bỏ qua khi nét đứt để nhìn rõ tường ẩn
+    if (!wallDashed) {
+        ctx.strokeStyle = isOuter ? 'rgba(239, 68, 68, 0.25)' : 'rgba(17, 24, 39, 0.2)';
+        ctx.lineWidth = thickness + (isOuter ? 3 : 2);
+        ctx.lineCap = wall.isMline ? 'butt' : 'round';
+        ctx.lineJoin = wall.isMline ? 'miter' : 'round';
+        ctx.beginPath();
+        ctx.moveTo(wall.points[0].x, wall.points[0].y);
+        for (var i = 1; i < wall.points.length; i++) {
+            ctx.lineTo(wall.points[i].x, wall.points[i].y);
+        }
+        ctx.stroke();
     }
-    ctx.stroke();
 
     // Nét chính
     ctx.strokeStyle = isSelected ? '#f59e0b' : (isOuter ? '#ef4444' : '#111827');
     ctx.lineWidth = isSelected ? thickness + 1 : thickness;
+    ctx.lineCap = wall.isMline ? 'butt' : 'round';
+    ctx.lineJoin = wall.isMline ? 'miter' : 'round';
+    ctx.setLineDash(isSelected ? [6 / zoom, 3 / zoom] : wallDash);
     ctx.beginPath();
     ctx.moveTo(wall.points[0].x, wall.points[0].y);
     for (var j = 1; j < wall.points.length; j++) {
         ctx.lineTo(wall.points[j].x, wall.points[j].y);
     }
     ctx.stroke();
+    ctx.setLineDash([]);
     if (isSelected) {
         if (typeof drawSegmentVertexHandles === 'function') drawSegmentVertexHandles(wall, '#f59e0b');
         if (typeof drawSegmentRotateHandle === 'function') drawSegmentRotateHandle(wall, { color: '#f59e0b' });
@@ -481,32 +525,58 @@ function drawWallToolPreview() {
     }
 }
 
-/** Vẽ đoạn thẳng hỗ trợ (mảnh, xanh — khác tường). */
+/** Vẽ đoạn thẳng hỗ trợ (mảnh, xanh — khác tường). Hỗ trợ cả cung (type='arc'). */
 function drawLineSegment(line, isSelected) {
     if (!line || !line.points || line.points.length < 2) return;
-    var a = line.points[0];
-    var b = line.points[1];
+    var pts = line.points;
+    var isArc = line.type === 'arc';
+    var isEllipse = line.type === 'ellipse';
+    var a = pts[0];
+    var b = pts[pts.length - 1];
     var color = line.color || '#3b82f6';
-    var weight = (line.lineWeight || 2) / zoom;
+    var weight = ((typeof clampLineWeight === 'function' ? clampLineWeight(line.lineWeight) : (line.lineWeight || 2))) / zoom;
+    var lineDash = (typeof getLineDashPattern === 'function') ? getLineDashPattern(line.lineStyle, zoom) : [];
 
     ctx.save();
     ctx.strokeStyle = isSelected ? '#f59e0b' : color;
     ctx.lineWidth = isSelected ? weight + 1 / zoom : weight;
-    ctx.setLineDash(isSelected ? [6 / zoom, 3 / zoom] : []);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.setLineDash(isSelected ? [6 / zoom, 3 / zoom] : lineDash);
     ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
     if (isSelected) {
-        if (typeof drawSegmentVertexHandles === 'function') drawSegmentVertexHandles(line, '#3b82f6');
-        if (typeof drawSegmentRotateHandle === 'function') drawSegmentRotateHandle(line, { color: '#3b82f6' });
+        if (isEllipse) {
+            // Elip: chỉ hiện tâm xoay (không hiện 48 đỉnh xấp xỉ)
+            if (typeof drawSegmentRotateHandle === 'function') drawSegmentRotateHandle(line, { color: '#3b82f6' });
+        } else if (isArc) {
+            // Cung: chỉ hiện 2 đầu + tâm xoay (không hiện toàn bộ đỉnh xấp xỉ)
+            if (typeof ctx !== 'undefined') {
+                var hs = ((typeof HANDLE_SIZE !== 'undefined' ? HANDLE_SIZE : 8)) / zoom;
+                [a, b].forEach(function (p) {
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(p.x - hs / 2, p.y - hs / 2, hs, hs);
+                    ctx.strokeStyle = '#3b82f6';
+                    ctx.lineWidth = 1.5 / zoom;
+                    ctx.strokeRect(p.x - hs / 2, p.y - hs / 2, hs, hs);
+                });
+            }
+            if (typeof drawSegmentRotateHandle === 'function') drawSegmentRotateHandle(line, { color: '#3b82f6' });
+        } else {
+            if (typeof drawSegmentVertexHandles === 'function') drawSegmentVertexHandles(line, '#3b82f6');
+            if (typeof drawSegmentRotateHandle === 'function') drawSegmentRotateHandle(line, { color: '#3b82f6' });
+        }
     }
-    drawSegmentLengthLabel(a, b, {
-        color: isSelected ? '#f59e0b' : color,
-        requireDimCheck: true
-    });
+    if (!isArc && !isEllipse) {
+        drawSegmentLengthLabel(a, b, {
+            color: isSelected ? '#f59e0b' : color,
+            requireDimCheck: true
+        });
+    }
 }
 
 /**
@@ -769,6 +839,72 @@ function drawModifyPreview() {
             ctx.lineTo(cpts[si + 1].x, cpts[si + 1].y);
             ctx.stroke();
         }
+    }
+    // Highlight cạnh đã/đang chọn cho Fillet/Chamfer
+    if (prev && prev.pickHighlight && prev.pickHighlight.length) {
+        ctx.setLineDash([]);
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 3 / zoom;
+        for (var hpi = 0; hpi < prev.pickHighlight.length; hpi++) {
+            var hp = prev.pickHighlight[hpi];
+            if (!hp || !hp.a || !hp.b) continue;
+            ctx.beginPath();
+            ctx.moveTo(hp.a.x, hp.a.y);
+            ctx.lineTo(hp.b.x, hp.b.y);
+            ctx.stroke();
+        }
+    }
+    // Preview kết quả Fillet/Chamfer
+    if (prev && prev.cornerResult) {
+        var cr = prev.cornerResult;
+        ctx.setLineDash([4 / zoom, 3 / zoom]);
+        ctx.strokeStyle = '#22c55e';
+        ctx.lineWidth = 2.5 / zoom;
+        if (cr.far1 && cr.move1) {
+            ctx.beginPath();
+            ctx.moveTo(cr.far1.x, cr.far1.y);
+            ctx.lineTo(cr.move1.to.x, cr.move1.to.y);
+            ctx.stroke();
+        }
+        if (cr.far2 && cr.move2) {
+            ctx.beginPath();
+            ctx.moveTo(cr.far2.x, cr.far2.y);
+            ctx.lineTo(cr.move2.to.x, cr.move2.to.y);
+            ctx.stroke();
+        }
+        if (cr.connector && cr.connector.length) {
+            ctx.beginPath();
+            ctx.moveTo(cr.connector[0].a.x, cr.connector[0].a.y);
+            for (var cci = 0; cci < cr.connector.length; cci++) {
+                ctx.lineTo(cr.connector[cci].b.x, cr.connector[cci].b.y);
+            }
+            ctx.stroke();
+        }
+        ctx.setLineDash([]);
+    }
+    // Break: highlight cạnh + điểm cắt
+    if (prev && prev.breakSeg && prev.breakSeg.data && prev.breakSeg.data.points) {
+        var bs = prev.breakSeg;
+        var bpa = bs.data.points[bs.segIndex], bpb = bs.data.points[bs.segIndex + 1];
+        if (bpa && bpb) {
+            ctx.setLineDash([]);
+            ctx.strokeStyle = '#3b82f6';
+            ctx.lineWidth = 3 / zoom;
+            ctx.beginPath();
+            ctx.moveTo(bpa.x, bpa.y);
+            ctx.lineTo(bpb.x, bpb.y);
+            ctx.stroke();
+        }
+    }
+    if (prev && prev.breakPoint) {
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#ef4444';
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1 / zoom;
+        ctx.beginPath();
+        ctx.arc(prev.breakPoint.x, prev.breakPoint.y, 5 / zoom, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
     }
     // Preview kết quả Trim/Extend
     if (prev && prev.trimResult) {

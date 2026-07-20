@@ -104,6 +104,7 @@ function reassignLegacyObjectsLayer(fromId, toId) {
     reassign(typeof lines !== 'undefined' ? lines : window.lines);
     reassign(typeof doors !== 'undefined' ? doors : window.doors);
     reassign(typeof pois !== 'undefined' ? pois : window.pois);
+    reassign(typeof cadPoints !== 'undefined' ? cadPoints : window.cadPoints);
     reassign(typeof qrs !== 'undefined' ? qrs : window.qrs);
     reassign(typeof pathNodes !== 'undefined' ? pathNodes : window.pathNodes);
 }

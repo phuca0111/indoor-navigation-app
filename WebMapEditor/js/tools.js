@@ -5,15 +5,18 @@
 var toolNames = {
     'select': 'Chọn', 'room': 'Phòng', 'circle': 'Tròn',
     'polygon': 'Đa giác', 'door': 'Cửa', 'wall': 'Tường',
-    'line': 'Đoạn thẳng', 'mline': 'Tường dày',
+    'line': 'Đoạn thẳng', 'arc': 'Cung tròn', 'ellipse': 'Elip', 'point': 'Điểm mốc', 'mline': 'Tường dày',
     'poi': 'Điểm POI', 'qr': 'Mốc QR', 'path': 'Đường đi', 'ruler': 'Dist',
     'move': 'Move chính xác', 'copy': 'Sao chép', 'rotate': 'Xoay CAD', 'scale': 'Tỷ lệ CAD',
-    'mirror': 'Lật trục', 'trim': 'Cắt xén', 'extend': 'Kéo dài',
-    'pedit': 'Sửa đỉnh', 'array': 'Hàng loạt', 'matchprop': 'Matchprop',
+    'mirror': 'Lật trục', 'align': 'Căn chỉnh', 'trim': 'Cắt xén', 'extend': 'Kéo dài',
+    'fillet': 'Bo góc', 'chamfer': 'Vát góc', 'break': 'Cắt điểm',
+    'pedit': 'Sửa đỉnh', 'array': 'Hàng loạt', 'matchprop': 'Matchprop', 'explode': 'Phá khối', 'offset': 'Song song', 'join': 'Nối',
     'block': 'Block', 'insert': 'Insert',
     'dimlinear': 'Dimlinear', 'dimaligned': 'Dimaligned', 'dimedit': 'DIMEdit',
-    'area': 'Area', 'hatch': 'Hatch',
-    'calibrate': 'Calibrate', 'bg-crop': 'Crop nền', 'bg-adjust': 'Chỉnh nền'
+    'dimcontinue': 'Đo nối', 'dimbaseline': 'Đo song song', 'dimangular': 'Đo góc', 'dimradius': 'Đo bán kính', 'dimdiameter': 'Đo đường kính',
+    'divide': 'Chia đều',
+    'area': 'Area', 'hatch': 'Hatch', 'boundary': 'Boundary',
+    'calibrate': 'Calibrate', 'bg-crop': 'Crop nền', 'bg-adjust': 'Chỉnh nền', 'bg-warp': 'Nắn phối cảnh'
 };
 
 function isModifyTool(tool) {
@@ -21,7 +24,7 @@ function isModifyTool(tool) {
         return EditorCore.ModifySession.isModifyTool(tool);
     }
     return ['move', 'copy', 'rotate', 'scale', 'mirror', 'trim', 'extend',
-        'pedit', 'mline', 'array', 'matchprop'].indexOf(tool) >= 0;
+        'pedit', 'mline', 'array', 'matchprop', 'fillet', 'chamfer', 'break', 'divide'].indexOf(tool) >= 0;
 }
 
 function updateModifyHint() {
@@ -50,6 +53,31 @@ function cancelActiveCommand() {
         draw();
         return;
     }
+    if (currentTool === 'arc' && typeof cancelArcSession === 'function' && cancelArcSession()) {
+        beginArcTool(); // reset về bước 1, vẫn ở công cụ Cung
+        draw();
+        return;
+    }
+    if (currentTool === 'ellipse' && typeof cancelEllipseSession === 'function' && cancelEllipseSession()) {
+        beginEllipseTool(); // reset về bước 1, vẫn ở công cụ Elip
+        draw();
+        return;
+    }
+    if (currentTool === 'align' && typeof cancelAlignSession === 'function' && cancelAlignSession()) {
+        beginAlignTool(); // reset các điểm, vẫn ở công cụ Align
+        draw();
+        return;
+    }
+    if (currentTool === 'offset' && typeof cancelOffsetSession === 'function' && cancelOffsetSession()) {
+        beginOffsetTool(); // reset đối tượng gốc, vẫn ở công cụ Offset
+        draw();
+        return;
+    }
+    if (currentTool === 'join' && typeof cancelJoinSession === 'function' && cancelJoinSession()) {
+        beginJoinTool(); // reset đối tượng 1, vẫn ở công cụ Join
+        draw();
+        return;
+    }
     if (isDrawingRuler || lastDistMeasure) {
         isDrawingRuler = false;
         lastDistMeasure = null;
@@ -72,6 +100,12 @@ function cancelActiveCommand() {
         clearCalibrateSession();
         if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
         draw();
+        return;
+    }
+    if (typeof clearWarpSession === 'function' && (currentTool === 'bg-warp' || typeof isWarping === 'function' && isWarping())) {
+        clearWarpSession();
+        if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+        if (typeof draw === 'function') draw();
         return;
     }
     if (typeof clearCropSession === 'function' && (currentTool === 'bg-crop' || typeof isCroppingBg === 'function' && isCroppingBg())) {
@@ -163,9 +197,63 @@ function selectTool(tool) {
         beginDimalignedTool();
     } else if (tool === 'dimedit' && typeof beginDimeditTool === 'function') {
         beginDimeditTool();
+    } else if (tool === 'dimcontinue' && typeof beginDimcontinueTool === 'function') {
+        beginDimcontinueTool();
+    } else if (tool === 'dimbaseline' && typeof beginDimbaselineTool === 'function') {
+        beginDimbaselineTool();
+    } else if (tool === 'dimangular' && typeof beginDimangularTool === 'function') {
+        beginDimangularTool();
+    } else if ((tool === 'dimradius' || tool === 'dimdiameter') && typeof beginDimCircularTool === 'function') {
+        beginDimCircularTool(tool);
     }
 
     if (typeof cancelPendingInsert === 'function') cancelPendingInsert();
+
+    // Arc: khởi tạo session khi chọn, huỷ khi rời công cụ
+    if (tool === 'arc' && typeof beginArcTool === 'function') {
+        beginArcTool();
+    } else if (tool !== 'arc' && typeof cancelArcSession === 'function') {
+        cancelArcSession();
+    }
+
+    // Ellipse: khởi tạo session khi chọn, huỷ khi rời công cụ
+    if (tool === 'ellipse' && typeof beginEllipseTool === 'function') {
+        beginEllipseTool();
+    } else if (tool !== 'ellipse' && typeof cancelEllipseSession === 'function') {
+        cancelEllipseSession();
+    }
+
+    // Point: hint khi chọn công cụ
+    if (tool === 'point' && typeof beginPointTool === 'function') {
+        beginPointTool();
+    }
+
+    // Align: cần đối tượng đang chọn; huỷ session khi rời công cụ
+    if (tool === 'align' && typeof beginAlignTool === 'function') {
+        beginAlignTool();
+    } else if (tool !== 'align' && typeof cancelAlignSession === 'function') {
+        cancelAlignSession();
+    }
+
+    // Explode: click đối tượng để phá (block/polyline)
+    if (tool === 'explode') {
+        var explodeHint = document.getElementById('commandHint');
+        if (explodeHint) explodeHint.textContent = 'Phá khối (X): click block hoặc polyline ≥3 đỉnh để tách thành nguyên thủy';
+    }
+
+    // Offset: khởi tạo session khi chọn, huỷ khi rời công cụ
+    if (tool === 'offset' && typeof beginOffsetTool === 'function') {
+        beginOffsetTool();
+    } else if (tool !== 'offset' && typeof cancelOffsetSession === 'function') {
+        cancelOffsetSession();
+    }
+
+    // Join: khởi tạo session khi chọn, huỷ khi rời công cụ
+    if (tool === 'join' && typeof beginJoinTool === 'function') {
+        beginJoinTool();
+    } else if (tool !== 'join' && typeof cancelJoinSession === 'function') {
+        cancelJoinSession();
+    }
 
     if (isDrawingPolygon && tool !== 'polygon') {
         if (polygonPoints.length >= 3) {
@@ -249,6 +337,9 @@ function selectTool(tool) {
     if (currentTool === 'bg-crop' && tool !== 'bg-crop' && typeof clearCropSession === 'function') {
         clearCropSession();
     }
+    if (currentTool === 'bg-warp' && tool !== 'bg-warp' && typeof clearWarpSession === 'function') {
+        clearWarpSession();
+    }
 
     currentTool = tool;
 
@@ -323,6 +414,14 @@ document.addEventListener('keydown', function (e) {
         return;
     }
 
+    // Đợt 3 — Ctrl+G nhóm, Ctrl+Shift+G rã nhóm
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        if (e.shiftKey) { if (typeof msUngroup === 'function') msUngroup(); }
+        else { if (typeof msGroup === 'function') msGroup(); }
+        return;
+    }
+
     switch (e.key.toLowerCase()) {
         case 'v': runToolShortcut('v'); break;
         case 'r': runToolShortcut('r'); break;
@@ -337,6 +436,7 @@ document.addEventListener('keydown', function (e) {
             break;
         case 'p': runToolShortcut('p'); break;
         case 'q': runToolShortcut('q'); break;
+        case 'f': runToolShortcut('f'); break;
         case 'n': runToolShortcut('n'); break;
         case 's': runToolShortcut('s'); break;
         case 'h': runToolShortcut('h'); break;
@@ -379,6 +479,10 @@ document.addEventListener('keydown', function (e) {
                 draw();
                 break;
             }
+            // Đợt 3 — nếu đang chọn nhiều thì xóa cả tập
+            if (typeof msIsMulti === 'function' && msIsMulti()) {
+                if (typeof msDeleteAll === 'function') { msDeleteAll(); break; }
+            }
             saveState();
             deleteSelected();
             break;
@@ -408,6 +512,10 @@ document.addEventListener('keydown', function (e) {
             if (currentTool === 'bg-crop' && typeof applyCropBackground === 'function') {
                 e.preventDefault();
                 applyCropBackground();
+            }
+            if (currentTool === 'bg-warp' && typeof applyPerspectiveDeskew === 'function') {
+                e.preventDefault();
+                applyPerspectiveDeskew();
             }
             break;
         case 'escape':

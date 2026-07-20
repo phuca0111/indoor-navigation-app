@@ -307,7 +307,73 @@ function renderEditorUser(currentUser) {
     }
 
     el.innerHTML = displayHtml;
+
+    updatePresenceIndicator({ name: fullName, email: email, role: role });
 }
+
+// ==========================================
+// Presence indicator (avatar + chấm trạng thái, kiểu Figma/M365)
+// ==========================================
+function presenceInitials(name, email) {
+    var s = (name || '').trim();
+    if (s) {
+        var parts = s.split(/\s+/);
+        if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+        return s.slice(0, 2).toUpperCase();
+    }
+    var e = (email || '').trim();
+    return e ? e.slice(0, 2).toUpperCase() : '?';
+}
+
+function updatePresenceIndicator(user) {
+    var ind = document.getElementById('presenceIndicator');
+    if (!ind) return;
+    user = user || {};
+    var name = user.name || user.full_name || user.email || 'Người dùng';
+    var ini = presenceInitials(user.name || user.full_name, user.email);
+
+    function setText(id, txt) { var el = document.getElementById(id); if (el) el.textContent = txt; }
+    setText('presenceAvatar', ini);
+    setText('presencePopAvatar', ini);
+    setText('presenceName', name);
+    setText('presenceEmail', user.email || '—');
+    setText('presenceRole', user.role || '—');
+
+    if (!window._presenceStart) window._presenceStart = Date.now();
+    refreshPresenceState();
+    if (!window._presenceTimer) {
+        window._presenceTimer = setInterval(refreshPresenceSince, 60000);
+    }
+}
+
+function refreshPresenceSince() {
+    var el = document.getElementById('presenceSince');
+    if (!el || !window._presenceStart) return;
+    var start = new Date(window._presenceStart);
+    var hh = ('0' + start.getHours()).slice(-2);
+    var mm = ('0' + start.getMinutes()).slice(-2);
+    var mins = Math.max(0, Math.round((Date.now() - window._presenceStart) / 60000));
+    var rel = mins < 1 ? 'vừa mở' : (mins < 60 ? (mins + ' phút') : (Math.floor(mins / 60) + ' giờ'));
+    el.textContent = 'Từ ' + hh + ':' + mm + ' · ' + rel;
+}
+
+function refreshPresenceState() {
+    var dot = document.getElementById('presenceDot');
+    var popDot = document.getElementById('presencePopDot');
+    var stateEl = document.getElementById('presenceState');
+    var offline = window.editorAccessBlocked === true;
+    var readonly = (typeof isFloorLockReadOnly === 'function') && isFloorLockReadOnly();
+    var cls = 'presence-dot', label;
+    if (offline) { cls += ' presence-dot--offline'; label = 'Offline'; }
+    else if (readonly) { cls += ' presence-dot--viewing'; label = 'Đang xem'; }
+    else { cls += ' presence-dot--online'; label = 'Đang chỉnh sửa'; }
+    if (dot) dot.className = cls;
+    if (popDot) popDot.className = cls;
+    if (stateEl) stateEl.textContent = label;
+    refreshPresenceSince();
+}
+window.updatePresenceIndicator = updatePresenceIndicator;
+window.refreshPresenceState = refreshPresenceState;
 
 const BUILDING_STATUS_LABELS = {
     DRAFT: 'Nháp',
@@ -331,21 +397,29 @@ function updateEditorMapVersion(version) {
 }
 
 function renderEditorBuildingContext(building) {
+    // Breadcrumb header đã bỏ — các phần tử này có thể không tồn tại (null-safe).
     const nameEl = document.getElementById('editorBuildingName');
     const statusEl = document.getElementById('editorBuildingStatus');
-    if (!nameEl || !statusEl) return;
 
     if (!building) {
-        nameEl.textContent = buildingId ? 'Không tải được tòa nhà' : 'Chưa chọn tòa nhà';
-        statusEl.textContent = '—';
-        statusEl.className = 'editor-status-badge editor-status-draft';
-        return;
+        if (nameEl) nameEl.textContent = buildingId ? 'Không tải được tòa nhà' : 'Chưa chọn tòa nhà';
+        if (statusEl) {
+            statusEl.textContent = '—';
+            statusEl.className = 'editor-status-badge editor-status-draft';
+        }
+    } else {
+        if (nameEl) nameEl.textContent = building.name || buildingId;
+        const status = building.status || 'DRAFT';
+        if (statusEl) {
+            statusEl.textContent = BUILDING_STATUS_LABELS[status] || status;
+            statusEl.className = 'editor-status-badge ' + (status === 'PUBLISHED' ? 'editor-status-published' : 'editor-status-draft');
+        }
     }
 
-    nameEl.textContent = building.name || buildingId;
-    const status = building.status || 'DRAFT';
-    statusEl.textContent = BUILDING_STATUS_LABELS[status] || status;
-    statusEl.className = 'editor-status-badge ' + (status === 'PUBLISHED' ? 'editor-status-published' : 'editor-status-draft');
+    // Explorer (cây tòa/tầng) + nhật ký xuất bản dùng chung payload building — luôn refresh
+    if (typeof refreshExplorerPanel === 'function') {
+        try { refreshExplorerPanel(building); } catch (e) { /* noop */ }
+    }
 }
 
 function showEditorAccessBanner(message) {
@@ -675,6 +749,7 @@ function updateFloorLockWriteControls(writeEnabled) {
         statusEl.className = 'editor-floor-lock-status ' +
             (writeEnabled ? 'editor-floor-lock-status--write' : 'editor-floor-lock-status--readonly');
     }
+    if (typeof refreshPresenceState === 'function') refreshPresenceState();
 }
 
 function applyFloorLockWriteMode() {
@@ -1037,6 +1112,27 @@ function applyPublishSuccessUi(floor, newVersion, publishedAt, pipelineResult) {
     if (typeof clearAutoSave === 'function') clearAutoSave();
     if (newVersion != null) updateEditorMapVersion(newVersion);
     window.editorBuildingMeta = Object.assign({}, window.editorBuildingMeta || {}, { status: 'PUBLISHED' });
+    // Ghi nhật ký xuất bản tức thời (ai/khi nào) — không chờ refetch
+    try {
+        const meta = window.editorBuildingMeta;
+        const whenIso = publishedAt || new Date().toISOString();
+        const by = {
+            full_name: (typeof localStorage !== 'undefined' && localStorage.getItem('userName')) || undefined,
+            email: (typeof localStorage !== 'undefined' && localStorage.getItem('userEmail')) || undefined
+        };
+        if (!Array.isArray(meta.versions)) meta.versions = [];
+        meta.versions.unshift({
+            floor_number: floor,
+            version: newVersion,
+            published_at: whenIso,
+            published_by: by
+        });
+        meta.resource_summary = Object.assign({}, meta.resource_summary, { latest_publish_at: whenIso });
+        if (Array.isArray(meta.floors)) {
+            const fr = meta.floors.filter(function (x) { return String(x.floor_number) === String(floor); })[0];
+            if (fr) { fr.is_published = true; fr.version = newVersion; fr.has_draft = false; fr.has_map = true; }
+        }
+    } catch (e) { /* noop */ }
     renderEditorBuildingContext(window.editorBuildingMeta);
     if (window.EditorCore && EditorCore.VersionManager &&
         typeof EditorCore.VersionManager.syncAfterPublish === 'function') {
@@ -1301,6 +1397,7 @@ function clearCanvasData(opts) {
     rooms = [];
     doors = [];
     pois = [];
+    cadPoints = [];
     pathNodes = [];
     pathEdges = [];
     walls = [];
@@ -1317,6 +1414,7 @@ function clearCanvasData(opts) {
     nextRoomId = 1;
     nextDoorId = 1;
     nextPoiId = 1;
+    nextCadPointId = 1;
     nextQrId = 1;
     nextNodeId = 1;
     nextWallId = 1;
@@ -1529,6 +1627,26 @@ function applyMapData(data) {
     });
     nextPoiId = maxPoiId + 1;
 
+    cadPoints = Array.isArray(data.cadPoints) ? data.cadPoints.map(function (cp, index) {
+        var out = {
+            id: cp.id || (index + 1),
+            name: cp.name || ('Điểm #' + (cp.id || index + 1)),
+            x: cp.x || 0,
+            y: cp.y || 0,
+            style: (typeof normalizePointStyle === 'function') ? normalizePointStyle(cp.style) : (cp.style || 'cross'),
+            size: cp.size != null ? cp.size : 8,
+            color: cp.color || '#e11d48',
+            layerId: cp.layerId || 'default'
+        };
+        if (cp.groupId != null) out.groupId = cp.groupId;
+        return out;
+    }) : [];
+    var maxCadPtId = 0;
+    cadPoints.forEach(function (cp) {
+        if (cp.id > maxCadPtId) maxCadPtId = cp.id;
+    });
+    nextCadPointId = maxCadPtId + 1;
+
     // 3. Khôi phục Nodes (nodes -> pathNodes)
     pathNodes = (data.nodes || data.pathNodes || []).map(n => ({
         id: parseInt(n.id),
@@ -1571,6 +1689,7 @@ function applyMapData(data) {
         type: w.type || 'segment',
         thickness: w.thickness || 4,
         is_outer: !!w.is_outer,
+        lineStyle: w.lineStyle || 'solid',
         points: Array.isArray(w.points) ? w.points.map(p => ({ x: p.x, y: p.y })) : []
     }));
     let maxWallId = 0;
@@ -1581,13 +1700,27 @@ function applyMapData(data) {
 
     // 6b. Khôi phục Lines (hỗ trợ vẽ — chỉ editor, không publish)
     lines = (data.lines || []).map(function (ln) {
-        return {
+        var out = {
             id: ln.id || Math.floor(Math.random() * 100000),
             type: ln.type || 'segment',
             color: ln.color || '#3b82f6',
             lineWeight: ln.lineWeight || 2,
+            lineStyle: ln.lineStyle || 'solid',
+            layerId: ln.layerId || 'default',
             points: Array.isArray(ln.points) ? ln.points.map(function (p) { return { x: p.x, y: p.y }; }) : []
         };
+        if (ln.groupId != null) out.groupId = ln.groupId;
+        if (ln.type === 'arc' && ln.arc) {
+            out.arc = { cx: ln.arc.cx, cy: ln.arc.cy, radius: ln.arc.radius };
+        }
+        if (ln.type === 'ellipse' && ln.ellipse) {
+            out.ellipse = {
+                cx: ln.ellipse.cx, cy: ln.ellipse.cy,
+                rx: ln.ellipse.rx, ry: ln.ellipse.ry,
+                rotation: ln.ellipse.rotation
+            };
+        }
+        return out;
     });
     var maxLineId = 0;
     lines.forEach(function (ln) {
@@ -1721,6 +1854,7 @@ function buildPublishPayloadInline() {
             type: w.type || 'segment',
             thickness: w.thickness || 4,
             is_outer: !!w.is_outer,
+            lineStyle: w.lineStyle || 'solid',
             points: Array.isArray(w.points)
                 ? w.points.map(p => ({ x: Math.round(p.x || 0), y: Math.round(p.y || 0) }))
                 : []
@@ -1760,11 +1894,12 @@ function attachEditorCadExtras(mapData) {
     mapData.lines = (lines || []).filter(function (ln) {
         return ln && typeof ln === 'object';
     }).map(function (ln) {
-        return {
+        var out = {
             id: ln.id,
             type: ln.type || 'segment',
             color: ln.color || '#3b82f6',
             lineWeight: ln.lineWeight || 2,
+            lineStyle: ln.lineStyle || 'solid',
             layerId: ln.layerId || 'default',
             points: Array.isArray(ln.points)
                 ? ln.points.map(function (p) {
@@ -1772,6 +1907,40 @@ function attachEditorCadExtras(mapData) {
                 })
                 : []
         };
+        if (ln.groupId != null) out.groupId = ln.groupId;
+        if (ln.type === 'arc' && ln.arc) {
+            out.arc = {
+                cx: Math.round(ln.arc.cx || 0),
+                cy: Math.round(ln.arc.cy || 0),
+                radius: Math.round(ln.arc.radius || 0)
+            };
+        }
+        if (ln.type === 'ellipse' && ln.ellipse) {
+            out.ellipse = {
+                cx: Math.round(ln.ellipse.cx || 0),
+                cy: Math.round(ln.ellipse.cy || 0),
+                rx: Math.round(ln.ellipse.rx || 0),
+                ry: Math.round(ln.ellipse.ry || 0),
+                rotation: ln.ellipse.rotation || 0
+            };
+        }
+        return out;
+    });
+    mapData.cadPoints = (typeof cadPoints !== 'undefined' ? cadPoints : []).filter(function (cp) {
+        return cp && typeof cp === 'object';
+    }).map(function (cp) {
+        var out = {
+            id: cp.id,
+            name: cp.name,
+            x: Math.round(cp.x || 0),
+            y: Math.round(cp.y || 0),
+            style: (typeof normalizePointStyle === 'function') ? normalizePointStyle(cp.style) : (cp.style || 'cross'),
+            size: cp.size != null ? cp.size : 8,
+            color: cp.color || '#e11d48',
+            layerId: cp.layerId || 'default'
+        };
+        if (cp.groupId != null) out.groupId = cp.groupId;
+        return out;
     });
     mapData.dimensions = (dimensions || []).filter(function (d) {
         return d && typeof d === 'object';
@@ -1782,6 +1951,7 @@ function attachEditorCadExtras(mapData) {
             orientation: d.type === 'dimaligned' ? undefined : (d.orientation || 'horizontal'),
             p1: d.p1 ? { x: Math.round(d.p1.x || 0), y: Math.round(d.p1.y || 0) } : null,
             p2: d.p2 ? { x: Math.round(d.p2.x || 0), y: Math.round(d.p2.y || 0) } : null,
+            p3: d.p3 ? { x: Math.round(d.p3.x || 0), y: Math.round(d.p3.y || 0) } : undefined,
             offset: d.offset || 0,
             textOverride: d.textOverride != null && String(d.textOverride) !== '' ? String(d.textOverride) : undefined,
             color: d.color || (d.type === 'dimaligned' ? '#c026d3' : '#e11d48'),

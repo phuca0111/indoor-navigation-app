@@ -280,6 +280,19 @@ function updatePropertiesPanel() {
                 '<div class="prop-group">' +
                 '<button class="btn btn-sm btn-primary" type="button" onclick="applyCropBackground()">Áp dụng crop</button>' +
                 '</div>';
+        } else if (currentTool === 'bg-warp') {
+            propertiesDiv.innerHTML =
+                '<div class="tool-guide">' +
+                '<p>📐 <b>Nắn phối cảnh (4 điểm):</b></p>' +
+                '<p>Click lần lượt 4 góc của vùng cần nắn theo thứ tự <b>TL → TR → BR → BL</b> ' +
+                '(trên-trái, trên-phải, dưới-phải, dưới-trái).</p>' +
+                '<p>Đủ 4 điểm → <b>Enter</b> hoặc nút Áp dụng. Vùng chọn sẽ được kéo về chữ nhật thẳng.</p>' +
+                '<p><b>Esc</b> để hủy. Đã chọn: <b>' +
+                ((typeof warpPointCount === 'function' ? warpPointCount() : 0)) + '/4</b> điểm.</p>' +
+                '</div>' +
+                '<div class="prop-group">' +
+                '<button class="btn btn-sm btn-primary" type="button" onclick="applyPerspectiveDeskew()">Áp dụng nắn</button>' +
+                '</div>';
         } else {
             var bgHtml = '';
             if (window.bgImage) {
@@ -324,6 +337,7 @@ function updatePropertiesPanel() {
                     <div class="prop-row">
                         <label>Deskew:</label>
                         <button class="btn btn-sm btn-outline" type="button" onclick="autoDeskewBackground()">Tự thẳng góc</button>
+                        <button class="btn btn-sm ${currentTool === 'bg-warp' ? 'btn-primary' : 'btn-outline'}" type="button" onclick="selectTool(currentTool === 'bg-warp' ? 'select' : 'bg-warp')" title="Nắn phối cảnh bằng 4 điểm góc">📐 Nắn phối cảnh</button>
                     </div>
                     <div class="prop-row">
                         <label>Detect:</label>
@@ -348,6 +362,7 @@ function updatePropertiesPanel() {
     else if (obj.type === 'wall') showWallProps(obj.data);
     else if (obj.type === 'line') showLineProps(obj.data);
     else if (obj.type === 'poi') showPoiProps(obj.data);
+    else if (obj.type === 'point') showCadPointProps(obj.data);
     else if (obj.type === 'qr') showQrProps(obj.data);
     else if (obj.type === 'node') showNodeProps(obj.data);
     else if (obj.type === 'blockRef') {
@@ -361,8 +376,125 @@ function updatePropertiesPanel() {
     }
 }
 
+/**
+ * HTML nhóm "Nét vẽ": kiểu nét (Linetype) + độ dày (LWeight).
+ * @param {'line'|'wall'} kind
+ * @param {object} obj
+ * @param {boolean} withWeight có hiện ô độ dày không (line có, wall dùng độ dày = thickness nên bỏ)
+ */
+function renderStrokeStyleHtml(kind, obj, withWeight) {
+    var styles = (typeof LINE_STYLES !== 'undefined') ? LINE_STYLES : ['solid', 'dashed', 'dotted', 'dashdot'];
+    var labels = (typeof LINE_STYLE_LABELS !== 'undefined') ? LINE_STYLE_LABELS : {};
+    var cur = (typeof normalizeLineStyle === 'function') ? normalizeLineStyle(obj.lineStyle) : (obj.lineStyle || 'solid');
+    var opts = styles.map(function (s) {
+        return '<option value="' + s + '"' + (s === cur ? ' selected' : '') + '>' + (labels[s] || s) + '</option>';
+    }).join('');
+    var html =
+        '<div class="prop-group">' +
+        '<div class="prop-group-title">Nét vẽ</div>' +
+        '<div class="prop-row"><label>Kiểu nét:</label>' +
+        '<select onchange="updateStrokeProp(\'lineStyle\', this.value)">' + opts + '</select></div>';
+    if (withWeight) {
+        var w = (typeof clampLineWeight === 'function') ? clampLineWeight(obj.lineWeight) : (obj.lineWeight || 2);
+        html +=
+            '<div class="prop-row"><label>Độ dày:</label>' +
+            '<input type="number" step="0.5" min="0.5" max="20" value="' + w + '" ' +
+            'onchange="updateStrokeProp(\'lineWeight\', Number(this.value))"><span class="unit">px</span></div>';
+    }
+    html += '</div>';
+    return html;
+}
+
+/** Cập nhật thuộc tính nét vẽ (lineStyle/lineWeight) cho line/wall đang chọn. */
+function updateStrokeProp(prop, value) {
+    if (!selectedObject) return;
+    if (selectedObject.type !== 'line' && selectedObject.type !== 'wall') return;
+    saveState();
+    if (prop === 'lineStyle') {
+        value = (typeof normalizeLineStyle === 'function') ? normalizeLineStyle(value) : value;
+    } else if (prop === 'lineWeight') {
+        value = (typeof clampLineWeight === 'function') ? clampLineWeight(value) : value;
+    }
+    selectedObject.data[prop] = value;
+    if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
+    draw();
+}
+window.renderStrokeStyleHtml = renderStrokeStyleHtml;
+window.updateStrokeProp = updateStrokeProp;
+
+/** Thông tin cung tính trực tiếp từ hình học (fit qua đầu/giữa/cuối) — luôn đúng sau khi biến đổi. */
+function getArcInfoLive(ln) {
+    if (!ln || !ln.points || ln.points.length < 3) return null;
+    var ge = window.EditorCore && EditorCore.GeometryEngine;
+    if (!ge || !ge.arcFrom3Points) return null;
+    var pts = ln.points;
+    var a = pts[0];
+    var mid = pts[Math.floor(pts.length / 2)];
+    var b = pts[pts.length - 1];
+    var arc = ge.arcFrom3Points(a, mid, b);
+    if (!arc) return null;
+    // Chiều dài cung ≈ tổng các đoạn polyline
+    var lenPx = 0;
+    for (var i = 1; i < pts.length; i++) lenPx += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    return { cx: arc.cx, cy: arc.cy, radius: arc.radius, lengthPx: lenPx };
+}
+
+// --- CUNG TRÒN (arc) — panel riêng ---
+function showArcProps(ln) {
+    var desc = getInspectorDescriptor();
+    var info = getArcInfoLive(ln);
+    var toM = (typeof pixelsToMeters === 'function') ? pixelsToMeters : function (v) { return v; };
+    var rVal = info ? toM(info.radius).toFixed(2) : '—';
+    var lenVal = info ? toM(info.lengthPx).toFixed(2) : '—';
+    propertiesDiv.innerHTML =
+        renderSchemaPropGroup(desc, { title: '◠ Cung tròn #' + ln.id }) +
+        '<div class="prop-group">' +
+        '<div class="prop-group-title">Kích thước</div>' +
+        '<div class="prop-row"><label>Bán kính:</label><span>' + rVal + '</span><span class="unit">m</span></div>' +
+        '<div class="prop-row"><label>Độ dài cung:</label><span>' + lenVal + '</span><span class="unit">m</span></div>' +
+        '<p class="hint-text">Cung dựng qua 3 điểm. Dùng Move/Rotate/Scale hoặc Align để biến đổi; vẽ lại (A) nếu cần đổi hình.</p>' +
+        '</div>' +
+        renderStrokeStyleHtml('line', ln, true) +
+        renderQuickTransformHtml('line') +
+        '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
+}
+
+/** Thông tin elip tính từ meta (rx/ry đo bằng pixel) → trục & chu vi xấp xỉ. */
+function getEllipseInfoLive(ln) {
+    if (!ln || !ln.ellipse) return null;
+    var rx = ln.ellipse.rx || 0, ry = ln.ellipse.ry || 0;
+    // Chu vi xấp xỉ Ramanujan
+    var h = Math.pow(rx - ry, 2) / Math.pow(rx + ry || 1, 2);
+    var peri = Math.PI * (rx + ry) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
+    return { rx: rx, ry: ry, peri: peri };
+}
+
+// --- ELIP (ellipse) — panel riêng ---
+function showEllipseProps(ln) {
+    var desc = getInspectorDescriptor();
+    var info = getEllipseInfoLive(ln);
+    var toM = (typeof pixelsToMeters === 'function') ? pixelsToMeters : function (v) { return v; };
+    var majVal = info ? toM(info.rx * 2).toFixed(2) : '—';
+    var minVal = info ? toM(info.ry * 2).toFixed(2) : '—';
+    var periVal = info ? toM(info.peri).toFixed(2) : '—';
+    propertiesDiv.innerHTML =
+        renderSchemaPropGroup(desc, { title: '⬭ Elip #' + ln.id }) +
+        '<div class="prop-group">' +
+        '<div class="prop-group-title">Kích thước</div>' +
+        '<div class="prop-row"><label>Trục lớn:</label><span>' + majVal + '</span><span class="unit">m</span></div>' +
+        '<div class="prop-row"><label>Trục nhỏ:</label><span>' + minVal + '</span><span class="unit">m</span></div>' +
+        '<div class="prop-row"><label>Chu vi:</label><span>' + periVal + '</span><span class="unit">m</span></div>' +
+        '<p class="hint-text">Elip dựng theo tâm + 2 trục. Dùng Move/Rotate/Scale hoặc Align để biến đổi; vẽ lại (EL) nếu cần đổi hình.</p>' +
+        '</div>' +
+        renderStrokeStyleHtml('line', ln, true) +
+        renderQuickTransformHtml('line') +
+        '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
+}
+
 // --- ĐOẠN THẲNG (hỗ trợ) — schema-driven ---
 function showLineProps(ln) {
+    if (ln && ln.type === 'arc') return showArcProps(ln);
+    if (ln && ln.type === 'ellipse') return showEllipseProps(ln);
     var desc = getInspectorDescriptor();
     var heading = typeof getPolylineHeadingDeg === 'function' ? getPolylineHeadingDeg(ln) : 0;
     var lenVal = '0';
@@ -381,6 +513,7 @@ function showLineProps(ln) {
         '<div class="prop-row"><label>Hướng:</label><span>' + heading.toFixed(1) + '°</span></div>' +
         '<p class="hint-text">Nhập mét rồi Enter/blur — giữ hướng, kéo đầu còn lại. Giống tường.</p>' +
         '</div>' +
+        renderStrokeStyleHtml('line', ln, true) +
         renderEndpointTrimHtml() +
         renderQuickTransformHtml('line') +
         '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
@@ -445,6 +578,7 @@ function showWallProps(w) {
         '<div class="prop-row"><label>Độ dày:</label>' +
         '<input type="number" step="1" min="1" value="' + (w.thickness || 4) + '" onchange="updateObjProp(\'thickness\', Number(this.value))"><span class="unit">px</span></div>' +
         '</div>' +
+        renderStrokeStyleHtml('wall', w, false) +
         '<div class="prop-group">' +
         '<div class="prop-group-title">🔗 Nối tiếp tới Tường khác</div>' +
         '<div class="prop-row">' +
@@ -981,6 +1115,45 @@ function showPoiProps(p) {
         '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
 }
 
+// --- CAD POINT (điểm mốc) ---
+function showCadPointProps(pt) {
+    var styles = (typeof CAD_POINT_STYLES !== 'undefined') ? CAD_POINT_STYLES : ['dot', 'cross', 'plus', 'circle-cross'];
+    var labels = (typeof CAD_POINT_STYLE_LABELS !== 'undefined') ? CAD_POINT_STYLE_LABELS : {};
+    var styleOpts = styles.map(function (s) {
+        var sel = ((typeof normalizePointStyle === 'function' ? normalizePointStyle(pt.style) : pt.style) === s) ? ' selected' : '';
+        return '<option value="' + s + '"' + sel + '>' + (labels[s] || s) + '</option>';
+    }).join('');
+    var toM = (typeof pixelsToMeters === 'function') ? pixelsToMeters : function (v) { return v; };
+    propertiesDiv.innerHTML =
+        '<div class="prop-group">' +
+        '<div class="prop-group-title">⌖ Điểm mốc #' + pt.id + '</div>' +
+        '<div class="prop-row"><label>Tên:</label><input type="text" value="' + (pt.name || '') + '" onchange="updateCadPointProp(\'name\', this.value)"></div>' +
+        '<div class="prop-row"><label>X:</label><span>' + toM(pt.x).toFixed(2) + '</span><span class="unit">m</span></div>' +
+        '<div class="prop-row"><label>Y:</label><span>' + toM(pt.y).toFixed(2) + '</span><span class="unit">m</span></div>' +
+        '<div class="prop-row"><label>Kiểu:</label><select onchange="updateCadPointProp(\'style\', this.value)">' + styleOpts + '</select></div>' +
+        '<div class="prop-row"><label>Màu:</label><input type="color" value="' + (pt.color || '#e11d48') + '" onchange="updateCadPointProp(\'color\', this.value)"></div>' +
+        '<div class="prop-row"><label>Cỡ (px):</label><input type="number" min="4" max="24" value="' + (pt.size || 8) + '" onchange="updateCadPointProp(\'size\', +this.value)"></div>' +
+        '<p class="hint-text">Điểm mốc CAD — tham chiếu snap NODE. Khác Điểm POI (tiện ích điều hướng).</p>' +
+        '</div>' +
+        (typeof renderQuickTransformHtml === 'function' ? renderQuickTransformHtml('point') : '') +
+        '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
+}
+
+function updateCadPointProp(key, value) {
+    if (!selectedObject || selectedObject.type !== 'point' || !selectedObject.data) return;
+    if (typeof saveState === 'function') saveState();
+    var pt = selectedObject.data;
+    if (key === 'style') pt.style = (typeof normalizePointStyle === 'function') ? normalizePointStyle(value) : value;
+    else if (key === 'size') pt.size = Math.max(4, Math.min(24, Number(value) || 8));
+    else if (key === 'color') pt.color = value || '#e11d48';
+    else if (key === 'name') pt.name = String(value || '');
+    if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
+    if (typeof updateObjectList === 'function') updateObjectList();
+    if (typeof draw === 'function') draw();
+}
+window.updateCadPointProp = updateCadPointProp;
+window.showCadPointProps = showCadPointProps;
+
 // --- PATH NODE ---
 function showNodeProps(n) {
     var desc = getInspectorDescriptor();
@@ -1188,6 +1361,11 @@ function changePoiType(index) {
 
 // === XÓA ĐỐI TƯỢNG ĐANG CHỌN ===
 function deleteSelected() {
+    // Đợt 3 — nếu đang chọn nhiều đối tượng thì xóa cả tập
+    if (typeof msIsMulti === 'function' && msIsMulti() && typeof msDeleteAll === 'function') {
+        msDeleteAll();
+        return;
+    }
     if (!selectedObject && !selectedRoom) return;
 
     var target = selectedObject ? selectedObject.data : selectedRoom;
@@ -1214,6 +1392,8 @@ function deleteSelected() {
             deleteLine(data);
         } else if (type === 'poi') {
             deletePoi(data);
+        } else if (type === 'point') {
+            if (typeof deleteCadPoint === 'function') deleteCadPoint(data);
         } else if (type === 'qr') {
             deleteQr(data);
         } else if (type === 'node') {
@@ -1244,6 +1424,7 @@ function updateObjectList() {
 
     var totalItems = rooms.length + doors.length + pois.length + pathNodes.length
         + (walls ? walls.length : 0) + (lines ? lines.length : 0)
+        + (typeof cadPoints !== 'undefined' && cadPoints ? cadPoints.length : 0)
         + (typeof blockInserts !== 'undefined' ? blockInserts.length : 0);
     if (totalItems === 0) {
         objectListDiv.innerHTML = '<p class="hint-text">Chưa có đối tượng</p>';
@@ -1278,7 +1459,11 @@ function updateObjectList() {
     if (lines && lines.forEach) {
         lines.forEach(function (line) {
             var isActive = (selectedObject && selectedObject.type === 'line' && selectedObject.data === line);
-            addListItem('📏', 'Đoạn #' + line.id, 'Hỗ trợ', line.color || '#3b82f6', isActive, function () {
+            var isArc = line.type === 'arc';
+            var isEllipse = line.type === 'ellipse';
+            var lineIcon = isArc ? '◠' : (isEllipse ? '⬭' : '📏');
+            var lineLabel = (isArc ? 'Cung #' : (isEllipse ? 'Elip #' : 'Đoạn #')) + line.id;
+            addListItem(lineIcon, lineLabel, 'Hỗ trợ', line.color || '#3b82f6', isActive, function () {
                 setEditorSelection('line', line);
             });
         });
@@ -1292,6 +1477,16 @@ function updateObjectList() {
             setEditorSelection('poi', poi);
         });
     });
+
+    // CAD Points (điểm mốc)
+    if (typeof cadPoints !== 'undefined' && cadPoints) {
+        cadPoints.forEach(function (cp) {
+            var isActive = (selectedObject && selectedObject.type === 'point' && selectedObject.data === cp);
+            addListItem('⌖', cp.name || ('Điểm #' + cp.id), 'Mốc CAD', cp.color || '#e11d48', isActive, function () {
+                setEditorSelection('point', cp);
+            });
+        });
+    }
 
     // QR Code
     qrs.forEach(function (qr) {

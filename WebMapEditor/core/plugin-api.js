@@ -22,6 +22,8 @@
     var _plugins = {};
     var _validators = [];
     var _exporters = [];
+    var _importers = [];
+    var _panels = [];
 
     function registerPlugin(id, manifest) {
         if (!id || !manifest) return { ok: false, error: 'invalid_args' };
@@ -53,14 +55,34 @@
         return { ok: true, count: _validators.length };
     }
 
+    function normalizeIssue(raw) {
+        if (raw == null) return null;
+        if (typeof raw === 'string') return { level: 'error', code: '', message: raw, meta: {} };
+        var level = (raw.level || raw.severity) === 'warning' ? 'warning' : 'error';
+        return {
+            level: level,
+            code: raw.code || '',
+            message: raw.message || raw.msg || '',
+            meta: raw.meta || raw.details || {}
+        };
+    }
+
     function runValidators(mapData) {
         var issues = [];
         _validators.forEach(function (v) {
             try {
                 var res = v.fn(mapData);
-                if (Array.isArray(res)) issues = issues.concat(res);
+                if (Array.isArray(res)) {
+                    res.forEach(function (r) {
+                        var norm = normalizeIssue(r);
+                        if (norm) issues.push(norm);
+                    });
+                } else if (res) {
+                    var single = normalizeIssue(res);
+                    if (single) issues.push(single);
+                }
             } catch (e) {
-                issues.push({ level: 'error', code: 'plugin_validator_error', message: e.message });
+                issues.push({ level: 'error', code: 'plugin_validator_error', message: e.message, meta: {} });
             }
         });
         return issues;
@@ -82,6 +104,46 @@
         }
     }
 
+    function registerImporter(format, fn) {
+        if (!format || typeof fn !== 'function') return { ok: false, error: 'invalid_args' };
+        _importers.push({ format: format, fn: fn });
+        return { ok: true, format: format };
+    }
+
+    function importFrom(format, raw) {
+        var match = _importers.filter(function (e) { return e.format === format; });
+        if (!match.length) return { ok: false, error: 'unknown_format' };
+        try {
+            return { ok: true, data: match[0].fn(raw) };
+        } catch (e) {
+            return { ok: false, error: e.message };
+        }
+    }
+
+    function listImporterFormats() {
+        return _importers.map(function (e) { return e.format; });
+    }
+
+    function registerPanel(id, panelDef) {
+        if (!id || !panelDef) return { ok: false, error: 'invalid_args' };
+        _panels = _panels.filter(function (p) { return p.id !== id; });
+        _panels.push({ id: id, panel: panelDef });
+        return { ok: true, id: id };
+    }
+
+    function getPanels() {
+        return _panels.map(function (p) { return Object.assign({ id: p.id }, p.panel); });
+    }
+
+    // test-only: xóa mọi registry để cô lập test
+    function _reset() {
+        _plugins = {};
+        _validators = [];
+        _exporters = [];
+        _importers = [];
+        _panels = [];
+    }
+
     return {
         registerPlugin: registerPlugin,
         getPlugin: getPlugin,
@@ -90,6 +152,12 @@
         registerValidator: registerValidator,
         runValidators: runValidators,
         registerExporter: registerExporter,
-        exportAs: exportAs
+        exportAs: exportAs,
+        registerImporter: registerImporter,
+        importFrom: importFrom,
+        listImporterFormats: listImporterFormats,
+        registerPanel: registerPanel,
+        getPanels: getPanels,
+        _reset: _reset
     };
 });

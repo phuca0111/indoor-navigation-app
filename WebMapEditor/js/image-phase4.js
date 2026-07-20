@@ -269,6 +269,107 @@ function applyCropBackground() {
 }
 window.applyCropBackground = applyCropBackground;
 
+// ---- Nắn phối cảnh (perspective deskew, 4 điểm TL→TR→BR→BL) ----
+var warpPts = [];
+var warpActive = false;
+
+function clearWarpSession() {
+    warpActive = false;
+    warpPts = [];
+}
+window.clearWarpSession = clearWarpSession;
+
+function isWarping() { return warpActive || warpPts.length > 0; }
+window.isWarping = isWarping;
+
+function warpPointCount() { return warpPts.length; }
+window.warpPointCount = warpPointCount;
+
+function handleWarpPointerDown(x, y) {
+    if (!requireBgImage()) return;
+    if (warpPts.length >= 4) warpPts = []; // đủ 4 rồi click lại → làm mới
+    warpPts.push({ x: x, y: y });
+    warpActive = warpPts.length < 4;
+    if (typeof showToast === 'function') {
+        if (warpPts.length < 4) {
+            showToast('Nắn phối cảnh: chọn điểm ' + (warpPts.length + 1) + '/4 (TL→TR→BR→BL)', 'info');
+        } else {
+            showToast('Đủ 4 điểm — bấm «Áp dụng nắn» hoặc Enter', 'success');
+        }
+    }
+    if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+    if (typeof draw === 'function') draw();
+}
+window.handleWarpPointerDown = handleWarpPointerDown;
+
+function applyPerspectiveDeskew() {
+    if (!requireBgImage()) return false;
+    var api = getImageToolsApi();
+    if (!api || warpPts.length < 4) {
+        if (typeof showToast === 'function') showToast('Chọn đủ 4 điểm góc (TL→TR→BR→BL)', 'error');
+        return false;
+    }
+    var bg = {
+        width: window.bgImage.width,
+        height: window.bgImage.height,
+        bgX: window.bgX || 0,
+        bgY: window.bgY || 0,
+        bgScale: window.bgScale || 1,
+        bgRotation: window.bgRotation || 0
+    };
+    var quad = [];
+    for (var i = 0; i < 4; i++) {
+        var p = api.worldToImagePixel(warpPts[i].x, warpPts[i].y, bg);
+        if (!p) {
+            if (typeof showToast === 'function') showToast('Không quy đổi được điểm về ảnh gốc', 'error');
+            return false;
+        }
+        quad.push(p);
+    }
+    var size = api.suggestWarpSize(quad);
+    var res = api.warpPerspectiveToDataUrl(window.bgImage, quad, size.width, size.height);
+    if (!res) {
+        if (typeof showToast === 'function') showToast('Không nắn được ảnh (4 điểm suy biến?)', 'error');
+        return false;
+    }
+    if (typeof saveState === 'function') saveState();
+    clearWarpSession();
+    replaceBackgroundFromDataUrl(res.dataUrl, { keepTransform: false, resetFilters: false });
+    if (typeof showToast === 'function') {
+        showToast('Đã nắn phối cảnh ảnh nền (' + res.width + '×' + res.height + ')', 'success');
+    }
+    return true;
+}
+window.applyPerspectiveDeskew = applyPerspectiveDeskew;
+
+function drawWarpPreview() {
+    if (!warpPts.length || typeof ctx === 'undefined') return;
+    var z = typeof zoom !== 'undefined' && zoom > 0 ? zoom : 1;
+    ctx.save();
+    ctx.strokeStyle = '#7c3aed';
+    ctx.fillStyle = 'rgba(124, 58, 237, 0.12)';
+    ctx.lineWidth = 2 / z;
+    ctx.setLineDash([6 / z, 4 / z]);
+    ctx.beginPath();
+    ctx.moveTo(warpPts[0].x, warpPts[0].y);
+    for (var i = 1; i < warpPts.length; i++) ctx.lineTo(warpPts[i].x, warpPts[i].y);
+    if (warpPts.length === 4) ctx.closePath();
+    if (warpPts.length >= 3) ctx.fill();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    var labels = ['1', '2', '3', '4'];
+    ctx.fillStyle = '#6d28d9';
+    ctx.font = 'bold ' + (12 / z) + 'px Consolas, monospace';
+    for (var k = 0; k < warpPts.length; k++) {
+        ctx.beginPath();
+        ctx.arc(warpPts[k].x, warpPts[k].y, 4 / z, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillText(labels[k], warpPts[k].x + 6 / z, warpPts[k].y - 6 / z);
+    }
+    ctx.restore();
+}
+window.drawWarpPreview = drawWarpPreview;
+
 function runAutoDetectV2() {
     if (!requireBgImage()) return;
     if (typeof detectRoomsFromImageV2 === 'function') {
