@@ -34,10 +34,26 @@ const userSchema = new mongoose.Schema({
     },
 
     // Cột 3: Vai trò của người dùng
+    // REGISTERED_USER: tài khoản cá nhân (không thuộc Organization), có Personal Workspace
     role: {
         type: String,
-        enum: ['SUPER_ADMIN', 'FINANCE_ADMIN', 'ORG_ADMIN', 'BUILDING_ADMIN'],
+        enum: ['SUPER_ADMIN', 'FINANCE_ADMIN', 'ORG_ADMIN', 'BUILDING_ADMIN', 'REGISTERED_USER'],
         default: 'BUILDING_ADMIN'
+    },
+
+    // Gói cước cá nhân (chỉ áp dụng cho REGISTERED_USER — Personal Workspace).
+    // Role quyết định quyền, Plan quyết định hạn mức tài nguyên — hai khái niệm độc lập.
+    // Với ORG_ADMIN/BUILDING_ADMIN, gói cước lấy theo Organization.plan (không dùng trường này).
+    // Mã động theo catalog (FREE/PRO + tùy chỉnh như TT) — validate ở service, không enum cứng.
+    plan: {
+        type: String,
+        uppercase: true,
+        trim: true,
+        default: 'FREE'
+    },
+    plan_expires_at: {
+        type: Date,
+        default: null
     },
 
     // Cột 4: Danh sách các tòa nhà được gán cho Admin này quản lý
@@ -69,6 +85,17 @@ const userSchema = new mongoose.Schema({
     phone: {
         type: String,
         default: ''
+    },
+
+    // Hồ sơ thanh toán / hóa đơn — tự điền form checkout lần sau
+    billing_profile: {
+        full_name: { type: String, default: '' },
+        company: { type: String, default: '' },
+        address: { type: String, default: '' },
+        city: { type: String, default: '' },
+        country: { type: String, default: '' },
+        phone: { type: String, default: '' },
+        updated_at: { type: Date, default: null }
     },
 
     // Cột 9: Super Admin nào đã tạo account này

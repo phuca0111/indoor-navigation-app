@@ -1,9 +1,10 @@
 // Phase 5.7/5.8 — Checkout + hoàn tất thanh toán (VNPay / TPTPpay)
+const QRCode = require('qrcode');
 const OrganizationBillingEvent = require('../models/OrganizationBillingEvent');
 const Invoice = require('../models/Invoice');
-const { getPlanPrice, PLAN_PERIOD_DAYS } = require('../config/planPricing');
+const { getPlanPrice, getPlanPeriodDays } = require('../config/planPricing');
+const { assertPlanCode } = require('./planCatalog');
 const {
-  isPaidPlan,
   defaultPeriod,
   createOpenInvoice,
   applyBillingEventToSubscription,
@@ -30,17 +31,17 @@ function checkoutIdempotencyKey(orgId, plan, action) {
  * Tạo hóa đơn OPEN + URL thanh toán.
  */
 async function createCheckoutSession({ org, plan, action = 'upgrade', userId, ipAddr }) {
-  const nextPlan = String(plan || 'PRO').toUpperCase();
-  if (!isPaidPlan(nextPlan)) {
-    throw Object.assign(new Error('plan phải là PRO hoặc ENTERPRISE.'), { status: 400 });
-  }
+  const nextPlan = await assertPlanCode(plan || 'PRO', {
+    mustBePaid: true,
+    mustBeActive: true
+  });
 
   const amount = getPlanPrice(nextPlan);
   if (!amount) {
     throw Object.assign(new Error('Không có giá cho gói này.'), { status: 400 });
   }
 
-  const period = defaultPeriod(PLAN_PERIOD_DAYS);
+  const period = defaultPeriod(getPlanPeriodDays(nextPlan));
   const idempotencyKey = checkoutIdempotencyKey(org._id, nextPlan, action);
 
   const providerChoice = getCheckoutProvider();
@@ -76,6 +77,8 @@ async function createCheckoutSession({ org, plan, action = 'upgrade', userId, ip
 
   let provider = providerChoice;
   let checkoutUrl;
+  let qrDataUrl = null;
+  let deepLink = null;
 
   if (provider === 'VNPAY') {
     checkoutUrl = createVnpayPaymentUrl({
@@ -90,6 +93,11 @@ async function createCheckoutSession({ org, plan, action = 'upgrade', userId, ip
     const nonce = generatePaymentNonce();
     const { token, exp } = createPaymentAccessToken(invoice._id, org._id, userId, nonce);
     checkoutUrl = buildTptpPayUrl(invoice._id, token);
+    // QR quét bằng app TPTPbank — dùng chung schema deep link với gói cá nhân
+    deepLink = `tptpbank://pay?invoiceId=${encodeURIComponent(String(invoice._id))}&token=${encodeURIComponent(token)}`;
+    try {
+      qrDataUrl = await QRCode.toDataURL(deepLink, { width: 260, margin: 1, errorCorrectionLevel: 'M' });
+    } catch (_) { qrDataUrl = null; }
     invoice.metadata = {
       ...(invoice.metadata || {}),
       provider: 'TPTPPAY',
@@ -108,7 +116,7 @@ async function createCheckoutSession({ org, plan, action = 'upgrade', userId, ip
     );
   }
 
-  return { invoice, provider, checkout_url: checkoutUrl, duplicated };
+  return { invoice, provider, checkout_url: checkoutUrl, qr_data_url: qrDataUrl, deep_link: deepLink, duplicated };
 }
 
 /**
@@ -189,6 +197,32 @@ async function completeCheckoutPayment({
     provider,
     createdBy: userId
   });
+
+  if (userId) {
+    try {
+      const ActivityLog = require('../models/ActivityLog');
+      await ActivityLog.create({
+        user_id: userId,
+        action: 'SUBSCRIPTION_PAYMENT',
+        target_type: 'organization',
+        target_id: String(org._id),
+        target: org.name,
+        details: {
+          message: 'Thanh toán gói thành công — kích hoạt/gia hạn subscription',
+          plan,
+          amount: invoice.amount,
+          provider,
+          invoice_number: invoice.invoice_number,
+          invoice_id: String(invoice._id),
+          subscription_id: result.subscription?._id
+            ? String(result.subscription._id)
+            : null
+        },
+        ip_address: '',
+        organization_id: org._id
+      });
+    } catch (_) { /* không chặn luồng thanh toán nếu log lỗi */ }
+  }
 
   return {
     invoice,

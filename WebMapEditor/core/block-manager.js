@@ -12,8 +12,29 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
     'use strict';
 
+    var SUPPORTED_TYPES = ['room', 'wall', 'line', 'door', 'poi'];
+
     function cloneJson(obj) {
         return JSON.parse(JSON.stringify(obj));
+    }
+
+    // Lọc danh sách {type,data} chỉ giữ loại đối tượng có thể đưa vào block.
+    function filterInsertableItems(items) {
+        return (items || []).filter(function (it) {
+            return it && it.type && it.data && SUPPORTED_TYPES.indexOf(it.type) >= 0;
+        });
+    }
+
+    // Tóm tắt thư viện block để hiển thị palette: {id,name,count,createdAt}
+    function summarizeForPalette(blocks) {
+        return (blocks || []).map(function (b) {
+            return {
+                id: b.id,
+                name: b.name || 'Block',
+                count: (b.entities && b.entities.length) || 0,
+                createdAt: b.createdAt || 0
+            };
+        });
     }
 
     function entityBBox(type, data) {
@@ -267,6 +288,21 @@
         return box;
     }
 
+    /**
+     * Phá 1 Insert thành các entity nguyên thủy ở toạ độ world.
+     * Pure: KHÔNG đụng state global — trả về [{type, data}] đã clone + biến đổi
+     * theo vị trí/scale/rotation của insert. Lớp UI sẽ gán id mới và push vào mảng.
+     */
+    function explodeInsert(def, insert) {
+        if (!def || !def.entities || !insert) return [];
+        return def.entities.map(function (ent) {
+            return {
+                type: ent.type,
+                data: worldEntityFromLocal(ent.type, ent.data, insert)
+            };
+        });
+    }
+
     function hitTestInsert(def, insert, wx, wy, pad) {
         pad = pad != null ? pad : 4;
         var box = insertBBox(def, insert);
@@ -281,6 +317,8 @@
 
     return {
         cloneJson: cloneJson,
+        filterInsertableItems: filterInsertableItems,
+        summarizeForPalette: summarizeForPalette,
         entityBBox: entityBBox,
         selectionBBox: selectionBBox,
         createDefinition: createDefinition,
@@ -290,6 +328,7 @@
         findDefinition: findDefinition,
         insertBBox: insertBBox,
         hitTestInsert: hitTestInsert,
+        explodeInsert: explodeInsert,
         translateEntityInPlace: translateEntityInPlace
     };
 });

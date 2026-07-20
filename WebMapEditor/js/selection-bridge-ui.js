@@ -27,6 +27,11 @@ function setLegacySelectionOnly(type, data) {
 function setEditorSelection(type, data, opts) {
     opts = opts || {};
     setLegacySelectionOnly(type, data);
+    // Đợt 3 — đồng bộ tập chọn: mỗi lần chọn đơn sẽ reset tập, trừ khi caller giữ tập (_msKeepSet)
+    if (!window._msKeepSet) {
+        if (type && data) window.selectionSet = [{ type: (type === 'room' ? 'room' : type), data: data }];
+        else window.selectionSet = [];
+    }
     if (window.EditorCore && EditorCore.SelectionBridge) {
         EditorCore.SelectionBridge.syncToSelectionManager(selectedObject, selectedRoom);
     }

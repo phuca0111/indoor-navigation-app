@@ -5,6 +5,7 @@
 // ============================================
 
 const QrCode = require('../models/QrCode');
+const QrScanLog = require('../models/QrScanLog');
 
 // GET /api/qr/:qrCode
 // Android scan QR → gửi giá trị qr_code lên → nhận về building_id, floor, vị trí, node_id
@@ -19,6 +20,16 @@ const getQrInfo = async (req, res) => {
         if (!qr) {
             return res.status(404).json({ message: 'Không tìm thấy mã QR này trong hệ thống!' });
         }
+
+        // AD16 — ghi nhận scan cho Overview navigation (không chặn response)
+        QrScanLog.create({
+            qr_code: qr.qr_code,
+            building_id: qr.building_id || null,
+            floor_number: qr.floor_number,
+            node_id: qr.node_id || '',
+            label: qr.label || '',
+            scanned_at: new Date()
+        }).catch(() => {});
 
         res.status(200).json({
             qr_code:      qr.qr_code,

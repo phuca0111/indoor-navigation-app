@@ -98,9 +98,14 @@ let draggingVertexIndex = -1;
 let doors = [];
 let nextDoorId = 1;
 
-// POI data (điểm đánh dấu)
+// POI data (điểm đánh dấu tiện ích — navigation)
 let pois = [];
 let nextPoiId = 1;
+
+// CAD Point data (điểm mốc dựng hình — snap NODE, khác POI)
+let cadPoints = [];
+let nextCadPointId = 1;
+window.defaultCadPointStyle = window.defaultCadPointStyle || 'cross';
 
 // QR Code data (mốc định vị quét mã)
 let qrs = [];
@@ -181,6 +186,7 @@ const NODE_RADIUS = 8;      // Bán kính path node
         rooms: function () { return rooms; },
         doors: function () { return doors; },
         pois: function () { return pois; },
+        cadPoints: function () { return cadPoints; },
         pathNodes: function () { return pathNodes; },
         pathEdges: function () { return pathEdges; },
         qrs: function () { return qrs; },

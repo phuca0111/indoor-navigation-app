@@ -20,7 +20,7 @@ function objCountOnLayer(layerId) {
         }).length;
     }
     return count(window.rooms) + count(window.doors) + count(window.walls) +
-        count(window.lines) + count(window.pois) + count(window.qrs) +
+        count(window.lines) + count(window.pois) + count(window.cadPoints) + count(window.qrs) +
         count(window.pathNodes);
 }
 
@@ -34,13 +34,15 @@ function renderLayersPanel() {
     var activeId = lm.getActiveLayerId ? lm.getActiveLayerId() : (lm.DEFAULT_LAYER_ID || 'default');
     var defaultId = lm.DEFAULT_LAYER_ID || 'default';
 
-    panel.innerHTML = layers.map(function (l) {
+    var lastIdx = layers.length - 1;
+    panel.innerHTML = layers.map(function (l, idx) {
         var visible = lm.isLayerVisible ? lm.isLayerVisible(l.id) : !!l.visible;
         var locked = lm.isLayerLocked ? lm.isLayerLocked(l.id) : !!l.locked;
         var isActive = (l.id === activeId);
         var count = objCountOnLayer(l.id);
         var isDefault = (l.id === defaultId);
         var lockIcon = locked ? '🔒' : '🔓';
+        var color = l.color || '#94a3b8';
 
         return '' +
             '<div class="layer-row ' + (isActive ? 'is-active' : '') + '" data-layer-id="' + escapeHtml(l.id) + '"' +
@@ -49,10 +51,17 @@ function renderLayersPanel() {
             '     title="Hiển thị" onclick="event.stopPropagation(); toggleLayerVisibleUI(\'' + escapeHtml(l.id) + '\', this.checked)">' +
             '  <input type="checkbox" class="layer-locked" ' + (locked ? 'checked' : '') +
             '     title="Khóa lớp (không vẽ/sửa)" onclick="event.stopPropagation(); toggleLayerLockedUI(\'' + escapeHtml(l.id) + '\', this.checked)">' +
+            '  <input type="color" class="layer-color" value="' + escapeHtml(color) + '"' +
+            '     title="Màu lớp" onclick="event.stopPropagation();"' +
+            '     onchange="setLayerColorUI(\'' + escapeHtml(l.id) + '\', this.value)">' +
             '  <div class="layer-row__name" title="' + escapeHtml(l.name) + '">' +
             escapeHtml(String(l.name || '')) + (locked ? ' ' + lockIcon : '') +
             '</div>' +
             '  <div class="layer-row__count" title="Số đối tượng">' + count + '</div>' +
+            '  <button type="button" class="layer-row__btn" title="Lên trên"' + (idx === 0 ? ' disabled' : '') +
+            '    onclick="event.stopPropagation(); moveLayerUI(\'' + escapeHtml(l.id) + '\', -1)">▲</button>' +
+            '  <button type="button" class="layer-row__btn" title="Xuống dưới"' + (idx === lastIdx ? ' disabled' : '') +
+            '    onclick="event.stopPropagation(); moveLayerUI(\'' + escapeHtml(l.id) + '\', 1)">▼</button>' +
             '  <button type="button" class="layer-row__btn" title="Đổi tên"' +
             '    onclick="event.stopPropagation(); renameLayerUI(\'' + escapeHtml(l.id) + '\')">✎</button>' +
             (isDefault
@@ -78,6 +87,19 @@ function toggleLayerLockedUI(layerId, locked) {
     if (!window.EditorCore || !EditorCore.LayerManager) return;
     if (EditorCore.LayerManager.setLocked) EditorCore.LayerManager.setLocked(layerId, locked);
     if (typeof draw === 'function') draw();
+}
+
+function setLayerColorUI(layerId, color) {
+    if (!window.EditorCore || !EditorCore.LayerManager || !EditorCore.LayerManager.setColor) return;
+    EditorCore.LayerManager.setColor(layerId, color);
+    if (typeof flushAutosaveNow === 'function') flushAutosaveNow();
+    if (typeof draw === 'function') draw();
+}
+
+function moveLayerUI(layerId, dir) {
+    if (!window.EditorCore || !EditorCore.LayerManager || !EditorCore.LayerManager.moveLayer) return;
+    EditorCore.LayerManager.moveLayer(layerId, dir);
+    if (typeof flushAutosaveNow === 'function') flushAutosaveNow();
 }
 
 function addLayerUI() {

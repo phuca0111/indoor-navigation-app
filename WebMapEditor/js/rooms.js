@@ -382,6 +382,57 @@ function createPolygonRoom(points) {
     return room;
 }
 
+// --- BOUNDARY (BO): tạo phòng từ vùng kín bao quanh điểm click ---
+function runBoundaryAt(x, y) {
+    var BT = (typeof EditorCore !== 'undefined') && EditorCore.BoundaryTrace;
+    if (!BT) {
+        if (typeof showToast === 'function') showToast('Chưa nạp module Boundary', 'error');
+        return;
+    }
+    var segs = [];
+    // Tường
+    (window.walls || []).forEach(function (w) {
+        if (w && Array.isArray(w.points)) segs = segs.concat(BT.polylineToSegments(w.points));
+    });
+    // Đoạn hỗ trợ
+    (window.lines || []).forEach(function (ln) {
+        if (ln && Array.isArray(ln.points)) segs = segs.concat(BT.polylineToSegments(ln.points));
+    });
+    // Cạnh của các phòng đã có (dùng làm ranh giới ngăn vùng)
+    (window.rooms || []).forEach(function (r) {
+        if (!r) return;
+        if (r.shape === 'polygon' && Array.isArray(r.points) && r.points.length >= 3) {
+            var pts = r.points.slice();
+            pts.push(r.points[0]);
+            segs = segs.concat(BT.polylineToSegments(pts));
+        } else if (r.shape !== 'circle' && r.width && r.height) {
+            var x0 = r.x, y0 = r.y, x1 = r.x + r.width, y1 = r.y + r.height;
+            segs.push({ a: { x: x0, y: y0 }, b: { x: x1, y: y0 } });
+            segs.push({ a: { x: x1, y: y0 }, b: { x: x1, y: y1 } });
+            segs.push({ a: { x: x1, y: y1 }, b: { x: x0, y: y1 } });
+            segs.push({ a: { x: x0, y: y1 }, b: { x: x0, y: y0 } });
+        }
+    });
+    if (segs.length < 3) {
+        if (typeof showToast === 'function') showToast('Cần có tường/đoạn tạo vùng bao trước', 'error');
+        return;
+    }
+    var poly = BT.trace(segs, { x: x, y: y });
+    if (!poly || poly.length < 3) {
+        if (typeof showToast === 'function') showToast('Không tìm thấy vùng kín quanh điểm này', 'error');
+        return;
+    }
+    saveState();
+    var room = createPolygonRoom(poly);
+    if (!room) return; // createPolygonRoom đã báo lỗi hình học nếu có
+    rooms.push(room);
+    setEditorSelection('room', room);
+    if (typeof updateObjectList === 'function') updateObjectList();
+    if (typeof showToast === 'function') showToast('Đã tạo phòng từ vùng bao (' + poly.length + ' đỉnh)', 'success');
+    if (typeof draw === 'function') draw();
+}
+window.runBoundaryAt = runBoundaryAt;
+
 // --- RESIZE HANDLES (chỉ cho rect) ---
 function getHandlePositions(room) {
     var x = room.x, y = room.y, w = room.width, h = room.height;

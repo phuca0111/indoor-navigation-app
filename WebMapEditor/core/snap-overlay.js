@@ -16,7 +16,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
     'use strict';
 
-    var DRAW_TOOLS = ['wall', 'line', 'room', 'circle', 'door', 'poi', 'path', 'ruler', 'polygon', 'dimlinear', 'dimaligned', 'dimedit'];
+    var DRAW_TOOLS = ['wall', 'line', 'room', 'circle', 'door', 'poi', 'point', 'path', 'ruler', 'polygon', 'dimlinear', 'dimaligned', 'dimedit'];
     var HINT_TOOLS = ['select'].concat(DRAW_TOOLS);
 
     var hint = null;
@@ -33,6 +33,13 @@
             case 'perpendicular':
                 // Vuông góc: góc chữ L cam — chân vuông góc từ điểm neo xuống tường
                 return { shape: 'perp', color: '#fb923c', sizePx: 28, label: 'VUÔNG' };
+            case 'center':
+                return { shape: 'circle', color: '#22d3ee', sizePx: 26, label: 'TÂM' };
+            case 'nearest':
+                return { shape: 'diamond', color: '#a78bfa', sizePx: 22, label: 'GẦN' };
+            case 'node':
+                // AutoCAD NODE: điểm mốc CAD
+                return { shape: 'cross', color: '#e11d48', sizePx: 26, label: 'NODE' };
             case 'grid':
                 return { shape: 'cross', color: '#c084fc', sizePx: 24, label: 'LƯỚI' };
             default:

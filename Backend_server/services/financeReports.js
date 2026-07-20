@@ -196,7 +196,7 @@ async function exportCsv(kind, { from, to } = {}) {
   ];
   const data = rows.map((r) => ({
     invoice_number: r.invoice_number || '',
-    org: r.organization_id?.name || '',
+    org: r.organization_id?.name || (r.metadata?.scope === 'personal' ? 'Cá nhân' : ''),
     plan: r.plan || '',
     status: r.status || '',
     amount: r.amount || 0,
@@ -208,8 +208,198 @@ async function exportCsv(kind, { from, to } = {}) {
   return { filename: 'invoices.csv', csv: toCsv(headers, data) };
 }
 
+const REPORT_TZ = process.env.REPORT_TIMEZONE || 'Asia/Ho_Chi_Minh';
+
+async function aggregateRevenueByDay(start, end) {
+  return Invoice.aggregate([
+    {
+      $match: {
+        status: 'PAID',
+        $or: [
+          { paid_at: { $gte: start, $lte: end } },
+          { paid_at: null, updatedAt: { $gte: start, $lte: end } }
+        ]
+      }
+    },
+    {
+      $addFields: {
+        day: { $ifNull: ['$paid_at', '$updatedAt'] }
+      }
+    },
+    {
+      $group: {
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$day', timezone: REPORT_TZ } },
+        amount: { $sum: '$amount' },
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+}
+
+async function aggregateExpenseByDay(start, end) {
+  return Expense.aggregate([
+    { $match: { expense_date: { $gte: start, $lte: end } } },
+    {
+      $group: {
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$expense_date', timezone: REPORT_TZ } },
+        amount: { $sum: '$amount' },
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+}
+
+async function aggregateRevenueByMonth(start, end) {
+  return Invoice.aggregate([
+    {
+      $match: {
+        status: 'PAID',
+        $or: [
+          { paid_at: { $gte: start, $lte: end } },
+          { paid_at: null, updatedAt: { $gte: start, $lte: end } }
+        ]
+      }
+    },
+    {
+      $addFields: {
+        day: { $ifNull: ['$paid_at', '$updatedAt'] }
+      }
+    },
+    {
+      $group: {
+        _id: { $dateToString: { format: '%Y-%m', date: '$day', timezone: REPORT_TZ } },
+        amount: { $sum: '$amount' },
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+}
+
+async function aggregateExpenseByMonth(start, end) {
+  return Expense.aggregate([
+    { $match: { expense_date: { $gte: start, $lte: end } } },
+    {
+      $group: {
+        _id: { $dateToString: { format: '%Y-%m', date: '$expense_date', timezone: REPORT_TZ } },
+        amount: { $sum: '$amount' },
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+}
+
+function mapAmount(rows) {
+  const m = {};
+  (rows || []).forEach((r) => {
+    m[r._id] = { amount: r.amount || 0, count: r.count || 0 };
+  });
+  return m;
+}
+
+function dateKeyLocal(d) {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+}
+
+function monthKeyLocal(d) {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`;
+}
+
+const DOW_VI = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+
+function buildSeriesSummary(series) {
+  let revenue = 0;
+  let expense = 0;
+  series.forEach((r) => {
+    revenue += Number(r.revenue) || 0;
+    expense += Number(r.expense) || 0;
+  });
+  return {
+    revenue,
+    expense,
+    profit: revenue - expense,
+    total: revenue + expense
+  };
+}
+
+/**
+ * AD16b — Thu/Chi kiểu Project Statistics (today / weekly / monthly).
+ */
+async function buildRevenueExpenseProjectStats() {
+  const now = new Date();
+  const todayStart = parseDayBound(dateKeyLocal(now), false);
+  const todayEnd = parseDayBound(dateKeyLocal(now), true);
+
+  const weekEnd = todayEnd;
+  const weekStart = new Date(todayStart);
+  weekStart.setDate(weekStart.getDate() - 6);
+
+  const monthEnd = todayEnd;
+  const monthStart = new Date(now.getFullYear(), now.getMonth() - 5, 1, 0, 0, 0, 0);
+
+  const [revDay, expDay, revMonth, expMonth] = await Promise.all([
+    aggregateRevenueByDay(weekStart, weekEnd),
+    aggregateExpenseByDay(weekStart, weekEnd),
+    aggregateRevenueByMonth(monthStart, monthEnd),
+    aggregateExpenseByMonth(monthStart, monthEnd)
+  ]);
+
+  const revDayMap = mapAmount(revDay);
+  const expDayMap = mapAmount(expDay);
+  const revMonthMap = mapAmount(revMonth);
+  const expMonthMap = mapAmount(expMonth);
+
+  // Today: 1 bucket (có thể mở rộng theo giờ sau)
+  const todayKey = dateKeyLocal(now);
+  const todaySeries = [{
+    key: todayKey,
+    label: 'Hôm nay',
+    revenue: revDayMap[todayKey]?.amount || 0,
+    expense: expDayMap[todayKey]?.amount || 0
+  }];
+
+  // Weekly: 7 ngày gần nhất
+  const weeklySeries = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + i);
+    const key = dateKeyLocal(d);
+    weeklySeries.push({
+      key,
+      label: DOW_VI[d.getDay()],
+      revenue: revDayMap[key]?.amount || 0,
+      expense: expDayMap[key]?.amount || 0
+    });
+  }
+
+  // Monthly: 6 tháng gần nhất
+  const monthlySeries = [];
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+    const key = monthKeyLocal(d);
+    monthlySeries.push({
+      key,
+      label: 'T' + (d.getMonth() + 1),
+      revenue: revMonthMap[key]?.amount || 0,
+      expense: expMonthMap[key]?.amount || 0
+    });
+  }
+
+  return {
+    currency: 'VND',
+    default_period: 'weekly',
+    periods: {
+      today: { summary: buildSeriesSummary(todaySeries), series: todaySeries },
+      weekly: { summary: buildSeriesSummary(weeklySeries), series: weeklySeries },
+      monthly: { summary: buildSeriesSummary(monthlySeries), series: monthlySeries }
+    }
+  };
+}
+
 module.exports = {
   buildReportSummary,
+  buildRevenueExpenseProjectStats,
   exportCsv,
   parseDayBound
 };

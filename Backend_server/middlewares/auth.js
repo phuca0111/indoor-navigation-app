@@ -91,4 +91,12 @@ const requireAdmin = (req, res, next) => {
     next();
 };
 
-module.exports = { auth, requireSuperAdmin, requireFinanceAccess, requireAdmin };
+// Người được phép tạo tòa nhà: SUPER/ORG (trong tổ chức) + REGISTERED_USER (Personal Workspace)
+const requireBuildingCreator = (req, res, next) => {
+    if (!req.user || !['SUPER_ADMIN', 'ORG_ADMIN', 'REGISTERED_USER'].includes(req.user.role)) {
+        return res.status(403).json({ message: 'Bạn không có quyền tạo tòa nhà!' });
+    }
+    next();
+};
+
+module.exports = { auth, requireSuperAdmin, requireFinanceAccess, requireAdmin, requireBuildingCreator };

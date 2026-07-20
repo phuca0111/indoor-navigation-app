@@ -18,15 +18,21 @@
         ENDPOINT: 'endpoint',
         MIDPOINT: 'midpoint',
         INTERSECTION: 'intersection',
-        PERPENDICULAR: 'perpendicular'
+        PERPENDICULAR: 'perpendicular',
+        CENTER: 'center',
+        NEAREST: 'nearest',
+        NODE: 'node'
     };
 
     /** Ưu tiên khi khoảng cách gần bằng nhau (trong ε²). */
     var KIND_PRIORITY = {
         endpoint: 3,
+        node: 2.8,
+        center: 2.6,
         midpoint: 2,
         intersection: 1,
         perpendicular: 0.5,
+        nearest: 0.2,
         grid: 0
     };
 
@@ -35,7 +41,10 @@
         objectSnapEnabled: true,
         gridSize: 40,
         tolerancePx: 12,
-        modes: { grid: true, endpoint: true, midpoint: true, intersection: true, perpendicular: true }
+        modes: {
+            grid: true, endpoint: true, midpoint: true, intersection: true,
+            perpendicular: true, center: true, nearest: false, node: true
+        }
     };
 
     function dist2(ax, ay, bx, by) {
@@ -241,6 +250,16 @@
             }
         });
 
+        (rootRef.lines || []).forEach(function (ln, li) {
+            var lpts = ln.points || [];
+            for (var i = 0; i < lpts.length; i++) {
+                pushEndpoint(points, lpts[i].x, lpts[i].y, 'line:' + (ln.id != null ? ln.id : li));
+                if (settings.modes.midpoint && i > 0) {
+                    pushMidpoint(points, lpts[i - 1].x, lpts[i - 1].y, lpts[i].x, lpts[i].y, 'line:' + (ln.id != null ? ln.id : li));
+                }
+            }
+        });
+
         (rootRef.pathNodes || []).forEach(function (n) {
             pushEndpoint(points, n.x, n.y, 'node:' + n.id);
         });
@@ -253,8 +272,24 @@
             pushEndpoint(points, p.x, p.y, 'poi:' + p.id);
         });
 
+        // CAD Point → OSNAP NODE (khác pathNodes vẫn dùng ENDPOINT)
+        if (settings.modes.node) {
+            (rootRef.cadPoints || []).forEach(function (cp) {
+                if (!cp || cp.x == null || cp.y == null) return;
+                points.push({
+                    x: cp.x, y: cp.y,
+                    kind: SNAP.NODE,
+                    source: 'cadPoint:' + cp.id
+                });
+            });
+        }
+
         (rootRef.rooms || []).forEach(function (r) {
-            if (r.shape === 'polygon' && r.points) {
+            if (r.shape === 'circle') {
+                if (settings.modes.center && r.cx != null && r.cy != null) {
+                    points.push({ x: r.cx, y: r.cy, kind: SNAP.CENTER, source: 'room:' + r.id });
+                }
+            } else if (r.shape === 'polygon' && r.points) {
                 r.points.forEach(function (p, i) {
                     pushEndpoint(points, p.x, p.y, 'room:' + r.id);
                     if (settings.modes.midpoint && i > 0) {
@@ -267,10 +302,60 @@
                 pushEndpoint(points, r.x + r.width, r.y, 'room:' + r.id);
                 pushEndpoint(points, r.x, r.y + r.height, 'room:' + r.id);
                 pushEndpoint(points, r.x + r.width, r.y + r.height, 'room:' + r.id);
+                if (settings.modes.center && r.width != null && r.height != null) {
+                    points.push({
+                        x: r.x + r.width / 2, y: r.y + r.height / 2,
+                        kind: SNAP.CENTER, source: 'room:' + r.id
+                    });
+                }
             }
         });
 
         return points;
+    }
+
+    /** Mọi đoạn (tường + đoạn thẳng + cạnh phòng) — dùng Nearest. */
+    function collectAllSegments() {
+        var segs = collectWallSegments();
+        var lines = globalThis.lines || [];
+        for (var li = 0; li < lines.length; li++) {
+            var lp = lines[li].points || [];
+            for (var i = 1; i < lp.length; i++) segs.push({ a: lp[i - 1], b: lp[i] });
+        }
+        var rooms = globalThis.rooms || [];
+        for (var ri = 0; ri < rooms.length; ri++) {
+            var rm = rooms[ri];
+            if (rm.shape === 'polygon' && rm.points && rm.points.length > 1) {
+                for (var pi = 1; pi < rm.points.length; pi++) {
+                    segs.push({ a: rm.points[pi - 1], b: rm.points[pi] });
+                }
+                segs.push({ a: rm.points[rm.points.length - 1], b: rm.points[0] });
+            } else if (rm.shape !== 'circle' && rm.width != null && rm.height != null) {
+                var c1 = { x: rm.x, y: rm.y }, c2 = { x: rm.x + rm.width, y: rm.y };
+                var c3 = { x: rm.x + rm.width, y: rm.y + rm.height }, c4 = { x: rm.x, y: rm.y + rm.height };
+                segs.push({ a: c1, b: c2 }, { a: c2, b: c3 }, { a: c3, b: c4 }, { a: c4, b: c1 });
+            }
+        }
+        return segs;
+    }
+
+    /** NEAREST — điểm gần nhất trên cạnh bất kỳ trong phạm vi tolerance. */
+    function collectNearestPoint(cursor) {
+        if (!settings.modes.nearest || !cursor) return null;
+        var tol = getTolerance();
+        var tol2 = tol * tol;
+        var segs = collectAllSegments();
+        var best = null, bestD = tol2;
+        for (var i = 0; i < segs.length; i++) {
+            var foot = footPerpendicularToSegment(cursor, segs[i].a, segs[i].b);
+            if (!foot) continue;
+            var d = dist2(cursor.x, cursor.y, foot.x, foot.y);
+            if (d < bestD) {
+                bestD = d;
+                best = { x: foot.x, y: foot.y, kind: SNAP.NEAREST, source: 'nearest' };
+            }
+        }
+        return best;
     }
 
     function findBestObjectSnap(point, candidates) {
@@ -287,6 +372,9 @@
             if (c.kind === SNAP.MIDPOINT && !settings.modes.midpoint) return;
             if (c.kind === SNAP.INTERSECTION && !settings.modes.intersection) return;
             if (c.kind === SNAP.PERPENDICULAR && !settings.modes.perpendicular) return;
+            if (c.kind === SNAP.CENTER && !settings.modes.center) return;
+            if (c.kind === SNAP.NEAREST && !settings.modes.nearest) return;
+            if (c.kind === SNAP.NODE && !settings.modes.node) return;
 
             var d = dist2(point.x, point.y, c.x, c.y);
             if (d > bestD + eps2) return;
@@ -342,6 +430,12 @@
                 candidates = candidates.concat(collectPerpendicularPoints(anchor, point));
             }
 
+            // Nearest: điểm gần nhất trên cạnh (ưu tiên thấp nhất — chỉ khi bật)
+            if (settings.modes.nearest) {
+                var nearestPt = collectNearestPoint(point);
+                if (nearestPt) candidates = candidates.concat(nearestPt);
+            }
+
             var objSnap = findBestObjectSnap(point, candidates);
             if (objSnap) return objSnap;
         }
@@ -392,6 +486,8 @@
         collectSnapPointsFromLegacy: collectSnapPointsFromLegacy,
         collectIntersectionPoints: collectIntersectionPoints,
         collectPerpendicularPoints: collectPerpendicularPoints,
+        collectNearestPoint: collectNearestPoint,
+        collectAllSegments: collectAllSegments,
         footPerpendicularToSegment: footPerpendicularToSegment,
         segmentIntersection: segmentIntersection,
         setMode: setMode,

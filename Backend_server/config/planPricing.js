@@ -7,6 +7,7 @@ const {
 /** Fallback hiển thị / test khi cache chưa seed */
 const PLAN_PRICES_VND = {
   PRO: 990000,
+  BUSINESS: 2490000,
   ENTERPRISE: 4990000
 };
 

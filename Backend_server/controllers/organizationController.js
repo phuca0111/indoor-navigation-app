@@ -10,6 +10,8 @@ const ActivityLog = require('../models/ActivityLog');
 const OrganizationPlanHistory = require('../models/OrganizationPlanHistory');
 const OrganizationBillingEvent = require('../models/OrganizationBillingEvent');
 const Invoice = require('../models/Invoice');
+const QrCode = require('../models/QrCode');
+const MapVersion = require('../models/MapVersion');
 const { createOrganizationWithAdmin } = require('../services/organizationOnboarding');
 const { countActiveBuildings, countActiveUsers } = require('../utils/planQuota');
 const {
@@ -27,8 +29,9 @@ const {
   expireCurrentSubscription,
   refreshSubscriptionStatus
 } = require('../services/subscriptionLifecycle');
+const { getPlanPrice, getPlanPeriodDays } = require('../config/planPricing');
+const { assertPlanCode, isPaidPlan } = require('../services/planCatalog');
 
-const VALID_PLANS = ['FREE', 'PRO', 'ENTERPRISE'];
 const VALID_PAYMENT_STATUSES = ['PENDING', 'PAID', 'FAILED', 'EXPIRED', 'REFUNDED'];
 
 function logActivity(data) {
@@ -220,18 +223,8 @@ async function createWithAdmin(req, res) {
   }
 }
 
-// GET /api/organizations/:id — Super Admin: chi tiết tổ chức (Phase 4.1)
-async function getOrganization(req, res) {
-  try {
-    if (!req.user || req.user.role !== 'SUPER_ADMIN') {
-      return res.status(403).json({ message: 'Chỉ Super Admin được truy cập.' });
-    }
-
-    const { id } = req.params;
-    const orgDoc = await Organization.findById(id);
-    if (!orgDoc) {
-      return res.status(404).json({ message: 'Không tìm thấy tổ chức.' });
-    }
+// Dựng payload chi tiết tổ chức (dùng chung cho Super Admin và ORG_ADMIN/me).
+async function buildOrgDetailPayload(orgDoc) {
     const orgId = orgDoc._id;
     const [
       buildingCount,
@@ -251,7 +244,9 @@ async function getOrganization(req, res) {
       activityRows,
       recentBillingEvents,
       billingStatusRows,
-      recentInvoices
+      recentInvoices,
+      floorSumAgg,
+      buildingIdsForOrg
     ] = await Promise.all([
       Building.countDocuments({ organization_id: orgId }),
       User.countDocuments({ organization_id: orgId }),
@@ -312,8 +307,38 @@ async function getOrganization(req, res) {
       Invoice.find({ organization_id: orgId })
         .sort({ createdAt: -1 })
         .limit(20)
-        .lean()
+        .lean(),
+      Building.aggregate([
+        { $match: { organization_id: orgId } },
+        { $group: { _id: null, total: { $sum: { $ifNull: ['$total_floors', 0] } } } }
+      ]),
+      Building.distinct('_id', { organization_id: orgId })
     ]);
+
+    // Stats thật cho card Overview (chỉ số có nguồn dữ liệu rõ ràng)
+    const orgBuildingIds = Array.isArray(buildingIdsForOrg) ? buildingIdsForOrg : [];
+    const [qrCount, publishedFloorAgg] = await Promise.all([
+      orgBuildingIds.length
+        ? QrCode.countDocuments({ building_id: { $in: orgBuildingIds } })
+        : 0,
+      orgBuildingIds.length
+        ? MapVersion.aggregate([
+            { $match: { building_id: { $in: orgBuildingIds } } },
+            { $group: { _id: { b: '$building_id', f: '$floor_number' } } },
+            { $count: 'floors' }
+          ])
+        : []
+    ]);
+    const publishedMapCount = (publishedFloorAgg && publishedFloorAgg[0] && publishedFloorAgg[0].floors) || 0;
+    const total_floors = (floorSumAgg && floorSumAgg[0] && floorSumAgg[0].total) || 0;
+    const stats = {
+      building_count: buildingCount,
+      published_building_count: 0, // gán bên dưới sau khi có building_status_counts
+      total_floors,
+      published_map_count: publishedMapCount,
+      qr_count: qrCount,
+      building_admin_count: 0 // gán bên dưới sau khi có role_counts
+    };
 
     // Phase 5.6 — subscription hiện hành (sau refresh quota/billing)
     let currentSubscription = await getCurrentSubscription(orgId);
@@ -330,14 +355,20 @@ async function getOrganization(req, res) {
 
     const role_counts = {};
     userRoleCounts.forEach((r) => { role_counts[r._id] = r.count; });
+    stats.building_admin_count = role_counts.BUILDING_ADMIN || 0;
     const building_status_counts = {};
     buildingStatusCounts.forEach((b) => { building_status_counts[b._id] = b.count; });
-    const plan_distribution = { FREE: 0, PRO: 0, ENTERPRISE: 0 };
+    stats.published_building_count = building_status_counts.PUBLISHED || 0;
+    const plan_distribution = {};
     planDistributionRows.forEach((row) => {
-      if (plan_distribution[row._id] !== undefined) {
-        plan_distribution[row._id] = row.count;
-      }
+      const code = String(row._id || 'FREE').toUpperCase();
+      plan_distribution[code] = row.count || 0;
     });
+    if (plan_distribution.FREE == null) plan_distribution.FREE = 0;
+    const paid_registrations_total = Object.keys(plan_distribution).reduce((sum, code) => {
+      if (code === 'FREE') return sum;
+      return sum + (isPaidPlan(code) ? (plan_distribution[code] || 0) : 0);
+    }, 0);
     const activity_counts = {};
     activityRows.forEach((row) => { activity_counts[row._id] = row.count; });
     const billing_status_counts = { PENDING: 0, PAID: 0, FAILED: 0, EXPIRED: 0, REFUNDED: 0 };
@@ -349,7 +380,7 @@ async function getOrganization(req, res) {
     const lifecycle_stats = {
       plan_changes_total: planChangeCount || 0,
       plan_distribution,
-      paid_registrations_total: (plan_distribution.PRO || 0) + (plan_distribution.ENTERPRISE || 0),
+      paid_registrations_total,
       current_cycle_started_at: orgDoc.plan_started_at || null,
       current_cycle_expires_at: orgDoc.plan_expires_at || null,
       last_activity_at: recentLogs[0]?.createdAt || null,
@@ -365,7 +396,7 @@ async function getOrganization(req, res) {
       }
     };
 
-    res.status(200).json({
+    return {
       organization: orgDoc.toObject(),
       building_count: buildingCount,
       active_building_count: activeBuildingCount,
@@ -373,6 +404,7 @@ async function getOrganization(req, res) {
       active_user_count: activeUserCount,
       role_counts,
       building_status_counts,
+      stats,
       quota,
       lifecycle_stats,
       plan_history: planHistory,
@@ -385,10 +417,170 @@ async function getOrganization(req, res) {
       recent_buildings: recentBuildingsAnnotated,
       recent_users: recentUsersAnnotated,
       recent_logs: recentLogs
-    });
+    };
+}
+
+// GET /api/organizations/:id — Super Admin: chi tiết tổ chức (Phase 4.1)
+async function getOrganization(req, res) {
+  try {
+    if (!req.user || req.user.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ message: 'Chỉ Super Admin được truy cập.' });
+    }
+    const orgDoc = await Organization.findById(req.params.id);
+    if (!orgDoc) {
+      return res.status(404).json({ message: 'Không tìm thấy tổ chức.' });
+    }
+    const payload = await buildOrgDetailPayload(orgDoc);
+    res.status(200).json(payload);
   } catch (error) {
     console.error('GetOrganization error:', error);
     res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+  }
+}
+
+// GET /api/organizations/me/detail — ORG_ADMIN: chi tiết tổ chức của chính mình
+async function getMyOrganizationDetail(req, res) {
+  try {
+    if (!req.user || req.user.role !== 'ORG_ADMIN') {
+      return res.status(403).json({ message: 'Chỉ ORG_ADMIN được xem tổ chức của mình.' });
+    }
+    if (!req.user.organization_id) {
+      return res.status(403).json({ message: 'Tài khoản ORG_ADMIN chưa được gán tổ chức.' });
+    }
+    const orgDoc = await Organization.findById(req.user.organization_id);
+    if (!orgDoc) {
+      return res.status(404).json({ message: 'Không tìm thấy tổ chức.' });
+    }
+    const payload = await buildOrgDetailPayload(orgDoc);
+    res.status(200).json(payload);
+  } catch (error) {
+    console.error('GetMyOrganizationDetail error:', error);
+    res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+  }
+}
+
+/**
+ * Lõi tạo tổ chức từ tài khoản cá nhân (dùng chung cho tạo trực tiếp & tạo sau thanh toán).
+ * KHÔNG bump session_version, KHÔNG cấp session — để caller tự quyết định thời điểm.
+ * @param {Object} user - document User (REGISTERED_USER, chưa có tổ chức)
+ * @param {Object} opts - { name, slug, plan, activatePaid, source, ip }
+ * @returns {Object} { org, migratedCount }
+ */
+async function createOrgForUserCore(user, { name, slug = '', plan = 'BUSINESS', activatePaid = false, source = 'SELF_UPGRADE', ip = '' } = {}) {
+  const orgName = String(name || '').trim();
+  if (orgName.length < 2) {
+    throw Object.assign(new Error('Tên tổ chức phải có ít nhất 2 ký tự.'), { status: 400 });
+  }
+  let planCode = String(plan || 'BUSINESS').toUpperCase();
+  if (!['BUSINESS', 'ENTERPRISE', 'PRO', 'FREE'].includes(planCode)) planCode = 'BUSINESS';
+
+  // Slug duy nhất
+  const baseSlug = String(slug || orgName)
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40) || 'org';
+  let finalSlug = baseSlug;
+  let attempt = 0;
+  while (await Organization.findOne({ slug: finalSlug }).select('_id').lean()) {
+    attempt += 1;
+    finalSlug = `${baseSlug}-${attempt}`;
+    if (attempt > 50) { finalSlug = `${baseSlug}-${Date.now().toString(36)}`; break; }
+  }
+
+  const orgData = { name: orgName, slug: finalSlug, plan: planCode, is_active: true };
+  // Nếu đã thanh toán → kích hoạt kỳ hạn gói trả phí
+  if (activatePaid && isPaidPlan(planCode)) {
+    const now = new Date();
+    const end = new Date(now);
+    end.setDate(end.getDate() + (getPlanPeriodDays(planCode) || 30));
+    orgData.plan_started_at = now;
+    orgData.plan_expires_at = end;
+    orgData.billing_status = 'ACTIVE';
+  }
+  const org = await Organization.create(orgData);
+
+  // Nâng cấp user -> ORG_ADMIN + gán tổ chức (KHÔNG bump session_version ở đây)
+  user.role = 'ORG_ADMIN';
+  user.organization_id = org._id;
+  await user.save();
+
+  // Di trú building Personal Workspace sang tổ chức
+  const migrate = await Building.updateMany(
+    { owner_user_id: user._id },
+    { $set: { organization_id: org._id, owner_user_id: null } }
+  );
+
+  logActivity({
+    user_id: user._id,
+    action: 'CREATE_ORG',
+    target_type: 'organization',
+    target_id: String(org._id),
+    target: org.name,
+    details: { slug: org.slug, plan: org.plan, source, migrated_buildings: migrate.modifiedCount || 0 },
+    ip_address: ip || '',
+    organization_id: String(org._id)
+  });
+
+  return { org, migratedCount: migrate.modifiedCount || 0 };
+}
+
+// POST /api/organizations/me/create — REGISTERED_USER tạo tổ chức, tự nâng lên ORG_ADMIN
+async function createOrganizationFromPersonal(req, res) {
+  try {
+    if (!req.user || req.user.role !== 'REGISTERED_USER') {
+      return res.status(403).json({ message: 'Chỉ tài khoản cá nhân mới được tạo tổ chức.' });
+    }
+
+    // Chính sách Freeze: tạo tổ chức = gói trả phí (BUSINESS/ENTERPRISE) → phải qua thanh toán.
+    // Đường tạo miễn phí đã bị vô hiệu hóa; dùng luồng checkout QR để tạo tổ chức.
+    if (String(process.env.ALLOW_FREE_ORG_CREATE || '').toLowerCase() !== 'true') {
+      return res.status(403).json({
+        message: 'Tạo tổ chức phải qua thanh toán gói (BUSINESS/ENTERPRISE). Vui lòng dùng trang nâng cấp: /admin/upgrade-pro.html?scope=create-org&plan=BUSINESS',
+        code: 'FREE_ORG_CREATE_DISABLED'
+      });
+    }
+
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ message: 'Không tìm thấy tài khoản.' });
+    if (user.organization_id) {
+      return res.status(400).json({ message: 'Tài khoản đã thuộc một tổ chức.' });
+    }
+
+    const { org, migratedCount } = await createOrgForUserCore(user, {
+      name: req.body?.name,
+      slug: req.body?.slug,
+      plan: req.body?.plan,
+      ip: req.ip || ''
+    });
+
+    // Tạo trực tiếp (không thanh toán) → bump session_version để token cũ hết hiệu lực
+    user.session_version = (Number(user.session_version) || 0) + 1;
+    await user.save();
+
+    // Cấp phiên mới với role ORG_ADMIN để frontend dùng ngay
+    const { issueAuthSession } = require('./authController');
+    const session = await issueAuthSession(user, req);
+
+    return res.status(201).json({
+      message: 'Tạo tổ chức thành công! Bạn giờ là Quản trị tổ chức.',
+      organization: { _id: org._id, name: org.name, slug: org.slug, plan: org.plan },
+      migrated_buildings: migratedCount,
+      token: session.token,
+      refreshToken: session.refreshToken,
+      user: { id: user._id, email: user.email, role: user.role, organization_id: user.organization_id }
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ message: 'Slug tổ chức đã tồn tại, vui lòng thử tên khác.' });
+    }
+    if (error.status) {
+      return res.status(error.status).json({ message: error.message });
+    }
+    console.error('createOrganizationFromPersonal:', error);
+    return res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
   }
 }
 
@@ -434,9 +626,13 @@ async function updateOrganization(req, res) {
     let logAction = 'UPDATE_ORGANIZATION';
 
     if (body.plan !== undefined) {
-      const plan = String(body.plan).toUpperCase();
-      if (!VALID_PLANS.includes(plan)) {
-        return res.status(400).json({ message: 'plan phải là FREE, PRO hoặc ENTERPRISE.' });
+      let plan;
+      try {
+        plan = await assertPlanCode(body.plan, { mustExist: true });
+      } catch (err) {
+        return res.status(err.status || 400).json({
+          message: err.message || 'Gói không hợp lệ trong danh mục.'
+        });
       }
       if (org.plan !== plan) {
         const oldPlan = org.plan;
@@ -619,8 +815,14 @@ async function createOrganizationBillingEvent(req, res) {
     if (!paymentStatus) {
       return res.status(400).json({ message: 'payment_status phải là PENDING/PAID/FAILED/EXPIRED/REFUNDED.' });
     }
-    if (nextPlan && !VALID_PLANS.includes(nextPlan)) {
-      return res.status(400).json({ message: 'plan phải là FREE, PRO hoặc ENTERPRISE.' });
+    if (nextPlan) {
+      try {
+        await assertPlanCode(nextPlan, { mustExist: true });
+      } catch (err) {
+        return res.status(err.status || 400).json({
+          message: err.message || 'Gói không hợp lệ trong danh mục.'
+        });
+      }
     }
 
     const org = await Organization.findById(id);
@@ -766,9 +968,13 @@ async function activateOrganizationSubscription(req, res) {
     if (!org) return res.status(404).json({ message: 'Không tìm thấy tổ chức.' });
 
     const body = req.body || {};
-    const plan = String(body.plan || 'PRO').toUpperCase();
-    if (!['PRO', 'ENTERPRISE'].includes(plan)) {
-      return res.status(400).json({ message: 'plan phải là PRO hoặc ENTERPRISE.' });
+    let plan;
+    try {
+      plan = await assertPlanCode(body.plan || 'PRO', { mustBePaid: true });
+    } catch (err) {
+      return res.status(err.status || 400).json({
+        message: err.message || 'plan phải là gói trả phí trong danh mục.'
+      });
     }
 
     const result = await activateOrRenewSubscription({
@@ -776,7 +982,7 @@ async function activateOrganizationSubscription(req, res) {
       plan,
       periodStart: body.period_start_at,
       periodEnd: body.period_end_at,
-      amount: body.amount ?? (plan === 'ENTERPRISE' ? 4990000 : 990000),
+      amount: body.amount != null ? body.amount : getPlanPrice(plan),
       currency: body.currency || 'VND',
       note: body.note || `Kích hoạt ${plan} từ dashboard`,
       createdBy: req.user.userId,
@@ -1039,6 +1245,9 @@ module.exports = {
   listOrganizations,
   createWithAdmin,
   getOrganization,
+  getMyOrganizationDetail,
+  createOrganizationFromPersonal,
+  createOrgForUserCore,
   updateOrganization,
   createOrganizationBillingEvent,
   getOrganizationSubscription,

@@ -178,7 +178,7 @@ function handleLeftMouseDown(e) {
 
     // Chặn vẽ khi lớp active đang khóa (select / ruler / bg-adjust vẫn được)
     var drawTools = {
-        room: 1, circle: 1, polygon: 1, door: 1, wall: 1, line: 1, poi: 1, qr: 1, path: 1, mline: 1,
+        room: 1, circle: 1, polygon: 1, door: 1, wall: 1, line: 1, poi: 1, point: 1, qr: 1, path: 1, mline: 1,
         dimlinear: 1,
         dimaligned: 1,
         dimedit: 1
@@ -233,6 +233,34 @@ function handleLeftMouseDown(e) {
         if (typeof handleDimeditClick === 'function') {
             handleDimeditClick(snappedX, snappedY);
         }
+        draw();
+        return;
+    }
+
+    // --- TOOL: DIMCONTINUE (DCO) ---
+    if (currentTool === 'dimcontinue') {
+        if (typeof handleDimcontinueClick === 'function') handleDimcontinueClick(snappedX, snappedY);
+        draw();
+        return;
+    }
+
+    // --- TOOL: DIMBASELINE (DBA) ---
+    if (currentTool === 'dimbaseline') {
+        if (typeof handleDimbaselineClick === 'function') handleDimbaselineClick(snappedX, snappedY);
+        draw();
+        return;
+    }
+
+    // --- TOOL: DIMANGULAR (DAN) ---
+    if (currentTool === 'dimangular') {
+        if (typeof handleDimangularClick === 'function') handleDimangularClick(snappedX, snappedY);
+        draw();
+        return;
+    }
+
+    // --- TOOL: DIMRADIUS / DIAMETER ---
+    if (currentTool === 'dimradius' || currentTool === 'dimdiameter') {
+        if (typeof handleDimCircularClick === 'function') handleDimCircularClick(currentTool, snappedX, snappedY);
         draw();
         return;
     }
@@ -299,6 +327,57 @@ function handleLeftMouseDown(e) {
             handleLineVertex(world, snapOpts);
         }
         draw();
+    }
+
+    // --- TOOL: VẼ CUNG TRÒN (Arc — 3 điểm) ---
+    else if (currentTool === 'arc') {
+        if (typeof handleArcClick === 'function') {
+            handleArcClick(snappedX, snappedY);
+        }
+        draw();
+    }
+    // --- TOOL: VẼ ELIP (Ellipse — tâm + 2 trục) ---
+    else if (currentTool === 'ellipse') {
+        if (typeof handleEllipseClick === 'function') {
+            handleEllipseClick(snappedX, snappedY);
+        }
+        draw();
+    }
+    // --- TOOL: ĐIỂM MỐC (Point / PO) ---
+    else if (currentTool === 'point') {
+        if (typeof handlePointClick === 'function') {
+            handlePointClick(snappedX, snappedY);
+        }
+        draw();
+    }
+
+    // --- TOOL: ALIGN (AL — 2 cặp điểm) ---
+    else if (currentTool === 'align') {
+        if (typeof handleAlignClick === 'function') {
+            handleAlignClick(snappedX, snappedY);
+        }
+        draw();
+    }
+
+    // --- TOOL: EXPLODE (X — phá block/polyline) ---
+    else if (currentTool === 'explode') {
+        if (typeof handleExplodeClick === 'function') {
+            handleExplodeClick(snappedX, snappedY);
+        }
+    }
+
+    // --- TOOL: OFFSET (O — bản song song) ---
+    else if (currentTool === 'offset') {
+        if (typeof handleOffsetClick === 'function') {
+            handleOffsetClick(snappedX, snappedY);
+        }
+    }
+
+    // --- TOOL: JOIN (J — nối 2 đối tượng) ---
+    else if (currentTool === 'join') {
+        if (typeof handleJoinClick === 'function') {
+            handleJoinClick(snappedX, snappedY);
+        }
     }
 
     // --- TOOL: VẼ POI ---
@@ -376,11 +455,23 @@ function handleLeftMouseDown(e) {
         }
     }
 
+    // --- TOOL: NẮN PHỐI CẢNH NỀN ---
+    else if (currentTool === 'bg-warp') {
+        if (typeof handleWarpPointerDown === 'function') {
+            handleWarpPointerDown(snappedX, snappedY);
+        }
+    }
+
     // --- TOOL: CHỈNH ẢNH NỀN ---
     else if (currentTool === 'bg-adjust') {
         window.isDraggingBg = true;
         window.bgLastX = world.x;
         window.bgLastY = world.y;
+    }
+
+    // --- TOOL: BOUNDARY (BO) — tạo vùng kín từ tường/đoạn bao quanh ---
+    else if (currentTool === 'boundary') {
+        if (typeof runBoundaryAt === 'function') runBoundaryAt(world.x, world.y);
     }
 
     // --- TOOL: CHỌN ---
@@ -488,6 +579,12 @@ function handleLeftMouseDown(e) {
                     pickType = 'poi';
                     pickData = clickedPoi;
                 } else {
+                    var clickedCadPt = typeof findCadPointAt === 'function'
+                        ? findCadPointAt(world.x, world.y) : null;
+                    if (clickedCadPt) {
+                        pickType = 'point';
+                        pickData = clickedCadPt;
+                    } else {
                     var clickedBlock = typeof findBlockInsertAt === 'function'
                         ? findBlockInsertAt(world.x, world.y) : null;
                     if (clickedBlock) {
@@ -595,7 +692,24 @@ function handleLeftMouseDown(e) {
                         }
                     }
                     }
+                    }
                 }
+            }
+        }
+        // Đợt 3 — chọn nhiều / nhóm / quét chọn
+        if (typeof msHandlePick === 'function') {
+            var msHandled = msHandlePick(pickType, pickData, e);
+            if (msHandled) {
+                if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+                if (typeof updateObjectList === 'function') updateObjectList();
+                draw();
+                return;
+            }
+            if (!pickData) {
+                // Click vào vùng trống → bắt đầu quét chọn (marquee), dựng tập khi thả chuột
+                msStartMarquee(world);
+                setEditorSelection(null, null);
+                return;
             }
         }
         setEditorSelection(pickType, pickData);
@@ -607,6 +721,13 @@ function handleLeftMouseDown(e) {
 // ============================================================
 function handleMouseMove(e, world) {
     if (editorLocked()) return;
+
+    // Đợt 3 — quét chọn (marquee) đang hoạt động
+    if (window.isMarquee && typeof msUpdateMarquee === 'function') {
+        msUpdateMarquee(world);
+        if (typeof scheduleDragDraw === 'function') scheduleDragDraw(); else draw();
+        return;
+    }
 
     var busyDrag = isDragging || isDraggingDim || isResizing || isResizingDoor || isRotatingDoor
         || isRotatingRoom || isRotatingSegment || isDraggingVertex || isDraggingSegVertex
@@ -681,6 +802,10 @@ function handleMouseMove(e, world) {
     // Kéo đối tượng (Phòng / Cửa / Block) — tắt OSNAP + không rebuild panel mỗi frame
     if (isDragging) {
         var dragOpts = getDragSnapOpts(e);
+        // Đợt 3 — nếu đang chọn nhiều, ghi lại vị trí primary trước khi dịch để đồng bộ cả tập
+        var msOthers = (typeof msDragOthers === 'function') ? msDragOthers() : null;
+        var msPrim = (msOthers && msOthers.length && typeof msPrimaryRef === 'function') ? msPrimaryRef() : null;
+        var msBefore = (msPrim && typeof msAnchor === 'function') ? msAnchor(msPrim.type, msPrim.data) : null;
         if (selectedRoom) {
             var dragPt = snapWorldPoint(world.x - dragOffsetX, world.y - dragOffsetY, dragOpts);
             var newX = dragPt.x;
@@ -708,7 +833,7 @@ function handleMouseMove(e, world) {
             var blkPt = snapWorldPoint(world.x - dragOffsetX, world.y - dragOffsetY, dragOpts);
             blk.x = blkPt.x;
             blk.y = blkPt.y;
-        } else if (selectedObject && (selectedObject.type === 'poi' || selectedObject.type === 'qr' || selectedObject.type === 'node')) {
+        } else if (selectedObject && (selectedObject.type === 'poi' || selectedObject.type === 'qr' || selectedObject.type === 'node' || selectedObject.type === 'point')) {
             var ptObj = selectedObject.data;
             var moved = snapWorldPoint(world.x - dragOffsetX, world.y - dragOffsetY, dragOpts);
             ptObj.x = moved.x;
@@ -729,6 +854,18 @@ function handleMouseMove(e, world) {
                     for (var pj = 0; pj < poly.points.length; pj++) {
                         poly.points[pj].x += dxP;
                         poly.points[pj].y += dyP;
+                    }
+                }
+            }
+        }
+        // Đợt 3 — dịch các thành viên còn lại của tập theo delta của primary
+        if (msOthers && msOthers.length && msBefore) {
+            var msAfter = msAnchor(msPrim.type, msPrim.data);
+            if (msAfter) {
+                var mdx = msAfter.x - msBefore.x, mdy = msAfter.y - msBefore.y;
+                if (mdx || mdy) {
+                    for (var mi = 0; mi < msOthers.length; mi++) {
+                        msTranslate(msOthers[mi].type, msOthers[mi].data, mdx, mdy);
                     }
                 }
             }
@@ -872,6 +1009,13 @@ function handleMouseMove(e, world) {
         draw();
         return;
     }
+    if ((currentTool === 'dimcontinue' || currentTool === 'dimbaseline' || currentTool === 'dimangular'
+        || currentTool === 'dimradius' || currentTool === 'dimdiameter')
+        && typeof updateDimGenericPreview === 'function') {
+        updateDimGenericPreview(currentTool, snappedX, snappedY);
+        draw();
+        return;
+    }
 
     // Preview tường (PolylineTool)
     if (currentTool === 'wall' && window.EditorCore && EditorCore.PolylineTool) {
@@ -884,6 +1028,29 @@ function handleMouseMove(e, world) {
             draw();
             return;
         }
+    }
+
+    // Preview elip (Ellipse)
+    if (currentTool === 'ellipse' && typeof updateEllipsePreview === 'function') {
+        updateEllipsePreview(snappedX, snappedY);
+        draw();
+    }
+    // Preview cung tròn (Arc)
+    if (currentTool === 'arc' && typeof updateArcPreview === 'function') {
+        updateArcPreview(snappedX, snappedY);
+        draw();
+    }
+
+    // Preview Offset
+    if (currentTool === 'offset' && typeof updateOffsetPreview === 'function') {
+        updateOffsetPreview(snappedX, snappedY);
+        draw();
+    }
+
+    // Preview Align
+    if (currentTool === 'align' && typeof updateAlignPreview === 'function') {
+        updateAlignPreview(snappedX, snappedY);
+        draw();
     }
 
     // Preview đoạn thẳng (LineTool)
@@ -966,9 +1133,10 @@ function handleMouseMove(e, world) {
     }
 
     // Repaint OSNAP marker khi rê chuột (tool vẽ + Chọn)
-    var snapRepaintTools = ['select', 'wall', 'line', 'room', 'circle', 'door', 'poi', 'path', 'ruler', 'area', 'polygon', 'dimlinear', 'dimaligned', 'dimedit',
-        'move', 'copy', 'rotate', 'scale', 'mirror', 'trim', 'extend', 'pedit', 'mline', 'array', 'matchprop',
-        'calibrate', 'bg-crop', 'bg-adjust'];
+    var snapRepaintTools = ['select', 'wall', 'line', 'arc', 'ellipse', 'point', 'align', 'room', 'circle', 'door', 'poi', 'path', 'ruler', 'area', 'polygon', 'dimlinear', 'dimaligned', 'dimedit',
+        'dimcontinue', 'dimbaseline', 'dimangular', 'dimradius', 'dimdiameter',
+        'move', 'copy', 'rotate', 'scale', 'mirror', 'trim', 'extend', 'fillet', 'chamfer', 'break', 'pedit', 'mline', 'array', 'matchprop', 'explode', 'offset', 'join',
+        'divide', 'calibrate', 'bg-crop', 'bg-adjust', 'bg-warp'];
     if (snapRepaintTools.indexOf(currentTool) >= 0) {
         if (currentTool === 'polygon' && isDrawingPolygon && typeof updatePropertiesPanel === 'function') {
             updatePropertiesPanel();
@@ -986,6 +1154,14 @@ function handleMouseMove(e, world) {
 // ============================================================
 function handleLeftMouseUp(e) {
     if (editorLocked()) return;
+
+    // Đợt 3 — hoàn tất quét chọn (marquee)
+    if (window.isMarquee && typeof msFinishMarquee === 'function') {
+        msFinishMarquee();
+        if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+        if (typeof updateObjectList === 'function') updateObjectList();
+        return;
+    }
 
     if (typeof isModifyTool === 'function' && isModifyTool(currentTool)
         && window.EditorCore && EditorCore.ModifySession) {

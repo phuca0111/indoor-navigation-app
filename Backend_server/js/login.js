@@ -41,15 +41,29 @@ function applyAuthTokens(data) {
     const refreshToken = params.get('refreshToken');
     const err = params.get('error');
     const pending = params.get('pending');
+    const reason = params.get('reason') || '';
     window.history.replaceState({}, '', window.location.pathname);
+
+    function googleErrorText(raw) {
+        const code = decodeURIComponent(raw || '').trim();
+        const map = {
+            ORG_MISSING: 'Tài khoản Google chưa gắn tổ chức. Hệ thống sẽ chuyển sang không gian cá nhân — hãy thử đăng nhập Google lại.',
+            ORG_NOT_FOUND: 'Tổ chức của tài khoản không còn tồn tại. Liên hệ Super Admin.',
+            ORG_INACTIVE: 'Tổ chức đã bị tạm dừng. Liên hệ Super Admin để kích hoạt lại.',
+            OVER_QUOTA_USER_LOCKED: 'Tài khoản bị khóa do vượt hạn mức gói tổ chức.',
+            disabled: 'Đăng nhập Google chưa được cấu hình.',
+            missing_code: 'Google không trả về mã xác thực. Thử lại.',
+            oauth_failed: 'Đăng nhập Google thất bại. Thử lại.'
+        };
+        if (map[code]) return map[code];
+        if (/^ORG_|^OVER_|^disabled|^missing_|^oauth_/i.test(code)) return 'Google: ' + code;
+        return code ? ('Google: ' + code) : 'Đăng nhập Google thất bại.';
+    }
+
     if (err || params.get('google') === '0') {
         const errorMsg = document.getElementById('errorMessage');
         if (errorMsg) {
-            errorMsg.textContent = err
-                ? ('Google: ' + decodeURIComponent(err))
-                : (pending === '1'
-                    ? 'Tài khoản Google đã tạo — chờ Super Admin duyệt trước khi đăng nhập.'
-                    : 'Đăng nhập Google thất bại.');
+            errorMsg.textContent = err ? googleErrorText(err) : 'Đăng nhập Google thất bại.';
             errorMsg.style.display = 'block';
         }
         return;
@@ -57,7 +71,9 @@ function applyAuthTokens(data) {
     if (pending === '1' && !token) {
         const errorMsg = document.getElementById('errorMessage');
         if (errorMsg) {
-            errorMsg.textContent = 'Tài khoản Google đã tạo — chờ Super Admin duyệt.';
+            errorMsg.textContent = (reason === 'account_inactive')
+                ? 'Email Google này đã có tài khoản đang bị khóa hoặc chờ Super Admin duyệt. Liên hệ quản trị để kích hoạt, hoặc dùng email khác.'
+                : 'Không thể đăng nhập bằng Google. Liên hệ Super Admin nếu tài khoản đang chờ duyệt.';
             errorMsg.style.display = 'block';
         }
         return;

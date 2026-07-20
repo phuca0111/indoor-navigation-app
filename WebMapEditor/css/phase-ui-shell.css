@@ -15,12 +15,13 @@ body.phase-ui {
     --border: #D0D7DE;
     --shadow: 0 1px 3px rgba(31, 35, 40, 0.08);
 
-    --shell-header-h: 44px;
+    --shell-header-h: 50px;
     --ribbon-h: 72px;
     --project-bar-h: 40px;
     --command-h: 36px;
     --status-h: 28px;
     --sidebar-width: 260px;
+    --left-width: 260px;
     --header-height: var(--shell-header-h);
 }
 
@@ -40,63 +41,356 @@ body.phase-ui .app-container {
     overflow: hidden;
 }
 
-/* --- Compact header --- */
+/* --- Compact single-row header --- */
 body.phase-ui .shell-header {
+    min-height: var(--shell-header-h);
     height: var(--shell-header-h);
-    padding: 0 12px;
+    padding: 0 14px;
     background: var(--bg-sidebar);
     border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 14px;
     z-index: 100;
 }
 
-body.phase-ui .shell-header h1 {
-    font-size: 0.95rem;
-    font-weight: 700;
-    background: none;
-    -webkit-text-fill-color: var(--text-main);
-    color: var(--text-main);
+body.phase-ui .shell-header .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
-body.phase-ui .shell-header .header-left,
 body.phase-ui .shell-header .header-right {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
+    flex: 0 0 auto;
 }
 
-body.phase-ui .shell-header button {
-    font-size: 0.78rem;
-    padding: 5px 10px;
-    border-radius: 6px;
+body.phase-ui .shell-header .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    flex: 0 0 auto;
 }
 
-body.phase-ui .shell-header .btn-new-map {
-    background: var(--bg-main);
-    border: 1px solid var(--border);
+body.phase-ui .shell-header .brand-name {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-main);
+    white-space: nowrap;
+}
+
+/* Breadcrumb ngay trên header */
+body.phase-ui .header-crumb {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding-left: 12px;
+    margin-left: 2px;
+    border-left: 1px solid var(--border);
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 12px;
     color: var(--text-dim);
 }
 
-body.phase-ui .header-right button:not(.btn-primary) {
+body.phase-ui .header-crumb .crumb-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+}
+
+body.phase-ui .header-crumb .crumb-sep {
+    color: #afb8c1;
+    margin: 0 1px;
+}
+
+body.phase-ui .header-crumb strong {
+    color: var(--text-main);
+    font-weight: 600;
+    font-size: 12.5px;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Autosave "Đã lưu ✓" gọn trên header */
+body.phase-ui .header-autosave {
+    font-size: 11.5px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    min-width: 0;
+}
+
+/* Đường kẻ dọc phân nhóm */
+body.phase-ui .hdr-divider {
+    width: 1px;
+    height: 22px;
+    background: var(--border);
+    flex: 0 0 auto;
+}
+
+/* Menu Tệp (details/summary) */
+body.phase-ui .hdr-menu {
+    position: relative;
+    flex: 0 0 auto;
+}
+
+body.phase-ui .hdr-menu-btn {
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.78rem;
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
     background: var(--bg-main);
     color: var(--text-main);
-    border: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
 }
+
+body.phase-ui .hdr-menu-btn::-webkit-details-marker { display: none; }
+body.phase-ui .hdr-menu[open] .hdr-menu-btn {
+    border-color: var(--primary);
+    background: var(--accent-soft);
+    color: var(--primary);
+}
+
+body.phase-ui .hdr-menu-pop {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 200px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(31, 35, 40, 0.16);
+    padding: 6px;
+    z-index: 300;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+body.phase-ui .hdr-menu-pop button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    padding: 7px 10px;
+    border: none;
+    background: transparent;
+    color: var(--text-main);
+    font-size: 0.8rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+body.phase-ui .hdr-menu-pop button:hover {
+    background: var(--accent-soft);
+    color: var(--primary);
+}
+
+body.phase-ui .hdr-menu-pop button i {
+    width: 15px;
+    height: 15px;
+}
+
+body.phase-ui .hdr-menu-sep {
+    height: 1px;
+    background: var(--border);
+    margin: 3px 2px;
+}
+
+/* Nút Khóa dạng icon vuông */
+body.phase-ui .btn-lock.btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 6px;
+    background: var(--accent-soft);
+    color: var(--primary);
+    border: 1px solid #9cd7ff;
+    cursor: pointer;
+}
+
+body.phase-ui .btn-lock.btn-icon i { width: 16px; height: 16px; }
 
 body.phase-ui .btn-primary {
     background: var(--primary);
     border-color: var(--primary);
 }
 
-body.phase-ui .btn-lock {
-    background: var(--accent-soft);
-    color: var(--primary);
-    border: 1px solid #9cd7ff;
+/* --- Presence indicator (kiểu Figma / M365) --- */
+body.phase-ui .header-user-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
 }
+
+body.phase-ui .presence {
+    position: relative;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 auto;
+    cursor: default;
+    outline: none;
+}
+
+body.phase-ui .presence-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: #fff;
+    background: linear-gradient(135deg, var(--primary), #6366f1);
+    text-transform: uppercase;
+    user-select: none;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+}
+
+body.phase-ui .presence-avatar--lg {
+    width: 34px;
+    height: 34px;
+    font-size: 13px;
+}
+
+/* Chấm trạng thái góc dưới-phải */
+body.phase-ui .presence-dot {
+    position: absolute;
+    right: -1px;
+    bottom: -1px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--bg-sidebar);
+    background: #9ca3af;
+}
+
+body.phase-ui .presence-row .presence-dot,
+body.phase-ui .presence-pop .presence-dot {
+    position: static;
+    border-color: #fff;
+}
+
+body.phase-ui .presence-dot--online {
+    background: #22c55e;
+    animation: presencePulse 2.4s ease-in-out infinite;
+}
+
+body.phase-ui .presence-dot--viewing {
+    background: #f59e0b;
+    animation: none;
+}
+
+body.phase-ui .presence-dot--offline {
+    background: #9ca3af;
+    animation: none;
+}
+
+@keyframes presencePulse {
+    0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+    70% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+/* Tooltip popup */
+body.phase-ui .presence-pop {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 220px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 10px 28px rgba(31, 35, 40, 0.18);
+    padding: 12px;
+    z-index: 320;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s;
+}
+
+body.phase-ui .presence:hover .presence-pop,
+body.phase-ui .presence:focus .presence-pop,
+body.phase-ui .presence:focus-within .presence-pop {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+body.phase-ui .presence-pop-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+body.phase-ui .presence-pop-id {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+body.phase-ui .presence-pop-id strong {
+    font-size: 13px;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+body.phase-ui .presence-sub {
+    font-size: 11.5px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+body.phase-ui .presence-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--text-main);
+    margin-top: 4px;
+}
+
+body.phase-ui .presence-row.presence-meta {
+    color: var(--text-dim);
+    font-size: 11.5px;
+}
+
+body.phase-ui .presence-sep { color: #c4ccd4; }
+
+/* Trạng thái người dùng dưới footer */
+body.phase-ui .shell-status-bar .status-user {
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+body.phase-ui .shell-status-bar .status-user strong { color: var(--text-main); }
 
 /* --- Ribbon --- */
 body.phase-ui .shell-ribbon {
@@ -243,14 +537,23 @@ body.phase-ui .project-actions {
 }
 
 body.phase-ui .btn-project {
-    padding: 4px 10px;
-    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    font-size: 11.5px;
     border-radius: 6px;
     border: 1px solid var(--border);
     background: var(--bg-main);
     color: var(--text-main);
     cursor: pointer;
     font-family: inherit;
+    white-space: nowrap;
+}
+
+body.phase-ui .btn-project i {
+    width: 14px;
+    height: 14px;
 }
 
 body.phase-ui .btn-project.btn-primary {
@@ -424,11 +727,12 @@ body.phase-ui .shell-workspace {
 }
 
 body.phase-ui .shell-left {
-    flex: 0 0 var(--sidebar-width);
-    width: var(--sidebar-width);
+    flex: 0 0 var(--left-width);
+    width: var(--left-width);
     background: var(--bg-sidebar);
     border-right: 1px solid var(--border);
     display: flex;
+    position: relative;
     flex-direction: column;
     min-height: 0;
     transition: width 0.2s ease, opacity 0.2s ease, border 0.2s ease, flex-basis 0.2s ease;
@@ -454,6 +758,26 @@ body.phase-ui .shell-right {
     backdrop-filter: none;
 }
 
+/* Tay kéo đổi rộng panel trái */
+body.phase-ui .shell-left-resizer {
+    position: absolute;
+    top: 0;
+    right: -3px;
+    width: 7px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 25;
+    background: transparent;
+    transition: background 0.15s;
+}
+body.phase-ui .shell-left-resizer:hover,
+body.phase-ui .shell-left-resizer.dragging {
+    background: var(--primary, #2563eb);
+    opacity: 0.35;
+}
+body.phase-ui.left-collapsed .shell-left-resizer,
+body.phase-ui.focus-mode .shell-left-resizer { display: none; }
+
 body.phase-ui.left-collapsed .shell-left {
     flex: 0 0 0;
     width: 0;
@@ -462,9 +786,12 @@ body.phase-ui.left-collapsed .shell-left {
     pointer-events: none;
 }
 
-body.phase-ui.right-collapsed .shell-right {
+body.phase-ui.right-collapsed .shell-right,
+body.phase-ui.right-collapsed .shell-right.properties-panel {
     flex: 0 0 0;
     width: 0;
+    min-width: 0;
+    max-width: 0;
     opacity: 0;
     border: none;
     pointer-events: none;
@@ -794,6 +1121,17 @@ body.phase-ui .layer-row__btn {
     border: 1px solid var(--border);
 }
 
+body.phase-ui .layer-color {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+    background: none;
+}
+
 /* --- Focus mode: ẩn panel hai bên + nhường hết chỗ cho bản vẽ --- */
 body.phase-ui.focus-mode .shell-left,
 body.phase-ui.focus-mode .shell-right {
@@ -979,3 +1317,232 @@ body.phase-ui .secure-lock-input {
         --ribbon-h: 64px;
     }
 }
+
+/* ===== Explorer (Dự án): cây tòa/tầng + nhật ký xuất bản ===== */
+body.phase-ui .explorer-root {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 0.8rem;
+}
+
+body.phase-ui .explorer-building {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-weight: 600;
+}
+body.phase-ui .explorer-building i { width: 15px; height: 15px; flex-shrink: 0; }
+body.phase-ui .explorer-building-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Khối thông tin dự án trong tab Dự án */
+body.phase-ui .explorer-info {
+    margin: 8px 0 4px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-main);
+}
+body.phase-ui .explorer-info-row {
+    display: flex;
+    gap: 8px;
+    font-size: 0.76rem;
+    padding: 2px 0;
+    align-items: baseline;
+}
+body.phase-ui .explorer-info-label {
+    color: var(--text-dim);
+    flex: 0 0 58px;
+}
+body.phase-ui .explorer-info-value {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+}
+body.phase-ui .explorer-info-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+body.phase-ui .explorer-info-stat {
+    flex: 1 1 auto;
+    min-width: 46px;
+    text-align: center;
+    padding: 5px 4px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-sidebar);
+}
+body.phase-ui .explorer-info-stat-num {
+    display: block;
+    font-weight: 700;
+    font-size: 0.92rem;
+    color: var(--text-main);
+}
+body.phase-ui .explorer-info-stat-label {
+    display: block;
+    font-size: 0.66rem;
+    color: var(--text-dim);
+    margin-top: 1px;
+}
+
+body.phase-ui .explorer-floors {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+body.phase-ui .explorer-floor {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 6px 8px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--text-main);
+    cursor: pointer;
+    text-align: left;
+    transition: background .12s, border-color .12s;
+}
+body.phase-ui .explorer-floor:hover { background: var(--bg-hover, rgba(0,0,0,.05)); }
+body.phase-ui .explorer-floor.active {
+    background: var(--accent-soft, rgba(37,99,235,.12));
+    border-color: var(--accent, #2563eb);
+}
+body.phase-ui .explorer-floor i { width: 14px; height: 14px; opacity: .7; }
+body.phase-ui .explorer-floor-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.phase-ui .explorer-floor-badges { display: flex; gap: 4px; }
+
+body.phase-ui .explorer-badge {
+    font-size: 0.66rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 999px;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+body.phase-ui .badge-pub { background: #dcfce7; color: #15803d; }
+body.phase-ui .badge-draft { background: #fef9c3; color: #a16207; }
+body.phase-ui .badge-empty { background: #f1f5f9; color: #64748b; }
+
+body.phase-ui .explorer-section-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 600;
+    font-size: 0.76rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    margin-top: 4px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+}
+body.phase-ui .explorer-audit-count {
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0 7px;
+    font-size: 0.7rem;
+    color: var(--text-main);
+}
+body.phase-ui .explorer-audit-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+body.phase-ui .explorer-audit-row {
+    padding: 6px 8px;
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+body.phase-ui .explorer-audit-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    font-weight: 600;
+}
+body.phase-ui .explorer-audit-when { color: var(--text-dim); font-weight: 400; font-size: 0.72rem; }
+body.phase-ui .explorer-audit-who { color: var(--text-dim); font-size: 0.74rem; margin-top: 2px; }
+body.phase-ui .explorer-audit-counts { color: var(--text-dim); font-size: 0.72rem; margin-top: 2px; }
+
+body.phase-ui #statusLastPublish { color: var(--text-dim); font-size: 0.72rem; }
+
+/* ---- Block palette (thư viện block) ---- */
+.block-palette-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 4000;
+}
+.block-palette-panel {
+    width: min(420px, 92vw);
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel, #fff);
+    color: var(--text, #0f172a);
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.25);
+    overflow: hidden;
+}
+.block-palette-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border, #e2e8f0);
+}
+.block-palette-close {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 1rem;
+    color: var(--text-dim, #64748b);
+}
+.block-palette-list {
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.block-palette-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 8px;
+}
+.block-palette-item:hover { background: var(--hover, #f1f5f9); }
+.block-palette-info { display: flex; flex-direction: column; }
+.block-palette-name { font-weight: 600; }
+.block-palette-count { color: var(--text-dim, #64748b); font-size: 0.74rem; }
+.block-palette-actions { display: flex; gap: 6px; }
+.block-palette-empty { padding: 18px; color: var(--text-dim, #64748b); text-align: center; }
+.block-palette-panel .hint-text { padding: 8px 14px; margin: 0; border-top: 1px solid var(--border, #e2e8f0); }

@@ -56,7 +56,7 @@ async function createOrganizationWithAdmin({
     throw new Error('Mã định danh chỉ chấp nhận chữ thường, số và dấu gạch ngang.');
   }
 
-  const validPlans = ['FREE', 'PRO', 'ENTERPRISE'];
+  const validPlans = ['FREE', 'PRO', 'BUSINESS', 'ENTERPRISE'];
   const orgPlan = plan && validPlans.includes(plan) ? plan : 'FREE';
 
   const hashedPassword = adminPasswordHash || await bcrypt.hash(adminPassword, 10);

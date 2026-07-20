@@ -52,29 +52,35 @@ function createBlockFromSelection() {
         if (typeof showToast === 'function') showToast('BlockManager chưa sẵn sàng', 'error');
         return false;
     }
-    var item = null;
-    if (selectedObject && selectedObject.data && selectedObject.type) {
+    // Gom đối tượng: ưu tiên tập chọn nhiều (selectionSet — Đợt 3), fallback chọn đơn
+    var rawItems = [];
+    if (Array.isArray(window.selectionSet) && window.selectionSet.length) {
+        rawItems = window.selectionSet.map(function (s) {
+            return { type: s.type, data: s.data };
+        });
+    } else if (selectedObject && selectedObject.data && selectedObject.type) {
         if (selectedObject.type === 'blockRef') {
             if (typeof showToast === 'function') {
                 showToast('Chọn đối tượng gốc (cửa/POI/đường…), không phải Insert', 'error');
             }
             return false;
         }
-        item = { type: selectedObject.type, data: selectedObject.data };
+        rawItems = [{ type: selectedObject.type, data: selectedObject.data }];
     } else if (selectedRoom) {
-        item = { type: 'room', data: selectedRoom };
+        rawItems = [{ type: 'room', data: selectedRoom }];
     }
-    if (!item) {
-        if (typeof showToast === 'function') showToast('Chọn 1 đối tượng rồi bấm Block (B)', 'error');
-        return false;
-    }
-    if (['room', 'wall', 'line', 'door', 'poi'].indexOf(item.type) < 0) {
-        if (typeof showToast === 'function') showToast('Loại đối tượng chưa hỗ trợ Block', 'error');
+
+    var items = BM.filterInsertableItems(rawItems);
+    if (!items.length) {
+        if (typeof showToast === 'function') {
+            showToast('Chọn ≥1 đối tượng (phòng/tường/đường/cửa/POI) rồi bấm Block (B)', 'error');
+        }
         return false;
     }
 
-    var defaultName = (item.data.name ? String(item.data.name) : item.type) + '_block';
-    var name = prompt('Tên block (vd WC, Cua_chinh):', defaultName);
+    var firstData = items[0].data;
+    var defaultName = (firstData.name ? String(firstData.name) : items[0].type) + '_block';
+    var name = prompt('Tên block (vd WC, Cua_chinh) — gồm ' + items.length + ' đối tượng:', defaultName);
     if (name == null) return false;
     name = String(name).trim();
     if (!name) {
@@ -82,12 +88,12 @@ function createBlockFromSelection() {
         return false;
     }
 
-    var box = BM.selectionBBox([item]);
+    var box = BM.selectionBBox(items);
     if (!box) return false;
     var baseX = box.minX;
     var baseY = box.minY;
 
-    var def = BM.createDefinition(name, [item], {
+    var def = BM.createDefinition(name, items, {
         id: 'blk_' + (nextBlockDefId++),
         baseX: baseX,
         baseY: baseY
@@ -96,7 +102,8 @@ function createBlockFromSelection() {
 
     saveState();
     blocks.push(def);
-    removeSourceObject(item.type, item.data);
+    items.forEach(function (it) { removeSourceObject(it.type, it.data); });
+    if (typeof msClear === 'function') { try { msClear(); } catch (e) { /* noop */ } }
 
     var inst = BM.createInsert(def.id, baseX, baseY, {
         id: nextBlockInsertId++,
@@ -117,39 +124,107 @@ function createBlockFromSelection() {
 }
 window.createBlockFromSelection = createBlockFromSelection;
 
-function pickBlockIdForInsert() {
-    if (!blocks.length) {
-        if (typeof showToast === 'function') showToast('Chưa có block — chọn đối tượng rồi Block (B)', 'error');
-        return null;
-    }
-    if (blocks.length === 1) return blocks[0].id;
-    var list = blocks.map(function (b, i) {
-        return (i + 1) + '. ' + b.name + ' (' + b.id + ')';
-    }).join('\n');
-    var ans = prompt('Chọn block để chèn (số thứ tự):\n' + list, '1');
-    if (ans == null) return null;
-    var n = parseInt(String(ans).trim(), 10);
-    if (!Number.isFinite(n) || n < 1 || n > blocks.length) {
-        if (typeof showToast === 'function') showToast('Số không hợp lệ', 'error');
-        return null;
-    }
-    return blocks[n - 1].id;
-}
+// ---- Block palette (thư viện block) — thay cho prompt chọn số ----
 
-function beginInsertTool() {
-    var id = pickBlockIdForInsert();
-    if (!id) {
-        window.pendingInsertBlockId = null;
-        if (typeof selectTool === 'function') selectTool('select');
+function buildBlockPaletteHtml(summaries) {
+    if (!summaries || !summaries.length) {
+        return '<p class="block-palette-empty">Chưa có block nào. Chọn đối tượng rồi bấm <b>Block (B)</b> để tạo.</p>';
+    }
+    return summaries.map(function (s) {
+        return '<div class="block-palette-item" data-block-id="' + escapeHtmlValue(String(s.id)) + '">' +
+            '<div class="block-palette-info">' +
+            '<span class="block-palette-name">' + escapeHtmlValue(s.name) + '</span>' +
+            '<span class="block-palette-count">' + s.count + ' đối tượng</span>' +
+            '</div>' +
+            '<div class="block-palette-actions">' +
+            '<button type="button" class="btn btn-sm btn-primary" data-block-insert="' + escapeHtmlValue(String(s.id)) + '">Chèn</button>' +
+            '<button type="button" class="btn btn-sm btn-outline" data-block-delete="' + escapeHtmlValue(String(s.id)) + '" title="Xóa khỏi thư viện">✕</button>' +
+            '</div></div>';
+    }).join('');
+}
+window.buildBlockPaletteHtml = buildBlockPaletteHtml;
+
+function closeBlockPalette() {
+    var ov = document.getElementById('blockPaletteOverlay');
+    if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+}
+window.closeBlockPalette = closeBlockPalette;
+
+function openBlockPalette() {
+    var BM = getBlockManager();
+    if (!BM) return false;
+    closeBlockPalette();
+    var summaries = BM.summarizeForPalette(blocks);
+
+    var ov = document.createElement('div');
+    ov.id = 'blockPaletteOverlay';
+    ov.className = 'block-palette-overlay';
+    ov.innerHTML =
+        '<div class="block-palette-panel" role="dialog" aria-label="Thư viện block">' +
+        '<div class="block-palette-header"><span>Thư viện Block (' + summaries.length + ')</span>' +
+        '<button type="button" class="block-palette-close" aria-label="Đóng">✕</button></div>' +
+        '<div class="block-palette-list">' + buildBlockPaletteHtml(summaries) + '</div>' +
+        '<p class="hint-text">Click «Chèn» rồi click trên map để đặt block. Esc để hủy.</p>' +
+        '</div>';
+    document.body.appendChild(ov);
+
+    ov.addEventListener('click', function (e) {
+        var insId = e.target && e.target.getAttribute && e.target.getAttribute('data-block-insert');
+        var delId = e.target && e.target.getAttribute && e.target.getAttribute('data-block-delete');
+        if (insId) { choosePaletteBlock(insId); return; }
+        if (delId) { deleteBlockDefinition(delId); openBlockPalette(); return; }
+        if (e.target === ov || (e.target.classList && e.target.classList.contains('block-palette-close'))) {
+            closeBlockPalette();
+            if (window.pendingInsertBlockId == null && currentTool === 'insert' && typeof selectTool === 'function') {
+                selectTool('select');
+            }
+        }
+    });
+    return true;
+}
+window.openBlockPalette = openBlockPalette;
+
+function choosePaletteBlock(id) {
+    var def = findBlockDefinition(id);
+    if (!def) {
+        if (typeof showToast === 'function') showToast('Không tìm thấy block', 'error');
         return false;
     }
     window.pendingInsertBlockId = id;
-    var def = findBlockDefinition(id);
+    currentTool = 'insert';
+    if (typeof updateCursor === 'function') updateCursor();
+    closeBlockPalette();
     var hint = document.getElementById('commandHint');
-    if (hint) hint.textContent = 'Insert «' + ((def && def.name) || id) + '»: click điểm chèn (Esc hủy)';
+    if (hint) hint.textContent = 'Insert «' + def.name + '»: click điểm chèn (Esc hủy)';
     if (typeof showToast === 'function') {
-        showToast('Click trên map để chèn «' + ((def && def.name) || id) + '»', 'success');
+        showToast('Click trên map để chèn «' + def.name + '»', 'success');
     }
+    if (typeof draw === 'function') draw();
+    return true;
+}
+window.choosePaletteBlock = choosePaletteBlock;
+
+function deleteBlockDefinition(id) {
+    var def = findBlockDefinition(id);
+    if (!def) return false;
+    saveState();
+    blocks = blocks.filter(function (b) { return String(b.id) !== String(id); });
+    blockInserts = blockInserts.filter(function (ins) { return String(ins.blockId) !== String(id); });
+    if (typeof updateObjectList === 'function') updateObjectList();
+    if (typeof draw === 'function') draw();
+    if (typeof flushAutosaveNow === 'function') flushAutosaveNow();
+    if (typeof showToast === 'function') showToast('Đã xóa block «' + def.name + '»', 'success');
+    return true;
+}
+window.deleteBlockDefinition = deleteBlockDefinition;
+
+function beginInsertTool() {
+    if (!blocks.length) {
+        if (typeof showToast === 'function') showToast('Chưa có block — chọn đối tượng rồi Block (B)', 'error');
+        if (typeof selectTool === 'function') selectTool('select');
+        return false;
+    }
+    openBlockPalette();
     return true;
 }
 window.beginInsertTool = beginInsertTool;
@@ -183,13 +258,15 @@ function placeBlockInsertAt(wx, wy) {
 window.placeBlockInsertAt = placeBlockInsertAt;
 
 function cancelPendingInsert() {
+    var had = false;
+    if (document.getElementById('blockPaletteOverlay')) { closeBlockPalette(); had = true; }
     if (window.pendingInsertBlockId) {
         window.pendingInsertBlockId = null;
         var hint = document.getElementById('commandHint');
         if (hint) hint.textContent = '';
-        return true;
+        had = true;
     }
-    return false;
+    return had;
 }
 window.cancelPendingInsert = cancelPendingInsert;
 

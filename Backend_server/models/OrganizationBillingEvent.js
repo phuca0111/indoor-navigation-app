@@ -27,7 +27,8 @@ const organizationBillingEventSchema = new mongoose.Schema({
   },
   plan: {
     type: String,
-    enum: ['FREE', 'PRO', 'ENTERPRISE'],
+    uppercase: true,
+    trim: true,
     default: null
   },
   amount: { type: Number, default: 0 },

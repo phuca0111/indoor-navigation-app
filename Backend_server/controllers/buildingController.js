@@ -1,4 +1,4 @@
-﻿// ============================================
+// ============================================
 // FILE: buildingController.js
 // MỤC ĐÍCH: NÃO BỘ xử lý logic Tạo / Xem / Sửa Tòa Nhà
 // ============================================
@@ -7,7 +7,12 @@ const Building = require('../models/Building');
 const Organization = require('../models/Organization');
 const User = require('../models/User');
 const ActivityLog = require('../models/ActivityLog');
-const { assertCanCreateBuilding } = require('../utils/planQuota');
+const Floor = require('../models/Floor');
+const Draft = require('../models/Draft');
+const MapVersion = require('../models/MapVersion');
+const QrCode = require('../models/QrCode');
+const QrScanLog = require('../models/QrScanLog');
+const { assertCanCreateBuilding, assertCanCreateBuildingForUser, assertCanAddFloorForUser } = require('../utils/planQuota');
 const {
   annotateBuildingsQuotaLock,
   assertBuildingWritable
@@ -44,6 +49,13 @@ const getBuildings = async (req, res) => {
             const filter = req.query.include_inactive === 'true' ? {} : activeOnlyFilter;
             buildings = await Building.find(filter).lean();
             buildings = await annotateBuildingsForSuperAdmin(buildings);
+        } else if (req.user.role === 'REGISTERED_USER') {
+            // Personal Workspace — chỉ tòa nhà thuộc sở hữu của user
+            const ownerFilter = { owner_user_id: req.user.userId };
+            const filter = req.query.include_inactive === 'true'
+                ? ownerFilter
+                : { ...ownerFilter, ...activeOnlyFilter };
+            buildings = await Building.find(filter).lean();
         } else if (req.user.role === 'ORG_ADMIN') {
             const User = require('../models/User');
             const user = await User.findById(req.user.userId).select('organization_id').lean();
@@ -83,7 +95,7 @@ const getBuildings = async (req, res) => {
 
 async function annotateBuildingsForSuperAdmin(buildings) {
     if (!buildings.length) return buildings;
-    const orgIds = [...new Set(buildings.map((b) => String(b.organization_id)).filter(Boolean))];
+    const orgIds = [...new Set(buildings.map((b) => b.organization_id).filter(Boolean).map(String))];
     const orgs = await Organization.find({ _id: { $in: orgIds } });
     const orgMap = Object.fromEntries(orgs.map((o) => [String(o._id), o]));
     const byOrg = {};
@@ -106,7 +118,7 @@ async function annotateBuildingsForSuperAdmin(buildings) {
 
 async function filterPublicBuildingsOverQuota(buildings) {
     if (!buildings.length) return buildings;
-    const orgIds = [...new Set(buildings.map((b) => String(b.organization_id)).filter(Boolean))];
+    const orgIds = [...new Set(buildings.map((b) => b.organization_id).filter(Boolean).map(String))];
     const orgs = await Organization.find({ _id: { $in: orgIds } });
     const orgMap = Object.fromEntries(orgs.map((o) => [String(o._id), o]));
     const annotated = await annotateBuildingsForSuperAdmin(buildings);
@@ -124,6 +136,47 @@ const createBuilding = async (req, res) => {
         }
 
         const { name, address, lat, lng, activation_radius, organization_id } = req.body;
+
+        // REGISTERED_USER: tạo tòa nhà trong Personal Workspace (không thuộc Organization)
+        if (req.user.role === 'REGISTERED_USER') {
+            const me = await User.findById(req.user.userId).select('plan').lean();
+            const quota = await assertCanCreateBuildingForUser({ _id: req.user.userId, plan: me?.plan });
+            if (!quota.ok) {
+                return res.status(403).json({ message: quota.message, code: quota.code, usage: quota.usage });
+            }
+            let personalFloors;
+            try {
+                personalFloors = clampCreateTotalFloors(req.body.total_floors || 1);
+            } catch (e) {
+                return res.status(e.status || 400).json({ message: e.message, code: e.code, max: e.max });
+            }
+            // Không cho vượt giới hạn tầng của gói cá nhân ngay khi tạo
+            if (quota.limits && quota.limits.maxFloorsPerBuilding != null &&
+                personalFloors > quota.limits.maxFloorsPerBuilding) {
+                personalFloors = quota.limits.maxFloorsPerBuilding;
+            }
+            const personalBuilding = await Building.create({
+                name,
+                address: address || '',
+                gps_location: { lat: lat || 0, lng: lng || 0 },
+                activation_radius: activation_radius || 50,
+                description: req.body.description || '',
+                total_floors: personalFloors,
+                created_by: req.user.userId,
+                organization_id: null,
+                owner_user_id: req.user.userId
+            });
+            logActivity({
+                user_id: req.user.userId,
+                action: 'CREATE_BUILDING',
+                target_type: 'building',
+                target_id: String(personalBuilding._id),
+                target: personalBuilding.name,
+                details: { message: 'Tạo tòa nhà (Personal Workspace)', workspace: 'personal' },
+                ip_address: req.ip || ''
+            });
+            return res.status(201).json({ message: 'Tạo tòa nhà thành công!', building: personalBuilding });
+        }
 
         let orgId = organization_id;
 
@@ -415,6 +468,19 @@ const patchBuildingFloors = async (req, res) => {
             }
         }
 
+        // Personal Workspace: giới hạn số tầng theo gói cá nhân (FREE/PRO)
+        if (action === 'add' && building.owner_user_id && !building.organization_id) {
+            const owner = await User.findById(building.owner_user_id).select('plan').lean();
+            const floorQuota = assertCanAddFloorForUser({ plan: owner?.plan }, building);
+            if (!floorQuota.ok) {
+                return res.status(403).json({
+                    message: floorQuota.message,
+                    code: floorQuota.code,
+                    usage: floorQuota.usage
+                });
+            }
+        }
+
         let result;
         try {
             result = action === 'add' ? await addFloor(building) : await removeFloor(building);
@@ -597,22 +663,206 @@ const restoreBuilding = async (req, res) => {
     }
 };
 
-// GET /api/buildings/:id — chi tiết tòa nhà (editor / dashboard)
+// GET /api/buildings/:id — chi tiết tòa nhà (editor / dashboard profile)
 const getBuildingById = async (req, res) => {
     try {
         const { id } = req.params;
-        const building = await Building.findById(id).lean();
+        let building = await Building.findById(id).lean();
         if (!building) {
             return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
         }
+
+        let organization = null;
         if (building.organization_id) {
-            const org = await Organization.findById(building.organization_id);
-            if (org) {
-                const [annotated] = await annotateBuildingsQuotaLock(org, [building]);
-                return res.status(200).json(annotated);
+            const orgDoc = await Organization.findById(building.organization_id);
+            if (orgDoc) {
+                organization = {
+                    _id: orgDoc._id,
+                    name: orgDoc.name,
+                    slug: orgDoc.slug,
+                    is_active: orgDoc.is_active,
+                    plan: orgDoc.plan
+                };
+                const [annotated] = await annotateBuildingsQuotaLock(orgDoc, [building]);
+                building = annotated;
+            } else {
+                building = { ...building, quota_locked: false };
             }
+        } else {
+            building = { ...building, quota_locked: false };
         }
-        res.status(200).json({ ...building, quota_locked: false });
+
+        let created_by_user = null;
+        if (building.created_by) {
+            created_by_user = await User.findById(building.created_by)
+                .select('full_name email role is_active')
+                .lean();
+        }
+
+        const managers = await User.find({
+            role: 'BUILDING_ADMIN',
+            assigned_buildings: building._id,
+            is_active: { $ne: false }
+        })
+            .select('full_name email role is_active')
+            .lean();
+
+        let org_admins = [];
+        if (building.organization_id) {
+            org_admins = await User.find({
+                role: 'ORG_ADMIN',
+                organization_id: building.organization_id,
+                is_active: { $ne: false }
+            })
+                .select('full_name email role is_active')
+                .limit(20)
+                .lean();
+        }
+
+        const buildingId = building._id;
+        const activityTarget = new RegExp(`Building ${String(buildingId)}`, 'i');
+        const scanSince = new Date();
+        scanSince.setDate(scanSince.getDate() - 29);
+        scanSince.setHours(0, 0, 0, 0);
+
+        const [
+            floorDocs,
+            draftDocs,
+            versionDocs,
+            qrDocs,
+            activityDocs,
+            scanRows,
+            versionTotal,
+            qrTotal
+        ] = await Promise.all([
+            Floor.find({ building_id: buildingId })
+                .select('floor_number floor_name version published_at last_modified_by map_data.scale_ratio map_data.map_bearing_offset')
+                .populate('last_modified_by', 'full_name email')
+                .sort({ floor_number: 1 })
+                .lean(),
+            Draft.find({ building_id: buildingId })
+                .select('floor_number version updatedAt updated_by')
+                .populate('updated_by', 'full_name email')
+                .sort({ floor_number: 1 })
+                .lean(),
+            MapVersion.find({ building_id: buildingId })
+                .select('floor_number version rooms_count nodes_count edges_count published_by published_at')
+                .populate('published_by', 'full_name email')
+                .sort({ published_at: -1 })
+                .limit(100)
+                .lean(),
+            QrCode.find({ building_id: buildingId })
+                .select('qr_code floor_number label node_id createdAt')
+                .sort({ floor_number: 1, createdAt: -1 })
+                .limit(500)
+                .lean(),
+            ActivityLog.find({
+                $or: [
+                    { target_id: String(buildingId) },
+                    { target: activityTarget },
+                    { 'details.building_ids': String(buildingId) },
+                    { 'details.building_ids': buildingId }
+                ]
+            })
+                .select('user_id action target_type target_id target details createdAt')
+                .populate('user_id', 'full_name email')
+                .sort({ createdAt: -1 })
+                .limit(30)
+                .lean(),
+            QrScanLog.aggregate([
+                { $match: { building_id: buildingId, scanned_at: { $gte: scanSince } } },
+                {
+                    $group: {
+                        _id: {
+                            $dateToString: {
+                                format: '%Y-%m-%d',
+                                date: '$scanned_at',
+                                timezone: 'Asia/Ho_Chi_Minh'
+                            }
+                        },
+                        count: { $sum: 1 }
+                    }
+                },
+                { $sort: { _id: 1 } }
+            ]),
+            MapVersion.countDocuments({ building_id: buildingId }),
+            QrCode.countDocuments({ building_id: buildingId })
+        ]);
+
+        const draftByFloor = new Map(
+            draftDocs.map((draft) => [Number(draft.floor_number), draft])
+        );
+        const qrCountByFloor = {};
+        qrDocs.forEach((qr) => {
+            const key = String(Number(qr.floor_number));
+            qrCountByFloor[key] = (qrCountByFloor[key] || 0) + 1;
+        });
+        const versionCountByFloor = {};
+        versionDocs.forEach((version) => {
+            const key = String(Number(version.floor_number));
+            versionCountByFloor[key] = (versionCountByFloor[key] || 0) + 1;
+        });
+        const floorByNumber = new Map(
+            floorDocs.map((floor) => [Number(floor.floor_number), floor])
+        );
+        const totalFloors = Math.max(1, Number(building.total_floors) || 1);
+        const floors = Array.from({ length: totalFloors }, (_, floorNumber) => {
+            const floor = floorByNumber.get(floorNumber) || null;
+            const draft = draftByFloor.get(floorNumber) || null;
+            return {
+                floor_number: floorNumber,
+                floor_name: floor?.floor_name || (floorNumber === 0 ? 'Tầng trệt' : `Tầng ${floorNumber}`),
+                has_map: Boolean(floor),
+                is_published: Boolean(floor?.published_at),
+                has_draft: Boolean(draft),
+                version: floor?.version || 0,
+                version_count: versionCountByFloor[String(floorNumber)] || 0,
+                qr_count: qrCountByFloor[String(floorNumber)] || 0,
+                published_at: floor?.published_at || null,
+                draft_updated_at: draft?.updatedAt || null,
+                scale_ratio: floor?.map_data?.scale_ratio ?? null,
+                map_bearing_offset: floor?.map_data?.map_bearing_offset ?? null,
+                last_modified_by: floor?.last_modified_by || draft?.updated_by || null
+            };
+        });
+
+        const latestVersion = versionDocs[0] || null;
+        const scanCount30d = scanRows.reduce((sum, row) => sum + Number(row.count || 0), 0);
+        const qrCodes = qrDocs.map((qr) => ({
+            _id: qr._id,
+            qr_code: qr.qr_code,
+            floor_number: qr.floor_number,
+            label: qr.label,
+            node_id: qr.node_id,
+            createdAt: qr.createdAt
+        }));
+
+        res.status(200).json({
+            ...building,
+            organization,
+            created_by_user,
+            managers,
+            org_admins,
+            resource_summary: {
+                total_floors: totalFloors,
+                map_count: floorDocs.length,
+                published_floor_count: floorDocs.filter((floor) => Boolean(floor.published_at)).length,
+                draft_floor_count: draftDocs.length,
+                qr_count: qrTotal,
+                building_admin_count: managers.length,
+                version_count: versionTotal,
+                latest_publish_at: latestVersion?.published_at || null,
+                qr_scans_30d: scanCount30d
+            },
+            floors,
+            versions: versionDocs,
+            qr_codes: qrCodes,
+            recent_activity: activityDocs,
+            qr_scan_series_30d: scanRows.map((row) => ({
+                date: row._id,
+                count: row.count
+            }))
+        });
     } catch (error) {
         res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
     }

@@ -8,6 +8,7 @@ function getMapSnapshot() {
     var mapName = (mapNameEl && mapNameEl.value) ? mapNameEl.value : 'Bản đồ mới';
     function withLayer(obj, base) {
         base.layerId = (obj && obj.layerId != null) ? obj.layerId : 'default';
+        if (obj && obj.groupId != null) base.groupId = obj.groupId; // Đợt 3 — lưu nhóm
         return base;
     }
     var activeLayerId = (typeof legacyGetActiveLayerId === 'function')
@@ -48,6 +49,17 @@ function getMapSnapshot() {
         }),
         doors: doors.map(d => withLayer(d, { id: d.id, name: d.name, x: Math.round(d.x), y: Math.round(d.y), width: d.width, type: d.type, rotation: d.rotation })),
         pois: pois.map(p => withLayer(p, { id: p.id, name: p.name, x: Math.round(p.x), y: Math.round(p.y), type: p.type, typeIndex: p.typeIndex })),
+        cadPoints: (typeof cadPoints !== 'undefined' ? cadPoints : []).map(function (cp) {
+            return withLayer(cp, {
+                id: cp.id,
+                name: cp.name,
+                x: Math.round(cp.x),
+                y: Math.round(cp.y),
+                style: (typeof normalizePointStyle === 'function') ? normalizePointStyle(cp.style) : (cp.style || 'cross'),
+                size: cp.size != null ? cp.size : 8,
+                color: cp.color || '#e11d48'
+            });
+        }),
         pathNodes: pathNodes.map(n => withLayer(n, { id: n.id, nodeType: n.nodeType || 'normal', x: Math.round(n.x), y: Math.round(n.y), neighbors: n.neighbors })),
         pathEdges: pathEdges,
         walls: walls.map(w => withLayer(w, {
@@ -55,18 +67,31 @@ function getMapSnapshot() {
             type: w.type || 'segment',
             thickness: w.thickness || 4,
             is_outer: !!w.is_outer,
+            lineStyle: w.lineStyle || 'solid',
             points: Array.isArray(w.points) ? w.points.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })) : []
         })),
         lines: (lines || []).map(function (ln) {
-            return withLayer(ln, {
+            var lineOut = withLayer(ln, {
                 id: ln.id,
                 type: ln.type || 'segment',
                 color: ln.color || '#3b82f6',
                 lineWeight: ln.lineWeight || 2,
+                lineStyle: ln.lineStyle || 'solid',
                 points: Array.isArray(ln.points) ? ln.points.map(function (p) {
                     return { x: Math.round(p.x), y: Math.round(p.y) };
                 }) : []
             });
+            if (ln.type === 'arc' && ln.arc) {
+                lineOut.arc = { cx: ln.arc.cx, cy: ln.arc.cy, radius: ln.arc.radius };
+            }
+            if (ln.type === 'ellipse' && ln.ellipse) {
+                lineOut.ellipse = {
+                    cx: ln.ellipse.cx, cy: ln.ellipse.cy,
+                    rx: ln.ellipse.rx, ry: ln.ellipse.ry,
+                    rotation: ln.ellipse.rotation
+                };
+            }
+            return lineOut;
         }),
         qrs: qrs.map(q => withLayer(q, { id: q.id, name: q.name, serial: q.serial, x: Math.round(q.x), y: Math.round(q.y), node_id: q.node_id != null ? q.node_id : null })),
         blocks: (blocks || []).map(function (b) {
@@ -90,6 +115,7 @@ function getMapSnapshot() {
                 orientation: d.type === 'dimaligned' ? undefined : (d.orientation || 'horizontal'),
                 p1: d.p1 ? { x: Math.round(d.p1.x), y: Math.round(d.p1.y) } : null,
                 p2: d.p2 ? { x: Math.round(d.p2.x), y: Math.round(d.p2.y) } : null,
+                p3: d.p3 ? { x: Math.round(d.p3.x), y: Math.round(d.p3.y) } : undefined,
                 offset: d.offset || 0,
                 textOverride: d.textOverride != null && String(d.textOverride) !== '' ? String(d.textOverride) : undefined,
                 color: d.color || (d.type === 'dimaligned' ? '#c026d3' : '#e11d48')
@@ -127,6 +153,16 @@ function applyMapSnapshot(data) {
 
     pois = data.pois || [];
     nextPoiId = 1; pois.forEach(p => { if (p.id >= nextPoiId) nextPoiId = p.id + 1; });
+
+    cadPoints = Array.isArray(data.cadPoints) ? data.cadPoints : [];
+    nextCadPointId = 1;
+    cadPoints.forEach(function (cp) {
+        if (!cp.style && typeof normalizePointStyle === 'function') cp.style = normalizePointStyle(cp.style);
+        else if (typeof normalizePointStyle === 'function') cp.style = normalizePointStyle(cp.style);
+        if (cp.size == null) cp.size = 8;
+        if (!cp.color) cp.color = '#e11d48';
+        if (cp.id && cp.id >= nextCadPointId) nextCadPointId = cp.id + 1;
+    });
 
     pathNodes = data.pathNodes || [];
     pathEdges = data.pathEdges || [];
@@ -275,6 +311,18 @@ function exportJSON() {
                 typeIndex: p.typeIndex
             };
         }),
+        cadPoints: (typeof cadPoints !== 'undefined' ? cadPoints : []).map(function (cp) {
+            return {
+                id: cp.id,
+                name: cp.name,
+                x: Math.round(cp.x),
+                y: Math.round(cp.y),
+                style: (typeof normalizePointStyle === 'function') ? normalizePointStyle(cp.style) : (cp.style || 'cross'),
+                size: cp.size != null ? cp.size : 8,
+                color: cp.color || '#e11d48',
+                layerId: cp.layerId || 'default'
+            };
+        }),
         pathNodes: pathNodes.map(function (n) {
             return {
                 id: n.id,
@@ -291,8 +339,31 @@ function exportJSON() {
                 type: w.type || 'segment',
                 thickness: w.thickness || 4,
                 is_outer: !!w.is_outer,
+                lineStyle: w.lineStyle || 'solid',
                 points: (w.points || []).map(function (p) { return { x: Math.round(p.x), y: Math.round(p.y) }; })
             };
+        }),
+        lines: (typeof lines !== 'undefined' ? lines : []).map(function (ln) {
+            var out = {
+                id: ln.id,
+                type: ln.type || 'segment',
+                color: ln.color || '#3b82f6',
+                lineWeight: ln.lineWeight || 2,
+                lineStyle: ln.lineStyle || 'solid',
+                layerId: ln.layerId || 'default',
+                points: (ln.points || []).map(function (p) { return { x: Math.round(p.x), y: Math.round(p.y) }; })
+            };
+            if (ln.type === 'arc' && ln.arc) {
+                out.arc = { cx: ln.arc.cx, cy: ln.arc.cy, radius: ln.arc.radius };
+            }
+            if (ln.type === 'ellipse' && ln.ellipse) {
+                out.ellipse = {
+                    cx: ln.ellipse.cx, cy: ln.ellipse.cy,
+                    rx: ln.ellipse.rx, ry: ln.ellipse.ry,
+                    rotation: ln.ellipse.rotation
+                };
+            }
+            return out;
         }),
         qrs: qrs.map(function (q) {
             return {
@@ -325,6 +396,7 @@ function exportJSON() {
                 orientation: d.type === 'dimaligned' ? undefined : (d.orientation || 'horizontal'),
                 p1: d.p1 ? { x: Math.round(d.p1.x), y: Math.round(d.p1.y) } : null,
                 p2: d.p2 ? { x: Math.round(d.p2.x), y: Math.round(d.p2.y) } : null,
+                p3: d.p3 ? { x: Math.round(d.p3.x), y: Math.round(d.p3.y) } : undefined,
                 offset: d.offset || 0,
                 textOverride: d.textOverride != null && String(d.textOverride) !== '' ? String(d.textOverride) : undefined,
                 color: d.color || (d.type === 'dimaligned' ? '#c026d3' : '#e11d48'),
@@ -392,6 +464,16 @@ function importJSON(file) {
                 if (p.id >= nextPoiId) nextPoiId = p.id + 1;
             });
 
+            // Load CAD Points (điểm mốc)
+            cadPoints = Array.isArray(data.cadPoints) ? data.cadPoints : [];
+            nextCadPointId = 1;
+            cadPoints.forEach(function (cp) {
+                if (typeof normalizePointStyle === 'function') cp.style = normalizePointStyle(cp.style);
+                if (cp.size == null) cp.size = 8;
+                if (!cp.color) cp.color = '#e11d48';
+                if (cp.id && cp.id >= nextCadPointId) nextCadPointId = cp.id + 1;
+            });
+
             // Load path
             pathNodes = data.pathNodes || [];
             pathEdges = data.pathEdges || [];
@@ -408,7 +490,20 @@ function importJSON(file) {
                 if (!w.id || isNaN(w.id)) w.id = index + 1;
                 if (w.id >= nextWallId) nextWallId = w.id + 1;
             });
-            
+
+            // Load lines (đoạn thẳng hỗ trợ + cung arc)
+            lines = Array.isArray(data.lines) ? data.lines : [];
+            nextLineId = 1;
+            lines.forEach(function (ln, index) {
+                if (!ln.id || isNaN(ln.id)) ln.id = index + 1;
+                if (!ln.type) ln.type = 'segment';
+                if (!ln.color) ln.color = '#3b82f6';
+                if (ln.lineWeight == null) ln.lineWeight = 2;
+                if (!ln.lineStyle) ln.lineStyle = 'solid';
+                if (!Array.isArray(ln.points)) ln.points = [];
+                if (ln.id >= nextLineId) nextLineId = ln.id + 1;
+            });
+
             // Load QR Codes
             qrs = data.qrs || [];
             nextQrId = 1;

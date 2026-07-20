@@ -52,7 +52,7 @@
     function ctaFor(plan) {
         var code = String(plan.code || '').toUpperCase();
         if (code === 'FREE') {
-            return { href: '/org-trial.html', label: 'Dùng thử', primary: true };
+            return { href: '/login', label: 'Dùng thử miễn phí', primary: true };
         }
         if (code === 'PRO') {
             return { href: '/contact', label: 'Hỏi thêm', primary: false };

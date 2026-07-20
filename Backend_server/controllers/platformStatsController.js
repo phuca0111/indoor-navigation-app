@@ -4,6 +4,9 @@
 
 const Organization = require('../models/Organization');
 const Building = require('../models/Building');
+const Floor = require('../models/Floor');
+const Draft = require('../models/Draft');
+const MapVersion = require('../models/MapVersion');
 const User = require('../models/User');
 const OrganizationRegistration = require('../models/OrganizationRegistration');
 const { getOrgQuotaSnapshot } = require('../utils/overQuotaLock');
@@ -18,6 +21,92 @@ async function getBuildingStats(orgFilter) {
     Building.countDocuments({ ...base, is_active: false })
   ]);
   return { total_active: totalActive, published, draft, inactive };
+}
+
+async function getFloorStats(buildingFilter) {
+  const filter = buildingFilter && Object.keys(buildingFilter).length ? buildingFilter : null;
+  let buildingIds = [];
+  let publishedBuildingIds = [];
+  let draftBuildingIds = [];
+
+  if (filter) {
+    const buildings = await Building.find({
+      ...filter,
+      is_active: { $ne: false }
+    }).select('_id status is_active').lean();
+    buildingIds = buildings.map((b) => b._id);
+    publishedBuildingIds = buildings
+      .filter((b) => b.is_active !== false && b.status === 'PUBLISHED')
+      .map((b) => b._id);
+    draftBuildingIds = buildings
+      .filter((b) => b.is_active !== false && b.status !== 'PUBLISHED')
+      .map((b) => b._id);
+    if (!buildingIds.length) {
+      return {
+        total: 0, published: 0, draft: 0, published_at: 0,
+        in_published_buildings: 0, orphan: 0
+      };
+    }
+  } else {
+    const buildings = await Building.find({ is_active: { $ne: false } }).select('_id status').lean();
+    buildingIds = buildings.map((b) => b._id);
+    publishedBuildingIds = buildings.filter((b) => b.status === 'PUBLISHED').map((b) => b._id);
+    draftBuildingIds = buildings.filter((b) => b.status !== 'PUBLISHED').map((b) => b._id);
+  }
+
+  const allBuildingIds = await Building.find({}).distinct('_id');
+  const floorMatch = { building_id: { $in: buildingIds } };
+  const [
+    total,
+    publishedAt,
+    inPublishedBuildings,
+    inDraftBuildings,
+    orphanFloors,
+    draftMaps,
+    versionCount
+  ] = await Promise.all([
+    Floor.countDocuments(floorMatch),
+    Floor.countDocuments({ ...floorMatch, published_at: { $ne: null } }),
+    publishedBuildingIds.length
+      ? Floor.countDocuments({ building_id: { $in: publishedBuildingIds } })
+      : Promise.resolve(0),
+    draftBuildingIds.length
+      ? Floor.countDocuments({ building_id: { $in: draftBuildingIds } })
+      : Promise.resolve(0),
+    Floor.countDocuments({
+      $or: [
+        { building_id: null },
+        { building_id: { $exists: false } },
+        { building_id: { $nin: allBuildingIds } }
+      ]
+    }),
+    Draft.countDocuments({ building_id: { $in: buildingIds } }),
+    MapVersion.countDocuments({ building_id: { $in: buildingIds } })
+  ]);
+
+  return {
+    total,
+    published: inPublishedBuildings,
+    draft: inDraftBuildings,
+    published_at: publishedAt,
+    in_published_buildings: inPublishedBuildings,
+    orphan: orphanFloors,
+    current_maps: publishedAt,
+    draft_maps: draftMaps,
+    version_count: versionCount
+  };
+}
+
+async function countActiveUsersToday(orgFilter) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  return User.countDocuments({
+    ...(orgFilter || {}),
+    role: { $ne: 'SUPER_ADMIN' },
+    last_login: { $gte: start, $lte: end }
+  });
 }
 
 async function getUserStats(orgFilter) {
@@ -45,9 +134,11 @@ const getPlatformStats = async (req, res) => {
         Organization.countDocuments({ plan: 'ENTERPRISE', is_active: { $ne: false } })
       ]);
 
-      const [buildings, users] = await Promise.all([
+      const [buildings, users, floors, activeUsersToday] = await Promise.all([
         getBuildingStats({}),
-        getUserStats({})
+        getUserStats({}),
+        getFloorStats(null),
+        countActiveUsersToday({})
       ]);
 
       return res.status(200).json({
@@ -61,7 +152,9 @@ const getPlatformStats = async (req, res) => {
           enterprise
         },
         buildings,
+        floors,
         users,
+        active_users_today: activeUsersToday,
         registrations: { pending: pendingRegs }
       });
     }
@@ -75,9 +168,11 @@ const getPlatformStats = async (req, res) => {
       const orgDoc = await Organization.findById(orgId);
       const orgFilter = { organization_id: orgId };
 
-      const [buildings, users, quota] = await Promise.all([
+      const [buildings, users, floors, activeUsersToday, quota] = await Promise.all([
         getBuildingStats(orgFilter),
         getUserStats(orgFilter),
+        getFloorStats(orgFilter),
+        countActiveUsersToday(orgFilter),
         getOrgQuotaSnapshot(orgDoc)
       ]);
       const org = orgDoc ? orgDoc.toObject() : null;
@@ -96,7 +191,9 @@ const getPlatformStats = async (req, res) => {
           }
           : { id: String(orgId) },
         buildings,
+        floors,
         users,
+        active_users_today: activeUsersToday,
         quota
       });
     }
@@ -114,8 +211,9 @@ const getPlatformStats = async (req, res) => {
         ? await Organization.findById(user.organization_id)
         : null;
 
-      const [buildings, quota] = await Promise.all([
+      const [buildings, floors, quota] = await Promise.all([
         getBuildingStats(orgFilter),
+        getFloorStats(orgFilter),
         orgDoc ? getOrgQuotaSnapshot(orgDoc) : null
       ]);
       const org = orgDoc ? orgDoc.toObject() : null;
@@ -134,6 +232,7 @@ const getPlatformStats = async (req, res) => {
           ...buildings,
           assigned: assignedIds.length
         },
+        floors,
         quota
       });
     }
@@ -144,4 +243,4 @@ const getPlatformStats = async (req, res) => {
   }
 };
 
-module.exports = { getPlatformStats, getBuildingStats, getUserStats };
+module.exports = { getPlatformStats, getBuildingStats, getUserStats, getFloorStats, countActiveUsersToday };

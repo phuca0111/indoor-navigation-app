@@ -6,7 +6,7 @@
 const Building = require('../models/Building');
 const Organization = require('../models/Organization');
 const { assertFloorInRange } = require('../services/floorLifecycle');
-const { assertBuildingWritable } = require('../utils/overQuotaLock');
+const { assertBuildingCanUploadCad } = require('../utils/overQuotaLock');
 const {
   putMapBackground,
   deleteByKey,
@@ -41,7 +41,7 @@ async function assertCanUpload(req, res, buildingId, floorNum) {
   }
   if (req.user?.role !== 'SUPER_ADMIN' && buildingMeta.organization_id) {
     const org = await Organization.findById(buildingMeta.organization_id);
-    const writable = await assertBuildingWritable(buildingId, org);
+    const writable = await assertBuildingCanUploadCad(buildingId, org);
     if (!writable.ok) {
       res.status(403).json({ message: writable.message, code: writable.code });
       return null;

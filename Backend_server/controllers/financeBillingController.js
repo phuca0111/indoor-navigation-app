@@ -7,11 +7,18 @@ const Organization = require('../models/Organization');
 const {
   ensureDefaultPlans,
   refreshPlanCache,
-  listPlans
+  listPlans,
+  PLAN_CODE_RE
 } = require('../services/planCatalog');
 const { createOpenInvoice } = require('../services/subscriptionLifecycle');
 const { listPayments } = require('../services/paymentLedger');
 const { getPlanPrice } = require('../config/planPricing');
+const Subscription = require('../models/Subscription');
+const ActivityLog = require('../models/ActivityLog');
+
+function logActivity(data) {
+  ActivityLog.create(data).catch(() => {});
+}
 
 function invoiceTotal(inv) {
   const amount = Number(inv.amount) || 0;
@@ -79,6 +86,11 @@ async function createPlan(req, res) {
     const body = req.body || {};
     const code = String(body.code || '').toUpperCase().trim();
     if (!code) return res.status(400).json({ message: 'Thiếu code gói.' });
+    if (!PLAN_CODE_RE.test(code)) {
+      return res.status(400).json({
+        message: 'Mã gói không hợp lệ (chữ hoa, số, gạch dưới; bắt đầu bằng chữ).'
+      });
+    }
     const doc = await Plan.create({
       code,
       name: String(body.name || code).trim(),
@@ -87,11 +99,34 @@ async function createPlan(req, res) {
       period_days: Number(body.period_days) || 30,
       max_buildings: parseNullableLimit(body.max_buildings),
       max_users: parseNullableLimit(body.max_users),
+      is_personal: body.is_personal === true,
+      is_organization: body.is_organization === true,
+      show_on_landing: body.show_on_landing !== false,
+      personal_max_buildings: parseNullableLimit(body.personal_max_buildings),
+      personal_max_floors_per_building: parseNullableLimit(body.personal_max_floors_per_building),
+      personal_max_maps: parseNullableLimit(body.personal_max_maps),
+      personal_max_qr: parseNullableLimit(body.personal_max_qr),
       is_active: body.is_active !== false,
       sort_order: Number(body.sort_order) || 0,
       features: Array.isArray(body.features) ? body.features : []
     });
     await refreshPlanCache();
+    logActivity({
+      user_id: req.user.userId,
+      action: 'CREATE_PLAN',
+      target_type: 'plan',
+      target_id: String(doc._id),
+      target: doc.code,
+      details: {
+        message: 'Tạo gói dịch vụ mới',
+        code: doc.code,
+        name: doc.name,
+        price_vnd: doc.price_vnd,
+        period_days: doc.period_days,
+        is_active: doc.is_active
+      },
+      ip_address: req.ip || ''
+    });
     res.status(201).json({ message: 'Đã tạo gói.', plan: doc });
   } catch (e) {
     if (e.code === 11000) return res.status(400).json({ message: 'Mã gói đã tồn tại.' });
@@ -115,14 +150,81 @@ async function updatePlan(req, res) {
     if (body.max_users !== undefined) {
       doc.max_users = parseNullableLimit(body.max_users);
     }
+    if (body.is_personal !== undefined) doc.is_personal = !!body.is_personal;
+    if (body.is_organization !== undefined) doc.is_organization = !!body.is_organization;
+    if (body.show_on_landing !== undefined) doc.show_on_landing = !!body.show_on_landing;
+    if (body.personal_max_buildings !== undefined) {
+      doc.personal_max_buildings = parseNullableLimit(body.personal_max_buildings);
+    }
+    if (body.personal_max_floors_per_building !== undefined) {
+      doc.personal_max_floors_per_building = parseNullableLimit(body.personal_max_floors_per_building);
+    }
+    if (body.personal_max_maps !== undefined) {
+      doc.personal_max_maps = parseNullableLimit(body.personal_max_maps);
+    }
+    if (body.personal_max_qr !== undefined) {
+      doc.personal_max_qr = parseNullableLimit(body.personal_max_qr);
+    }
     if (body.is_active !== undefined) doc.is_active = !!body.is_active;
     if (body.sort_order !== undefined) doc.sort_order = Number(body.sort_order) || 0;
     if (body.features !== undefined) doc.features = Array.isArray(body.features) ? body.features : [];
     await doc.save();
     await refreshPlanCache();
+    logActivity({
+      user_id: req.user.userId,
+      action: 'UPDATE_PLAN',
+      target_type: 'plan',
+      target_id: String(doc._id),
+      target: doc.code,
+      details: {
+        message: doc.is_active ? 'Cập nhật gói dịch vụ' : 'Ngừng bán / cập nhật gói dịch vụ',
+        code: doc.code,
+        name: doc.name,
+        price_vnd: doc.price_vnd,
+        is_active: doc.is_active
+      },
+      ip_address: req.ip || ''
+    });
     res.status(200).json({ message: 'Đã cập nhật gói.', plan: doc });
   } catch (e) {
     console.error('updatePlan:', e);
+    res.status(500).json({ message: e.message });
+  }
+}
+
+async function deletePlan(req, res) {
+  try {
+    const doc = await Plan.findById(req.params.id);
+    if (!doc) return res.status(404).json({ message: 'Không tìm thấy gói.' });
+    const code = String(doc.code || '').toUpperCase();
+    if (code === 'FREE') {
+      return res.status(400).json({ message: 'Không thể xóa gói FREE (bắt buộc hệ thống).' });
+    }
+    const [orgCount, subCount] = await Promise.all([
+      Organization.countDocuments({ plan: code }),
+      Subscription.countDocuments({ plan: code, is_current: true })
+    ]);
+    if (orgCount > 0 || subCount > 0) {
+      return res.status(400).json({
+        message:
+          `Không thể xóa gói ${code}: còn ${orgCount} tổ chức và ${subCount} subscription đang dùng. ` +
+          'Hãy chuyển org sang gói khác hoặc chọn «Ngừng bán».'
+      });
+    }
+    await Plan.deleteOne({ _id: doc._id });
+    await refreshPlanCache();
+    logActivity({
+      user_id: req.user.userId,
+      action: 'DELETE_PLAN',
+      target_type: 'plan',
+      target_id: String(doc._id),
+      target: code,
+      details: { message: 'Xóa gói khỏi danh mục', code },
+      ip_address: req.ip || ''
+    });
+    res.status(200).json({ message: `Đã xóa gói ${code}.`, code });
+  } catch (e) {
+    console.error('deletePlan:', e);
     res.status(500).json({ message: e.message });
   }
 }
@@ -199,6 +301,23 @@ async function createManualInvoice(req, res) {
     if (body.due_at) invoice.due_at = new Date(body.due_at);
     await invoice.save();
 
+    logActivity({
+      user_id: req.user.userId,
+      action: 'CREATE_INVOICE',
+      target_type: 'invoice',
+      target_id: String(invoice._id),
+      target: invoice.invoice_number,
+      details: {
+        message: 'Tạo hóa đơn OPEN thủ công',
+        plan,
+        amount: invoice.amount,
+        organization_id: String(org._id),
+        organization_name: org.name
+      },
+      ip_address: req.ip || '',
+      organization_id: org._id
+    });
+
     res.status(201).json({
       message: 'Đã tạo hóa đơn OPEN.',
       invoice: { ...invoice.toObject(), total: invoiceTotal(invoice) }
@@ -258,6 +377,21 @@ async function voidInvoice(req, res) {
     inv.status = 'VOID';
     inv.note = (inv.note ? inv.note + ' | ' : '') + (req.body?.reason || 'Super void');
     await inv.save();
+    logActivity({
+      user_id: req.user.userId,
+      action: 'VOID_INVOICE',
+      target_type: 'invoice',
+      target_id: String(inv._id),
+      target: inv.invoice_number,
+      details: {
+        message: 'Hủy hóa đơn (VOID)',
+        plan: inv.plan,
+        amount: inv.amount,
+        reason: req.body?.reason || 'Super void'
+      },
+      ip_address: req.ip || '',
+      organization_id: inv.organization_id
+    });
     res.status(200).json({ message: 'Đã hủy hóa đơn (VOID).', invoice: inv });
   } catch (e) {
     console.error('voidInvoice:', e);
@@ -300,6 +434,22 @@ async function markInvoicePaidHandler(req, res) {
       externalRef: body.external_ref || body.externalRef || '',
       provider,
       createdBy: req.user.userId
+    });
+
+    logActivity({
+      user_id: req.user.userId,
+      action: 'MARK_INVOICE_PAID',
+      target_type: 'invoice',
+      target_id: String(paid._id),
+      target: paid.invoice_number,
+      details: {
+        message: 'Ghi nhận thu hóa đơn (PAID)',
+        plan: paid.plan,
+        amount: paid.amount,
+        method: provider
+      },
+      ip_address: req.ip || '',
+      organization_id: paid.organization_id
     });
 
     res.status(200).json({
@@ -407,6 +557,7 @@ module.exports = {
   listPlansHandler,
   createPlan,
   updatePlan,
+  deletePlan,
   listInvoices,
   createManualInvoice,
   updateInvoice,

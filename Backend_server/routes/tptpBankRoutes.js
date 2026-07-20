@@ -11,7 +11,9 @@ const {
   getTransactions,
   getResolvePayment,
   postConfirmPayment,
-  getTopupLimits
+  getTopupLimits,
+  getResolvePersonal,
+  postConfirmPersonal
 } = require('../controllers/tptpBankController');
 
 const authLimiter = rateLimit({
@@ -26,11 +28,13 @@ router.get('/wallet/limits', getTopupLimits);
 
 // Resolve QR — không cần đăng nhập (chỉ đọc thông tin đơn)
 router.get('/pay/resolve', getResolvePayment);
+router.get('/pay/resolve-personal', getResolvePersonal);
 
 router.use(bankAuth);
 router.get('/wallet', getWallet);
 router.post('/wallet/topup', postTopup);
 router.get('/transactions', getTransactions);
 router.post('/pay/confirm', postConfirmPayment);
+router.post('/pay/confirm-personal', postConfirmPersonal);
 
 module.exports = router;

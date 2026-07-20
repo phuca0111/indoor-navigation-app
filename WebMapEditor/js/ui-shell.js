@@ -266,12 +266,79 @@
         }
     }
 
+    var LEFT_MIN = 200;
+    var LEFT_MAX = 560;
+
+    function readShellPrefs() {
+        try {
+            var raw = localStorage.getItem('wme_ui_shell_v2');
+            return raw ? JSON.parse(raw) : {};
+        } catch (e) { return {}; }
+    }
+
+    function writeShellPref(key, value) {
+        try {
+            var prefs = readShellPrefs();
+            prefs[key] = value;
+            localStorage.setItem('wme_ui_shell_v2', JSON.stringify(prefs));
+        } catch (e) { /* ignore */ }
+    }
+
+    function applyLeftWidth(px) {
+        var w = Math.max(LEFT_MIN, Math.min(LEFT_MAX, Math.round(px)));
+        document.body.style.setProperty('--left-width', w + 'px');
+        return w;
+    }
+
+    function initLeftResize() {
+        var left = qs('#shellLeft');
+        if (!left) return;
+        var prefs = readShellPrefs();
+        if (prefs.leftWidth) applyLeftWidth(prefs.leftWidth);
+
+        var handle = document.createElement('div');
+        handle.className = 'shell-left-resizer';
+        handle.title = 'Kéo để đổi rộng panel (nhấp đúp để đặt lại)';
+        left.appendChild(handle);
+
+        var dragging = false;
+
+        handle.addEventListener('pointerdown', function (e) {
+            dragging = true;
+            handle.classList.add('dragging');
+            try { handle.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
+            e.preventDefault();
+        });
+
+        window.addEventListener('pointermove', function (e) {
+            if (!dragging) return;
+            var rect = left.getBoundingClientRect();
+            applyLeftWidth(e.clientX - rect.left);
+            layoutReflow();
+        });
+
+        window.addEventListener('pointerup', function () {
+            if (!dragging) return;
+            dragging = false;
+            handle.classList.remove('dragging');
+            var cur = getComputedStyle(document.body).getPropertyValue('--left-width');
+            writeShellPref('leftWidth', parseInt(cur, 10) || 260);
+        });
+
+        handle.addEventListener('dblclick', function () {
+            applyLeftWidth(260);
+            writeShellPref('leftWidth', 260);
+            layoutReflow();
+        });
+    }
+
     function initUiShell() {
         if (!document.body.classList.contains('phase-ui')) return;
         initRibbon();
         initSidebarTabs('#shellLeft', '.sidebar-tab', '.sidebar-panel', 'leftTab', 'layers');
         initSidebarTabs('#shellRight', '.right-tab', '.right-panel', 'rightTab', 'properties');
         initCollapseAndFocus();
+        initLeftResize();
         wireProjectBarActions();
         syncProjectCrumb();
         initStatusPills();

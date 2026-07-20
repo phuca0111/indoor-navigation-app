@@ -9,6 +9,7 @@ const { assertFloorInRange } = require('../services/floorLifecycle');
 const { assertBuildingWritable } = require('../utils/overQuotaLock');
 const { assertOrgCanPublish } = require('../services/publishPermit');
 const { assertCanPublish } = require('../services/floorEditLock');
+const { assertPersonalMapQrQuota } = require('../utils/planQuota');
 const {
   validateMapData,
   resolvePublishMapData,
@@ -146,6 +147,16 @@ async function enqueuePublish(req, res) {
         message: 'Validate map thất bại.',
         code: 'VALIDATE_FAILED',
         errors: validation.errors
+      });
+    }
+
+    // Personal Workspace: giới hạn Map/QR theo gói cá nhân
+    const mapQrQuota = await assertPersonalMapQrQuota(buildingId, floorNum, resolved.map_data);
+    if (!mapQrQuota.ok) {
+      return res.status(403).json({
+        message: mapQrQuota.message,
+        code: mapQrQuota.code,
+        usage: mapQrQuota.usage
       });
     }
 

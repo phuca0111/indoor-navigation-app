@@ -34,12 +34,44 @@ function findLineAt(wx, wy) {
         var ln = lines[i];
         if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(ln)) continue;
         if (!ln.points || ln.points.length < 2) continue;
-        var a = ln.points[0];
-        var b = ln.points[1];
-        var d = distancePointToSegment(wx, wy, a.x, a.y, b.x, b.y);
-        if (d <= threshold) return ln;
+        // Hỗ trợ cả đoạn 2 điểm lẫn cung/polyline nhiều điểm
+        for (var s = 0; s < ln.points.length - 1; s++) {
+            var a = ln.points[s];
+            var b = ln.points[s + 1];
+            var d = distancePointToSegment(wx, wy, a.x, a.y, b.x, b.y);
+            if (d <= threshold) return ln;
+        }
     }
     return null;
+}
+
+/**
+ * Tạo cung tròn (ARC) qua 3 điểm — lưu dưới dạng line polyline type='arc'
+ * để tái dùng toàn bộ hạ tầng line (chọn/di chuyển/xoay/lưu/snap).
+ */
+function createArc(a, b, c, options) {
+    var ge = window.EditorCore && EditorCore.GeometryEngine;
+    if (!ge || !ge.arcFrom3Points) return null;
+    var arc = ge.arcFrom3Points(a, b, c);
+    if (!arc) return null; // 3 điểm thẳng hàng
+    var pts = ge.arcToPolyline(arc, 32);
+    if (!pts || pts.length < 2) return null;
+    var obj = {
+        id: nextLineId++,
+        type: 'arc',
+        color: (options && options.color) || '#3b82f6',
+        lineWeight: (options && options.lineWeight) || 2,
+        lineStyle: (options && options.lineStyle) || 'solid',
+        arc: { cx: arc.cx, cy: arc.cy, radius: arc.radius },
+        layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default',
+        points: pts
+    };
+    lines.push(obj);
+    if (typeof EditorCore !== 'undefined' && EditorCore.ObjectTransform) {
+        EditorCore.ObjectTransform.ensureOriginalGeometry('line', obj);
+    }
+    if (typeof syncSpatialIndexFromLegacy === 'function') syncSpatialIndexFromLegacy();
+    return obj;
 }
 
 function deleteLine(line) {
@@ -220,6 +252,237 @@ function retractPolylineEndpointToNearestCutter(type, obj, end) {
     return true;
 }
 
+// ============================================================
+// ARC TOOL (A) — cung tròn qua 3 điểm (đầu → giữa → cuối)
+// ============================================================
+var arcSession = null; // { step:1|2|3, p1, p2, preview }
+
+function beginArcTool() {
+    arcSession = { step: 1, p1: null, p2: null, preview: null };
+    if (typeof showToast === 'function') {
+        showToast('Cung: click điểm ĐẦU → điểm GIỮA (trên cung) → điểm CUỐI', 'info');
+    }
+}
+
+function cancelArcSession() {
+    if (!arcSession) return false;
+    arcSession = null;
+    return true;
+}
+
+function handleArcClick(wx, wy) {
+    if (!arcSession) beginArcTool();
+    var s = arcSession;
+    if (s.step === 1) {
+        s.p1 = { x: wx, y: wy };
+        s.step = 2;
+        s.preview = { x: wx, y: wy };
+        if (typeof showToast === 'function') showToast('Cung: click điểm GIỮA (trên cung)', 'info');
+        return;
+    }
+    if (s.step === 2) {
+        s.p2 = { x: wx, y: wy };
+        s.step = 3;
+        s.preview = { x: wx, y: wy };
+        if (typeof showToast === 'function') showToast('Cung: click điểm CUỐI', 'info');
+        return;
+    }
+    if (typeof saveState === 'function') saveState();
+    var arc = createArc(s.p1, s.p2, { x: wx, y: wy });
+    arcSession = { step: 1, p1: null, p2: null, preview: null };
+    if (!arc) {
+        if (typeof showToast === 'function') showToast('3 điểm thẳng hàng — không tạo được cung', 'error');
+        return;
+    }
+    if (typeof setEditorSelection === 'function') setEditorSelection('line', arc);
+    if (typeof updateObjectList === 'function') updateObjectList();
+    if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
+    if (typeof flushAutosaveNow === 'function') flushAutosaveNow();
+    if (typeof showToast === 'function') showToast('Đã tạo cung tròn', 'success');
+    if (typeof draw === 'function') draw();
+}
+
+function updateArcPreview(wx, wy) {
+    if (!arcSession || arcSession.step < 2) return;
+    arcSession.preview = { x: wx, y: wy };
+}
+
+function drawArcPreview() {
+    if (!arcSession || !arcSession.p1 || typeof ctx === 'undefined') return;
+    var z = (typeof zoom !== 'undefined' && zoom) ? zoom : 1;
+    var s = arcSession;
+    ctx.save();
+    ctx.strokeStyle = '#3b82f6';
+    ctx.lineWidth = 1.5 / z;
+    ctx.setLineDash([5 / z, 4 / z]);
+    if (s.step === 2 && s.preview) {
+        ctx.beginPath();
+        ctx.moveTo(s.p1.x, s.p1.y);
+        ctx.lineTo(s.preview.x, s.preview.y);
+        ctx.stroke();
+    } else if (s.step === 3 && s.p2 && s.preview) {
+        var ge = window.EditorCore && EditorCore.GeometryEngine;
+        var arc = ge && ge.arcFrom3Points ? ge.arcFrom3Points(s.p1, s.p2, s.preview) : null;
+        if (arc) {
+            var pts = ge.arcToPolyline(arc, 32);
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+            ctx.stroke();
+        } else {
+            ctx.beginPath();
+            ctx.moveTo(s.p1.x, s.p1.y);
+            ctx.lineTo(s.preview.x, s.preview.y);
+            ctx.stroke();
+        }
+    }
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#3b82f6';
+    [s.p1, s.p2].forEach(function (p) {
+        if (!p) return;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4 / z, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    ctx.restore();
+}
+
+// ============================================================
+// ELLIPSE TOOL (EL) — elip theo tâm → đầu trục lớn → điểm trục nhỏ
+// Lưu dưới dạng line polyline kín type='ellipse' để tái dùng hạ tầng line.
+// ============================================================
+var ellipseSession = null; // { step:1|2|3, center, major, preview }
+
+function ellipseParamsFrom(center, major, minorPoint) {
+    var dx = major.x - center.x, dy = major.y - center.y;
+    var rx = Math.hypot(dx, dy);
+    var rot = Math.atan2(dy, dx);
+    // Pháp tuyến của trục lớn để đo bán trục nhỏ
+    var nx = -Math.sin(rot), ny = Math.cos(rot);
+    var ry = Math.abs((minorPoint.x - center.x) * nx + (minorPoint.y - center.y) * ny);
+    return { cx: center.x, cy: center.y, rx: rx, ry: ry, rotation: rot };
+}
+
+function createEllipse(center, major, minorPoint, options) {
+    var ge = window.EditorCore && EditorCore.GeometryEngine;
+    if (!ge || !ge.ellipsePolyline) return null;
+    var p = ellipseParamsFrom(center, major, minorPoint);
+    if (p.rx < 1 || p.ry < 1) return null; // quá nhỏ
+    var pts = ge.ellipsePolyline(p.cx, p.cy, p.rx, p.ry, p.rotation, 48);
+    if (!pts || pts.length < 3) return null;
+    var obj = {
+        id: nextLineId++,
+        type: 'ellipse',
+        color: (options && options.color) || '#3b82f6',
+        lineWeight: (options && options.lineWeight) || 2,
+        lineStyle: (options && options.lineStyle) || 'solid',
+        ellipse: { cx: p.cx, cy: p.cy, rx: p.rx, ry: p.ry, rotation: p.rotation },
+        layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default',
+        points: pts
+    };
+    lines.push(obj);
+    if (typeof EditorCore !== 'undefined' && EditorCore.ObjectTransform) {
+        EditorCore.ObjectTransform.ensureOriginalGeometry('line', obj);
+    }
+    if (typeof syncSpatialIndexFromLegacy === 'function') syncSpatialIndexFromLegacy();
+    return obj;
+}
+
+function beginEllipseTool() {
+    ellipseSession = { step: 1, center: null, major: null, preview: null };
+    if (typeof showToast === 'function') {
+        showToast('Elip: click TÂM → đầu TRỤC LỚN → điểm TRỤC NHỎ', 'info');
+    }
+}
+
+function cancelEllipseSession() {
+    if (!ellipseSession) return false;
+    ellipseSession = null;
+    return true;
+}
+
+function handleEllipseClick(wx, wy) {
+    if (!ellipseSession) beginEllipseTool();
+    var s = ellipseSession;
+    if (s.step === 1) {
+        s.center = { x: wx, y: wy };
+        s.preview = { x: wx, y: wy };
+        s.step = 2;
+        if (typeof showToast === 'function') showToast('Elip: click đầu TRỤC LỚN', 'info');
+        return;
+    }
+    if (s.step === 2) {
+        s.major = { x: wx, y: wy };
+        s.preview = { x: wx, y: wy };
+        s.step = 3;
+        if (typeof showToast === 'function') showToast('Elip: click điểm TRỤC NHỎ', 'info');
+        return;
+    }
+    if (typeof saveState === 'function') saveState();
+    var el = createEllipse(s.center, s.major, { x: wx, y: wy });
+    ellipseSession = { step: 1, center: null, major: null, preview: null };
+    if (!el) {
+        if (typeof showToast === 'function') showToast('Elip quá nhỏ — thử lại', 'error');
+        return;
+    }
+    if (typeof setEditorSelection === 'function') setEditorSelection('line', el);
+    if (typeof updateObjectList === 'function') updateObjectList();
+    if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
+    if (typeof flushAutosaveNow === 'function') flushAutosaveNow();
+    if (typeof showToast === 'function') showToast('Đã tạo elip', 'success');
+    if (typeof draw === 'function') draw();
+}
+
+function updateEllipsePreview(wx, wy) {
+    if (!ellipseSession || ellipseSession.step < 2) return;
+    ellipseSession.preview = { x: wx, y: wy };
+}
+
+function drawEllipsePreview() {
+    if (!ellipseSession || !ellipseSession.center || typeof ctx === 'undefined') return;
+    var z = (typeof zoom !== 'undefined' && zoom) ? zoom : 1;
+    var s = ellipseSession;
+    var ge = window.EditorCore && EditorCore.GeometryEngine;
+    ctx.save();
+    ctx.strokeStyle = '#3b82f6';
+    ctx.lineWidth = 1.5 / z;
+    ctx.setLineDash([5 / z, 4 / z]);
+    if (s.step === 2 && s.preview) {
+        ctx.beginPath();
+        ctx.moveTo(s.center.x, s.center.y);
+        ctx.lineTo(s.preview.x, s.preview.y);
+        ctx.stroke();
+    } else if (s.step === 3 && s.major && s.preview && ge && ge.ellipsePolyline) {
+        var p = ellipseParamsFrom(s.center, s.major, s.preview);
+        var pts = ge.ellipsePolyline(p.cx, p.cy, p.rx, p.ry, p.rotation, 48);
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#3b82f6';
+    [s.center, s.major].forEach(function (pt) {
+        if (!pt) return;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 4 / z, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    ctx.restore();
+}
+
+window.createArc = createArc;
+window.beginArcTool = beginArcTool;
+window.cancelArcSession = cancelArcSession;
+window.handleArcClick = handleArcClick;
+window.updateArcPreview = updateArcPreview;
+window.drawArcPreview = drawArcPreview;
+window.createEllipse = createEllipse;
+window.beginEllipseTool = beginEllipseTool;
+window.cancelEllipseSession = cancelEllipseSession;
+window.handleEllipseClick = handleEllipseClick;
+window.updateEllipsePreview = updateEllipsePreview;
+window.drawEllipsePreview = drawEllipsePreview;
 window.getPolylineCentroid = getPolylineCentroid;
 window.getPolylineHeadingDeg = getPolylineHeadingDeg;
 window.getSegmentRotateHandle = getSegmentRotateHandle;
