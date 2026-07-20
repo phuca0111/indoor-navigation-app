@@ -127,6 +127,7 @@ app.use('/api/tptp-pay', tptpPayRoutes);
 app.use('/api/tptp-bank', tptpBankRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/finance', financeRoutes);
+app.use('/api/website', require('./routes/websiteRoutes'));
 app.use('/tptp-pay', tptpPayRoutes);
 
 // Export app cho testing
