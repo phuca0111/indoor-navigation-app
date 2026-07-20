@@ -1,26 +1,264 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Quản Lý Tòa Nhà</title>
-    <link rel="stylesheet" href="css/admin.css?v=20260712p6b">
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('indoorNavAdminTheme');
+          if (t !== 'dark' && t !== 'light') {
+            t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          document.documentElement.setAttribute('data-admin-theme', t);
+        } catch (e) { /* ignore */ }
+      })();
+    </script>
+    <link rel="stylesheet" href="css/admin.css?v=20260721ad88">
+    <link rel="stylesheet" href="css/admin-theme.css?v=20260721ad88">
 </head>
-<body>
+<body class="admin-shell-body">
+    <div id="adminPageProgress" class="admin-page-progress" aria-hidden="true">
+      <span></span>
+    </div>
+    <div id="adminToastRegion" class="admin-toast-region" aria-live="polite" aria-atomic="false"></div>
+    <div class="admin-shell">
+      <button id="adminSidebarOverlay" class="admin-sidebar-overlay" type="button" aria-label="đóng menu"></button>
+
+      <aside id="adminSidebar" class="admin-sidebar" aria-label="điều hướng quản trị">
+        <div class="admin-sidebar-header">
+          <a class="admin-brand" href="/admin/dashboard.html" aria-label="IndoorNav Dashboard">
+            <span class="admin-brand-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 21s7-4.5 7-11a7 7 0 1 0-14 0c0 6.5 7 11 7 11z"></path>
+                <circle cx="12" cy="10" r="2.5"></circle>
+              </svg>
+            </span>
+            <span>
+              <strong>IndoorNav</strong>
+              <small>Admin Console</small>
+            </span>
+          </a>
+          <button id="btnCloseSidebar" class="admin-icon-btn admin-sidebar-close" type="button" aria-label="đóng menu">✕</button>
+        </div>
+
+        <p class="admin-menu-label">MENU QUẢN TRỊ</p>
+
+        <!-- AD33: c�y menu � T?ng quan / V?n h�nh / Kh�ch h�ng / T�i ch�nh / C� nh�n -->
+        <div id="tabNav" class="tab-nav admin-sidebar-nav" style="display:none;">
+            <div class="admin-nav-group is-open" data-nav-group="overview">
+              <button type="button" class="admin-nav-group-toggle" aria-expanded="true">
+                <span class="admin-nav-group-label">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15v-4"/><path d="M12 15V8"/><path d="M16 15v-7"/></svg></span>
+                  <span>Tổng quan</span>
+                </span>
+                <span class="admin-nav-chevron" aria-hidden="true">▾</span>
+              </button>
+              <div class="admin-nav-group-items">
+                <button type="button" class="tab-btn overview-tab-btn active" data-tab="overview" onclick="switchTab('overview')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg></span>
+                  <span>Dashboard</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="admin-nav-group is-open" data-nav-group="ops">
+              <button type="button" class="admin-nav-group-toggle" aria-expanded="true">
+                <span class="admin-nav-group-label">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h18"/><path d="M3 6h18"/><path d="M3 18h18"/></svg></span>
+                  <span>Vận hành</span>
+                </span>
+                <span class="admin-nav-chevron" aria-hidden="true">▾</span>
+              </button>
+              <div class="admin-nav-group-items">
+                <button type="button" class="tab-btn" data-tab="buildings" onclick="switchTab('buildings')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18"/><path d="M5 21V8l7-4 7 4v13"/><path d="M9 21v-6h6v6"/></svg></span>
+                  <span>Tòa nhà</span>
+                </button>
+                <button type="button" class="tab-btn" data-tab="maps" onclick="switchTab('maps')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h6"/><path d="M8 9h2"/></svg></span>
+                  <span>Chi tiết tòa</span>
+                </button>
+                <button type="button" class="tab-btn logs-tab-btn" data-tab="logs" onclick="switchTab('logs')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h6"/></svg></span>
+                  <span>Nhật ký hệ thống</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="admin-nav-group is-open" data-nav-group="customers">
+              <button type="button" class="admin-nav-group-toggle" aria-expanded="true">
+                <span class="admin-nav-group-label">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+                  <span id="navCustomersGroupLabel">Khách hàng</span>
+                </span>
+                <span class="admin-nav-chevron" aria-hidden="true">▾</span>
+              </button>
+              <div class="admin-nav-group-items">
+                <button type="button" class="tab-btn org-admin-only" data-tab="myorg" onclick="switchTab('myorg')" style="display:none;">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18"/><path d="M6 21V5h5v16"/><path d="M11 10h7v11"/><path d="M14 7h4"/><path d="M14 13h4"/></svg></span>
+                  <span>Tổ chức của tôi</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only" data-tab="organizations" onclick="switchTab('organizations')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18"/><path d="M6 21V5h5v16"/><path d="M11 10h7v11"/><path d="M14 7h4"/><path d="M14 13h4"/></svg></span>
+                  <span>Tổ chức</span>
+                </button>
+                <button type="button" class="tab-btn users-tab-btn" data-tab="users" onclick="switchTab('users')" style="display:none;">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+                  <span>Tài khoản</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only" data-tab="registrations" onclick="switchTab('registrations')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg></span>
+                  <span>Hồ sơ đăng ký</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="admin-nav-group is-open" data-nav-group="finance">
+              <button type="button" class="admin-nav-group-toggle" aria-expanded="true">
+                <span class="admin-nav-group-label">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v18"/><path d="M7 8h7a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h8"/></svg></span>
+                  <span>Tài chính</span>
+                </span>
+                <span class="admin-nav-chevron" aria-hidden="true">▾</span>
+              </button>
+              <div class="admin-nav-group-items">
+                <button type="button" class="tab-btn billing-tab-btn" data-tab="billing" onclick="switchTab('billing')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
+                  <span>Gói đăng ký</span>
+                </button>
+                <button type="button" class="tab-btn registered-user-only" data-tab="buildings" onclick="openPersonalBillingNav()" title="Gói cá nhân và hóa đơn thanh toán của bạn" style="display:none;">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
+                  <span>Gói &amp; hóa đơn</span>
+                </button>
+                <button type="button" class="tab-btn plans-tab-btn" data-tab="plans" onclick="switchTab('plans')" title="Catalog gói FREE / PRO / ENTERPRISE">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 4v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V7z"/><path d="M9 12l2 2 4-4"/></svg></span>
+                  <span>Danh mục gói</span>
+                </button>
+                <button type="button" class="tab-btn finance-tab-btn" data-tab="finance" data-finance-sub="invoices" onclick="openFinanceInvoicesNav()" title="Danh sách hóa đơn">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16l4-2 4 2 4-2 4 2V8z"/><path d="M14 2v6h6"/><path d="M8 13h5"/><path d="M8 17h5"/></svg></span>
+                  <span>Hóa đơn</span>
+                </button>
+                <button type="button" class="tab-btn finance-tab-btn super-admin-only" data-tab="finance" data-finance-sub="overview" onclick="openFinanceOverviewNav()" title="Doanh thu, chi phí, lợi nhuận sàn — chỉ Super Admin">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v18"/><path d="M7 8h7a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h8"/></svg></span>
+                  <span>Thu chi</span>
+                </button>
+                <button type="button" class="tab-btn analytics-tab-btn super-admin-only" data-tab="analytics" onclick="switchTab('analytics')" title="Xu hướng hoạt động, doanh thu và cảnh báo vận hành — chỉ Super Admin">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15v-4"/><path d="M12 15V8"/><path d="M16 15v-7"/></svg></span>
+                  <span>Phân tích</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="admin-nav-group is-open" data-nav-group="website">
+              <button type="button" class="admin-nav-group-toggle" aria-expanded="true">
+                <span class="admin-nav-group-label">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg></span>
+                  <span>Website</span>
+                </span>
+                <span class="admin-nav-chevron" aria-hidden="true">▾</span>
+              </button>
+              <div class="admin-nav-group-items">
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="pages" onclick="openWebsiteSub('pages')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>
+                  <span>Landing Pages</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="banner" onclick="openWebsiteSub('banner')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 15l5-4 4 3 3-2 6 5"/></svg></span>
+                  <span>Banner &amp; Hero</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="navigation" onclick="openWebsiteSub('navigation')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg></span>
+                  <span>Navigation</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="media" onclick="openWebsiteSub('media')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10.5" r="1.5"/><path d="M21 16l-5-5-8 8"/></svg></span>
+                  <span>Media</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="forms" onclick="openWebsiteSub('forms')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/></svg></span>
+                  <span>Liên hệ</span>
+                  <span id="websiteContactBadge" class="admin-nav-badge" hidden>0</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="seo" onclick="openWebsiteSub('seo')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
+                  <span>SEO</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="theme" onclick="openWebsiteSub('theme')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 9 9h-9V3z"/><path d="M19 5l-2 2"/></svg></span>
+                  <span>Theme</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="settings" onclick="openWebsiteSub('settings')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c0 .7.4 1.3 1 1.5H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span>
+                  <span>Cài đặt Website</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="admin-nav-group is-open" data-nav-group="account">
+              <button type="button" class="admin-nav-group-toggle" aria-expanded="true">
+                <span class="admin-nav-group-label">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span>
+                  <span>Cá nhân</span>
+                </span>
+                <span class="admin-nav-chevron" aria-hidden="true">▾</span>
+              </button>
+              <div class="admin-nav-group-items">
+                <button type="button" class="tab-btn" data-tab="profile" data-profile-section="info" onclick="openProfileSectionNav('info')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span>
+                  <span>Hồ sơ</span>
+                </button>
+                <button type="button" class="tab-btn" data-tab="profile" data-profile-section="security" onclick="openProfileSectionNav('security')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>
+                  <span>Bảo mật</span>
+                </button>
+                <button type="button" class="tab-btn" data-tab="profile" data-profile-section="sessions" onclick="openProfileSectionNav('sessions')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 18v3"/></svg></span>
+                  <span>Phiên đăng nhập</span>
+                </button>
+              </div>
+            </div>
+        </div>
+
+        <div class="admin-sidebar-footer">
+          <span class="admin-status-dot"></span>
+          <span>Hệ thống đang hoạt động</span>
+        </div>
+      </aside>
+
+      <div class="admin-main">
     <nav class="navbar">
-        <h2>🗺️ Bảng Điều Khiển Quản Trị</h2>
+        <div class="admin-navbar-title">
+            <button id="btnOpenSidebar" class="admin-icon-btn admin-menu-toggle" type="button" aria-label="Mở menu">☰</button>
+            <div>
+              <h2 id="adminPageTitle">Bảng Điều Khiển</h2>
+              <p>Quản lý hệ thống dẫn đường trong nhà</p>
+            </div>
+        </div>
         <div class="nav-right">
+            <button id="btnAdminTheme" class="admin-icon-btn admin-theme-toggle" type="button" aria-label="Bật giao diện tối" aria-pressed="false">
+              <span class="admin-theme-icon admin-theme-icon-dark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 14.5A8.5 8.5 0 1 1 9.5 3 7 7 0 0 0 21 14.5z"/></svg>
+              </span>
+              <span class="admin-theme-icon admin-theme-icon-light" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+              </span>
+            </button>
+            <span class="admin-user-avatar" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+            </span>
             <span id="userEmail">admin@example.com</span>
             <button id="btnLogout" class="btn-logout" title="Đăng xuất phiên hiện tại trên trình duyệt này">Đăng Xuất</button>
         </div>
     </nav>
 
-    <div class="dashboard-content">
+        <main class="dashboard-content">
 
         <!-- Thông tin chào mừng -->
         <div class="welcome-box">
             <p id="userOrgLine" class="user-org-line" style="display:none;">
-                🏛️ Tổ chức: <strong id="userOrgName">—</strong>
+                🏢 Tổ chức: <strong id="userOrgName"></strong>
             </p>
             <h3>Xin chào, <span id="userName">Admin</span>!</h3>
             <p>Vai trò: <span id="userRole" class="badge">BUILDING_ADMIN</span>
@@ -29,33 +267,299 @@
             <p id="quotaAlertLine" class="quota-alert-line" style="display:none;"></p>
         </div>
 
-        <!-- Phase 4.6 — Thẻ tổng quan platform / tổ chức -->
-        <div id="platformOverviewSection" class="platform-overview-section" style="display:none;">
+        <!-- Phase 4.6 cu: kh?i t?ng quan m?i tab � AD14 ?n, chuy?n sang tab overview -->
+        <div id="platformOverviewSection" class="platform-overview-section" style="display:none;" hidden aria-hidden="true">
             <h4 id="platformOverviewTitle" class="platform-overview-title">📊 Tổng quan</h4>
             <p class="platform-overview-hint">Bấm thẻ để mở tab tương ứng và lọc dữ liệu</p>
             <div id="platformOverviewCards" class="org-overview-grid" aria-label="Thống kê tổng quan"></div>
         </div>
 
-        <!-- Tab navigation (chỉ Super Admin thấy đầy đủ) -->
-        <div id="tabNav" class="tab-nav" style="display:none; margin-bottom: 20px;">
-            <button class="tab-btn active" onclick="switchTab('buildings')">🏢 Tòa Nhà</button>
-            <button class="tab-btn super-admin-only" onclick="switchTab('organizations')">🏛️ Tổ Chức</button>
-            <button class="tab-btn billing-tab-btn" onclick="switchTab('billing')">💳 Gói & Thanh toán</button>
-            <button class="tab-btn super-admin-only" onclick="switchTab('finance')" title="Doanh thu, chi phí, lợi nhuận sàn — chỉ Super Admin">💰 Thu – Chi</button>
-            <button class="tab-btn analytics-tab-btn" onclick="switchTab('analytics')" title="Xu hướng hoạt động, doanh thu và cảnh báo vận hành">📊 Phân tích</button>
-            <button class="tab-btn super-admin-only" onclick="switchTab('registrations')">📝 Hồ Sơ ĐK</button>
-            <button class="tab-btn" onclick="switchTab('users')">👑 Tài Khoản</button>
-            <button class="tab-btn" onclick="switchTab('logs')">📋 Lịch Sử Thao Tác</button>
-            <button class="tab-btn" onclick="switchTab('profile')">👤 Thông Tin Cá Nhân</button>
+        <!-- ===== TAB: OVERVIEW (AD15 � widget dashboard) ===== -->
+        <div id="tab-overview" class="tab-content overview-tab">
+          <div class="admin-section overview-tab-section">
+            <div class="section-header analytics-header-row overview-header-row">
+              <div>
+                <h3 id="overviewPageTitle">📊 Tổng quan</h3>
+                <p class="analytics-tab-intro" id="overviewPageIntro">Nhìn nhanh vận hành SaaS. Đổi khoảng thời gian để làm mới widget phụ thuộc thời gian.</p>
+              </div>
+              <div class="analytics-toolbar overview-toolbar">
+                <label class="overview-range-label" for="overviewRangeSelect">Khoảng thời gian</label>
+                <select id="overviewRangeSelect" class="overview-range-select" onchange="onOverviewRangeChange()" title="Lọc theo khoảng thời gian">
+                  <option value="today">Hôm nay</option>
+                  <option value="7d">7 ngày</option>
+                  <option value="30d" selected>30 ngày</option>
+                  <option value="90d">90 ngày</option>
+                  <option value="month">Tháng này</option>
+                  <option value="year">Năm nay</option>
+                  <option value="custom">Tùy chọn</option>
+                </select>
+                <span id="overviewCustomRange" class="overview-custom-range" hidden>
+                  <input type="date" id="overviewFromDate" class="overview-date-input" title="Từ ngày">
+                  <span class="overview-range-sep">–</span>
+                  <input type="date" id="overviewToDate" class="overview-date-input" title="Đến ngày">
+                  <button type="button" class="btn-edit" onclick="applyOverviewCustomRange()">Áp dụng</button>
+                </span>
+                <button type="button" class="btn-edit" onclick="refreshOverviewDashboard()" title="Làm mới số liệu">Làm mới</button>
+                <span id="overviewRangeSummary" class="overview-range-summary" hidden></span>
+              </div>
+            </div>
+
+            <div id="overviewKpiCards" class="overview-kpi-grid" aria-label="Chỉ số tổng quan" data-ov-widget="kpi"></div>
+
+            <div class="overview-section-nav" role="navigation" aria-label="Nhóm nội dung Dashboard">
+              <div class="overview-section-tabs" role="tablist">
+                <button type="button" class="is-active" data-overview-section-btn="priority" onclick="setOverviewDashboardSection('priority')">Tổng quan ưu tiên</button>
+                <button type="button" data-overview-section-btn="operations" onclick="setOverviewDashboardSection('operations')">Vận hành</button>
+                <button type="button" data-overview-section-btn="system" onclick="setOverviewDashboardSection('system')">Hệ thống</button>
+              </div>
+              <div class="overview-section-links">
+                <button type="button" onclick="switchTab('analytics')">Mở phân tích →</button>
+                <button type="button" onclick="switchTab('finance')">Mở tài chính →</button>
+              </div>
+            </div>
+
+            <div class="overview-widget-grid">
+              <!-- ORG_ADMIN / thấp hơn: ẩn — tăng trưởng đa tổ chức chỉ Super Admin -->
+              <div class="analytics-chart-card overview-widget overview-widget--wide overview-widget--growth super-admin-only" id="ov-w-org_growth" data-ov-widget="org_growth" data-overview-section="priority">
+                <div class="overview-widget-head">
+                  <div>
+                    <h4>Tăng trưởng tổ chức</h4>
+                    <p class="overview-widget-subtitle">Tổng tích lũy và số tổ chức mới trong khoảng đã chọn</p>
+                  </div>
+                  <div class="overview-revexp-tools">
+                    <button type="button" class="overview-widget-retry" onclick="switchTab('analytics')" title="Mở trang phân tích">Mở phân tích</button>
+                    <button type="button" class="overview-widget-retry" onclick="retryOverviewWidget('org_growth')" title="Thử lại">Thử lại</button>
+                  </div>
+                </div>
+                <div class="overview-widget-body" id="ov-body-org_growth"></div>
+              </div>
+              <div class="analytics-chart-card overview-widget overview-widget--revexp super-admin-only" id="ov-w-revenue_expense" data-ov-widget="revenue_expense" data-overview-section="priority">
+                <div class="overview-widget-head">
+                  <h4>Thu vs Chi</h4>
+                  <div class="overview-revexp-tools">
+                    <div class="overview-period-seg" role="group" aria-label="Khoảng Thu–Chi">
+                      <button type="button" class="overview-period-btn" data-revexp-period="monthly" onclick="setOverviewRevExpPeriod('monthly')">Tháng</button>
+                      <button type="button" class="overview-period-btn is-active" data-revexp-period="weekly" onclick="setOverviewRevExpPeriod('weekly')">Tuần</button>
+                      <button type="button" class="overview-period-btn" data-revexp-period="today" onclick="setOverviewRevExpPeriod('today')">Hôm nay</button>
+                    </div>
+                    <button type="button" class="overview-widget-retry" onclick="retryOverviewWidget('revenue_expense')" title="Thử lại">Thử lại</button>
+                  </div>
+                </div>
+                <div class="overview-widget-body" id="ov-body-revenue_expense"></div>
+              </div>
+              <div class="analytics-chart-card overview-widget" id="ov-w-navigation_activity" data-ov-widget="navigation_activity" data-overview-section="operations">
+                <div class="overview-widget-head">
+                  <h4>Hoạt động điều hướng</h4>
+                  <button type="button" class="overview-widget-retry" onclick="retryOverviewWidget('navigation_activity')" title="Thử lại">Thử lại</button>
+                </div>
+                <div class="overview-widget-body" id="ov-body-navigation_activity"></div>
+              </div>
+              <div class="analytics-chart-card overview-widget" id="ov-w-map_publish" data-ov-widget="map_publish" data-overview-section="priority">
+                <div class="overview-widget-head">
+                  <h4 id="overviewChartLeftTitle">Trạng thái tòa nhà</h4>
+                  <button type="button" class="overview-widget-retry" onclick="retryOverviewWidget('map_publish')" title="Thử lại">Thử lại</button>
+                </div>
+                <div class="overview-widget-body overview-chart-body" id="ov-body-map_publish"></div>
+              </div>
+              <!-- ORG_ADMIN / thấp hơn: ẩn — chỉ Super Admin xem tổng quan đa tổ chức -->
+              <div class="analytics-chart-card overview-widget overview-widget--wide overview-widget--subscription super-admin-only" id="ov-w-subscription" data-ov-widget="subscription" data-overview-section="priority">
+                <div class="overview-widget-head">
+                  <div><h4 id="overviewChartRightTitle">Tổng quan gói đăng ký</h4><p class="overview-widget-subtitle">Bộ lọc ngày chỉ áp dụng cho widget này (không đổi Tăng trưởng tổ chức phía trên)</p></div>
+                  <div class="overview-revexp-tools">
+                    <button type="button" class="overview-widget-retry" onclick="switchTab('finance')" title="Mở quản lý tài chính">Mở tài chính</button>
+                    <button type="button" class="overview-widget-retry" onclick="retryOverviewWidget('subscription')" title="Thử tải lại dữ liệu">Thử lại</button>
+                  </div>
+                </div>
+                <div class="overview-subscription-toolbar" aria-label="Bộ lọc thời gian gói đăng ký">
+                  <select id="subscriptionRangeSelect" class="overview-range-select" onchange="onSubscriptionRangeSelect()" title="Chọn khoảng thời gian">
+                    <option value="today">Hôm nay</option>
+                    <option value="7d">7 ngày</option>
+                    <option value="30d" selected>30 ngày</option>
+                    <option value="90d">90 ngày</option>
+                    <option value="month">Tháng này</option>
+                    <option value="year">Năm nay</option>
+                    <option value="custom">Tùy chọn</option>
+                  </select>
+                  <div class="overview-subscription-quick-filter" role="group" aria-label="Chọn nhanh khoảng thời gian">
+                    <button type="button" data-sub-range="today" onclick="setOverviewSubscriptionRange('today')">Hôm nay</button>
+                    <button type="button" data-sub-range="7d" onclick="setOverviewSubscriptionRange('7d')">7 ngày</button>
+                    <button type="button" class="is-active" data-sub-range="30d" onclick="setOverviewSubscriptionRange('30d')">30 ngày</button>
+                    <button type="button" data-sub-range="90d" onclick="setOverviewSubscriptionRange('90d')">90 ngày</button>
+                    <button type="button" data-sub-range="month" onclick="setOverviewSubscriptionRange('month')">Tháng này</button>
+                    <button type="button" data-sub-range="year" onclick="setOverviewSubscriptionRange('year')">Năm nay</button>
+                    <button type="button" data-sub-range="custom" onclick="setOverviewSubscriptionRange('custom')">Tùy chọn</button>
+                  </div>
+                  <span id="subscriptionCustomRange" class="overview-custom-range" hidden>
+                    <input type="date" id="subscriptionFromDate" class="overview-date-input" title="Từ ngày">
+                    <span class="overview-range-sep">–</span>
+                    <input type="date" id="subscriptionToDate" class="overview-date-input" title="Đến ngày">
+                    <button type="button" class="btn-edit" onclick="applySubscriptionCustomRange()">Áp dụng</button>
+                  </span>
+                </div>
+                <div class="overview-widget-body overview-chart-body" id="ov-body-subscription"></div>
+              </div>
+              <!-- ORG_ADMIN / thấp hơn: ẩn — Top tổ chức chỉ Super Admin -->
+              <div class="analytics-chart-card overview-widget super-admin-only" id="ov-w-top_organizations" data-ov-widget="top_organizations" data-overview-section="priority">
+                <div class="overview-widget-head">
+                  <h4>Top tổ chức</h4>
+                  <div class="overview-revexp-tools">
+                    <button type="button" class="overview-widget-retry" onclick="switchTab('organizations')" title="Xem tất cả tổ chức">Xem tất cả</button>
+                    <button type="button" class="overview-widget-retry" onclick="retryOverviewWidget('top_organizations')" title="Thử lại">Thử lại</button>
+                  </div>
+                </div>
+                <div class="overview-widget-body" id="ov-body-top_organizations"></div>
+              </div>
+              <!-- Super Admin: chăm sóc gói tổ chức -->
+              <div class="analytics-chart-card overview-widget overview-widget--wide super-admin-only" id="ov-w-billing_care" data-ov-widget="billing_care" data-overview-section="priority">
+                <div class="overview-widget-head">
+                  <div>
+                    <h4>Chăm sóc gói tổ chức</h4>
+                    <p class="overview-widget-subtitle">Sắp hết hạn · Grace · Hết hạn · Lưu trữ · Doanh thu treo</p>
+                  </div>
+                  <div class="overview-revexp-tools">
+                    <button type="button" class="overview-widget-retry" onclick="switchTab('organizations')" title="Mở danh sách tổ chức">Tổ chức</button>
+                    <button type="button" class="overview-widget-retry" onclick="retryOverviewWidget('billing_care')" title="Thử lại">Thử lại</button>
+                  </div>
+                </div>
+                <div class="overview-widget-body" id="ov-body-billing_care"></div>
+              </div>
+              <!-- T?m ?n widget S?c kh?e h? th?ng � b? data-overview-force-hidden + hidden d? hi?n l?i -->
+              <div class="analytics-chart-card overview-widget" id="ov-w-system_health" data-ov-widget="system_health" data-overview-section="priority system" data-overview-force-hidden="1" hidden>
+                <div class="overview-widget-head">
+                  <h4>Sức khỏe hệ thống</h4>
+                  <button type="button" class="overview-widget-retry" onclick="retryOverviewWidget('system_health')" title="Thử lại">Thử lại</button>
+                </div>
+                <div class="overview-widget-body" id="ov-body-system_health"></div>
+              </div>
+              <div class="analytics-chart-card overview-widget" id="ov-w-recent_activities" data-ov-widget="recent_activities" data-overview-section="operations">
+                <div class="overview-widget-head">
+                  <h4>Hoạt động gần đây</h4>
+                  <button type="button" class="overview-widget-retry" onclick="retryOverviewWidget('recent_activities')" title="Thử lại">Thử lại</button>
+                </div>
+                <div class="overview-widget-body" id="ov-body-recent_activities"></div>
+              </div>
+              <div class="analytics-chart-card overview-widget" id="ov-w-contact_crm" data-ov-widget="contact_crm" data-overview-section="operations">
+                <div class="overview-widget-head">
+                  <h4>Liên hệ</h4>
+                  <div class="overview-revexp-tools">
+                    <button type="button" class="overview-widget-retry" onclick="openWebsiteSub('forms')" title="Mở CRM Liên hệ">Mở hộp thư</button>
+                    <button type="button" class="overview-widget-retry" onclick="retryOverviewWidget('contact_crm')" title="Thử lại">Thử lại</button>
+                  </div>
+                </div>
+                <div class="overview-widget-body" id="ov-body-contact_crm"></div>
+              </div>
+
+              <div class="analytics-chart-card overview-widget" id="ov-w-recent_alerts" data-ov-widget="recent_alerts" data-overview-section="operations system">
+                <div class="overview-widget-head">
+                  <h4>Cảnh báo gần đây</h4>
+                  <button type="button" class="overview-widget-retry" onclick="retryOverviewWidget('recent_alerts')" title="Thử lại">Thử lại</button>
+                </div>
+                <div class="overview-widget-body" id="ov-body-recent_alerts"></div>
+              </div>
+            </div>
+
+            <div class="analytics-chart-card overview-tasks-card" id="ov-w-tasks" data-overview-section="operations">
+              <h4>Việc cần xử lý</h4>
+              <div id="overviewTasks" class="overview-tasks"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== TAB: MAPS � profile chi ti?t t�a nh� ===== -->
+        <div id="tab-maps" class="tab-content" style="display:none;">
+          <div class="buildings-section building-detail-section">
+            <div class="section-header building-detail-header">
+              <div class="building-detail-header-main">
+                <button type="button" class="linkish building-detail-back" onclick="switchTab('buildings')">← Danh sách tòa nhà</button>
+                <div class="building-detail-title-row">
+                  <h3 id="buildingDetailTitle">Chi tiết tòa nhà</h3>
+                  <span id="buildingDetailHeaderStatus"></span>
+                </div>
+                <p id="buildingDetailHeaderAddress" class="building-detail-header-address"></p>
+                <div id="buildingDetailHeaderMeta" class="building-detail-header-meta"></div>
+              </div>
+              <div id="buildingDetailActions" class="building-detail-actions" aria-live="polite"></div>
+            </div>
+            <nav id="buildingDetailSubnav" class="building-detail-subnav" aria-label="Phân mục chi tiết tòa nhà" hidden>
+              <button type="button" class="building-detail-subnav-btn active" data-building-sub="overview" onclick="switchBuildingDetailSubtab('overview')">Tổng quan</button>
+              <button type="button" class="building-detail-subnav-btn" data-building-sub="floors" onclick="switchBuildingDetailSubtab('floors')">Tầng</button>
+              <button type="button" class="building-detail-subnav-btn" data-building-sub="versions" onclick="switchBuildingDetailSubtab('versions')">Phiên bản</button>
+              <button type="button" class="building-detail-subnav-btn" data-building-sub="qr" onclick="switchBuildingDetailSubtab('qr')">Mã QR</button>
+              <button type="button" class="building-detail-subnav-btn" data-building-sub="settings" onclick="switchBuildingDetailSubtab('settings')">Cài đặt</button>
+            </nav>
+            <div id="buildingDetailBody" class="building-detail-body" aria-live="polite">
+              <p class="analytics-tab-intro">Chọn một tòa từ tab <button type="button" class="linkish" onclick="switchTab('buildings')">Tòa nhà</button> để xem hồ sơ chi tiết.</p>
+            </div>
+          </div>
         </div>
 
         <!-- ===== TAB: BUILDINGS ===== -->
-        <div id="tab-buildings" class="tab-content">
+        <div id="tab-buildings" class="tab-content" style="display:none;">
             <div class="buildings-section">
                 <div class="section-header">
                     <h3>🏢 Danh Sách Tòa Nhà</h3>
                     <button id="btnAddBuilding" class="btn-add" onclick="openAddBuildingModal()">+ Thêm Tòa Nhà Mới</button>
                 </div>
+
+                <!-- Personal Workspace: chỉ REGISTERED_USER -->
+                <div id="personalWsBar" style="display:none; margin-bottom:16px;">
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                        <strong style="color:#5b3fbf; font-size:15px;">🚀 Không gian cá nhân</strong>
+                        <span id="personalPlanBadge" style="display:none; padding:2px 10px; border-radius:12px; font-size:12px; font-weight:600;"></span>
+                    </div>
+                    <div class="pws-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; align-items:stretch;">
+                        <!-- Thẻ 1: Gói hiện tại -->
+                        <div style="background:#fff; border:1px solid #eaecf0; border-radius:12px; padding:16px 18px; display:flex; flex-direction:column;">
+                            <div style="font-size:11px; letter-spacing:.5px; color:#98a2b3; text-transform:uppercase; margin-bottom:6px;">Gói hiện tại</div>
+                            <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;">
+                                <span id="personalCurrentPlanName" style="font-size:22px; font-weight:700; color:#1d2939;">FREE</span>
+                                <span id="personalCurrentPrice" style="font-size:13px; color:#667085;">Miễn phí</span>
+                            </div>
+                            <p id="personalPlanExpiry" style="margin:8px 0 0; font-size:12px; color:#667085;"></p>
+                            <div id="personalQuotaList" style="margin-top:12px; font-size:12px; color:#475467; line-height:1.8;"></div>
+                        </div>
+                        <!-- Các gói nâng cấp: mỗi gói 1 thẻ riêng (JS đổ vào) -->
+                        <div id="personalUpgradePlans" style="display:contents;"></div>
+                        <!-- Thẻ tổ chức (chỉ hiện khi đã có gói cá nhân trả phí) -->
+                        <div id="personalOrgUpgradeCard" style="background:#f5f8ff; border:1px solid #d6e4ff; border-radius:12px; padding:16px 18px; display:none; flex-direction:column;">
+                            <div style="font-size:11px; letter-spacing:.5px; color:#3b6fd4; text-transform:uppercase; margin-bottom:6px;">Cộng tác nhóm</div>
+                            <div style="font-size:22px; font-weight:700; color:#1d2939;">Tổ chức</div>
+                            <p id="personalOrgUpgradeDesc" style="margin:8px 0 14px; font-size:13px; color:#667085; flex:1;">Tạo tổ chức để quản lý nhiều thành viên, phân quyền &amp; cộng tác — hoặc tham gia một tổ chức có sẵn.</p>
+                            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                <button id="btnCreateOrgCheckout" class="btn-create" style="flex:1; min-width:150px;" onclick="openCreateOrgCheckout()">🏛️ Nâng cấp lên tổ chức</button>
+                                <button class="btn-add" style="background:#8e44ad;" onclick="openJoinOrgModal()">🤝 Tham gia</button>
+                            </div>
+                        </div>
+                        <div id="personalOrgLockedCard" style="background:#f8f9fb; border:1px dashed #d0d5dd; border-radius:12px; padding:16px 18px; display:none; flex-direction:column;">
+                            <div style="font-size:11px; letter-spacing:.5px; color:#98a2b3; text-transform:uppercase; margin-bottom:6px;">Cộng tác nhóm</div>
+                            <div style="font-size:22px; font-weight:700; color:#98a2b3;">Tổ chức</div>
+                            <p style="margin:8px 0 14px; font-size:13px; color:#667085; flex:1;">Tạo tổ chức yêu cầu gói cá nhân trả phí (vd. <strong>PRO</strong>). Bạn vẫn có thể xin tham gia tổ chức có sẵn.</p>
+                            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                <button type="button" class="btn-edit" style="flex:1; min-width:150px;" onclick="document.getElementById('personalUpgradePlans')?.scrollIntoView({behavior:'smooth',block:'nearest'})">Mở khóa tạo tổ chức</button>
+                                <button class="btn-add" style="background:#8e44ad;" onclick="openJoinOrgModal()">🤝 Tham gia</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="myJoinRequests" style="margin-top:12px; font-size:13px; color:#555;"></div>
+                    <div id="personalInvoicesPanel" style="margin-top:16px; background:#fff; border:1px solid #eaecf0; border-radius:12px; padding:14px 16px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;">
+                            <strong style="color:#1d2939; font-size:14px;">Hóa đơn thanh toán của bạn</strong>
+                            <button type="button" class="btn-edit" style="padding:4px 10px; font-size:12px;" onclick="loadPersonalBilling()">Làm mới</button>
+                        </div>
+                        <p style="margin:0 0 10px; font-size:12px; color:#667085;">Lịch sử nâng cấp / gia hạn gói cá nhân qua ví TPTPbank.</p>
+                        <div id="personalInvoicesList" style="font-size:13px; color:#475467;">Đang tải…</div>
+                    </div>
+                </div>
+
+                <!-- Yêu cầu tham gia: chỉ ORG_ADMIN -->
+                <div id="orgJoinPanel" style="display:none; background:#fffdf5; border:1px solid #f0e6c8; border-radius:10px; padding:14px 16px; margin-bottom:14px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+                        <strong style="color:#b8860b;">📥 Yêu cầu tham gia tổ chức</strong>
+                        <button class="btn-add" style="background:#b8860b; padding:6px 12px;" onclick="loadOrgJoinRequests()">Làm mới</button>
+                    </div>
+                    <div id="orgJoinRequestsList" style="margin-top:10px;"></div>
+                </div>
+
                 <div class="filter-bar" style="display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin-bottom:10px;">
                   <div class="super-admin-only">
                     <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Tổ chức</label>
@@ -111,7 +615,7 @@
                             <th class="org-sortable" data-sort-key="address" title="Sắp xếp theo địa chỉ">Địa Chỉ <span class="org-sort-indicator" data-for="address" aria-hidden="true"></span></th>
                             <th class="org-sortable" data-sort-key="floors" title="Sắp xếp theo số tầng">Số Tầng <span class="org-sort-indicator" data-for="floors" aria-hidden="true"></span></th>
                             <th class="org-sortable" data-sort-key="status" title="Sắp xếp theo trạng thái">Trạng Thái <span class="org-sort-indicator" data-for="status" aria-hidden="true"></span></th>
-                            <th class="org-sortable" data-sort-key="organization" title="Sắp xếp theo tổ chức">Tổ Chức <span class="org-sort-indicator" data-for="organization" aria-hidden="true"></span></th>
+                            <th class="org-sortable bcol-org" data-sort-key="organization" title="Sắp xếp theo tổ chức">Tổ Chức <span class="org-sort-indicator" data-for="organization" aria-hidden="true"></span></th>
                             <th class="org-sortable" data-sort-key="updated" title="Sắp xếp theo ngày cập nhật">Cập Nhật <span class="org-sort-indicator" data-for="updated" aria-hidden="true"></span></th>
                             <th>Thao Tác</th>
                         </tr>
@@ -128,13 +632,15 @@
         <!-- ===== TAB: USERS (chỉ Super Admin) ===== -->
         <div id="tab-users" class="tab-content" style="display:none;">
             <div class="admin-section user-management-section">
-                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:15px; flex-wrap:wrap; gap:10px;">
+                <div class="user-page-header">
                     <div>
                         <h3>👑 Quản Lý Tài Khoản</h3>
                         <p style="font-size:13px; color:#666; margin-top:4px;">Duyệt tài khoản đăng ký, quản lý trạng thái và phân quyền người dùng.</p>
                     </div>
+                    <div class="user-page-actions">
                     <button id="btnAddUser" class="btn-add" onclick="openCreateUserModal()" style="display:none;">+ Thêm Tài Khoản</button>
-<button class="btn-add" onclick="fetchUsers()">🔄 Làm mới</button>
+                      <button class="btn-edit" onclick="fetchUsers()">Làm mới</button>
+                    </div>
                 </div>
 
                 <div class="filter-bar" style="display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin-bottom:10px;">
@@ -152,17 +658,19 @@
     <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Vai trò</label>
     <select id="filterUserRole" onchange="applyUserFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:130px;">
       <option value="">Tất cả</option>
-      <option value="SUPER_ADMIN">Super Admin</option>
-      <option value="ORG_ADMIN">Org Admin</option>
-      <option value="BUILDING_ADMIN">Building Admin</option>
+      <option value="SUPER_ADMIN">Quản trị hệ thống</option>
+      <option value="FINANCE_ADMIN">Quản trị tài chính</option>
+      <option value="ORG_ADMIN">Quản trị tổ chức</option>
+      <option value="BUILDING_ADMIN">Quản trị tòa nhà</option>
+      <option value="REGISTERED_USER">Tài khoản cá nhân</option>
     </select>
   </div>
   <div>
     <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Trạng thái</label>
-    <select id="filterUserStatus" onchange="applyUserFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:130px;">
+    <select id="filterUserStatus" onchange="applyUserFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:160px;">
       <option value="">Tất cả</option>
       <option value="active">Đang hoạt động</option>
-      <option value="inactive">Đã khóa</option>
+      <option value="inactive">Đã khóa / chờ duyệt</option>
     </select>
   </div>
   <div>
@@ -185,8 +693,10 @@
     </select>
   </div>
   <button onclick="applyUserFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #3498db; background:#3498db; color:white; cursor:pointer;">Lọc</button>
+  <button type="button" class="super-admin-only" onclick="filterPendingAccounts()" style="padding:6px 14px; border-radius:6px; border:1px solid #e67e22; background:#fff7ed; color:#c2410c; cursor:pointer;" title="Tài khoản is_active=false (kể cả Google chờ duyệt) — không nằm ở Hồ sơ đăng ký">Chờ duyệt / khóa</button>
   <button onclick="clearUserFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #ddd; background:white; cursor:pointer;">Xóa lọc</button>
 </div>
+<p id="usersFilterHint" class="org-detail-hint" style="margin:8px 0 0;">Tài khoản Google chờ duyệt nằm ở đây (Trạng thái = Đã khóa / chờ duyệt), <strong>không</strong> nằm ở tab Hồ sơ đăng ký.</p>
 <div class="users-table-wrapper" style="overflow-x:auto;">
                     <table class="users-table dash-sort-table" id="usersTable" style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
                         <thead id="usersTableHead" style="background:#34495e; color:white;">
@@ -211,19 +721,26 @@
             </div>
         </div>
 
-        <!-- ===== TAB: REGISTRATIONS (Super Admin duyệt hồ sơ) ===== -->
+        <!-- ===== TAB: REGISTRATIONS (Super Admin duy?t h? so) ===== -->
 <div id="tab-registrations" class="tab-content" style="display:none;">
   <div class="admin-section">
-    <div class="section-header org-section-header">
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; width:100%;">
-        <h3>📝 Hồ Sơ Đăng Ký Tổ Chức</h3>
-        <button class="btn-add" onclick="fetchRegistrations()">🔄 Làm mới</button>
-      </div>
-      <p style="font-size:13px; color:#666; margin:0;">Khách gửi form công khai → chờ duyệt → tạo tổ chức + quản trị viên.</p>
-      <div class="filter-bar org-filter-bar" style="margin-top:10px;">
+    <div class="section-header registration-page-header">
+      <div class="registration-title-row">
         <div>
-          <label style="font-size:12px; color:#666;">Trạng thái</label>
-          <select id="filterRegStatus" onchange="renderRegistrationsFromCache()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd;">
+        <h3>📝 Hồ Sơ Đăng Ký Tổ Chức</h3>
+          <p>Tiếp nhận, kiểm tra và phê duyệt yêu cầu tạo tổ chức mới.</p>
+      </div>
+        <button class="btn-edit" onclick="fetchRegistrations()">Làm mới</button>
+      </div>
+    </div>
+    <div class="registration-toolbar">
+      <div class="registration-process">
+        <span>Gửi hồ sơ</span><i>›</i><span>Chờ duyệt</span><i>›</i><span>Tạo tổ chức và quản trị viên</span>
+      </div>
+      <div class="registration-filter">
+        <div>
+          <label for="filterRegStatus">Trạng thái hồ sơ</label>
+          <select id="filterRegStatus" onchange="renderRegistrationsFromCache()">
             <option value="">Tất cả</option>
             <option value="PENDING" selected>Chờ duyệt</option>
             <option value="APPROVED">Đã duyệt</option>
@@ -244,7 +761,7 @@
             <th>Nguồn</th>
             <th>Trạng thái</th>
             <th>Ngày gửi</th>
-            <th>Thao tác</th>
+            <th class="org-actions-header">Thao tác</th>
           </tr>
         </thead>
         <tbody id="registrationsList">
@@ -258,6 +775,7 @@
         <!-- ===== TAB: ORGANIZATIONS (chỉ Super Admin) ===== -->
 <div id="tab-organizations" class="tab-content" style="display:none;">
   <div class="admin-section">
+    <div id="orgListView">
     <div class="section-header">
       <h3>🏛️ Quản lý tổ chức</h3>
       <button id="btnAddOrg" class="btn-add super-admin-only" onclick="openAddOrgModal()" style="background:#8e44ad; color:white;">+ Thêm Tổ Chức</button>
@@ -299,7 +817,7 @@
           <option value="plan">Gói</option>
           <option value="status">Trạng thái</option>
           <option value="buildings">Tòa nhà</option>
-          <option value="users">Số user</option>
+          <option value="users">Số tài khoản</option>
           <option value="created">Ngày tạo</option>
         </select>
       </div>
@@ -323,7 +841,7 @@
             <th class="org-sortable" data-sort-key="plan" title="Sắp xếp theo gói">Gói <span class="org-sort-indicator" data-for="plan" aria-hidden="true"></span></th>
             <th class="org-sortable" data-sort-key="status" title="Sắp xếp theo trạng thái">Trạng thái <span class="org-sort-indicator" data-for="status" aria-hidden="true"></span></th>
             <th class="org-sortable" data-sort-key="buildings" title="Sắp xếp theo số tòa">Tòa nhà <span class="org-sort-indicator" data-for="buildings" aria-hidden="true"></span></th>
-            <th class="org-sortable" data-sort-key="users" title="Sắp xếp theo số user">Số user <span class="org-sort-indicator" data-for="users" aria-hidden="true"></span></th>
+            <th class="org-sortable" data-sort-key="users" title="Sắp xếp theo số tài khoản">Số tài khoản <span class="org-sort-indicator" data-for="users" aria-hidden="true"></span></th>
             <th>Quản trị viên</th>
             <th class="org-sortable" data-sort-key="created" title="Sắp xếp theo ngày tạo">Ngày tạo <span class="org-sort-indicator" data-for="created" aria-hidden="true"></span></th>
             <th>Thao tác</th>
@@ -335,10 +853,31 @@
       </table>
     </div>
     <div id="organizationsPagination" class="table-pagination"></div>
+    </div><!-- /orgListView -->
+
+    <div id="orgDetailPage" class="org-detail-page" hidden>
+      <div class="org-detail-hero-header">
+        <button type="button" class="linkish org-detail-back" onclick="closeOrgDetailPage()">← Danh sách tổ chức</button>
+        <div class="org-detail-hero-title-row">
+          <h3 id="orgDetailPageTitle">Chi tiết tổ chức</h3>
+          <span id="orgDetailPageBadges" class="org-detail-hero-badges"></span>
+        </div>
+        <div id="orgDetailPageMeta" class="org-detail-hero-meta"></div>
+      </div>
+      <nav class="org-detail-subnav" aria-label="Phân mục chi tiết tổ chức">
+        <button type="button" class="org-detail-subnav-btn active" data-org-sub="overview" onclick="switchOrgDetailSubtab('overview')">Tổng quan</button>
+        <button type="button" class="org-detail-subnav-btn" data-org-sub="buildings" onclick="switchOrgDetailSubtab('buildings')">Tòa nhà</button>
+        <button type="button" class="org-detail-subnav-btn" data-org-sub="users" onclick="switchOrgDetailSubtab('users')">Người dùng</button>
+        <button type="button" class="org-detail-subnav-btn" data-org-sub="subscription" onclick="switchOrgDetailSubtab('subscription')">Gói &amp; Thanh toán</button>
+        <button type="button" class="org-detail-subnav-btn" data-org-sub="activity" onclick="switchOrgDetailSubtab('activity')">Hoạt động</button>
+        <button type="button" class="org-detail-subnav-btn" data-org-sub="settings" onclick="switchOrgDetailSubtab('settings')">Cài đặt</button>
+      </nav>
+      <div id="orgDetailPageBody" class="org-detail-page-body"></div>
+    </div>
   </div>
 </div>
 
-<!-- ===== TAB: BILLING / SUBSCRIPTION ===== -->
+<!-- ===== TAB: BILLING / SUBSCRIPTION (AD10 � list-first) ===== -->
 <div id="tab-billing" class="tab-content" style="display:none;">
   <div class="admin-section billing-tab-section">
     <div class="section-header">
@@ -346,82 +885,334 @@
       <p class="billing-tab-intro">Quản lý subscription, hóa đơn và chu kỳ gói. Hệ thống tự theo dõi hạn qua scheduler + webhook.</p>
     </div>
     <div class="billing-tab-toolbar">
-      <div>
-        <label class="billing-field-label">Chọn tổ chức</label>
-        <select id="billingOrgSelect" onchange="loadBillingTab(this.value)" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd; min-width:280px;">
-          <option value="">— Chọn tổ chức —</option>
+      <div class="billing-search-field">
+        <label class="billing-field-label" for="billingOrgKeyword">Tên tổ chức</label>
+        <input id="billingOrgKeyword" type="search" placeholder="Nhập tên tổ chức..." oninput="renderBillingOrgList(true)">
+      </div>
+      <div class="billing-plan-filter">
+        <label class="billing-field-label" for="billingPlanFilter">Gói đăng ký</label>
+        <select id="billingPlanFilter" onchange="renderBillingOrgList(true)">
+          <option value="">Tất cả gói</option>
+          <option value="FREE">Miễn phí</option>
+          <option value="PRO">Pro</option>
+          <option value="ENTERPRISE">Doanh nghiệp</option>
         </select>
       </div>
-      <button type="button" class="btn-edit" onclick="loadBillingTab()">Làm mới</button>
+      <select id="billingOrgSelect" onchange="loadBillingTab(this.value)" hidden aria-hidden="true" tabindex="-1">
+        <option value="">— Xem danh sách —</option>
+      </select>
+      <button type="button" class="btn-edit" id="btnBillingShowList" onclick="showBillingOrgList()" title="Quay lại danh sách tổ chức">Danh sách</button>
+      <button type="button" class="btn-edit" onclick="refreshBillingTab()" title="Làm mới">Làm mới</button>
     </div>
-    <div id="billingTabBody" class="billing-tab-body">
+    <div id="billingOrgListPanel" class="billing-org-list-panel"></div>
+    <div id="billingOrgsPagination" class="table-pagination"></div>
+    <div id="billingTabBody" class="billing-tab-body" style="display:none;">
       <p class="billing-tab-empty">Chọn một tổ chức để xem và quản lý gói đăng ký.</p>
     </div>
   </div>
 </div>
 
+<!-- ===== TAB: PLANS CATALOG (AD40) ===== -->
+<div id="tab-plans" class="tab-content" style="display:none;">
+  <div class="admin-section plans-tab-section">
+    <div class="section-header plans-page-header">
+      <div>
+        <h3>Danh mục gói dịch vụ</h3>
+        <p class="analytics-tab-intro">Quản lý giá, hạn mức và trạng thái các gói FREE / PRO / ENTERPRISE. Tổ chức đăng ký dùng các gói này.</p>
+      </div>
+      <div class="plans-page-actions">
+        <button type="button" class="btn-edit" onclick="loadPlansTab()">Làm mới</button>
+        <button type="button" class="btn-add" onclick="openPlanEditor()">+ Thêm gói</button>
+      </div>
+    </div>
+    <div id="plansCatalogGrid" class="plans-catalog-grid" aria-live="polite"></div>
+  </div>
+</div>
+
 <!-- ===== TAB: ANALYTICS (Phase 6) ===== -->
 <div id="tab-analytics" class="tab-content" style="display:none;">
-  <div class="admin-section analytics-tab-section">
-    <div class="section-header analytics-header-row">
+  <div class="admin-section analytics-tab-section analytics-saas">
+    <div class="section-header analytics-header-row analytics-saas-header">
       <div>
-        <h3>📊 Phân tích</h3>
-        <p class="analytics-tab-intro" id="analyticsIntro">Xu hướng hoạt động và cảnh báo vận hành theo thời gian.</p>
+        <h3>Phân tích hệ thống</h3>
+        <p class="analytics-tab-intro" id="analyticsIntro">Tăng trưởng, mức sử dụng và hiệu quả kinh doanh của nền tảng.</p>
       </div>
       <div class="analytics-toolbar">
-        <label class="billing-field-label">Khoảng thời gian</label>
-        <select id="analyticsRangeSelect" onchange="loadAnalyticsTab()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
+        <label class="billing-field-label" for="analyticsRangeSelect">Khoảng thời gian</label>
+        <select id="analyticsRangeSelect" onchange="onAnalyticsRangeChange()">
           <option value="7d">7 ngày</option>
           <option value="30d" selected>30 ngày</option>
           <option value="90d">90 ngày</option>
+          <option value="1y">1 nam</option>
+          <option value="custom">Tùy chọn</option>
         </select>
+        <div id="analyticsCustomRange" class="analytics-custom-range" hidden>
+          <input type="date" id="analyticsFromDate" aria-label="Từ ngày">
+          <span>đến</span>
+          <input type="date" id="analyticsToDate" aria-label="Đến ngày">
+          <button type="button" class="btn-create" onclick="loadAnalyticsTab()">Áp dụng</button>
+        </div>
         <button type="button" class="btn-edit" onclick="loadAnalyticsTab()">Làm mới</button>
       </div>
     </div>
+
+    <section class="analytics-saas-section" aria-labelledby="analyticsKpiTitle">
+      <div class="analytics-saas-section-head">
+        <div><h4 id="analyticsKpiTitle">Tổng quan chỉ số</h4><p>So sánh với khoảng thời gian liền trước.</p></div>
+    </div>
     <div id="analyticsSummaryCards" class="analytics-summary-cards"></div>
-    <div class="analytics-charts-grid">
-      <div class="analytics-chart-card">
-        <h4>Đăng nhập theo ngày</h4>
-        <div id="analyticsLoginChart" class="analytics-bar-chart"></div>
+    </section>
+
+    <section class="analytics-saas-section" aria-labelledby="analyticsRevenueTitle">
+      <div class="analytics-saas-section-head">
+        <div><h4 id="analyticsRevenueTitle">Xu hướng doanh thu</h4><p>Doanh thu hóa đơn đã thanh toán theo thời gian.</p></div>
+        <button type="button" class="linkish analytics-drill-btn" onclick="analyticsOpenInvoices()">Xem hóa đơn →</button>
       </div>
-      <div class="analytics-chart-card">
-        <h4>Xuất bản bản đồ theo ngày</h4>
-        <div id="analyticsPublishChart" class="analytics-bar-chart"></div>
+      <div class="analytics-chart-card analytics-chart-card--hero">
+        <div id="analyticsRevenueTrend" class="analytics-line-chart"></div>
+      </div>
+    </section>
+
+    <section class="analytics-saas-section" aria-labelledby="analyticsUsageTitle">
+      <div class="analytics-saas-section-head">
+        <div><h4 id="analyticsUsageTitle">Mức sử dụng nền tảng</h4><p>Đăng nhập, xuất bản bản đồ, quét mã QR và yêu cầu tìm đường.</p></div>
+      </div>
+      <div class="analytics-saas-grid analytics-saas-grid--2">
+        <div class="analytics-chart-card"><div class="analytics-card-head"><h4>Đang nháp</h4><button type="button" class="linkish" onclick="switchTab('logs')">Xem nhật ký</button></div><div id="analyticsLoginChart" class="analytics-line-chart"></div></div>
+        <div class="analytics-chart-card"><div class="analytics-card-head"><h4>Xuất bản bản đồ</h4><button type="button" class="linkish" onclick="switchTab('buildings')">Xem tòa nhà</button></div><div id="analyticsPublishChart" class="analytics-column-chart"></div></div>
+        <div class="analytics-chart-card"><div class="analytics-card-head"><h4>Quét mã QR</h4></div><div id="analyticsQrChart" class="analytics-column-chart"></div></div>
+        <div class="analytics-chart-card"><div class="analytics-card-head"><h4>Yêu cầu tìm đường</h4></div><div id="analyticsNavigationChart" class="analytics-column-chart"></div></div>
+      </div>
+    </section>
+
+    <section class="analytics-saas-section" aria-labelledby="analyticsBusinessTitle">
+      <div class="analytics-saas-section-head"><div><h4 id="analyticsBusinessTitle">Kinh doanh</h4><p>Cơ cấu doanh thu, gói đăng ký và chuyển đổi khách hàng.</p></div></div>
+      <div id="analyticsBusinessMetrics" class="analytics-business-metrics"></div>
+      <div class="analytics-saas-grid analytics-saas-grid--3">
+        <div class="analytics-chart-card"><div class="analytics-card-head"><h4>Doanh thu theo gói</h4></div><div id="analyticsRevenueByPlan" class="analytics-donut-wrap"></div></div>
+        <div class="analytics-chart-card"><div class="analytics-card-head"><h4>Xu hướng đăng ký gói</h4></div><div id="analyticsSubscriptionTrend" class="analytics-line-chart"></div></div>
+        <div class="analytics-chart-card"><div class="analytics-card-head"><h4>Phễu chuyển đổi</h4></div><div id="analyticsConversionFunnel" class="analytics-funnel"></div></div>
+      </div>
+    </section>
+
+    <section class="analytics-saas-section" aria-labelledby="analyticsGrowthTitle">
+      <div class="analytics-saas-section-head"><div><h4 id="analyticsGrowthTitle">Tăng trưởng</h4><p>Tài nguyên mới được tạo trong khoảng đã chọn.</p></div></div>
+      <div class="analytics-saas-grid analytics-saas-grid--2">
+        <div class="analytics-chart-card"><h4>Tổ chức mới</h4><div id="analyticsOrgGrowth" class="analytics-line-chart"></div></div>
+        <div class="analytics-chart-card"><h4>Tòa nhà mới</h4><div id="analyticsBuildingGrowth" class="analytics-line-chart"></div></div>
+        <div class="analytics-chart-card"><h4>Người dùng mới</h4><div id="analyticsUserGrowth" class="analytics-line-chart"></div></div>
+        <div class="analytics-chart-card"><h4>Bản đồ tầng mới</h4><div id="analyticsMapGrowth" class="analytics-line-chart"></div></div>
+      </div>
+    </section>
+
+    <section class="analytics-saas-section" aria-labelledby="analyticsRankingTitle">
+      <div class="analytics-saas-section-head"><div><h4 id="analyticsRankingTitle">Xếp hạng nổi bật</h4><p>Tổ chức, tòa nhà và gói tạo nhiều giá trị nhất.</p></div></div>
+      <div class="analytics-saas-grid analytics-saas-grid--3">
+        <div class="analytics-chart-card analytics-ranking-card"><h4>Tổ chức hàng đầu</h4><div id="analyticsTopOrganizations"></div></div>
+        <div class="analytics-chart-card analytics-ranking-card"><h4>Tòa nhà hàng đầu</h4><div id="analyticsTopBuildings"></div></div>
+        <div class="analytics-chart-card analytics-ranking-card"><h4>Gói có doanh thu cao</h4><div id="analyticsTopPlans"></div></div>
+      </div>
+    </section>
+
+    <section class="analytics-saas-section" aria-labelledby="analyticsInsightTitle">
+      <div class="analytics-saas-section-head"><div><h4 id="analyticsInsightTitle">Nhận định</h4><p>Tóm tắt biến động và vấn đề đáng chú ý từ dữ liệu.</p></div></div>
+      <div id="analyticsInsights" class="analytics-insights"></div>
+    </section>
+  </div>
+</div>
+
+<!-- ===== TAB: WEBSITE CMS (Landing � Super only) ===== -->
+<div id="tab-website" class="tab-content" style="display:none;">
+  <div class="admin-section website-cms-section">
+    <div class="section-header analytics-header-row">
+      <div>
+        <h3 id="websiteCmsTitle">Website</h3>
+        <p class="analytics-tab-intro" id="websiteCmsIntro">Quản lý Landing cố định (5 trang) – không phải CMS kiểu WordPress.</p>
+      </div>
+      <div class="analytics-toolbar" id="websiteCmsToolbar"></div>
+    </div>
+
+    <div id="website-panel-pages" class="website-subpanel is-active" data-website-panel="pages">
+      <div id="websitePagesList" class="website-pages-list"></div>
+      <div id="websitePageEditor" class="website-page-editor" hidden>
+        <div class="website-editor-top">
+          <button type="button" class="btn-edit" onclick="WebsiteCms.closeEditor()">← Danh sách trang</button>
+          <div class="website-editor-actions">
+            <span id="websitePageStatus" class="resource-status"></span>
+            <button type="button" class="btn-edit" onclick="WebsiteCms.saveDraft()">Lưu nháp</button>
+            <button type="button" class="btn-create" onclick="WebsiteCms.publishPage()">Xuất bản</button>
+          </div>
+        </div>
+        <div class="website-editor-grid">
+          <aside class="website-editor-sections">
+            <h4>Section</h4>
+            <div id="websiteSectionList"></div>
+          </aside>
+          <div class="website-editor-preview">
+            <h4>Preview</h4>
+            <div id="websitePreview" class="website-preview-frame"></div>
+          </div>
+          <aside class="website-editor-props">
+            <h4>Properties</h4>
+            <div id="websitePropsForm"></div>
+          </aside>
+        </div>
       </div>
     </div>
-    <div class="analytics-bottom-grid">
-      <div class="analytics-chart-card">
-        <h4>Phân bố gói</h4>
-        <div id="analyticsPlanDist" class="analytics-plan-dist"></div>
+
+    <div id="website-panel-banner" class="website-subpanel" data-website-panel="banner" hidden>
+      <form id="websiteBannerForm" class="website-form-grid" onsubmit="return WebsiteCms.saveBanner(event)">
+        <div><label>Tiêu đề Banner</label><input id="wbTitle" type="text"></div>
+        <div class="span-2"><label>Mô tả Hero</label><textarea id="wbSubtitle" rows="3"></textarea></div>
+        <div><label>Hero Image URL</label><input id="wbImage" type="text"></div>
+        <div><label>Hero Video URL</label><input id="wbVideo" type="text"></div>
+        <div><label>CTA Button</label><input id="wbCtaLabel" type="text"></div>
+        <div><label>CTA Link</label><input id="wbCtaHref" type="text"></div>
+        <div class="span-2"><label>Background</label><input id="wbBackground" type="text"></div>
+        <div><button type="submit" class="btn-create">Luu Banner &amp; Hero</button></div>
+      </form>
+    </div>
+
+    <div id="website-panel-navigation" class="website-subpanel" data-website-panel="navigation" hidden>
+      <div class="website-panel-actions">
+        <button type="button" class="btn-edit" onclick="WebsiteCms.addNavItem()">+ Thêm mục</button>
+        <button type="button" class="btn-create" onclick="WebsiteCms.saveNavigation()">Lưu thứ tự menu</button>
       </div>
-      <div class="analytics-chart-card">
-        <h4 id="analyticsPaidMonthTitle">Doanh thu PAID theo tháng</h4>
-        <div id="analyticsPaidMonth" class="analytics-paid-month"></div>
+      <div id="websiteNavList" class="website-nav-list"></div>
+    </div>
+
+    <div id="website-panel-media" class="website-subpanel" data-website-panel="media" hidden>
+      <form id="websiteMediaForm" class="website-form-grid" onsubmit="return WebsiteCms.addMedia(event)">
+        <div><label>Tên</label><input id="wmName" required type="text"></div>
+        <div><label>URL</label><input id="wmUrl" required type="url" placeholder="https://... hoặc /uploads/..."></div>
+        <div>
+          <label>Loại</label>
+          <select id="wmKind">
+            <option value="logo">Logo</option>
+            <option value="icon">Icon</option>
+            <option value="image" selected>Hình</option>
+            <option value="video">Video</option>
+            <option value="pdf">PDF</option>
+            <option value="other">Khác</option>
+          </select>
+        </div>
+        <div><label>Alt</label><input id="wmAlt" type="text"></div>
+        <div><button type="submit" class="btn-create">Thêm media</button></div>
+      </form>
+      <div id="websiteMediaList" class="website-media-list"></div>
+    </div>
+
+    <div id="website-panel-forms" class="website-subpanel" data-website-panel="forms" hidden>
+      <div id="websiteContactCrm" class="website-contact-crm">
+        <div class="website-contact-toolbar">
+          <div class="website-contact-filters" id="websiteContactFilters"></div>
+          <input id="websiteContactSearch" type="search" placeholder="Tìm tên, email, công ty…" oninput="WebsiteCms.filterContacts()">
+          <select id="websiteContactTypeFilter" onchange="WebsiteCms.filterContacts()">
+            <option value="ALL">Tất cả loại</option>
+            <option value="DEMO">Đăng ký Demo</option>
+            <option value="CONSULT">Tư vấn triển khai</option>
+            <option value="PRICING">Báo giá</option>
+            <option value="SUPPORT">Hỗ trợ kỹ thuật</option>
+            <option value="BUG">Báo lỗi</option>
+            <option value="OTHER">Khác</option>
+          </select>
+          <button type="button" class="btn-edit" onclick="WebsiteCms.loadForms()">Làm mới</button>
+        </div>
+        <div id="websiteContactStats" class="website-contact-stats"></div>
+        <div class="website-contact-layout">
+          <div id="websiteContactList" class="website-contact-list"></div>
+          <div id="websiteContactDetail" class="website-contact-detail">
+            <p class="analytics-empty">Chọn một liên hệ để xem chi tiết.</p>
+          </div>
+        </div>
       </div>
     </div>
-    <div id="analyticsBillingHint" class="analytics-billing-hint"></div>
-    <div class="analytics-chart-card" style="margin-top:16px;">
-      <h4>Cảnh báo</h4>
-      <div id="analyticsAlerts" class="analytics-alerts"></div>
+
+    <div id="contactReplyModal" class="modal" style="display:none;">
+      <div class="modal-content" style="max-width:560px;">
+        <h3>Phản hồi liên hệ</h3>
+        <form id="contactReplyForm" onsubmit="return WebsiteCms.sendReply(event)">
+          <label class="billing-field-label">Tới</label>
+          <input id="contactReplyTo" type="email" readonly style="width:100%;margin-bottom:10px;">
+          <label class="billing-field-label">Tiêu đề</label>
+          <input id="contactReplySubject" type="text" style="width:100%;margin-bottom:10px;">
+          <label class="billing-field-label">Nội dung</label>
+          <textarea id="contactReplyBody" rows="8" required style="width:100%;margin-bottom:12px;"></textarea>
+          <div class="modal-actions">
+            <button type="submit" class="btn-create">Gửi phản hồi</button>
+            <button type="button" class="btn-logout" onclick="WebsiteCms.closeReplyModal()">Hủy</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="website-panel-seo" class="website-subpanel" data-website-panel="seo" hidden>
+      <form id="websiteSeoForm" class="website-form-grid" onsubmit="return WebsiteCms.saveSeo(event)">
+        <div class="span-2"><label>Meta Title</label><input id="wsTitle" type="text"></div>
+        <div class="span-2"><label>Description</label><textarea id="wsDescription" rows="3"></textarea></div>
+        <div><label>OG Image</label><input id="wsOg" type="text"></div>
+        <div><label>Keywords</label><input id="wsKeywords" type="text"></div>
+        <div><label>robots</label><input id="wsRobots" type="text"></div>
+        <div><label>favicon</label><input id="wsFavicon" type="text"></div>
+        <div class="span-2"><label>Analytics Code</label><textarea id="wsAnalytics" rows="4" placeholder="&lt;script&gt;...&lt;/script&gt;"></textarea></div>
+        <div><button type="submit" class="btn-create">Luu SEO</button></div>
+      </form>
+    </div>
+
+    <div id="website-panel-theme" class="website-subpanel" data-website-panel="theme" hidden>
+      <form id="websiteThemeForm" class="website-form-grid" onsubmit="return WebsiteCms.saveTheme(event)">
+        <div><label>Primary Color</label><input id="wtPrimary" type="color"></div>
+        <div><label>Secondary Color</label><input id="wtSecondary" type="color"></div>
+        <div>
+          <label>Dark / Light</label>
+          <select id="wtMode"><option value="light">Light</option><option value="dark">Dark</option></select>
+        </div>
+        <div><label>Font</label><input id="wtFont" type="text"></div>
+        <div><label>Border Radius</label><input id="wtRadius" type="text" placeholder="12px"></div>
+        <div><button type="submit" class="btn-create">Luu Theme</button></div>
+      </form>
+    </div>
+
+    <div id="website-panel-settings" class="website-subpanel" data-website-panel="settings" hidden>
+      <form id="websiteSettingsForm" class="website-form-grid" onsubmit="return WebsiteCms.saveSettings(event)">
+        <div><label>Tên website</label><input id="wsetName" type="text"></div>
+        <div><label>Logo URL</label><input id="wsetLogo" type="text"></div>
+        <div><label>Email</label><input id="wsetEmail" type="email"></div>
+        <div><label>Hotline</label><input id="wsetHotline" type="text"></div>
+        <div><label>Facebook</label><input id="wsetFacebook" type="text"></div>
+        <div><label>Youtube</label><input id="wsetYoutube" type="text"></div>
+        <div class="span-2"><label>Google Map</label><input id="wsetMap" type="text"></div>
+        <div class="span-2"><label>Footer</label><textarea id="wsetFooter" rows="2"></textarea></div>
+        <div><button type="submit" class="btn-create">Lưu cài đặt</button></div>
+      </form>
     </div>
   </div>
 </div>
 
-<!-- ===== TAB: FINANCE (Phase 9 — Super only) ===== -->
-<div id="tab-finance" class="tab-content" style="display:none;">
-  <div class="admin-section analytics-tab-section">
-    <div class="section-header analytics-header-row">
+<!-- ===== TAB: FINANCE (Phase 9 — Super Admin Thu–Chi) ===== -->
+<div id="tab-finance" class="tab-content finance-tab" style="display:none;">
+  <div class="admin-section analytics-tab-section finance-tab-section">
+    <div class="section-header analytics-header-row finance-header-row">
       <div>
         <h3>💰 Thu – Chi</h3>
-        <p class="analytics-tab-intro">Theo dõi tiền vào (thu từ khách), tiền ra (chi vận hành) và lãi. Chỉ quản trị hệ thống / quản trị tài chính.</p>
+        <p class="analytics-tab-intro">Theo dõi tiền vào (thu từ khách), tiền ra (chi vận hành) và lãi. Chỉ <strong>Super Admin</strong>.</p>
       </div>
-      <div class="analytics-toolbar" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
-        <label class="billing-field-label" for="financeDayPicker" style="margin:0;">Xem ngày</label>
-        <input type="date" id="financeDayPicker" style="padding:8px 10px; border:1px solid #ddd; border-radius:6px;" title="Thu / Chi / Lãi theo ngày">
+      <div class="analytics-toolbar finance-toolbar">
+        <label class="billing-field-label" for="financeDayPicker">Xem ngày</label>
+        <input type="date" id="financeDayPicker" title="Thu / Chi / Lãi theo ngày">
         <button type="button" class="btn-create" onclick="loadFinanceDayKpi()" title="Xem Thu–Chi–Lãi ngày đã chọn">Xem ngày</button>
         <button type="button" class="btn-edit" onclick="loadFinanceTab()" title="Làm mới toàn bộ">Làm mới</button>
       </div>
     </div>
+    <nav id="financeSubNav" class="finance-subnav" aria-label="Phân mục Thu – Chi">
+      <button type="button" class="finance-subnav-btn active" data-finance-sub="overview" onclick="switchFinanceSubtab('overview')">Tổng quan</button>
+      <button type="button" class="finance-subnav-btn" data-finance-sub="customers" onclick="switchFinanceSubtab('customers')">Khách / gói</button>
+      <button type="button" class="finance-subnav-btn" data-finance-sub="invoices" onclick="switchFinanceSubtab('invoices')">Hóa đơn &amp; thu</button>
+      <button type="button" class="finance-subnav-btn" data-finance-sub="expenses" onclick="switchFinanceSubtab('expenses')">Chi phí</button>
+      <button type="button" class="finance-subnav-btn" data-finance-sub="reports" onclick="switchFinanceSubtab('reports')">Báo cáo &amp; cấu hình</button>
+    </nav>
+
+    <div id="finance-panel-overview" class="finance-subpanel is-active" data-finance-panel="overview">
     <div id="financeDayKpi" class="analytics-summary-cards" style="margin-bottom:12px;"></div>
     <div id="financeKpiCards" class="analytics-summary-cards"></div>
     <div class="analytics-charts-grid">
@@ -444,10 +1235,17 @@
         <div id="financeExpiring" class="analytics-alerts"></div>
       </div>
     </div>
-    <div class="analytics-chart-card" style="margin-top:16px;">
+    <div class="analytics-chart-card finance-panel">
+      <h4>Hoạt động gần đây</h4>
+      <div id="financeActivity" class="analytics-alerts"></div>
+    </div>
+    </div>
+
+    <div id="finance-panel-customers" class="finance-subpanel" data-finance-panel="customers">
+    <div class="analytics-chart-card finance-panel">
       <h4>Khách hàng / billing</h4>
-      <div style="margin-bottom:10px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-        <select id="financeOrgStatusFilter" onchange="loadFinanceOrgs()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
+      <div class="finance-filter-row">
+        <select id="financeOrgStatusFilter" onchange="loadFinanceOrgs()">
           <option value="">Tất cả</option>
           <option value="FREE">FREE / Trial</option>
           <option value="PAID">Gói trả phí</option>
@@ -459,13 +1257,16 @@
       </div>
       <div id="financeOrgList" class="finance-org-list"></div>
     </div>
-    <div class="analytics-chart-card" style="margin-top:16px;">
+    <div class="analytics-chart-card finance-panel">
       <h4>Danh mục gói dịch vụ</h4>
       <div id="financePlanList"></div>
     </div>
-    <div class="analytics-chart-card" style="margin-top:16px;">
+    </div>
+
+    <div id="finance-panel-invoices" class="finance-subpanel" data-finance-panel="invoices">
+    <div class="analytics-chart-card finance-panel">
       <h4>Hóa đơn</h4>
-      <form id="financeInvoiceForm" onsubmit="return submitFinanceInvoice(event)" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:14px; align-items:end;">
+      <form id="financeInvoiceForm" class="finance-form-grid" onsubmit="return submitFinanceInvoice(event)" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:14px; align-items:end;">
         <div>
           <label class="billing-field-label">Org ID</label>
           <input type="text" id="invOrgId" required placeholder="Mongo ObjectId org" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
@@ -486,8 +1287,8 @@
           <button type="submit" class="btn-create" title="Tạo hóa đơn OPEN">Tạo hóa đơn</button>
         </div>
       </form>
-      <div style="margin-bottom:8px;">
-        <select id="financeInvoiceStatusFilter" onchange="loadFinanceInvoices()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
+      <div class="finance-filter-row">
+        <select id="financeInvoiceStatusFilter" onchange="loadFinanceInvoices()">
           <option value="">Tất cả trạng thái</option>
           <option value="OPEN">OPEN</option>
           <option value="PAID">PAID</option>
@@ -496,11 +1297,12 @@
         <button type="button" class="btn-edit" onclick="loadFinanceInvoices()">Lọc HĐ</button>
       </div>
       <div id="financeInvoiceList"></div>
+      <div id="financeInvoicesPagination" class="table-pagination"></div>
     </div>
-    <div class="analytics-chart-card" style="margin-top:16px;">
+    <div class="analytics-chart-card finance-panel">
       <h4>Sổ thu tiền (giao dịch đã nhận)</h4>
-      <div style="margin-bottom:8px;">
-        <select id="financePaymentStatusFilter" onchange="loadFinancePayments()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
+      <div class="finance-filter-row">
+        <select id="financePaymentStatusFilter" onchange="loadFinancePayments()">
           <option value="">Tất cả</option>
           <option value="SUCCESS">SUCCESS</option>
           <option value="PENDING">PENDING</option>
@@ -510,12 +1312,15 @@
         <button type="button" class="btn-edit" onclick="loadFinancePayments()">Lọc payment</button>
       </div>
       <div id="financePaymentList"></div>
+      <div id="financePaymentsPagination" class="table-pagination"></div>
+    </div>
     </div>
 
-    <div class="analytics-chart-card" style="margin-top:16px;">
+    <div id="finance-panel-reports" class="finance-subpanel" data-finance-panel="reports">
+    <div class="analytics-chart-card finance-panel">
       <h4>Báo cáo thu – chi theo kỳ</h4>
-      <p class="analytics-muted" style="margin-bottom:10px;">Chọn khoảng thời gian để xem tổng thu, tổng chi, lãi và tải file CSV (Excel mở được).</p>
-      <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:end; margin-bottom:12px;">
+      <p class="analytics-muted finance-panel-hint">Chọn khoảng thời gian để xem tổng thu, tổng chi, lãi và tải file CSV (Excel mở được).</p>
+      <div class="finance-report-toolbar">
         <div>
           <label class="billing-field-label">Từ ngày</label>
           <input type="date" id="financeReportFrom" style="padding:8px; border:1px solid #ddd; border-radius:6px;">
@@ -531,56 +1336,28 @@
       </div>
       <div id="financeReportSummary"></div>
     </div>
-
-    <div class="analytics-chart-card" style="margin-top:16px;">
+    <div class="analytics-chart-card finance-panel">
       <h4>Cấu hình hóa đơn &amp; công ty</h4>
-      <p class="analytics-muted" style="margin-bottom:10px;">Thông tin in trên hóa đơn (tên công ty, MST, footer…). Tài khoản «Quản trị tài chính» cũng dùng được phần Thu – Chi này.</p>
-      <form id="financeSettingsForm" onsubmit="return saveFinanceSettings(event)" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:10px; align-items:end;">
-        <div>
-          <label class="billing-field-label">Tên công ty</label>
-          <input type="text" id="finSetCompany" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
-        </div>
-        <div>
-          <label class="billing-field-label">MST</label>
-          <input type="text" id="finSetTaxCode" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
-        </div>
-        <div>
-          <label class="billing-field-label">Địa chỉ</label>
-          <input type="text" id="finSetAddress" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
-        </div>
-        <div>
-          <label class="billing-field-label">Tiền tệ</label>
-          <input type="text" id="finSetCurrency" value="VND" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
-        </div>
-        <div>
-          <label class="billing-field-label">Thuế % mặc định</label>
-          <input type="number" id="finSetTaxPct" min="0" max="100" step="0.1" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
-        </div>
-        <div>
-          <label class="billing-field-label">Prefix HĐ</label>
-          <input type="text" id="finSetPrefix" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
-        </div>
-        <div>
-          <label class="billing-field-label">Nhắc hết hạn (ngày)</label>
-          <input type="number" id="finSetReminder" min="1" max="90" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
-        </div>
-        <div style="grid-column:1/-1;">
-          <label class="billing-field-label">Footer hóa đơn</label>
-          <input type="text" id="finSetFooter" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
-        </div>
-        <div>
-          <button type="submit" class="btn-create">Lưu cấu hình</button>
-        </div>
+      <p class="analytics-muted finance-panel-hint">Thông tin in trên hóa đơn (tên công ty, MST, footer…).</p>
+      <form id="financeSettingsForm" class="finance-form-grid finance-settings-grid" onsubmit="return saveFinanceSettings(event)" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:10px; align-items:end;">
+        <div><label class="billing-field-label">Tên công ty</label><input type="text" id="finSetCompany" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+        <div><label class="billing-field-label">MST</label><input type="text" id="finSetTaxCode" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+        <div><label class="billing-field-label">Địa chỉ</label><input type="text" id="finSetAddress" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+        <div><label class="billing-field-label">Tiền tệ</label><input type="text" id="finSetCurrency" value="VND" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+        <div><label class="billing-field-label">Thuế % mặc định</label><input type="number" id="finSetTaxPct" min="0" max="100" step="0.1" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+        <div><label class="billing-field-label">Prefix HĐ</label><input type="text" id="finSetPrefix" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+        <div><label class="billing-field-label">Nhắc hết hạn (ngày)</label><input type="number" id="finSetReminder" min="1" max="90" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+        <div style="grid-column:1/-1;"><label class="billing-field-label">Footer hóa đơn</label><input type="text" id="finSetFooter" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+        <div><button type="submit" class="btn-create">Lưu cấu hình</button></div>
       </form>
     </div>
+    </div>
 
-    <div class="analytics-chart-card" style="margin-top:16px;">
+    <div id="finance-panel-expenses" class="finance-subpanel" data-finance-panel="expenses">
+    <div class="analytics-chart-card finance-panel">
       <h4>Chi phí vận hành</h4>
-      <form id="financeExpenseForm" onsubmit="return submitFinanceExpense(event)" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:14px; align-items:end;">
-        <div>
-          <label class="billing-field-label">Ngày</label>
-          <input type="date" id="expenseDate" required style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
-        </div>
+      <form id="financeExpenseForm" class="finance-form-grid" onsubmit="return submitFinanceExpense(event)" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:14px; align-items:end;">
+        <div><label class="billing-field-label">Ngày</label><input type="date" id="expenseDate" required style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
         <div>
           <label class="billing-field-label">Danh mục</label>
           <select id="expenseCategory" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
@@ -596,27 +1373,13 @@
             <option value="OTHER">OTHER</option>
           </select>
         </div>
-        <div>
-          <label class="billing-field-label">NCC / Vendor</label>
-          <input type="text" id="expenseVendor" placeholder="VD: Render" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
-        </div>
-        <div>
-          <label class="billing-field-label">Số tiền (VND)</label>
-          <input type="number" id="expenseAmount" min="0" step="1000" required placeholder="0" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
-        </div>
-        <div style="grid-column: 1 / -1;">
-          <label class="billing-field-label">Ghi chú</label>
-          <input type="text" id="expenseNote" placeholder="Ghi chú..." style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
-        </div>
-        <div>
-          <button type="submit" class="btn-create" title="Thêm khoản chi">Thêm chi phí</button>
-        </div>
+        <div><label class="billing-field-label">NCC / Vendor</label><input type="text" id="expenseVendor" placeholder="VD: Render" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+        <div><label class="billing-field-label">Số tiền (VND)</label><input type="number" id="expenseAmount" min="0" step="1000" required placeholder="0" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+        <div style="grid-column: 1 / -1;"><label class="billing-field-label">Ghi chú</label><input type="text" id="expenseNote" placeholder="Ghi chú..." style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+        <div><button type="submit" class="btn-create" title="Thêm khoản chi">Thêm chi phí</button></div>
       </form>
       <div id="financeExpenseList"></div>
     </div>
-    <div class="analytics-chart-card" style="margin-top:16px;">
-      <h4>Hoạt động gần đây</h4>
-      <div id="financeActivity" class="analytics-alerts"></div>
     </div>
   </div>
 </div>
@@ -634,7 +1397,7 @@
                 <label style="font-size:13px; color:#666; margin-bottom:4px; display:block;">Hành động</label>
                 <select id="filterAction" onchange="resetLogsPageAndLoad()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd; min-width:220px;">
                   <option value="">Tất cả hành động</option>
-                  <option value="LOGIN">Đăng nhập</option>
+                  <option value="LOGIN">Đang nháp</option>
                   <option value="LOGOUT">Đăng xuất</option>
                   <option value="REGISTER">Đăng ký công khai</option>
                   <option value="UPDATE_PROFILE">Cập nhật hồ sơ</option>
@@ -651,7 +1414,7 @@
                   <option value="PUBLISH_MAP">Xuất bản bản đồ</option>
                   <option value="LOAD_MAP">Tải bản đồ</option>
                   <option value="CREATE_USER">Tạo tài khoản</option>
-                  <option value="ADMIN_UPDATE_USER">Admin sửa user</option>
+                  <option value="ADMIN_UPDATE_USER">Admin sửa tài khoản</option>
                   <option value="ACTIVATE_USER">Kích hoạt tài khoản</option>
                   <option value="DEACTIVATE_USER">Vô hiệu hóa tài khoản</option>
                   <option value="BUILDING_ACCESS_DENIED">Từ chối truy cập tòa</option>
@@ -670,6 +1433,21 @@
                   <option value="ROLLBACK_MAP">Khôi phục phiên bản bản đồ</option>
                   <option value="DELETE_USER">Xóa / khóa tài khoản (cũ)</option>
                   <option value="UNLOCK_SESSION">Mở khóa phiên editor</option>
+                  <option value="CREATE_PLAN">Tạo gói dịch vụ</option>
+                  <option value="UPDATE_PLAN">Cập nhật / ngừng bán gói</option>
+                  <option value="DELETE_PLAN">Xóa gói dịch vụ</option>
+                  <option value="CREATE_INVOICE">Tạo hóa đơn</option>
+                  <option value="VOID_INVOICE">Hủy hóa đơn</option>
+                  <option value="MARK_INVOICE_PAID">Ghi nhận thu hóa đơn</option>
+                  <option value="CHECKOUT_START">Bắt đầu thanh toán gói</option>
+                  <option value="SUBSCRIPTION_PAYMENT">Thanh toán gói thành công</option>
+                  <option value="ACTIVATE_SUBSCRIPTION">Kích hoạt / gia hạn gói</option>
+                  <option value="CANCEL_SUBSCRIPTION">Hủy gói đăng ký</option>
+                  <option value="EXPIRE_SUBSCRIPTION">Hết hạn gói</option>
+                  <option value="CREATE_BILLING_EVENT">Ghi sự kiện billing</option>
+                  <option value="UPDATE_ORG_CONTACT">Cập nhật liên hệ tổ chức</option>
+                  <option value="SET_PUBLISH_PERMIT">Cấp quyền xuất bản</option>
+                  <option value="CLEAR_PUBLISH_PERMIT">Thu hồi quyền xuất bản</option>
                 </select>
               </div>
 
@@ -697,17 +1475,17 @@
 
             <p style="margin-bottom:10px; color:#666;">Tổng số bản ghi: <span id="logsTotal">0</span></p>
 
-            <div class="logs-table-wrapper" style="overflow-x:auto;">
-              <table class="logs-table" style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
-                <thead style="background:#34495e; color:white;">
+            <div class="logs-table-wrapper">
+              <table class="logs-table">
+                <thead>
                   <tr>
-                    <th style="padding:12px; text-align:left;">Thời gian</th>
-                    <th style="padding:12px; text-align:left;">Người dùng</th>
-                    <th style="padding:12px; text-align:left;">Role</th>
-                    <th style="padding:12px; text-align:left;">Hành động</th>
-                    <th style="padding:12px; text-align:left;">Đối tượng</th>
-                    <th style="padding:12px; text-align:left;">Chi tiết</th>
-                    <th style="padding:12px; text-align:left;">IP</th>
+                    <th>Thời gian</th>
+                    <th>Người dùng</th>
+                    <th>Role</th>
+                    <th>Hành động</th>
+                    <th>Đối tượng</th>
+                    <th>Chi tiết</th>
+                    <th>IP</th>
                   </tr>
                 </thead>
                 <tbody id="logsList">
@@ -723,7 +1501,7 @@
         <!-- ===== TAB: PROFILE ===== -->
         <div id="tab-profile" class="tab-content" style="display:none;">
           <div class="admin-section">
-            <h3>Thông Tin Cá Nhân</h3>
+            <h3 id="profileSectionInfo" class="profile-section-anchor">Thông Tin Cá Nhân</h3>
 
             <div class="profile-form" style="max-width:600px;">
               <div class="form-group">
@@ -787,13 +1565,13 @@
                 <p id="profileOrgHint" style="font-size:12px; color:#64748b; margin:0;"></p>
               </div>
 
-              <button id="btnSaveProfile" class="btn-create" title="Lưu họ tên, SĐT cá nhân; ORG_ADMIN thêm SĐT/địa chỉ tổ chức">Lưu Thay Đổi</button>
+              <button id="btnSaveProfile" class="btn-create" title="Lưu họ tên, SĐT cá nhân; quản trị tổ chức thêm SĐT/địa chỉ tổ chức">Lưu Thay Đổi</button>
               <p id="profileMessage" class="error-msg" style="display:none; margin-top:10px;"></p>
             </div>
 
             <hr style="margin:25px 0; border:none; border-top:1px solid #e0e0e0;">
 
-            <h4 style="margin-bottom:15px; color:#2c3e50;">Đổi Mật Khẩu</h4>
+            <h4 id="profileSectionSecurity" class="profile-section-anchor" style="margin-bottom:15px; color:#2c3e50;">Đổi Mật Khẩu</h4>
 
             <div class="password-change-form" style="max-width:600px;">
               <div class="form-group">
@@ -827,7 +1605,7 @@
 
             <hr style="margin:25px 0; border:none; border-top:1px solid #e0e0e0;">
 
-            <h4 style="margin-bottom:10px; color:#2c3e50;">Phiên đăng nhập</h4>
+            <h4 id="profileSectionSessions" class="profile-section-anchor" style="margin-bottom:10px; color:#2c3e50;">Phiên đăng nhập</h4>
             <p style="font-size:13px; color:#666; margin-bottom:12px;">
               Thu hồi <strong>mọi phiên đăng nhập</strong> của tài khoản này (mọi trình duyệt / máy đã login admin).
               Phiên khác sẽ mất hiệu lực ngay khi gọi API tiếp theo (F5 hoặc thao tác). Tab này cũng đăng xuất.
@@ -837,7 +1615,9 @@
           </div>
         </div><!-- end tab-profile -->
 
-    </div><!-- end dashboard-content -->
+        </main><!-- end dashboard-content -->
+      </div><!-- end admin-main -->
+    </div><!-- end admin-shell -->
 
     <!-- ===== MODAL: THÊM TÒA NHÀ ===== -->
     <div id="addBuildingModal" class="modal" style="display:none;">
@@ -861,13 +1641,75 @@
                     <input type="number" id="addBuildingLng" step="any" value="106.6">
                 </div>
             </div>
-            <label>Organization:</label>
+            <label>Tổ chức:</label>
             <select id="addBuildingOrganizationId" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
-                <option value="">Chọn organization...</option>
+                <option value="">Chọn tổ chức...</option>
             </select>
             <div class="modal-actions">
                 <button onclick="closeAddBuildingModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
                 <button id="btnSaveNewBuilding" class="btn-create">Lưu Tòa Nhà</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== MODAL: TẠO TỔ CHỨC (REGISTERED_USER → ORG_ADMIN) ===== -->
+    <div id="createOrgModal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <h3>🏛️ Tạo tổ chức mới</h3>
+            <p style="font-size:13px; color:#666; margin-top:0;">Bạn sẽ trở thành <strong>Quản trị tổ chức (ORG_ADMIN)</strong>. Toàn bộ tòa nhà cá nhân hiện có sẽ được chuyển vào tổ chức.</p>
+            <label>Tên tổ chức:</label>
+            <input type="text" id="createOrgName" placeholder="Ví dụ: Công ty ABC">
+            <label>Mã định danh (slug) — tùy chọn:</label>
+            <input type="text" id="createOrgSlug" placeholder="tự sinh từ tên nếu để trống">
+            <label>Gói dịch vụ:</label>
+            <select id="createOrgPlan" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
+                <option value="BUSINESS">Business (50 tòa / 100 tài khoản)</option>
+                <option value="ENTERPRISE">Enterprise (không giới hạn cơ bản)</option>
+            </select>
+            <p id="createOrgMsg" style="font-size:13px; color:#c0392b; margin:8px 0 0; display:none;"></p>
+            <div class="modal-actions">
+                <button onclick="closeCreateOrgModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
+                <button id="btnSubmitCreateOrg" class="btn-create" onclick="submitCreateOrg()">Tạo tổ chức</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== MODAL: NÂNG CẤP PRO CÁ NHÂN (thanh toán qua ví TPTPbank) ===== -->
+    <div id="personalUpgradeModal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <h3>⭐ Nâng cấp gói PRO cá nhân</h3>
+            <p style="font-size:13px; color:#666; margin-top:0;">Mở khóa: không giới hạn tòa nhà / tầng / bản đồ / QR. Thanh toán bằng ví <strong>TPTPbank</strong>.</p>
+            <div id="personalUpgradePrice" style="font-size:14px; font-weight:600; color:#5b3fbf; margin-bottom:6px;">Giá: — đ / tháng</div>
+            <label>Số tháng:</label>
+            <input type="number" id="personalUpgradeMonths" min="1" max="24" value="1" oninput="updatePersonalUpgradeTotal()">
+            <div id="personalUpgradeTotal" style="font-size:13px; color:#333; margin:6px 0;"></div>
+            <hr style="border:none; border-top:1px solid #eee; margin:10px 0;">
+            <p style="font-size:12px; color:#888; margin:0 0 6px;">Đăng nhập ví TPTPbank để thanh toán:</p>
+            <label>Email / SĐT ví:</label>
+            <input type="text" id="personalUpgradeBankEmail" placeholder="email hoặc số điện thoại ví">
+            <label>Mật khẩu ví:</label>
+            <input type="password" id="personalUpgradeBankPassword" placeholder="mật khẩu ví TPTPbank">
+            <p id="personalUpgradeMsg" style="font-size:13px; color:#c0392b; margin:8px 0 0; display:none;"></p>
+            <div class="modal-actions">
+                <button onclick="closePersonalUpgradeModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
+                <button id="btnSubmitPersonalUpgrade" class="btn-create" onclick="submitPersonalUpgrade()">Thanh toán & Nâng cấp</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== MODAL: THAM GIA TỔ CHỨC (REGISTERED_USER → chờ duyệt) ===== -->
+    <div id="joinOrgModal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <h3>🤝 Tham gia tổ chức</h3>
+            <p style="font-size:13px; color:#666; margin-top:0;">Nhập <strong>mã tổ chức (slug)</strong> do quản trị tổ chức cung cấp. Sau khi được duyệt, bạn sẽ trở thành <strong>Quản trị tòa nhà</strong> của tổ chức đó.</p>
+            <label>Mã tổ chức (slug):</label>
+            <input type="text" id="joinOrgSlug" placeholder="ví dụ: cong-ty-abc">
+            <label>Lời nhắn (tùy chọn):</label>
+            <input type="text" id="joinOrgMessage" placeholder="Giới thiệu ngắn gọn...">
+            <p id="joinOrgMsg" style="font-size:13px; color:#c0392b; margin:8px 0 0; display:none;"></p>
+            <div class="modal-actions">
+                <button onclick="closeJoinOrgModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
+                <button id="btnSubmitJoinOrg" class="btn-create" onclick="submitJoinOrg()">Gửi yêu cầu</button>
             </div>
         </div>
     </div>
@@ -888,11 +1730,11 @@
                 <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                     <span>Số tầng hiện tại: <strong id="editBuildingFloorsLabel">1</strong></span>
                     <button type="button" id="btnAddFloor" class="btn-create" style="padding:6px 12px;" onclick="patchBuildingFloor('add')">+ Thêm tầng</button>
-                    <button type="button" id="btnRemoveFloor" class="btn-logout" style="padding:6px 12px; background:#e67e22;" onclick="patchBuildingFloor('remove')">− Bớt tầng cao nhất</button>
+                    <button type="button" id="btnRemoveFloor" class="btn-logout" style="padding:6px 12px; background:#e67e22;" onclick="patchBuildingFloor('remove')">- Bớt tầng cao nhất</button>
                 </div>
                 <p id="editBuildingFloorHint" style="font-size:12px; color:#666; margin:8px 0 0;">Tầng hợp lệ: 0 .. N-1 (0 = trệt). Chỉ bớt được tầng cao nhất khi chưa có bản đồ.</p>
                 <p id="editBuildingFloorMsg" style="font-size:13px; color:#c0392b; margin:6px 0 0; display:none;"></p>
-                <!-- Giữ input ẩn để không phá form cũ; giá trị sync từ API -->
+                <!-- Gi? input ?n d? kh�ng ph� form cu; giá trị sync từ API -->
                 <input type="hidden" id="editBuildingFloors" value="1">
             </div>
             <div style="display:flex; gap:10px;">
@@ -907,12 +1749,12 @@
             </div>
             <label>Trạng thái:</label>
             <select id="editBuildingStatus">
-                <option value="DRAFT">DRAFT</option>
-                <option value="PUBLISHED">PUBLISHED</option>
+                <option value="DRAFT">Nháp</option>
+                <option value="PUBLISHED">Đã xuất bản</option>
             </select>
-            <label>Organization:</label>
+            <label>Tổ chức:</label>
             <select id="editBuildingOrganizationId" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
-                <option value="">Chọn organization...</option>
+                <option value="">Chọn tổ chức...</option>
             </select>
             <div class="modal-actions">
                 <button onclick="closeEditBuildingModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
@@ -941,17 +1783,17 @@
         <div id="createUserRoleGroup">
           <label>Vai trò:</label>
           <select id="createUserRole">
-            <option value="BUILDING_ADMIN" selected>BUILDING_ADMIN</option>
-            <option value="ORG_ADMIN">ORG_ADMIN</option>
-            <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+            <option value="BUILDING_ADMIN" selected>Quản trị tòa nhà</option>
+            <option value="ORG_ADMIN">Quản trị tổ chức</option>
+            <option value="SUPER_ADMIN">Quản trị hệ thống</option>
             <option value="FINANCE_ADMIN">Quản trị tài chính</option>
           </select>
         </div>
 
         <div id="createUserOrgGroup">
-          <label>Organization <span style="color:#e74c3c;">*</span>:</label>
+          <label>Tổ chức <span style="color:#e74c3c;">*</span>:</label>
           <select id="createUserOrganizationId" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
-            <option value="">Chọn organization...</option>
+            <option value="">Chọn tổ chức...</option>
           </select>
         </div>
 
@@ -996,9 +1838,9 @@
         <div id="updateUserRoleGroup">
           <label>Vai trò:</label>
           <select id="updateUserRole">
-            <option value="BUILDING_ADMIN">BUILDING_ADMIN</option>
-            <option value="ORG_ADMIN">ORG_ADMIN</option>
-            <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+            <option value="BUILDING_ADMIN">Quản trị tòa nhà</option>
+            <option value="ORG_ADMIN">Quản trị tổ chức</option>
+            <option value="SUPER_ADMIN">Quản trị hệ thống</option>
             <option value="FINANCE_ADMIN">Quản trị tài chính</option>
           </select>
         </div>
@@ -1018,7 +1860,7 @@
 
         <div id="updateUserPasswordGroup" style="margin-top:14px; padding-top:14px; border-top:1px solid #ecf0f1;">
           <label>Cấp lại mật khẩu</label>
-          <p class="org-detail-note" style="margin-top:4px;">Mật khẩu được mã hóa — không xem được. Chỉ đặt mật khẩu mới.</p>
+          <p class="org-detail-note" style="margin-top:4px;">Mật khẩu được mã hóa – không xem được. Chỉ đặt mật khẩu mới.</p>
           <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
             <button type="button" class="btn-edit org-reset-pwd-btn" onclick="promptResetUserPassword(document.getElementById('updateUserId').value)">Đặt mật khẩu mới</button>
             <button type="button" class="btn-create org-reset-pwd-btn" onclick="generateResetUserPassword(document.getElementById('updateUserId').value)">Tạo mật khẩu ngẫu nhiên</button>
@@ -1045,11 +1887,12 @@
             <p id="mapVersionHint" style="font-size:12px;color:#666;margin:0 0 10px 0;line-height:1.5;">
               <strong>Lưu ý:</strong> Khôi phục <em>không</em> xóa phiên bản 4 — server tạo <strong>phiên bản mới</strong> (vd. v5) với nội dung bản bạn chọn.
               Bản v1–v3 publish trước khi có snapshot đầy đủ chỉ khôi phục được <strong>nodes/edges</strong>, phòng/cửa có thể không đổi.
-              Sau khi khôi phục: mở Editor và <strong>Ctrl+F5</strong> để thấy map mới.
+              Sau khi khôi phục: mở trình soạn bản đồ và <strong>Ctrl+F5</strong> để thấy bản đồ mới.
               Khi vượt ngưỡng, hệ thống <strong>tự xóa bản cũ nhất</strong> (mặc định 50 bản/tầng).
             </p>
             <p id="mapVersionStatus" style="display:none;font-size:13px;margin:0 0 10px 0;padding:8px 12px;border-radius:6px;"></p>
-            <table class="buildings-table">
+            <div class="map-versions-table-wrap">
+            <table class="buildings-table map-versions-table">
                 <thead>
                     <tr>
                         <th>Phiên bản</th>
@@ -1065,6 +1908,7 @@
                     <tr><td colspan="7" style="text-align:center;color:#888;">Đang tải...</td></tr>
                 </tbody>
             </table>
+            </div>
             <div class="modal-actions" style="margin-top:15px;">
                 <button onclick="closeMapVersionModal()" class="btn-logout" style="background:#95a5a6;">Đóng</button>
             </div>
@@ -1092,7 +1936,7 @@
             <option value="ENTERPRISE">ENTERPRISE</option>
           </select>
         </div>
-        <p style="font-size:13px; color:#666; margin:0 0 12px 0; font-weight:600;">Tài khoản quản trị (ORG_ADMIN)</p>
+        <p style="font-size:13px; color:#666; margin:0 0 12px 0; font-weight:600;">Tài khoản quản trị tổ chức</p>
         <div class="form-group">
           <label>Họ tên <span style="color:#e74c3c;">*</span>:</label>
           <input type="text" id="addOrgAdminName" placeholder="Nguyễn Văn A">
@@ -1112,6 +1956,129 @@
       </div>
     </div>
 
+    <!-- ===== MODAL: TH�M / S?A G�I ===== -->
+    <div id="planEditorModal" class="modal" style="display:none;">
+      <div class="modal-content plan-editor-modal">
+        <h3 id="planEditorTitle">Thêm gói dịch vụ</h3>
+        <form id="planEditorForm" onsubmit="return savePlanEditor(event)">
+          <input type="hidden" id="planEditId" value="">
+          <div class="form-group">
+            <label for="planEditCode">Mã gói <span style="color:#e74c3c;">*</span></label>
+            <input type="text" id="planEditCode" placeholder="VD: PRO" required maxlength="32" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="planEditName">Tên hiển thị <span style="color:#e74c3c;">*</span></label>
+            <input type="text" id="planEditName" placeholder="Chuyên nghiệp" required maxlength="80">
+          </div>
+          <div class="form-group">
+            <label for="planEditDescription">Mô tả</label>
+            <input type="text" id="planEditDescription" placeholder="Gói chuyên nghiệp..." maxlength="200">
+          </div>
+          <div class="plan-editor-grid">
+            <div class="form-group">
+              <label for="planEditPrice">Giá (VND)</label>
+              <input type="number" id="planEditPrice" min="0" step="1000" value="0">
+            </div>
+            <div class="form-group">
+              <label for="planEditPeriod">Chu kỳ (ngày)</label>
+              <input type="number" id="planEditPeriod" min="1" step="1" value="30">
+            </div>
+            <div class="form-group">
+              <label for="planEditSort">Thứ tự</label>
+              <input type="number" id="planEditSort" min="0" step="1" value="10">
+            </div>
+            <div class="form-group plan-editor-active">
+              <label for="planEditActive">
+                <input type="checkbox" id="planEditActive" checked>
+                Đang bán / kích hoạt
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group" style="border:1px solid #e4e7ec; border-radius:12px; padding:14px; background:#f9fafb;">
+            <div style="font-weight:700; margin-bottom:4px;">Hiển thị cho đối tượng / quyền</div>
+            <p style="margin:0 0 12px; font-size:12px; color:#667085; line-height:1.5;">
+              Chọn nơi gói xuất hiện. Mỗi ô bật sẽ mở thêm phần giới hạn tương ứng bên dưới — <strong>không dùng chung một số</strong>.
+            </p>
+            <div style="display:grid; gap:8px;">
+              <label class="plan-audience-opt" style="display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border:1px solid #d0d5dd; border-radius:10px; background:#fff; cursor:pointer;">
+                <input type="checkbox" id="planEditIsPersonal" onchange="syncPlanAudienceFields()" style="margin-top:3px;">
+                <span>
+                  <strong style="display:block;">Cá nhân · REGISTERED_USER</strong>
+                  <span style="font-size:12px; color:#667085;">Hiện thẻ nâng cấp trên Personal Workspace. Dùng riêng <em>Quota cá nhân</em>.</span>
+                </span>
+              </label>
+              <label class="plan-audience-opt" style="display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border:1px solid #d0d5dd; border-radius:10px; background:#fff; cursor:pointer;">
+                <input type="checkbox" id="planEditIsOrganization" onchange="syncPlanAudienceFields()" style="margin-top:3px;">
+                <span>
+                  <strong style="display:block;">Tổ chức · ORG_ADMIN</strong>
+                  <span style="font-size:12px; color:#667085;">Dùng khi tạo / nâng cấp tổ chức. Dùng riêng <em>Giới hạn tổ chức</em> (tòa nhà &amp; tài khoản).</span>
+                </span>
+              </label>
+              <label class="plan-audience-opt" style="display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border:1px solid #d0d5dd; border-radius:10px; background:#fff; cursor:pointer;">
+                <input type="checkbox" id="planEditShowLanding" checked style="margin-top:3px;">
+                <span>
+                  <strong style="display:block;">Landing / bảng giá công khai</strong>
+                  <span style="font-size:12px; color:#667085;">Hiện trên trang giá cho khách (không cần đăng nhập).</span>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div id="planEditOrgQuota" style="display:none; border:1px solid #dbeafe; border-radius:12px; padding:14px; background:#f5f8ff; margin-bottom:12px;">
+            <div style="font-weight:700; color:#1e40af; margin-bottom:4px;">Giới hạn tổ chức</div>
+            <p style="margin:0 0 10px; font-size:12px; color:#667085;">Áp dụng khi tổ chức dùng gói này. Trống = không giới hạn (∞).</p>
+            <div class="plan-editor-grid">
+              <div class="form-group">
+                <label for="planEditBuildings">Số tòa nhà tối đa <small>(trống = ∞)</small></label>
+                <input type="number" id="planEditBuildings" min="0" step="1" placeholder="∞">
+              </div>
+              <div class="form-group">
+                <label for="planEditUsers">Số tài khoản tối đa <small>(trống = ∞)</small></label>
+                <input type="number" id="planEditUsers" min="0" step="1" placeholder="∞">
+              </div>
+            </div>
+          </div>
+
+          <div id="planEditPersonalQuota" style="display:none; border:1px solid #fde3b8; border-radius:12px; padding:14px; background:#fffaf0; margin-bottom:12px;">
+            <div style="font-weight:700; color:#92400e; margin-bottom:4px;">Quota cá nhân (Personal Workspace)</div>
+            <p style="margin:0 0 10px; font-size:12px; color:#667085;">
+              Áp dụng cho REGISTERED_USER mua gói này. <strong>Không xung đột</strong> với giới hạn tổ chức ở trên — hai bộ số độc lập.
+              Trống = không giới hạn (∞).
+            </p>
+            <div class="plan-editor-grid">
+              <div class="form-group">
+                <label for="planEditPMaxBuildings">Số tòa nhà tối đa <small>(trống = ∞)</small></label>
+                <input type="number" id="planEditPMaxBuildings" min="0" step="1" placeholder="∞">
+              </div>
+              <div class="form-group">
+                <label for="planEditPMaxFloors">Tầng / mỗi tòa <small>(trống = ∞)</small></label>
+                <input type="number" id="planEditPMaxFloors" min="0" step="1" placeholder="∞">
+              </div>
+              <div class="form-group">
+                <label for="planEditPMaxMaps">Số bản đồ tối đa <small>(trống = ∞)</small></label>
+                <input type="number" id="planEditPMaxMaps" min="0" step="1" placeholder="∞">
+              </div>
+              <div class="form-group">
+                <label for="planEditPMaxQr">Số mã QR tối đa <small>(trống = ∞)</small></label>
+                <input type="number" id="planEditPMaxQr" min="0" step="1" placeholder="∞">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="planEditFeatures">Tính năng (mỗi dòng một mục)</label>
+            <textarea id="planEditFeatures" rows="4" placeholder="20 tòa nhà&#10;50 tài khoản"></textarea>
+          </div>
+          <p id="planEditorMessage" class="error-msg" style="display:none;"></p>
+          <div class="modal-actions">
+            <button type="button" class="btn-logout" style="background:#95a5a6;" onclick="closePlanEditor()">Hủy</button>
+            <button type="submit" class="btn-create">Lưu gói</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- ===== MODAL: CHI TIẾT TỔ CHỨC ===== -->
     <div id="orgDetailModal" class="modal" style="display:none;">
       <div class="modal-content org-detail-modal" style="max-width:800px;">
@@ -1127,8 +2094,11 @@
       </div>
     </div>
 
+    <script src="../js/admin-shell.js?v=20260717ad33"></script>
     <script src="../js/orgListSort.js?v=20260708l"></script>
     <script src="../js/dashboardTableSort.js?v=20260708l"></script>
-    <script src="../js/dashboard.js?v=20260716sess1"></script>
+    <script src="../js/dashboard.js?v=20260721ad94"></script>
+    <script src="../js/website-cms.js?v=20260718ad61"></script>
+    <script src="../js/admin-ui.js?v=20260717ad32"></script>
 </body>
 </html>

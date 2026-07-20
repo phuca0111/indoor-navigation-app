@@ -99,12 +99,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
 
             if (response.ok) {
-                // Success
-                messageP.innerHTML = `
-                    <strong>✅ Đăng ký thành công!</strong><br>
-                    Tài khoản của bạn đang chờ quản trị viên duyệt.<br>
-                    Bạn có thể <a href="index.html" style="color:#007AFF;">đăng nhập</a> sau khi được kích hoạt.
-                `;
+                // Đăng ký xong đăng nhập luôn (REGISTERED_USER — gói FREE)
+                if (data.token) {
+                    localStorage.setItem('token', data.token);
+                    if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
+                    if (data.user) {
+                        localStorage.setItem('userEmail', data.user.email || '');
+                        localStorage.setItem('userRole', data.user.role || '');
+                        localStorage.setItem('userId', data.user.id || '');
+                    }
+                    messageP.innerHTML = '<strong>✅ Đăng ký thành công! Đang chuyển vào workspace...</strong>';
+                    messageP.style.display = 'block';
+                    form.reset();
+                    window.location.replace('/admin/dashboard.html');
+                    return;
+                }
+                messageP.innerHTML = '<strong>✅ Đăng ký thành công!</strong> Bạn có thể <a href="index.html" style="color:#007AFF;">đăng nhập</a>.';
                 messageP.style.display = 'block';
                 form.reset();
             } else {
