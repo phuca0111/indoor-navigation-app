@@ -146,6 +146,8 @@ connectDB().then(() => {
   startBillingScheduler();
   const { ensureDefaultPlans } = require('./services/planCatalog');
   ensureDefaultPlans().catch((e) => console.warn('planCatalog seed:', e.message));
+  const BankUser = require('./models/BankUser');
+  BankUser.ensureBankUserIndexes().catch((e) => console.warn('BankUser indexes:', e.message));
 
   const HOST = process.env.HOST || '0.0.0.0';
   const server = app.listen(PORT, HOST, () => {

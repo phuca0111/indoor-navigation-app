@@ -9,6 +9,8 @@ const {
   listOrganizations,
   createWithAdmin,
   getOrganization,
+  getMyOrganizationDetail,
+  createOrganizationFromPersonal,
   updateOrganization,
   createOrganizationBillingEvent,
   getOrganizationSubscription,
@@ -29,6 +31,12 @@ router.get('/', listOrganizations);
 
 // Phase 8 — ORG_ADMIN cập nhật contact org (đặt trước /:id)
 router.put('/me/contact', updateMyOrganizationContact);
+
+// ORG_ADMIN xem chi tiết tổ chức của chính mình (đặt trước /:id)
+router.get('/me/detail', getMyOrganizationDetail);
+
+// REGISTERED_USER tạo tổ chức từ tài khoản cá nhân → trở thành ORG_ADMIN (đặt trước /:id)
+router.post('/me/create', createOrganizationFromPersonal);
 
 // POST /api/organizations/with-admin — Super Admin tạo org + ORG_ADMIN (2.7)
 router.post('/with-admin', requireSuperAdmin, createWithAdmin);

@@ -26,17 +26,20 @@ describe('Phase 5.3 — overQuotaLock helpers', () => {
     expect(shouldEnforceOverQuotaLock({ plan: 'PRO', billing_status: 'ACTIVE' })).toBe(false);
     expect(shouldEnforceOverQuotaLock({ plan: 'FREE', billing_status: 'GRACE_PERIOD' })).toBe(false);
     expect(shouldEnforceOverQuotaLock({ plan: 'FREE', billing_status: 'ACTIVE' })).toBe(true);
-    expect(shouldEnforceOverQuotaLock({ plan: 'FREE', billing_status: 'EXPIRED' })).toBe(true);
-    expect(shouldEnforceOverQuotaLock({ plan: 'PRO', billing_status: 'EXPIRED' })).toBe(true);
+    // EXPIRED/ARCHIVED: dùng ma trận quyền billing, không soft-lock quota
+    expect(shouldEnforceOverQuotaLock({ plan: 'FREE', billing_status: 'EXPIRED' })).toBe(false);
+    expect(shouldEnforceOverQuotaLock({ plan: 'PRO', billing_status: 'EXPIRED' })).toBe(false);
+    expect(shouldEnforceOverQuotaLock({ plan: 'BUSINESS', billing_status: 'ARCHIVED' })).toBe(false);
   });
 
   test('TC-5.3-unit-03 normalizeBillingStatus', () => {
     expect(normalizeBillingStatus('grace_period')).toBe('GRACE_PERIOD');
+    expect(normalizeBillingStatus('archived')).toBe('ARCHIVED');
     expect(normalizeBillingStatus('bad')).toBe('ACTIVE');
   });
 
-  test('TC-5.3-unit-04 GRACE_PERIOD_DAYS = 7', () => {
-    expect(GRACE_PERIOD_DAYS).toBe(7);
+  test('TC-5.3-unit-04 GRACE_PERIOD_DAYS = 15', () => {
+    expect(GRACE_PERIOD_DAYS).toBe(15);
   });
 
   test('TC-5.3-unit-05 annotateUsersQuotaLockForList bỏ qua organization_id không hợp lệ', async () => {

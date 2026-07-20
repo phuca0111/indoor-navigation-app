@@ -48,6 +48,7 @@ async function ensureWallet(bankUserId) {
 }
 
 async function registerBankUser({ email, phone, password, fullName }) {
+  await BankUser.ensureBankUserIndexes();
   const normalizedEmail = email ? String(email).trim().toLowerCase() : '';
   const normalizedPhone = phone ? String(phone).trim() : '';
   if (!normalizedEmail && !normalizedPhone) {
@@ -66,12 +67,14 @@ async function registerBankUser({ email, phone, password, fullName }) {
   }
 
   const hashed = await bcrypt.hash(password, 10);
-  const user = await BankUser.create({
-    email: normalizedEmail || undefined,
-    phone: normalizedPhone || undefined,
+  const payload = {
     password: hashed,
     full_name: fullName ? String(fullName).trim() : ''
-  });
+  };
+  if (normalizedEmail) payload.email = normalizedEmail;
+  if (normalizedPhone) payload.phone = normalizedPhone;
+
+  const user = await BankUser.create(payload);
   await ensureWallet(user._id);
   const token = signBankToken(user._id);
   return {
@@ -229,6 +232,42 @@ async function confirmBankPayment({ bankUserId, invoiceId, token }) {
   return { wallet, transaction: tx, payment, duplicated: false };
 }
 
+/**
+ * Trừ ví trực tiếp cho giao dịch KHÔNG gắn Invoice (vd nâng cấp gói cá nhân).
+ * Trung lập với Organization — chỉ thao tác trên ví ảo TPTPbank.
+ */
+async function chargeWalletDirect({ bankUserId, amount, description = '', idempotencyKey = '' }) {
+  const value = Number(amount);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw Object.assign(new Error('Số tiền thanh toán không hợp lệ.'), { status: 400 });
+  }
+  if (idempotencyKey) {
+    const dup = await BankTransaction.findOne({ idempotency_key: idempotencyKey });
+    if (dup) {
+      const wallet = await BankWallet.findOne({ bank_user_id: bankUserId });
+      return { wallet, transaction: dup, duplicated: true };
+    }
+  }
+  const wallet = await ensureWallet(bankUserId);
+  if (Number(wallet.balance) < value) {
+    throw Object.assign(
+      new Error(`Số dư không đủ. Cần ${value.toLocaleString('vi-VN')} VND, hiện có ${Number(wallet.balance).toLocaleString('vi-VN')} VND.`),
+      { status: 400, code: 'INSUFFICIENT_BALANCE' }
+    );
+  }
+  wallet.balance = Number(wallet.balance) - value;
+  await wallet.save();
+  const tx = await BankTransaction.create({
+    bank_user_id: bankUserId,
+    type: 'PAYMENT',
+    amount: -value,
+    balance_after: wallet.balance,
+    description: description || `Thanh toán ${value.toLocaleString('vi-VN')} VND`,
+    idempotency_key: idempotencyKey || `charge-${bankUserId}-${Date.now()}`
+  });
+  return { wallet, transaction: tx, duplicated: false };
+}
+
 async function listTransactions(bankUserId, limit = 20) {
   return BankTransaction.find({ bank_user_id: bankUserId })
     .sort({ createdAt: -1 })
@@ -246,5 +285,6 @@ module.exports = {
   topUpWallet,
   resolvePaymentFromQr,
   confirmBankPayment,
+  chargeWalletDirect,
   listTransactions
 };

@@ -3,19 +3,27 @@ const Subscription = require('../models/Subscription');
 const Invoice = require('../models/Invoice');
 const OrganizationPlanHistory = require('../models/OrganizationPlanHistory');
 const { countActiveBuildings, countActiveUsers } = require('../utils/planQuota');
+const {
+  isPaidPlan,
+  getPaidPlanCodes,
+  getKnownPlanCodes,
+  assertPlanCode,
+  getPlanPeriodDays
+} = require('./planCatalog');
+const {
+  GRACE_PERIOD_DAYS,
+  GRACE_PERIOD_MS,
+  ARCHIVE_AFTER_EXPIRED_MS
+} = require('../utils/billingConstants');
 
+/** @deprecated dùng getKnownPlanCodes() — giữ alias tương thích test cũ */
 const VALID_PLANS = ['FREE', 'PRO', 'ENTERPRISE'];
+/** @deprecated dùng getPaidPlanCodes() / isPaidPlan() */
 const PAID_PLANS = ['PRO', 'ENTERPRISE'];
 const DEFAULT_PERIOD_DAYS = 30;
-const GRACE_PERIOD_DAYS = 7;
-const GRACE_PERIOD_MS = GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000;
 
 function graceEndsAtFromNow() {
   return new Date(Date.now() + GRACE_PERIOD_MS);
-}
-
-function isPaidPlan(plan) {
-  return PAID_PLANS.includes(String(plan || '').toUpperCase());
 }
 
 function defaultPeriod(days = DEFAULT_PERIOD_DAYS) {
@@ -73,25 +81,42 @@ async function syncOrganizationFromSubscription(org, subscription, options = {})
     org.plan = subscription.plan || org.plan;
     org.billing_status = 'ACTIVE';
     org.grace_ends_at = null;
+    org.billing_expired_at = null;
+    org.archived_at = null;
     org.plan_started_at = subscription.current_period_start || org.plan_started_at || new Date();
     org.plan_expires_at = subscription.current_period_end || null;
   } else if (status === 'GRACE_PERIOD') {
     org.billing_status = 'GRACE_PERIOD';
+    // Giữ gói đã mua (hiển thị + renew) — không hạ FREE trong grace
     org.plan = subscription.plan || org.plan;
     org.plan_started_at = subscription.current_period_start || org.plan_started_at;
     org.plan_expires_at = subscription.current_period_end || org.plan_expires_at;
     const metaGrace = subscription.metadata?.grace_ends_at;
     org.grace_ends_at = metaGrace ? new Date(metaGrace) : (org.grace_ends_at || graceEndsAtFromNow());
+    org.archived_at = null;
   } else if (status === 'PAST_DUE') {
     // Legacy: coi như grace
     org.billing_status = 'GRACE_PERIOD';
     org.grace_ends_at = org.grace_ends_at || graceEndsAtFromNow();
+    org.archived_at = null;
   } else if (status === 'EXPIRED' || status === 'CANCELED') {
-    org.plan = 'FREE';
+    // Giữ plan đã mua để UI/renew; khóa bằng billing_status (không xóa dữ liệu)
+    if (subscription.plan && subscription.plan !== 'FREE') {
+      org.plan = subscription.plan;
+    }
     org.billing_status = 'EXPIRED';
     org.grace_ends_at = null;
+    if (!org.billing_expired_at) org.billing_expired_at = new Date();
     org.plan_started_at = subscription.current_period_start || org.plan_started_at;
-    org.plan_expires_at = subscription.current_period_end || new Date();
+    org.plan_expires_at = subscription.current_period_end || org.plan_expires_at || new Date();
+  } else if (status === 'ARCHIVED') {
+    if (subscription.plan && subscription.plan !== 'FREE') {
+      org.plan = subscription.plan;
+    }
+    org.billing_status = 'ARCHIVED';
+    org.grace_ends_at = null;
+    org.archived_at = org.archived_at || new Date();
+    if (!org.billing_expired_at) org.billing_expired_at = org.plan_expires_at || new Date();
   }
 
   if (typeof org.save === 'function') {
@@ -120,8 +145,9 @@ async function syncOrganizationFromSubscription(org, subscription, options = {})
 }
 
 /**
- * ACTIVE/TRIALING quá hạn chu kỳ → GRACE_PERIOD 7 ngày.
- * GRACE_PERIOD quá grace → EXPIRED + FREE.
+ * ACTIVE/TRIALING quá hạn chu kỳ → GRACE_PERIOD (15 ngày).
+ * GRACE_PERIOD quá grace → EXPIRED (giữ plan, không xóa data).
+ * EXPIRED sau 90 ngày → ARCHIVED.
  */
 async function refreshSubscriptionStatus(org, subscription) {
   if (!org || !subscription) return { org, subscription };
@@ -136,14 +162,54 @@ async function refreshSubscriptionStatus(org, subscription) {
       ? new Date(subscription.metadata.grace_ends_at).getTime()
       : null);
 
-  if (subscription.status === 'GRACE_PERIOD' && graceEnd && graceEnd <= now) {
-    subscription.status = 'EXPIRED';
-    subscription.plan = 'FREE';
-    subscription.is_current = true;
-    await subscription.save();
+  // ARCHIVED: không chuyển ngược trừ khi thanh toán (activateOrRenew)
+  if (subscription.status === 'ARCHIVED' || org.billing_status === 'ARCHIVED') {
+    if (subscription.status !== 'ARCHIVED') {
+      subscription.status = 'ARCHIVED';
+      await subscription.save();
+    }
     await syncOrganizationFromSubscription(org, subscription, {
       source: 'SYSTEM',
-      note: 'Hết thời gian gia hạn 7 ngày (auto)'
+      note: 'Đồng bộ ARCHIVED',
+      recordHistory: false
+    });
+    return { org, subscription };
+  }
+
+  if (subscription.status === 'EXPIRED' || org.billing_status === 'EXPIRED') {
+    const expiredAt = org.billing_expired_at
+      ? new Date(org.billing_expired_at).getTime()
+      : (org.plan_expires_at ? new Date(org.plan_expires_at).getTime() : null);
+    if (expiredAt && expiredAt + ARCHIVE_AFTER_EXPIRED_MS <= now) {
+      subscription.status = 'ARCHIVED';
+      await subscription.save();
+      org.archived_at = new Date();
+      await syncOrganizationFromSubscription(org, subscription, {
+        source: 'SYSTEM',
+        note: 'Hết 90 ngày EXPIRED → ARCHIVED (auto)'
+      });
+      return { org, subscription };
+    }
+    if (subscription.status !== 'EXPIRED') {
+      subscription.status = 'EXPIRED';
+      await subscription.save();
+      await syncOrganizationFromSubscription(org, subscription, {
+        source: 'SYSTEM',
+        note: 'Đồng bộ EXPIRED',
+        recordHistory: false
+      });
+    }
+    return { org, subscription };
+  }
+
+  if (subscription.status === 'GRACE_PERIOD' && graceEnd && graceEnd <= now) {
+    subscription.status = 'EXPIRED';
+    // Giữ plan trên subscription để renew / hiển thị
+    await subscription.save();
+    org.billing_expired_at = new Date();
+    await syncOrganizationFromSubscription(org, subscription, {
+      source: 'SYSTEM',
+      note: `Hết thời gian gia hạn ${GRACE_PERIOD_DAYS} ngày (auto)`
     });
     return { org, subscription };
   }
@@ -160,7 +226,7 @@ async function refreshSubscriptionStatus(org, subscription) {
     await subscription.save();
     await syncOrganizationFromSubscription(org, subscription, {
       source: 'SYSTEM',
-      note: 'Chu kỳ hết hạn → gia hạn 7 ngày (auto)'
+      note: `Chu kỳ hết hạn → gia hạn ${GRACE_PERIOD_DAYS} ngày (auto)`
     });
     return { org, subscription };
   }
@@ -171,8 +237,8 @@ async function refreshSubscriptionStatus(org, subscription) {
     graceEnd <= now
   ) {
     subscription.status = 'EXPIRED';
-    subscription.plan = 'FREE';
     await subscription.save();
+    org.billing_expired_at = new Date();
     await syncOrganizationFromSubscription(org, subscription, {
       source: 'SYSTEM',
       note: 'PAST_DUE hết grace (auto)'
@@ -339,14 +405,12 @@ async function activateOrRenewSubscription({
   metadata = {},
   recordHistory = true
 }) {
-  const nextPlan = String(plan || 'PRO').toUpperCase();
-  if (!VALID_PLANS.includes(nextPlan) || !isPaidPlan(nextPlan)) {
-    throw Object.assign(new Error('plan phải là PRO hoặc ENTERPRISE.'), { status: 400 });
-  }
+  const nextPlan = await assertPlanCode(plan || 'PRO', { mustBePaid: true });
 
+  const periodDays = getPlanPeriodDays(nextPlan) || DEFAULT_PERIOD_DAYS;
   const period = {
-    start: periodStart ? new Date(periodStart) : defaultPeriod().start,
-    end: periodEnd ? new Date(periodEnd) : defaultPeriod().end
+    start: periodStart ? new Date(periodStart) : defaultPeriod(periodDays).start,
+    end: periodEnd ? new Date(periodEnd) : defaultPeriod(periodDays).end
   };
   if (Number.isNaN(period.start.getTime()) || Number.isNaN(period.end.getTime())) {
     throw Object.assign(new Error('period_start/period_end không hợp lệ.'), { status: 400 });
@@ -428,36 +492,39 @@ async function markSubscriptionPastDue(org, options = {}) {
 
 async function expireCurrentSubscription(org, options = {}) {
   let subscription = await getCurrentSubscription(org._id);
+  const keepPlan = (subscription && subscription.plan && subscription.plan !== 'FREE')
+    ? subscription.plan
+    : (org.plan && org.plan !== 'FREE' ? org.plan : 'FREE');
 
   if (!subscription) {
-    // Tạo bản ghi FREE expired để audit (optional nhẹ)
     await Subscription.updateMany(
       { organization_id: org._id, is_current: true },
       { $set: { is_current: false } }
     );
     subscription = await Subscription.create({
       organization_id: org._id,
-      plan: 'FREE',
+      plan: keepPlan,
       status: 'EXPIRED',
       current_period_start: org.plan_started_at || new Date(),
-      current_period_end: new Date(),
+      current_period_end: org.plan_expires_at || new Date(),
       is_current: true,
       provider: 'MANUAL',
-      note: options.note || 'Hết hạn / hạ gói',
+      note: options.note || 'Hết hạn gói',
       created_by: options.createdBy || null
     });
   } else {
     subscription.status = 'EXPIRED';
-    subscription.plan = 'FREE';
+    // Giữ plan đã mua — không xóa dữ liệu; khóa bằng billing_status
     if (!subscription.current_period_end) subscription.current_period_end = new Date();
     if (options.note) subscription.note = options.note;
     await subscription.save();
   }
 
+  org.billing_expired_at = org.billing_expired_at || new Date();
   await syncOrganizationFromSubscription(org, subscription, {
     changed_by: options.createdBy || null,
     source: options.source || 'PAYMENT',
-    note: options.note || 'Subscription hết hạn → FREE',
+    note: options.note || 'Subscription hết hạn (giữ dữ liệu + plan)',
     recordHistory: options.recordHistory !== false
   });
 
@@ -545,6 +612,8 @@ async function applyBillingEventToSubscription(org, event) {
 module.exports = {
   VALID_PLANS,
   PAID_PLANS,
+  getKnownPlanCodes,
+  getPaidPlanCodes,
   GRACE_PERIOD_DAYS,
   isPaidPlan,
   getCurrentSubscription,

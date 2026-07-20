@@ -10,12 +10,13 @@ const subscriptionSchema = new mongoose.Schema({
   },
   plan: {
     type: String,
-    enum: ['FREE', 'PRO', 'ENTERPRISE'],
+    uppercase: true,
+    trim: true,
     required: true
   },
   status: {
     type: String,
-    enum: ['TRIALING', 'ACTIVE', 'PAST_DUE', 'GRACE_PERIOD', 'CANCELED', 'EXPIRED'],
+    enum: ['TRIALING', 'ACTIVE', 'PAST_DUE', 'GRACE_PERIOD', 'CANCELED', 'EXPIRED', 'ARCHIVED'],
     default: 'ACTIVE',
     index: true
   },

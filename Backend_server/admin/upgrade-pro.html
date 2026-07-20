@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nâng cấp Gói PRO — Thanh toán</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #0d0d0f; color: #1d2939; min-height: 100vh;
+  }
+  .checkout { display: grid; grid-template-columns: 1fr 1fr; min-height: 100vh; }
+  /* ===== LEFT (summary) ===== */
+  .co-left { background: #0d0d0f; color: #e8e8ea; padding: 48px clamp(24px, 6vw, 96px); display: flex; flex-direction: column; }
+  .co-back { display: inline-flex; align-items: center; gap: 8px; color: #9b9ba3; text-decoration: none; font-size: 14px; margin-bottom: 40px; width: fit-content; }
+  .co-back:hover { color: #fff; }
+  .co-eyebrow { font-size: 15px; color: #c7c7cf; margin-bottom: 6px; }
+  .co-price { font-size: 44px; font-weight: 700; letter-spacing: -1px; line-height: 1.1; }
+  .co-price small { font-size: 14px; font-weight: 400; color: #9b9ba3; margin-left: 6px; }
+  .co-note { font-size: 12px; color: #8a8a92; margin-top: 10px; line-height: 1.5; }
+  .co-plancard { background: #17171b; border: 1px solid #2a2a30; border-radius: 12px; padding: 16px; margin-top: 28px; }
+  .co-planrow { display: flex; align-items: flex-start; gap: 12px; }
+  .co-planicon { width: 40px; height: 40px; border-radius: 8px; flex: none; background: linear-gradient(135deg,#7c3aed,#a855f7); display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  .co-planname { font-weight: 600; font-size: 15px; }
+  .co-plandesc { font-size: 12.5px; color: #9b9ba3; margin-top: 3px; line-height: 1.5; }
+  .co-planprice { margin-left: auto; font-weight: 600; white-space: nowrap; }
+  .co-periods { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+  .co-period { flex: 1; min-width: 70px; text-align: center; cursor: pointer; border: 1px solid #2a2a30; border-radius: 10px; padding: 10px 6px; background: #131317; transition: .15s; }
+  .co-period.active { border-color: #a855f7; background: #1e1636; }
+  .co-period b { display: block; font-size: 14px; }
+  .co-period span { font-size: 11px; color: #8a8a92; }
+  .co-lines { margin-top: 28px; border-top: 1px solid #26262c; padding-top: 18px; }
+  .co-line { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 12px; color: #c7c7cf; }
+  .co-line.total { color: #fff; font-weight: 700; font-size: 16px; border-top: 1px solid #26262c; padding-top: 16px; }
+
+  /* ===== RIGHT (payment) ===== */
+  .co-right { background: #fff; padding: 48px clamp(24px, 5vw, 72px); display: flex; flex-direction: column; }
+  .co-right h2 { font-size: 18px; margin-bottom: 4px; }
+  .co-right .sub { font-size: 13px; color: #667085; margin-bottom: 24px; }
+  .co-field { margin-bottom: 16px; }
+  .co-row { display: flex; gap: 12px; }
+  .co-row .co-field { flex: 1; }
+  .co-field label { display: block; font-size: 13px; font-weight: 600; color: #344054; margin-bottom: 6px; }
+  .co-field label .opt { font-weight: 400; color: #98a2b3; }
+  .co-field input {
+    width: 100%; padding: 11px 13px; border: 1px solid #d0d5dd; border-radius: 9px; font-size: 14px; transition: .15s; background: #fff;
+  }
+  .co-field input:focus { outline: none; border-color: #a855f7; box-shadow: 0 0 0 3px rgba(168,85,247,.15); }
+  .co-field input[readonly] { background: #f9fafb; color: #667085; }
+  .co-section-title { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: #98a2b3; margin: 24px 0 10px; }
+  .co-submit { margin-top: 8px; width: 100%; padding: 14px; border: none; border-radius: 10px; background: #0d0d0f; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; transition: .15s; }
+  .co-submit:hover { background: #26262c; }
+  .co-submit:disabled { opacity: .6; cursor: not-allowed; }
+  .co-msg { display: none; margin-top: 14px; padding: 11px 13px; border-radius: 9px; font-size: 13px; }
+  .co-msg.err { background: #fef3f2; border: 1px solid #fecdca; color: #b42318; }
+  .co-legal { font-size: 11.5px; color: #98a2b3; margin-top: 18px; line-height: 1.6; text-align: center; }
+
+  /* ===== QR state ===== */
+  #coQrState { display: none; text-align: center; }
+  #coQrState .qbox { display: inline-block; padding: 16px; border: 1px solid #eaecf0; border-radius: 16px; background: #fff; margin: 8px 0 16px; }
+  #coQrState img { width: 240px; height: 240px; display: block; }
+  #coQrState .amt { font-size: 26px; font-weight: 700; margin: 4px 0; }
+  .co-waiting { display: inline-flex; align-items: center; gap: 8px; background: #fffaeb; border: 1px solid #fedf89; color: #b54708; padding: 9px 14px; border-radius: 20px; font-size: 13px; margin-top: 6px; }
+  .spinner { width: 14px; height: 14px; border: 2px solid #fedf89; border-top-color: #b54708; border-radius: 50%; animation: sp .8s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .co-testbtn { display: inline-block; margin-top: 18px; padding: 11px 20px; border: 1px solid #d0d5dd; border-radius: 10px; font-size: 14px; color: #344054; text-decoration: none; font-weight: 600; background: #fff; }
+  .co-testbtn:hover { background: #f9fafb; border-color: #a855f7; color: #7c3aed; }
+  .co-cancel { display: block; margin: 14px auto 0; background: none; border: none; color: #98a2b3; font-size: 13px; cursor: pointer; text-decoration: underline; }
+
+  /* ===== Success overlay ===== */
+  .co-success { position: fixed; inset: 0; background: rgba(13,13,15,.75); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
+  .co-success .box { background: #fff; border-radius: 16px; padding: 36px 32px; max-width: 420px; width: 100%; text-align: center; }
+  .co-success .check { width: 64px; height: 64px; border-radius: 50%; background: #ecfdf3; color: #12b76a; display: flex; align-items: center; justify-content: center; font-size: 34px; margin: 0 auto 18px; }
+  .co-success h3 { font-size: 20px; margin-bottom: 8px; }
+  .co-success p { color: #667085; font-size: 14px; margin-bottom: 22px; line-height: 1.6; }
+  .co-success .btn { display: inline-block; padding: 12px 22px; border-radius: 10px; background: #7c3aed; color: #fff; text-decoration: none; font-weight: 600; border: none; cursor: pointer; font-size: 14px; }
+
+  @media (max-width: 820px) {
+    .checkout { grid-template-columns: 1fr; }
+    .co-left { padding: 32px 24px; }
+    .co-right { padding: 32px 24px; }
+  }
+</style>
+</head>
+<body>
+<div class="checkout">
+  <!-- LEFT: order summary -->
+  <div class="co-left">
+    <a class="co-back" href="/admin/dashboard.html">← Quay lại Dashboard</a>
+    <div class="co-eyebrow" id="coEyebrow">Nâng cấp gói</div>
+    <div class="co-price"><span id="coUnitPrice">…</span> <small id="coPriceUnit">mỗi tháng</small></div>
+    <div class="co-note">Thanh toán qua ví <b>TPTPbank</b>. Bấm “Thanh toán”, dùng điện thoại quét mã QR và xác nhận trong ví — số tiền được trừ trực tiếp từ số dư ví.</div>
+
+    <div class="co-plancard">
+      <div class="co-planrow">
+        <div>
+          <div class="co-planname" id="coPlanName">Gói</div>
+          <div class="co-plandesc" id="coPlanDesc">…</div>
+        </div>
+        <div class="co-planprice" id="coPlanPrice">…</div>
+      </div>
+      <div class="co-periods" id="coPeriods">
+        <div class="co-period active" data-months="1"><b>1 tháng</b><span>Hàng tháng</span></div>
+        <div class="co-period" data-months="3"><b>3 tháng</b><span>Theo quý</span></div>
+        <div class="co-period" data-months="6"><b>6 tháng</b><span>Nửa năm</span></div>
+        <div class="co-period" data-months="12"><b>12 tháng</b><span>Cả năm</span></div>
+      </div>
+    </div>
+
+    <div class="co-lines">
+      <div class="co-line"><span>Tổng phụ</span><span id="coSubtotal">…</span></div>
+      <div class="co-line"><span>Thuế</span><span>0 đ</span></div>
+      <div class="co-line total"><span>Tổng tiền phải trả hôm nay</span><span id="coTotal">…</span></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: payment -->
+  <div class="co-right">
+    <!-- STATE A: form -->
+    <div id="coFormState">
+      <h2>Thông tin thanh toán</h2>
+      <div class="sub">Vui lòng điền đầy đủ thông tin liên hệ &amp; hóa đơn để tiếp tục (chỉ tên công ty được để trống).</div>
+
+      <div id="coOrgSection" style="display:none">
+        <div class="co-section-title">Thông tin tổ chức</div>
+        <div class="co-field">
+          <label>Tên tổ chức <span style="color:#d92d20">*</span></label>
+          <input id="coOrgName" type="text" placeholder="VD: Bệnh viện ABC">
+        </div>
+        <div class="co-field">
+          <label>Mã tổ chức (slug) <span class="opt">(tùy chọn — tự tạo nếu để trống)</span></label>
+          <input id="coOrgSlug" type="text" placeholder="abc-hospital" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')">
+        </div>
+        <div class="co-field">
+          <label>Gói tổ chức <span style="color:#d92d20">*</span></label>
+          <select id="coOrgPlan" style="width:100%;padding:11px 13px;border:1px solid #d0d5dd;border-radius:9px;font-size:14px;background:#fff">
+            <option value="BUSINESS">BUSINESS</option>
+            <option value="ENTERPRISE">ENTERPRISE</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="co-section-title">Thông tin liên hệ</div>
+      <div class="co-field">
+        <label>Tài khoản</label>
+        <input id="coAccountEmail" type="text" readonly value="Đang tải…">
+      </div>
+      <div class="co-field">
+        <label>Họ và tên <span style="color:#d92d20">*</span></label>
+        <input id="coFullName" type="text" placeholder="Nguyễn Văn A">
+      </div>
+
+      <div class="co-section-title">Thông tin hóa đơn</div>
+      <div class="co-field">
+        <label>Tên công ty <span class="opt">(tùy chọn)</span></label>
+        <input id="coCompany" type="text" placeholder="Công ty TNHH…">
+      </div>
+      <div class="co-field">
+        <label>Địa chỉ <span style="color:#d92d20">*</span></label>
+        <input id="coAddress" type="text" placeholder="Số nhà, đường…">
+      </div>
+      <div class="co-row">
+        <div class="co-field">
+          <label>Thành phố <span style="color:#d92d20">*</span></label>
+          <input id="coCity" type="text" placeholder="TP. Hồ Chí Minh">
+        </div>
+        <div class="co-field">
+          <label>Quốc gia <span style="color:#d92d20">*</span></label>
+          <input id="coCountry" type="text" value="Việt Nam">
+        </div>
+      </div>
+      <div class="co-field">
+        <label>Số điện thoại <span style="color:#d92d20">*</span></label>
+        <input id="coPhone" type="tel" inputmode="numeric" maxlength="11" placeholder="09xxxxxxxx" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+      </div>
+
+      <button class="co-submit" id="coSubmit" onclick="createQr()">Thanh toán</button>
+      <div class="co-msg err" id="coMsg"></div>
+      <div class="co-legal" id="coLegal">Gói PRO giữ nguyên vai trò tài khoản cá nhân (REGISTERED_USER), chỉ mở rộng giới hạn tài nguyên.</div>
+    </div>
+
+    <!-- STATE B: QR -->
+    <div id="coQrState">
+      <h2>Quét mã QR để thanh toán</h2>
+      <div class="sub">Dùng <b>camera điện thoại</b> (cùng mạng WiFi với máy tính) quét mã → đăng nhập ví TPTPbank → xác nhận.</div>
+      <div class="qbox"><img id="coQrImg" src="" alt="Mã QR thanh toán"></div>
+      <div class="amt" id="coQrAmount">…</div>
+      <div class="co-waiting"><span class="spinner"></span> Đang chờ thanh toán…</div>
+      <a class="co-testbtn" id="coPayLink" href="#" target="_blank">💻 Thanh toán thử trên máy tính này</a>
+      <button class="co-cancel" onclick="cancelQr()">Hủy và quay lại</button>
+      <div class="co-msg err" id="coQrMsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Success -->
+<div class="co-success" id="coSuccess">
+  <div class="box">
+    <div class="check">✓</div>
+    <h3 id="coSuccessTitle">Nâng cấp thành công!</h3>
+    <p id="coSuccessMsg">Tài khoản của bạn đã được nâng cấp gói.</p>
+    <a class="btn" href="/admin/dashboard.html">Về Dashboard</a>
+  </div>
+</div>
+
+<script>
+  var TOKEN = localStorage.getItem('token');
+  var QS = new URLSearchParams(window.location.search);
+  var SCOPE = (QS.get('scope') || 'personal').toLowerCase();      // 'personal' | 'org' | 'create-org'
+  var IS_CREATE_ORG = SCOPE === 'create-org';
+  var IS_ORG = SCOPE === 'org';
+  var IS_PERSONAL = SCOPE === 'personal';
+  var USE_PERSONAL_ENDPOINT = IS_PERSONAL || IS_CREATE_ORG;       // đều dùng ví TPTPbank (PersonalPayment)
+  var SHOW_PERIODS = IS_PERSONAL;                                 // chỉ gói cá nhân chọn kỳ hạn tháng
+  var PLAN = (QS.get('plan') || (IS_CREATE_ORG ? 'BUSINESS' : 'PRO')).toUpperCase();
+  var ACTION = (QS.get('action') || 'upgrade').toLowerCase();     // org: upgrade | renew
+  var UNIT_PRICE = 0;   // personal: theo tháng; org/create-org: theo kỳ
+  var MONTHS = 1;       // personal only
+  var POLL_TIMER = null;
+  var CURRENT_PAYMENT = null;   // { kind, id, token }
+  var PENDING_STORAGE_KEY = 'indoorNavPendingCheckout';
+
+  function fmt(n) { return Number(n || 0).toLocaleString('vi-VN') + ' đ'; }
+  function authHeaders() { return { 'Authorization': 'Bearer ' + TOKEN }; }
+  function $(id) { return document.getElementById(id); }
+  function showErr(id, msg) { var el = $(id); el.textContent = msg; el.style.display = 'block'; }
+
+  function savePendingCheckout(payload) {
+    try {
+      sessionStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(payload));
+    } catch (e) {}
+  }
+  function clearPendingCheckout() {
+    try { sessionStorage.removeItem(PENDING_STORAGE_KEY); } catch (e) {}
+  }
+  function loadPendingCheckout() {
+    try {
+      var raw = sessionStorage.getItem(PENDING_STORAGE_KEY);
+      if (!raw) return null;
+      var data = JSON.parse(raw);
+      if (!data || !data.id || !data.expires_at) return null;
+      if (new Date(data.expires_at).getTime() <= Date.now()) {
+        clearPendingCheckout();
+        return null;
+      }
+      // Chỉ restore đúng scope/plan hiện tại
+      if (data.scope !== SCOPE || String(data.plan || '').toUpperCase() !== PLAN) return null;
+      return data;
+    } catch (e) {
+      return null;
+    }
+  }
+  function notifyOverviewRefresh() {
+    try {
+      if (window.opener && !window.opener.closed && typeof window.opener.notifyOverviewDataChanged === 'function') {
+        window.opener.notifyOverviewDataChanged();
+      }
+    } catch (e) {}
+    try { localStorage.setItem('indoorNavOverviewRefresh', String(Date.now())); } catch (e) {}
+    try {
+      var ch = new BroadcastChannel('indoor-nav-overview');
+      ch.postMessage({ type: 'overview-refresh', at: Date.now() });
+      ch.close();
+    } catch (e) {}
+  }
+  function showQrState(amount, payHref, qrDataUrl) {
+    if (payHref) $('coPayLink').href = payHref;
+    if (qrDataUrl) $('coQrImg').src = qrDataUrl;
+    $('coQrAmount').textContent = fmt(amount);
+    $('coFormState').style.display = 'none';
+    $('coQrState').style.display = 'block';
+    startPolling();
+  }
+
+  function recompute() {
+    var total = IS_PERSONAL ? UNIT_PRICE * MONTHS : UNIT_PRICE;
+    $('coSubtotal').textContent = fmt(total);
+    $('coTotal').textContent = fmt(total);
+  }
+
+  async function reloadPlanPrice() {
+    var info = await loadPlanInfo();
+    UNIT_PRICE = info.price_vnd || 0;
+    $('coUnitPrice').textContent = fmt(UNIT_PRICE);
+    applyScopeUI(info);
+    recompute();
+  }
+
+  function setupPeriods() {
+    var pills = document.querySelectorAll('#coPeriods .co-period');
+    pills.forEach(function (p) {
+      p.addEventListener('click', function () {
+        if (CURRENT_PAYMENT) return; // đã tạo QR thì khóa đổi kỳ hạn
+        pills.forEach(function (x) { x.classList.remove('active'); });
+        p.classList.add('active');
+        MONTHS = parseInt(p.getAttribute('data-months'), 10) || 1;
+        recompute();
+      });
+    });
+  }
+
+  // Tải thông tin gói từ catalog (data-driven — chạy được với mọi gói mới thêm)
+  async function loadPlanInfo() {
+    var info = { name: 'Gói ' + PLAN, description: '', price_vnd: 0, period_days: 30 };
+    try {
+      var res = await fetch('/api/billing/plans');
+      if (res.ok) {
+        var d = await res.json();
+        var found = (d.plans || []).find(function (p) { return String(p.code).toUpperCase() === PLAN; });
+        if (found) {
+          info.name = found.name || info.name;
+          info.description = found.description || '';
+          info.price_vnd = Number(found.price_vnd) || 0;
+          info.period_days = Number(found.period_days) || 30;
+        }
+      }
+    } catch (e) {}
+    return info;
+  }
+
+  function applyScopeUI(planInfo) {
+    var perDays = Math.max(1, Number(planInfo.period_days) || 30);
+    var periodLabel = perDays === 30 ? 'tháng' : (perDays === 7 ? 'tuần' : (perDays + ' ngày'));
+    if (IS_PERSONAL) {
+      $('coEyebrow').innerHTML = 'Nâng cấp gói <b>' + PLAN + '</b>';
+      $('coPlanName').textContent = (planInfo.name || ('Gói ' + PLAN)) + ' — Cá nhân';
+      $('coPlanDesc').textContent = planInfo.description ||
+        'Mở khóa không giới hạn tòa nhà, tầng, bản đồ, mã QR; upload CAD/ảnh lớn, lịch sử phiên bản & analytics đầy đủ.';
+      $('coPriceUnit').textContent = 'mỗi ' + periodLabel;
+      $('coPlanPrice').textContent = fmt(UNIT_PRICE) + '/' + periodLabel;
+      // Chỉ gói ~30 ngày mới cho chọn nhiều tháng; gói ngắn (vd. 5 ngày) = 1 kỳ
+      if (perDays === 30) {
+        $('coPeriods').style.display = 'flex';
+      } else {
+        $('coPeriods').style.display = 'none';
+        MONTHS = 1;
+        recompute();
+      }
+      $('coLegal').textContent = 'Gói ' + PLAN + ' giữ nguyên vai trò tài khoản cá nhân (REGISTERED_USER), chỉ mở rộng giới hạn tài nguyên. Mỗi lần thanh toán gia hạn ' + perDays + ' ngày.';
+      $('coSuccessTitle').textContent = 'Nâng cấp ' + PLAN + ' thành công!';
+    } else if (IS_CREATE_ORG) {
+      $('coEyebrow').innerHTML = 'Tạo tổ chức · gói <b>' + PLAN + '</b>';
+      $('coPlanName').textContent = (planInfo.name || ('Gói ' + PLAN)) + ' — Tổ chức';
+      $('coPlanDesc').textContent = planInfo.description ||
+        'Tạo tổ chức để cộng tác nhóm: nhiều tòa nhà & người dùng, phân quyền, quản lý subscription. Bạn sẽ trở thành Quản trị tổ chức (ORG_ADMIN).';
+      $('coPriceUnit').textContent = 'mỗi ' + periodLabel;
+      $('coPlanPrice').textContent = fmt(UNIT_PRICE);
+      $('coPeriods').style.display = 'none';
+      $('coLegal').textContent = 'Sau khi thanh toán, tổ chức được tạo và tài khoản của bạn nâng lên Quản trị tổ chức. Các tòa nhà cá nhân sẽ được chuyển vào tổ chức.';
+      $('coSuccessTitle').textContent = 'Tạo tổ chức thành công!';
+    } else {
+      $('coEyebrow').innerHTML = 'Nâng cấp lên <b>' + PLAN + '</b>';
+      $('coPlanName').textContent = (planInfo.name || ('Gói ' + PLAN)) + ' — Tổ chức';
+      $('coPlanDesc').textContent = planInfo.description ||
+        'Cộng tác nhóm, nhiều tòa nhà & người dùng, quản lý subscription và hóa đơn cho tổ chức.';
+      $('coPriceUnit').textContent = 'mỗi ' + periodLabel;
+      $('coPlanPrice').textContent = fmt(UNIT_PRICE);
+      $('coPeriods').style.display = 'none';
+      $('coLegal').textContent = 'Thanh toán tạo hóa đơn & kích hoạt/gia hạn subscription cho tổ chức của bạn.';
+      $('coSuccessTitle').textContent = 'Kích hoạt gói ' + PLAN + ' thành công!';
+    }
+  }
+
+  async function init() {
+    if (!TOKEN) { window.location.replace('/login'); return; }
+    var me;
+    try {
+      var meRes = await fetch('/api/users/me', { headers: authHeaders() });
+      if (!meRes.ok) { window.location.replace('/login'); return; }
+      me = await meRes.json();
+    } catch (e) { window.location.replace('/login'); return; }
+
+    if (USE_PERSONAL_ENDPOINT && me.role !== 'REGISTERED_USER') {
+      alert('Trang này chỉ dành cho tài khoản cá nhân (REGISTERED_USER).');
+      window.location.replace('/admin/dashboard.html'); return;
+    }
+    if (IS_CREATE_ORG) {
+      try {
+        var billRes = await fetch('/api/billing/personal/me', { headers: authHeaders() });
+        if (billRes.ok) {
+          var bill = await billRes.json();
+          if (bill.can_create_org !== true) {
+            alert(bill.create_org_lock_reason || 'Cần nâng cấp gói cá nhân trả phí trước khi tạo tổ chức.');
+            window.location.replace('/admin/upgrade-pro.html?scope=personal&plan=PRO');
+            return;
+          }
+        }
+      } catch (e) {}
+    }
+    if (IS_ORG && me.role !== 'ORG_ADMIN' && me.role !== 'SUPER_ADMIN') {
+      alert('Trang thanh toán tổ chức chỉ dành cho quản trị viên tổ chức.');
+      window.location.replace('/admin/dashboard.html'); return;
+    }
+
+    $('coAccountEmail').value = me.email || me.full_name || 'Tài khoản';
+    // Ưu tiên hồ sơ thanh toán đã lưu; fallback profile user / tổ chức
+    var bp = me.billing_profile || {};
+    var org = me.organization || {};
+    if (bp.full_name || me.full_name) $('coFullName').value = bp.full_name || me.full_name || '';
+    if (bp.company) $('coCompany').value = bp.company;
+    if (bp.address) $('coAddress').value = bp.address;
+    else if (org.contact_address) {
+      // address org dạng "địa chỉ, city, country" — chỉ lấy phần đầu nếu chưa có billing_profile
+      var parts = String(org.contact_address).split(',').map(function (s) { return s.trim(); });
+      if (parts[0]) $('coAddress').value = parts[0];
+      if (!bp.city && parts[1]) $('coCity').value = parts[1];
+      if (!bp.country && parts[2]) $('coCountry').value = parts[2];
+    }
+    if (bp.city) $('coCity').value = bp.city;
+    if (bp.country) $('coCountry').value = bp.country;
+    else if (!$('coCountry').value) $('coCountry').value = 'Việt Nam';
+    if (bp.phone || me.phone || org.contact_phone) {
+      $('coPhone').value = bp.phone || me.phone || org.contact_phone || '';
+    }
+    // Đã có đủ hồ sơ → focus nút thanh toán
+    if (bp.full_name && bp.address && bp.city && bp.phone) {
+      var payBtn = $('coSubmit');
+      if (payBtn) setTimeout(function () { payBtn.focus(); }, 50);
+    }
+
+    if (IS_CREATE_ORG) {
+      $('coOrgSection').style.display = 'block';
+      var sel = $('coOrgPlan');
+      sel.value = ['BUSINESS', 'ENTERPRISE'].indexOf(PLAN) >= 0 ? PLAN : 'BUSINESS';
+      PLAN = sel.value;
+      sel.addEventListener('change', function () { PLAN = sel.value; reloadPlanPrice(); });
+    }
+
+    var planInfo = await loadPlanInfo();
+    UNIT_PRICE = planInfo.price_vnd || 0;
+    $('coUnitPrice').textContent = fmt(UNIT_PRICE);
+    applyScopeUI(planInfo);
+    if (IS_PERSONAL) setupPeriods();
+    recompute();
+  }
+
+  function collectContact() {
+    return {
+      full_name: $('coFullName').value.trim(),
+      company: $('coCompany').value.trim(),
+      address: $('coAddress').value.trim(),
+      city: $('coCity').value.trim(),
+      country: $('coCountry').value.trim(),
+      phone: $('coPhone').value.trim()
+    };
+  }
+
+  function validateContact(contact) {
+    var required = [
+      ['full_name', 'coFullName', 'họ và tên'],
+      ['address', 'coAddress', 'địa chỉ'],
+      ['city', 'coCity', 'thành phố'],
+      ['country', 'coCountry', 'quốc gia'],
+      ['phone', 'coPhone', 'số điện thoại']
+    ];
+    var failFocus = function (id) { var f = $(id); if (f) f.focus(); };
+    for (var i = 0; i < required.length; i++) {
+      if (!contact[required[i][0]]) {
+        showErr('coMsg', 'Vui lòng nhập ' + required[i][2] + '.'); failFocus(required[i][1]); return false;
+      }
+    }
+    if (/\d/.test(contact.full_name) || contact.full_name.length < 2) {
+      showErr('coMsg', 'Họ và tên không hợp lệ (chỉ gồm chữ, tối thiểu 2 ký tự).'); failFocus('coFullName'); return false;
+    }
+    if (!/^0\d{9,10}$/.test(contact.phone)) {
+      showErr('coMsg', 'Số điện thoại không hợp lệ (10–11 chữ số, bắt đầu bằng 0).'); failFocus('coPhone'); return false;
+    }
+    if (contact.address.length < 5) {
+      showErr('coMsg', 'Địa chỉ quá ngắn (tối thiểu 5 ký tự).'); failFocus('coAddress'); return false;
+    }
+    if (contact.city.length < 2 || /\d/.test(contact.city)) {
+      showErr('coMsg', 'Thành phố không hợp lệ (chỉ gồm chữ, tối thiểu 2 ký tự).'); failFocus('coCity'); return false;
+    }
+    return true;
+  }
+
+  function showPaidSuccess(planExpiresAt) {
+    clearInterval(POLL_TIMER);
+    clearPendingCheckout();
+    notifyOverviewRefresh();
+    try {
+      if (window.opener && !window.opener.closed) {
+        if (CURRENT_PAYMENT && CURRENT_PAYMENT.kind === 'personal' && typeof window.opener.loadPersonalBilling === 'function') {
+          window.opener.loadPersonalBilling();
+        }
+        if (CURRENT_PAYMENT && CURRENT_PAYMENT.kind === 'org' && typeof window.opener.loadMyBillingTab === 'function') {
+          window.opener.loadMyBillingTab();
+        }
+      }
+    } catch (e) {}
+    var sm = $('coSuccessMsg');
+    if (planExpiresAt) {
+      sm.textContent = 'Gói ' + PLAN + ' hiệu lực đến ' + new Date(planExpiresAt).toLocaleDateString('vi-VN') + '. Mọi giới hạn tài nguyên đã được mở rộng.';
+    } else {
+      sm.textContent = 'Gói ' + PLAN + ' đã được kích hoạt.';
+    }
+    $('coFormState').style.display = 'none';
+    $('coQrState').style.display = 'none';
+    $('coSuccess').style.display = 'flex';
+  }
+
+  async function createQr() {
+    var btn = $('coSubmit');
+    $('coMsg').style.display = 'none';
+
+    // Đã có QR đang poll → không tạo đơn mới
+    if (CURRENT_PAYMENT && CURRENT_PAYMENT.kind === 'personal') {
+      showErr('coMsg', 'Đang có mã QR chờ thanh toán. Vuốt xuống hoặc F5 để xem lại mã hiện tại.');
+      return;
+    }
+
+    // Kiểm tra thông tin tổ chức (khi tạo tổ chức)
+    var orgName = '', orgSlug = '';
+    if (IS_CREATE_ORG) {
+      orgName = $('coOrgName').value.trim();
+      orgSlug = $('coOrgSlug').value.trim();
+      if (orgName.length < 2) { showErr('coMsg', 'Tên tổ chức phải có ít nhất 2 ký tự.'); $('coOrgName').focus(); return; }
+    }
+
+    var contact = collectContact();
+    if (!validateContact(contact)) return;
+
+    btn.disabled = true; btn.textContent = 'Đang xử lý…';
+    try {
+      var url, payload;
+      if (IS_CREATE_ORG) {
+        url = '/api/billing/personal/checkout';
+        payload = { plan: PLAN, purpose: 'CREATE_ORG', org_meta: { name: orgName, slug: orgSlug }, contact: contact };
+      } else if (IS_PERSONAL) {
+        url = '/api/billing/personal/checkout';
+        payload = { plan: PLAN, months: MONTHS, contact: contact };
+      } else {
+        url = '/api/billing/checkout';
+        payload = { plan: PLAN, action: ACTION, contact: contact };
+      }
+      var res = await fetch(url, {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        body: JSON.stringify(payload)
+      });
+      var d = await res.json();
+      if (!res.ok) { showErr('coMsg', d.message || 'Không tạo được mã QR.'); btn.disabled = false; btn.textContent = 'Thanh toán'; return; }
+
+      if (USE_PERSONAL_ENDPOINT) {
+        // Vừa thanh toán xong trong vài phút → hiện success, không mở QR mới
+        if (d.already_paid || d.status === 'PAID') {
+          CURRENT_PAYMENT = { kind: 'personal', id: d.payment_id, token: d.token };
+          showPaidSuccess(d.plan_expires_at);
+          btn.disabled = false; btn.textContent = 'Thanh toán';
+          return;
+        }
+        CURRENT_PAYMENT = { kind: 'personal', id: d.payment_id, token: d.token };
+        var payHref = window.location.origin + '/tptp-pay/personal/' + d.payment_id + '?token=' + encodeURIComponent(d.token);
+        savePendingCheckout({
+          kind: 'personal',
+          scope: SCOPE,
+          plan: PLAN,
+          months: MONTHS,
+          id: d.payment_id,
+          token: d.token,
+          amount: d.amount,
+          qr_data_url: d.qr_data_url,
+          pay_href: payHref,
+          expires_at: d.expires_at || new Date(Date.now() + 14 * 60 * 1000).toISOString()
+        });
+        showQrState(d.amount, payHref, d.qr_data_url);
+      } else {
+        if (!d.qr_data_url) {
+          if (d.checkout_url) { window.location.href = d.checkout_url; return; }
+          showErr('coMsg', 'Cổng thanh toán chưa hỗ trợ QR.'); btn.disabled = false; btn.textContent = 'Thanh toán'; return;
+        }
+        CURRENT_PAYMENT = { kind: 'org', id: d.invoice_id };
+        savePendingCheckout({
+          kind: 'org',
+          scope: SCOPE,
+          plan: PLAN,
+          id: d.invoice_id,
+          amount: d.amount,
+          qr_data_url: d.qr_data_url,
+          pay_href: d.checkout_url || '#',
+          expires_at: d.expires_at || new Date(Date.now() + 14 * 60 * 1000).toISOString()
+        });
+        showQrState(d.amount, d.checkout_url || '#', d.qr_data_url);
+      }
+      btn.disabled = false; btn.textContent = 'Thanh toán';
+    } catch (e) {
+      showErr('coMsg', 'Lỗi kết nối: ' + e.message);
+      btn.disabled = false; btn.textContent = 'Thanh toán';
+    }
+  }
+
+  function startPolling() {
+    if (POLL_TIMER) clearInterval(POLL_TIMER);
+    POLL_TIMER = setInterval(checkStatus, 2500);
+  }
+
+  async function checkStatus() {
+    if (!CURRENT_PAYMENT) return;
+    try {
+      var statusUrl = CURRENT_PAYMENT.kind === 'personal'
+        ? '/api/billing/personal/checkout/' + CURRENT_PAYMENT.id + '/status?token=' + encodeURIComponent(CURRENT_PAYMENT.token)
+        : '/api/billing/checkout/' + CURRENT_PAYMENT.id + '/status';
+      var res = await fetch(statusUrl, { headers: authHeaders() });
+      var d = await res.json();
+      if (d.status === 'PAID') {
+        if (IS_CREATE_ORG && d.reauth && d.token) {
+          clearInterval(POLL_TIMER);
+          clearPendingCheckout();
+          try {
+            localStorage.setItem('token', d.token);
+            if (d.refreshToken) localStorage.setItem('refreshToken', d.refreshToken);
+            if (d.user && d.user.role) localStorage.setItem('userRole', d.user.role);
+          } catch (e) {}
+          var orgName = (d.organization && d.organization.name) ? d.organization.name : 'tổ chức của bạn';
+          $('coSuccessMsg').textContent = 'Đã tạo "' + orgName + '". Bạn giờ là Quản trị tổ chức. Đang chuyển vào Dashboard…';
+          $('coFormState').style.display = 'none';
+          $('coQrState').style.display = 'none';
+          $('coSuccess').style.display = 'flex';
+          setTimeout(function () { window.location.replace('/admin/dashboard.html'); }, 1400);
+          return;
+        }
+        showPaidSuccess(d.plan_expires_at);
+      } else if (d.status === 'EXPIRED' || d.status === 'CANCELLED' || d.status === 'VOID') {
+        clearInterval(POLL_TIMER);
+        clearPendingCheckout();
+        CURRENT_PAYMENT = null;
+        showErr('coQrMsg', 'Đơn thanh toán đã hết hạn hoặc bị thay bằng mã mới. Vui lòng hủy và tạo lại QR.');
+      }
+    } catch (e) {}
+  }
+
+  function cancelQr() {
+    if (POLL_TIMER) clearInterval(POLL_TIMER);
+    CURRENT_PAYMENT = null;
+    clearPendingCheckout();
+    $('coQrMsg').style.display = 'none';
+    $('coQrState').style.display = 'none';
+    $('coFormState').style.display = 'block';
+    var btn = $('coSubmit');
+    btn.disabled = false; btn.textContent = 'Thanh toán';
+  }
+
+  async function tryRestorePendingQr() {
+    if (!USE_PERSONAL_ENDPOINT) {
+      var pendingLocal = loadPendingCheckout();
+      if (!pendingLocal || !pendingLocal.qr_data_url) return false;
+      CURRENT_PAYMENT = { kind: 'org', id: pendingLocal.id };
+      showQrState(pendingLocal.amount, pendingLocal.pay_href, pendingLocal.qr_data_url);
+      return true;
+    }
+
+    // Ưu tiên đơn PENDING trên server (không phụ thuộc sessionStorage)
+    try {
+      var q = '/api/billing/personal/checkout/active?purpose=' +
+        encodeURIComponent(IS_CREATE_ORG ? 'CREATE_ORG' : 'UPGRADE') +
+        '&plan=' + encodeURIComponent(PLAN);
+      var res = await fetch(q, { headers: authHeaders() });
+      var d = await res.json();
+      if (res.ok && d.active && d.payment_id && d.token && d.qr_data_url) {
+        CURRENT_PAYMENT = { kind: 'personal', id: d.payment_id, token: d.token };
+        var payHref = window.location.origin + '/tptp-pay/personal/' + d.payment_id + '?token=' + encodeURIComponent(d.token);
+        savePendingCheckout({
+          kind: 'personal',
+          scope: SCOPE,
+          plan: PLAN,
+          months: d.months || MONTHS,
+          id: d.payment_id,
+          token: d.token,
+          amount: d.amount,
+          qr_data_url: d.qr_data_url,
+          pay_href: payHref,
+          expires_at: d.expires_at
+        });
+        showQrState(d.amount, payHref, d.qr_data_url);
+        return true;
+      }
+    } catch (e) {}
+
+    var pending = loadPendingCheckout();
+    if (!pending || !pending.qr_data_url) return false;
+    try {
+      var statusUrl = '/api/billing/personal/checkout/' + pending.id + '/status?token=' + encodeURIComponent(pending.token);
+      var res2 = await fetch(statusUrl, { headers: authHeaders() });
+      var st = await res2.json();
+      if (!res2.ok) { clearPendingCheckout(); return false; }
+      if (st.status === 'PAID') {
+        CURRENT_PAYMENT = { kind: 'personal', id: pending.id, token: pending.token };
+        showPaidSuccess(st.plan_expires_at);
+        return true;
+      }
+      if (st.status !== 'PENDING') {
+        clearPendingCheckout();
+        return false;
+      }
+    } catch (e) {
+      return false;
+    }
+    CURRENT_PAYMENT = { kind: 'personal', id: pending.id, token: pending.token };
+    showQrState(pending.amount, pending.pay_href, pending.qr_data_url);
+    return true;
+  }
+
+  var _origInit = init;
+  init = async function () {
+    await _origInit();
+    await tryRestorePendingQr();
+  };
+  init();
+</script>
+</body>
+</html>

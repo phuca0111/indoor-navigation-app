@@ -16,7 +16,7 @@ const {
   restoreBuilding,
   checkLocation
 } = require('../controllers/buildingController');
-const { auth, requireAdmin } = require('../middlewares/auth');
+const { auth, requireAdmin, requireBuildingCreator } = require('../middlewares/auth');
 const { requireBuildingAccess } = require('../middlewares/buildingAccess');
 
 router.get('/',                auth, getBuildings);    // Web Admin — phải đăng nhập để thấy DRAFT
@@ -25,7 +25,7 @@ router.get('/check-location',  checkLocation);         // Android kiểm tra GPS
 
 router.get('/:id',             auth, requireBuildingAccess, getBuildingById);
 
-router.post('/',       auth, requireAdmin, createBuilding);
+router.post('/',       auth, requireBuildingCreator, createBuilding);
 
 // Floor lifecycle: thêm/bớt tầng đuôi (SUPER/ORG — BUILDING_ADMIN bị chặn trong controller)
 router.patch('/:id/floors', auth, requireBuildingAccess, patchBuildingFloors);

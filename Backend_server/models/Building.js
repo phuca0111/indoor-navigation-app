@@ -68,10 +68,19 @@ const buildingSchema = new mongoose.Schema({
     },
 
     // Cột 10: Organization mà tòa nhà thuộc về (multi-tenant)
-    // Sau migration, tất cả building đều có organization_id
+    // Building thuộc tổ chức: organization_id != null, owner_user_id = null.
+    // Building trong Personal Workspace (REGISTERED_USER): organization_id = null, owner_user_id = user._id.
     organization_id: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Organization',
+        default: null
+    },
+
+    // Cột 11: Chủ sở hữu cá nhân (Personal Workspace của REGISTERED_USER).
+    // null với building thuộc Organization.
+    owner_user_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
         default: null
     }
 

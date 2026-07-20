@@ -125,7 +125,7 @@ function validateRegisterInput(fullName, email, password, confirmPassword) {
     return errors;
 }
 
-// Đăng ký công khai — is_active=false, chờ Super Admin duyệt (Phase 1A)
+// Đăng ký công khai — tạo REGISTERED_USER (tài khoản cá nhân, gói FREE), vào dùng ngay.
 const registerPublic = async (req, res) => {
     try {
         const { fullName, email, password, confirmPassword } = req.body;
@@ -147,9 +147,11 @@ const registerPublic = async (req, res) => {
         const newUser = await User.create({
             email,
             password: hashedPassword,
-            role: 'BUILDING_ADMIN',
+            role: 'REGISTERED_USER',
+            plan: 'FREE',
             full_name: normalizeFullName(fullName),
-            is_active: false,
+            is_active: true,
+            organization_id: null,
             assigned_buildings: [],
             created_by: null
         });
@@ -160,15 +162,21 @@ const registerPublic = async (req, res) => {
             target_type: 'user',
             target_id: String(newUser._id),
             target: newUser.email,
+            details: { role: 'REGISTERED_USER', plan: 'FREE' },
             ip_address: req.ip || ''
         });
 
+        // Đăng nhập ngay sau khi đăng ký (không cần chờ duyệt)
+        const session = await issueAuthSession(newUser, req);
         res.status(201).json({
-            message: 'Đăng ký thành công, tài khoản đang chờ quản trị viên duyệt.',
+            message: 'Đăng ký thành công!',
+            token: session.token,
+            refreshToken: session.refreshToken,
             user: {
                 id: newUser._id,
                 email: newUser.email,
                 role: newUser.role,
+                plan: newUser.plan,
                 is_active: newUser.is_active
             }
         });
@@ -463,13 +471,19 @@ const googleAuthCallback = async (req, res) => {
                 }
                 await user.save();
             } else {
-                // New Google user — chờ duyệt (giống public-register)
+                // New Google user — tạo REGISTERED_USER (cá nhân, FREE), vào dùng ngay
+                let googleFullName = profile.name || '';
+                try {
+                    if (googleFullName) googleFullName = normalizeFullName(googleFullName);
+                } catch (_) { /* giữ nguyên tên gốc nếu không chuẩn hóa được */ }
                 user = await User.create({
                     email: profile.email,
                     google_id: profile.googleId,
-                    full_name: profile.name || '',
-                    role: 'BUILDING_ADMIN',
-                    is_active: false,
+                    full_name: googleFullName,
+                    role: 'REGISTERED_USER',
+                    plan: 'FREE',
+                    is_active: true,
+                    organization_id: null,
                     assigned_buildings: [],
                     created_by: null
                 });
@@ -479,22 +493,53 @@ const googleAuthCallback = async (req, res) => {
                     target_type: 'user',
                     target_id: String(user._id),
                     target: user.email,
-                    details: { via: 'google' },
+                    details: { via: 'google', role: 'REGISTERED_USER', plan: 'FREE' },
                     ip_address: req.ip || ''
                 });
-                return res.redirect(buildGoogleRedirectHash({ pending: true }));
+                const newSession = await issueAuthSession(user, req);
+                return res.redirect(buildGoogleRedirectHash({
+                    token: newSession.token,
+                    refreshToken: newSession.refreshToken
+                }));
             }
         }
 
         if (!user.is_active) {
-            return res.redirect(buildGoogleRedirectHash({ pending: true }));
+            // Tài khoản đã tồn tại nhưng bị khóa / chờ duyệt (không phải user Google mới)
+            return res.redirect(
+                buildGoogleRedirectHash({ pending: true }) +
+                '&reason=' + encodeURIComponent('account_inactive')
+            );
         }
 
         const orgCheck = await assertUserOrgActive(user);
         if (!orgCheck.ok) {
-            return res.redirect(
-                '/login#google=0&error=' + encodeURIComponent(orgCheck.code || 'ORG_INACTIVE')
-            );
+            // Tài khoản lệch: role org nhưng chưa gán tổ chức (thường gặp với Google cũ)
+            // → chuyển về Personal Workspace để đăng nhập được.
+            if (orgCheck.code === 'ORG_MISSING') {
+                user.role = 'REGISTERED_USER';
+                if (!user.plan) user.plan = 'FREE';
+                user.organization_id = null;
+                user.assigned_buildings = [];
+                await user.save();
+                logActivity({
+                    user_id: user._id,
+                    action: 'UPDATE_PROFILE',
+                    target_type: 'user',
+                    target_id: String(user._id),
+                    target: user.email,
+                    details: {
+                        message: 'Google login: tự chuyển ORG_* thiếu tổ chức → REGISTERED_USER',
+                        via: 'google',
+                        from_code: 'ORG_MISSING'
+                    },
+                    ip_address: req.ip || ''
+                });
+            } else {
+                return res.redirect(
+                    '/login#google=0&error=' + encodeURIComponent(orgCheck.message || orgCheck.code || 'ORG_INACTIVE')
+                );
+            }
         }
 
         if (user.organization_id && ['ORG_ADMIN', 'BUILDING_ADMIN'].includes(user.role)) {

@@ -12,7 +12,9 @@ async function getOverview(req, res) {
     const data = await buildOverview({
       role: scope.role,
       orgId: scope.orgId,
-      range: req.query.range
+      range: req.query.range,
+      from: req.query.from,
+      to: req.query.to
     });
     res.json(data);
   } catch (e) {
@@ -41,7 +43,9 @@ async function getTimeseries(req, res) {
       role: scope.role,
       orgId: scope.orgId,
       metric: req.query.metric,
-      range: req.query.range
+      range: req.query.range,
+      from: req.query.from,
+      to: req.query.to
     });
     res.json(data);
   } catch (e) {

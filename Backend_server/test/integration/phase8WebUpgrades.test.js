@@ -168,6 +168,10 @@ describe('Phase 8 — Web upgrades', () => {
   test('TC-8.0a UI static — tooltip admin + profile org + Google wrap + editor draft/lock', () => {
     const dashHtml = read('admin/dashboard.html');
     const dashJs = read('js/dashboard.js');
+    const adminShellJs = read('js/admin-shell.js');
+    const adminUiJs = read('js/admin-ui.js');
+    const adminCss = read('admin/css/admin.css');
+    const adminThemeCss = read('admin/css/admin-theme.css');
     const loginHtml = read('admin/index.html');
     const landingLoginHtml = read('public/login/index.html');
     const loginJs = read('js/login.js');
@@ -178,8 +182,129 @@ describe('Phase 8 — Web upgrades', () => {
     const trialHtml = read('public/org-trial.html');
 
     expect(dashHtml).toMatch(/id="btnLogout"[^>]*title="/);
+    expect(dashHtml).toMatch(/id="adminSidebar"/);
+    expect(dashHtml).toMatch(/id="btnOpenSidebar"/);
+    expect(dashHtml).toMatch(/id="tabNav"[^>]*admin-sidebar-nav/);
+    expect(dashHtml).toMatch(/id="adminPageTitle"/);
+    expect(dashHtml).toMatch(/id="btnAdminTheme"/);
+    expect(dashHtml).toMatch(/indoorNavAdminTheme/);
+    expect(dashHtml).toMatch(/admin-theme\.css\?v=20260718ad61/);
+    expect(dashHtml).toMatch(/data-overview-force-hidden="1"/);
+    expect(dashHtml).toMatch(/admin-menu-icon/);
+    expect(dashHtml).toMatch(/admin-theme-icon-light/);
+    expect(dashHtml).toMatch(/admin-shell\.js/);
+    expect(dashHtml).toMatch(/admin-ui\.js/);
+    expect(dashHtml).toMatch(/id="adminToastRegion"/);
+    expect(dashHtml).toMatch(/id="adminPageProgress"/);
+    expect(dashHtml).toMatch(/admin-nav-group/);
+    expect(dashHtml).toMatch(/data-nav-group="overview"/);
+    expect(dashHtml).toMatch(/data-nav-group="customers"/);
+    expect(dashHtml).toMatch(/data-tab="maps"/);
+    expect(dashHtml).toMatch(/id="tab-maps"/);
+    expect(dashHtml).toMatch(/id="buildingDetailBody"/);
+    expect(dashHtml).toMatch(/id="buildingDetailSubnav"/);
+    expect(dashHtml).toMatch(/switchBuildingDetailSubtab\('floors'\)/);
+    expect(dashHtml).toMatch(/id="analyticsRevenueTrend"/);
+    expect(dashHtml).toMatch(/id="analyticsConversionFunnel"/);
+    expect(dashHtml).toMatch(/id="analyticsTopOrganizations"/);
+    expect(dashHtml).toMatch(/id="analyticsInsights"/);
+    expect(dashHtml).toMatch(/data-nav-group="website"/);
+    expect(dashHtml).toMatch(/id="tab-website"/);
+    expect(dashHtml).toMatch(/website-cms\.js/);
+    expect(dashHtml).toMatch(/id="websiteContactCrm"/);
+    expect(dashHtml).toMatch(/id="ov-w-contact_crm"/);
+    expect(dashHtml).toMatch(/>Chi tiết tòa</);
+    expect(dashHtml).toMatch(/data-tab="plans"/);
+    expect(dashHtml).toMatch(/id="tab-plans"/);
+    expect(dashHtml).toMatch(/id="plansCatalogGrid"/);
+    expect(dashHtml).toMatch(/id="planEditorModal"/);
+    expect(dashHtml).toMatch(/openFinanceInvoicesNav/);
+    expect(dashHtml).toMatch(/openProfileSectionNav\('security'\)/);
+    expect(dashHtml).toMatch(/>Gói đăng ký</);
+    expect(dashHtml).toMatch(/>Danh mục gói</);
+    expect(dashHtml).toMatch(/>Nhật ký hệ thống</);
+    expect(dashHtml).toMatch(/id="billingOrgListPanel"/);
+    expect(dashHtml).toMatch(/id="billingOrgKeyword"/);
+    expect(dashHtml).toMatch(/id="billingPlanFilter"/);
+    expect(dashHtml).toMatch(/id="financeSubNav"/);
+    expect(dashHtml).toMatch(/id="tab-overview"/);
+    expect(dashHtml).toMatch(/id="overviewKpiCards"/);
+    expect(dashHtml).toMatch(/id="overviewRangeSelect"/);
+    expect(dashHtml).toMatch(/id="overviewCustomRange"/);
+    expect(dashHtml).toMatch(/id="ov-w-org_growth"/);
+    expect(dashHtml).toMatch(/id="ov-w-revenue_expense"/);
+    expect(dashHtml).toMatch(/id="ov-body-map_publish"/);
+    expect(dashHtml).toMatch(/id="orgDetailPage"/);
+    expect(dashHtml).toMatch(/id="orgListView"/);
+    expect(dashHtml).toMatch(/switchTab\('overview'\)/);
+    expect(adminShellJs).toMatch(/admin-sidebar-open/);
+    expect(adminShellJs).toMatch(/aria-current/);
+    expect(adminShellJs).toMatch(/indoorNavAdminTheme/);
+    expect(adminShellJs).toMatch(/document\.documentElement\.setAttribute/);
+    expect(adminShellJs).toMatch(/admin-nav-group-toggle/);
+    expect(adminShellJs).toMatch(/syncNavGroupVisibility/);
+    expect(adminShellJs).toMatch(/isTabBtnRoleVisible/);
+    expect(adminShellJs).toMatch(/tabStateChanged/);
+    expect(adminCss).toMatch(/--brand-primary/);
+    expect(adminCss).toMatch(/--admin-sidebar-width/);
+    expect(adminCss).toMatch(/admin-nav-group/);
+    expect(adminCss).toMatch(/max-height 0\.32s/);
+    expect(adminThemeCss).toMatch(/TailAdmin-inspired component theme/);
+    expect(adminThemeCss).toMatch(/data-admin-theme="dark"/);
+    expect(adminThemeCss).toMatch(/AD5 — Unify remaining surfaces/);
+    expect(adminThemeCss).toMatch(/billing-state-paid_active/);
+    expect(adminThemeCss).toMatch(/AD6 — Icons, sticky headers/);
+    expect(adminThemeCss).toMatch(/AD7 — Toast, page progress, skeleton loading/);
+    expect(adminThemeCss).toMatch(/AD8 — Empty states \+ Finance tab polish/);
+    expect(adminThemeCss).toMatch(/AD10 — Nav groups, billing list-first/);
+    expect(adminThemeCss).toMatch(/AD14 — Tab Tổng quan mặc định/);
+    expect(adminThemeCss).toMatch(/AD15 — Overview widget dashboard/);
+    expect(adminThemeCss).toMatch(/AD16 — health, nav, delta\/spark/);
+    expect(adminUiJs).toMatch(/admin-toast/);
+    expect(adminUiJs).toMatch(/wrapSwitchTab/);
+    expect(dashJs).toMatch(/dashUiLoading/);
+    expect(dashJs).toMatch(/showBillingOrgList/);
+    expect(dashJs).toMatch(/renderBillingOrgList/);
+    expect(dashJs).toMatch(/switchFinanceSubtab/);
+    expect(dashJs).toMatch(/org-row-actions/);
+    expect(dashJs).toMatch(/renderOverviewDashboard/);
+    expect(dashJs).toMatch(/loadOverviewDashboard/);
+    expect(dashJs).toMatch(/\/overview\/dashboard/);
+    expect(dashJs).toMatch(/renderOverviewRevExpWidget/);
+    expect(dashJs).toMatch(/setOverviewRevExpPeriod/);
+    expect(dashJs).toMatch(/buildOverviewAreaSparkline/);
+    expect(dashJs).toMatch(/buildOverviewStackedBar/);
+    expect(dashJs).toMatch(/buildOverviewDonut/);
+    expect(dashJs).toMatch(/buildOverviewProgressRing/);
+    expect(dashJs).toMatch(/buildOverviewStatusGauge/);
+    expect(adminThemeCss).toMatch(/AD17 — KPI cards dùng mini chart/);
+    expect(dashJs).toMatch(/buildOverviewOrgGrowthChart/);
+    expect(dashJs).toMatch(/handleOverviewOrgGrowthWheel/);
+    expect(dashJs).toMatch(/shiftOverviewOrgGrowth/);
+    expect(adminThemeCss).toMatch(/AD18 — Area chart tăng trưởng tổ chức/);
+    expect(dashJs).toMatch(/buildOverviewDonutChart/);
+    expect(dashJs).toMatch(/buildOverviewSubscriptionTable/);
+    expect(dashJs).toMatch(/buildOverviewSubscriptionRevenue/);
+    expect(dashJs).toMatch(/buildOverviewSubscriptionTrend/);
+    expect(dashJs).toMatch(/buildOverviewSubscriptionKpiStrip/);
+    expect(dashJs).toMatch(/buildOverviewNewSubscriptionChart/);
+    expect(dashJs).toMatch(/buildOverviewUpgradeFlow/);
+    expect(dashJs).toMatch(/setOverviewSubscriptionRange/);
+    expect(adminThemeCss).toMatch(/AD26 — Subscription dashboard/);
+    expect(dashJs).toMatch(/setOverviewDashboardSection/);
+    expect(dashHtml).toMatch(/data-overview-section-btn="priority"/);
+    expect(adminThemeCss).toMatch(/AD27 — Dashboard ngắn gọn/);
+    expect(dashJs).toMatch(/formatOverviewPeriodLabel/);
+    expect(dashHtml).toMatch(/id="overviewRangeSummary"/);
+    expect(dashHtml).toMatch(/Trạng thái tòa nhà/);
+    expect(dashJs).toMatch(/buildOverviewMapStats/);
+    expect(dashJs).toMatch(/Bản đồ hiện hành/);
+    expect(adminThemeCss).toMatch(/AD20 — Overview chart hierarchy/);
+    expect(dashHtml).toMatch(/data-revexp-period="weekly"/);
+    expect(dashJs).toMatch(/'overview'/);
+    expect(adminThemeCss).toMatch(/AD13 — Tinh gọn cột thao tác/);
     expect(dashJs).toMatch(/title="Mở trình soạn bản đồ tầng"/);
-    expect(dashJs).toMatch(/title="Quản lý gói và thanh toán"/);
+    expect(dashJs).toMatch(/Mở quản lý gói & thanh toán/);
 
     expect(dashHtml).toMatch(/id="profileOrgSection"/);
     expect(dashHtml).toMatch(/id="profileOrgPlan"/);
@@ -188,7 +313,7 @@ describe('Phase 8 — Web upgrades', () => {
     expect(dashHtml).toMatch(/id="profileOrgContactAddress"/);
     expect(dashJs).toMatch(/\/organizations\/me\/contact/);
 
-    expect(editorHtml).toMatch(/saveDraftToServer/);
+    expect(editorApi).toMatch(/saveDraftToServer/);
     expect(editorHtml).toMatch(/Lưu nháp/);
     expect(editorHtml).toMatch(/id="editorFloorLockBanner"/);
     expect(editorCss).toMatch(/editor-floor-lock-banner/);
@@ -208,6 +333,29 @@ describe('Phase 8 — Web upgrades', () => {
     expect(landingLoginJs).toMatch(/wrap\.style\.display = 'block'/);
     expect(loginJs).toMatch(/\/auth\/google\/status/);
     expect(loginJs).toMatch(/wrap\.style\.display = 'block'/);
+  });
+
+  test('TC-8.0b building resource detail trả KPI và trạng thái từng tầng', async () => {
+    const res = await authReq(orgToken)('get', `${API}/buildings/${testBuildingId}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.resource_summary).toEqual(expect.objectContaining({
+      total_floors: expect.any(Number),
+      map_count: expect.any(Number),
+      qr_count: expect.any(Number),
+      building_admin_count: expect.any(Number),
+      version_count: expect.any(Number)
+    }));
+    expect(Array.isArray(res.body.floors)).toBe(true);
+    expect(res.body.floors[0]).toEqual(expect.objectContaining({
+      floor_number: 0,
+      has_map: true,
+      is_published: true,
+      version: expect.any(Number),
+      qr_count: expect.any(Number)
+    }));
+    expect(Array.isArray(res.body.recent_activity)).toBe(true);
+    expect(Array.isArray(res.body.qr_scan_series_30d)).toBe(true);
   });
 
   test('TC-8.1 draft save → public GET unchanged; publish → public changed', async () => {

@@ -56,7 +56,7 @@ async function requireBuildingAccess(req, res, next) {
         }
 
         const building = await Building.findById(buildingId)
-            .select('organization_id is_active name')
+            .select('organization_id owner_user_id is_active name')
             .lean();
 
         if (!building) {
@@ -66,6 +66,18 @@ async function requireBuildingAccess(req, res, next) {
         const user = await User.findById(req.user.userId)
             .select('assigned_buildings role is_active organization_id')
             .lean();
+
+        // REGISTERED_USER: chỉ truy cập building trong Personal Workspace của chính mình
+        if (req.user.role === 'REGISTERED_USER') {
+            if (!user || !user.is_active) {
+                return res.status(401).json({ message: 'Tài khoản không hợp lệ hoặc đã bị khóa.' });
+            }
+            if (String(building.owner_user_id || '') !== String(req.user.userId)) {
+                logAccessDenied(req, buildingId, 'not_owner');
+                return res.status(403).json({ message: 'Bạn không có quyền truy cập tòa nhà này.' });
+            }
+            return next();
+        }
 
         if (!user || !user.is_active) {
             return res.status(401).json({ message: 'Tài khoản không hợp lệ hoặc đã bị khóa.' });

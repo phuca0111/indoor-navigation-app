@@ -77,6 +77,8 @@ const wallSchema = new mongoose.Schema({
     type: { type: String, default: 'segment' },
     is_outer: { type: Boolean, default: false },
     thickness: { type: Number, default: 4 },
+    // Linetype (nét đứt cho tường ẩn) — Android bỏ qua, editor giữ khi publish/reload
+    lineStyle: { type: String, default: 'solid' },
     points: [{ x: Number, y: Number }]
 }, { _id: false });
 

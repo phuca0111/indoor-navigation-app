@@ -5,7 +5,8 @@ const invoiceSchema = new mongoose.Schema({
   organization_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Organization',
-    required: true,
+    required: false,
+    default: null,
     index: true
   },
   subscription_id: {
@@ -32,7 +33,8 @@ const invoiceSchema = new mongoose.Schema({
   },
   plan: {
     type: String,
-    enum: ['FREE', 'PRO', 'ENTERPRISE'],
+    uppercase: true,
+    trim: true,
     default: null
   },
   amount: { type: Number, default: 0 },

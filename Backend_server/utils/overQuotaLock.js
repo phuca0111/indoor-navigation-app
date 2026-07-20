@@ -1,6 +1,6 @@
 // ============================================
-// Phase 5.3 — Soft lock khi hết gói / vượt quota FREE
-// Grace 7 ngày sau hạ gói PRO→FREE, sau đó khóa tòa vượt hạn mức.
+// Phase 5.3 — Soft lock khi hết gói / vượt quota
+// Grace 15 ngày sau hết hạn gói trả phí; sau đó EXPIRED; 90 ngày → ARCHIVED.
 // ============================================
 
 const Building = require('../models/Building');
@@ -12,14 +12,19 @@ const {
   countActiveBuildings,
   countActiveUsers
 } = require('./planQuota');
+const { isPaidPlan: isPaidPlanFromCatalog } = require('../services/planCatalog');
+const {
+  GRACE_PERIOD_DAYS,
+  GRACE_PERIOD_MS,
+  PAID_PLAN_DEFAULT_DAYS,
+  ARCHIVE_AFTER_EXPIRED_MS,
+  VALID_BILLING_STATUSES,
+  normalizeBillingStatus
+} = require('./billingConstants');
+const { assertOrgCapability, getOrgBillingCapabilities } = require('./orgBillingGates');
 
-const GRACE_PERIOD_DAYS = 7;
-const GRACE_PERIOD_MS = GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000;
-// Khi Super Admin chuyển sang PRO/ENTERPRISE (chưa có cổng thanh toán thật),
-// dùng thời hạn mặc định để UI có thể hiển thị "đến ngày ...".
-const PAID_PLAN_DEFAULT_DAYS = 30;
+/** @deprecated dùng isPaidPlan() từ planCatalog — giữ alias test cũ */
 const PAID_PLANS = ['PRO', 'ENTERPRISE'];
-const VALID_BILLING_STATUSES = ['ACTIVE', 'GRACE_PERIOD', 'EXPIRED'];
 const OBJECT_ID_HEX = /^[a-f\d]{24}$/i;
 
 function toValidObjectIdString(id) {
@@ -30,23 +35,17 @@ function toValidObjectIdString(id) {
 }
 
 function isPaidPlan(plan) {
-  return PAID_PLANS.includes(normalizePlan(plan));
-}
-
-function normalizeBillingStatus(status) {
-  const s = String(status || 'ACTIVE').toUpperCase();
-  return VALID_BILLING_STATUSES.includes(s) ? s : 'ACTIVE';
+  return isPaidPlanFromCatalog(normalizePlan(plan));
 }
 
 /**
- * Cập nhật GRACE_PERIOD → EXPIRED nếu đã quá hạn (mutates org nếu cần save).
+ * Cập nhật lifecycle billing (mutates org nếu cần save).
  * Phase 5.6: ưu tiên refresh theo Subscription hiện hành (source of truth).
  */
 async function refreshOrgBillingStatus(org) {
   if (!org) return org;
   const now = Date.now();
 
-  // Phase 5.6 — nếu có subscription hiện hành, sync từ đó.
   try {
     const {
       getCurrentSubscription,
@@ -61,17 +60,19 @@ async function refreshOrgBillingStatus(org) {
     console.warn('refreshOrgBillingStatus.subscription:', e.message);
   }
 
-  // Fallback (org chưa có bản ghi Subscription): dùng plan_expires_at trên Organization.
-  if (
-    isPaidPlan(org.plan) &&
-    org.plan_expires_at &&
-    new Date(org.plan_expires_at).getTime() <= now
-  ) {
-    org.billing_status = 'EXPIRED';
-    org.plan = 'FREE';
-    org.grace_ends_at = null;
-    if (typeof org.save === 'function') {
-      await org.save();
+  // Fallback (org chưa có Subscription): lifecycle trên Organization fields
+  if (org.billing_status === 'ARCHIVED') {
+    return org;
+  }
+
+  if (org.billing_status === 'EXPIRED') {
+    const expiredAt = org.billing_expired_at
+      ? new Date(org.billing_expired_at).getTime()
+      : (org.plan_expires_at ? new Date(org.plan_expires_at).getTime() : null);
+    if (expiredAt && expiredAt + ARCHIVE_AFTER_EXPIRED_MS <= now) {
+      org.billing_status = 'ARCHIVED';
+      org.archived_at = org.archived_at || new Date();
+      if (typeof org.save === 'function') await org.save();
     }
     return org;
   }
@@ -82,21 +83,36 @@ async function refreshOrgBillingStatus(org) {
     new Date(org.grace_ends_at).getTime() <= now
   ) {
     org.billing_status = 'EXPIRED';
-    if (typeof org.save === 'function') {
-      await org.save();
-    }
+    org.grace_ends_at = null;
+    org.billing_expired_at = org.billing_expired_at || new Date();
+    if (typeof org.save === 'function') await org.save();
+    return org;
   }
+
+  // Paid ACTIVE hết hạn → vào GRACE (không nhảy thẳng EXPIRED)
+  if (
+    (org.billing_status === 'ACTIVE' || !org.billing_status) &&
+    isPaidPlan(org.plan) &&
+    org.plan_expires_at &&
+    new Date(org.plan_expires_at).getTime() <= now
+  ) {
+    org.billing_status = 'GRACE_PERIOD';
+    org.grace_ends_at = new Date(now + GRACE_PERIOD_MS);
+    if (typeof org.save === 'function') await org.save();
+    return org;
+  }
+
   return org;
 }
 
 /**
- * Có áp dụng khóa tòa vượt quota không.
- * FREE (kể cả ACTIVE) + hết grace → khóa phần vượt; PRO/ENTERPRISE ACTIVE → không khóa.
+ * Khóa soft-quota chỉ khi org đang ACTIVE trên gói giới hạn (FREE / hạ gói)
+ * và không còn trong grace. EXPIRED/ARCHIVED dùng ma trận quyền (orgBillingGates).
  */
 function shouldEnforceOverQuotaLock(org) {
   if (!org) return false;
   const billing = normalizeBillingStatus(org.billing_status);
-  if (billing === 'GRACE_PERIOD') return false;
+  if (billing === 'GRACE_PERIOD' || billing === 'EXPIRED' || billing === 'ARCHIVED') return false;
   if (isPaidPlan(org.plan) && billing === 'ACTIVE') return false;
   return true;
 }
@@ -279,13 +295,20 @@ async function getOrgQuotaSnapshot(org) {
     graceDaysLeft = Math.max(0, Math.ceil((graceEndsAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
   }
 
+  const capabilities = getOrgBillingCapabilities(org);
+
   return {
     plan,
     billing_status: normalizeBillingStatus(org.billing_status),
     grace_ends_at: graceEndsAt,
     grace_days_left: graceDaysLeft,
+    grace_period_days: GRACE_PERIOD_DAYS,
+    billing_expired_at: org.billing_expired_at || null,
+    archived_at: org.archived_at || null,
     plan_started_at: org.plan_started_at || null,
     plan_expires_at: org.plan_expires_at || null,
+    capabilities,
+    capabilities_message: capabilities.message,
     buildings: {
       used: buildingsUsed,
       limit: limits.maxBuildings,
@@ -380,15 +403,24 @@ async function assertUserWritable(userId, organization) {
  * @returns {{ ok: true } | { ok: false, message: string, code: string }}
  */
 async function assertBuildingWritable(buildingId, organization) {
+  if (organization) {
+    await refreshOrgBillingStatus(organization);
+    const gate = assertOrgCapability(organization, 'canEdit');
+    if (!gate.ok) return gate;
+  }
   const locked = await isBuildingQuotaLocked(buildingId, organization);
   if (!locked) return { ok: true };
-  return {
-    ok: false,
-    code: 'OVER_QUOTA_LOCKED',
-    message:
-      'Tòa nhà này bị khóa do vượt hạn mức gói sau khi hết thời gian gia hạn. ' +
-      'Vô hiệu hóa bớt tòa hoặc nâng cấp gói PRO/ENTERPRISE.'
-  };
+  // OVER LIMIT: vẫn cho xem/sửa — chỉ chặn tạo mới ở assertCanCreate*
+  return { ok: true, over_quota: true };
+}
+
+async function assertBuildingCanUploadCad(buildingId, organization) {
+  if (organization) {
+    await refreshOrgBillingStatus(organization);
+    const gate = assertOrgCapability(organization, 'canUploadCad');
+    if (!gate.ok) return gate;
+  }
+  return assertBuildingWritable(buildingId, organization);
 }
 
 module.exports = {
@@ -410,5 +442,6 @@ module.exports = {
   getOrgQuotaSnapshot,
   handlePlanChangeBilling,
   assertBuildingWritable,
+  assertBuildingCanUploadCad,
   assertUserWritable
 };

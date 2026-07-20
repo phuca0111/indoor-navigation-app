@@ -12,9 +12,9 @@ const User = require('../../models/User');
 
 const API = '/api/analytics';
 
-function tokenFor(userId, role) {
+function tokenFor(userId, role, sessionVersion = 0) {
   return jwt.sign(
-    { userId: String(userId), role },
+    { userId: String(userId), role, sv: Number(sessionVersion) || 0 },
     process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
@@ -35,9 +35,9 @@ describe('Phase 6 — Analytics', () => {
     const buildingAdmin = await User.findOne({ role: 'BUILDING_ADMIN', is_active: { $ne: false } }).lean();
     if (!superUser) throw new Error('Thiếu SUPER_ADMIN trong DB test');
 
-    superToken = tokenFor(superUser._id, 'SUPER_ADMIN');
-    if (orgAdmin) orgAdminToken = tokenFor(orgAdmin._id, 'ORG_ADMIN');
-    if (buildingAdmin) buildingAdminToken = tokenFor(buildingAdmin._id, 'BUILDING_ADMIN');
+    superToken = tokenFor(superUser._id, 'SUPER_ADMIN', superUser.session_version);
+    if (orgAdmin) orgAdminToken = tokenFor(orgAdmin._id, 'ORG_ADMIN', orgAdmin.session_version);
+    if (buildingAdmin) buildingAdminToken = tokenFor(buildingAdmin._id, 'BUILDING_ADMIN', buildingAdmin.session_version);
   });
 
   afterAll(async () => {
@@ -82,6 +82,26 @@ describe('Phase 6 — Analytics', () => {
     );
     expect(Array.isArray(res.body.series?.login)).toBe(true);
     expect(res.body.series.login.length).toBe(7);
+    expect(res.body.changes).toEqual(expect.objectContaining({
+      logins: expect.any(Number),
+      publishes: expect.any(Number),
+      paid_invoices: expect.any(Number),
+      paid_amount: expect.any(Number)
+    }));
+    expect(Array.isArray(res.body.series?.qr_scan)).toBe(true);
+    expect(Array.isArray(res.body.growth?.building)).toBe(true);
+    expect(Array.isArray(res.body.revenue_by_plan)).toBe(true);
+    expect(res.body.subscription).toEqual(expect.objectContaining({
+      mrr: expect.any(Number),
+      arr: expect.any(Number),
+      arpu: expect.any(Number)
+    }));
+    expect(res.body.rankings).toEqual(expect.objectContaining({
+      organizations: expect.any(Array),
+      buildings: expect.any(Array),
+      plans: expect.any(Array)
+    }));
+    expect(Array.isArray(res.body.insights)).toBe(true);
     expect(Array.isArray(res.body.paid_by_month)).toBe(true);
   });
 

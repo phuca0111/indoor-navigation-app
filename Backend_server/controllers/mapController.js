@@ -8,10 +8,12 @@ const Floor      = require('../models/Floor');
 const Building   = require('../models/Building');
 const Organization = require('../models/Organization');
 const ActivityLog = require('../models/ActivityLog');
-const { assertBuildingWritable, isBuildingQuotaLocked } = require('../utils/overQuotaLock');
+const { assertBuildingWritable, refreshOrgBillingStatus } = require('../utils/overQuotaLock');
+const { assertOrgCapability } = require('../utils/orgBillingGates');
 const { assertFloorInRange } = require('../services/floorLifecycle');
 const { assertOrgCanPublish } = require('../services/publishPermit');
 const { assertCanPublish } = require('../services/floorEditLock');
+const { assertPersonalMapQrQuota } = require('../utils/planQuota');
 const {
     validateMapData,
     resolvePublishMapData,
@@ -31,12 +33,16 @@ async function assertPublicBuildingAccess(buildingId, res) {
     }
     if (building.organization_id) {
         const org = await Organization.findById(building.organization_id);
-        if (org && await isBuildingQuotaLocked(buildingId, org)) {
-            res.status(403).json({
-                message: 'Bản đồ tòa nhà tạm khóa do vượt hạn mức gói. Liên hệ quản trị tổ chức.',
-                code: 'OVER_QUOTA_LOCKED'
-            });
-            return false;
+        if (org) {
+            await refreshOrgBillingStatus(org);
+            const navGate = assertOrgCapability(org, 'canNavigation');
+            if (!navGate.ok) {
+                res.status(403).json({
+                    message: navGate.message || 'Điều hướng tạm khóa do gói tổ chức hết hạn. Liên hệ quản trị tổ chức để gia hạn.',
+                    code: navGate.code || 'BILLING_EXPIRED'
+                });
+                return false;
+            }
         }
     }
     return true;
@@ -222,8 +228,27 @@ const saveMap = async (req, res) => {
             }
         }
 
-        // Phase 8.4 — publish permit (sau writable checks)
-        if (buildingMeta.organization_id) {
+        // Phase 8.4 — publish permit + trạng thái billing (sau writable checks; SA bypass)
+        if (buildingMeta.organization_id && req.user?.role !== 'SUPER_ADMIN') {
+            const orgForPermit = await Organization.findById(buildingMeta.organization_id);
+            if (orgForPermit) {
+                await refreshOrgBillingStatus(orgForPermit);
+                const billingPub = assertOrgCapability(orgForPermit, 'canPublish');
+                if (!billingPub.ok) {
+                    return res.status(403).json({
+                        message: billingPub.message,
+                        code: billingPub.code
+                    });
+                }
+                const permit = assertOrgCanPublish(orgForPermit);
+                if (!permit.ok) {
+                    return res.status(403).json({
+                        message: permit.message,
+                        code: permit.code
+                    });
+                }
+            }
+        } else if (buildingMeta.organization_id) {
             const orgForPermit = await Organization.findById(buildingMeta.organization_id);
             if (orgForPermit) {
                 const permit = assertOrgCanPublish(orgForPermit);
@@ -268,6 +293,16 @@ const saveMap = async (req, res) => {
                 message: 'Validate map thất bại.',
                 code: 'VALIDATE_FAILED',
                 errors: validation.errors
+            });
+        }
+
+        // Personal Workspace: giới hạn Map/QR theo gói cá nhân (chặn trước khi ghi)
+        const mapQrQuota = await assertPersonalMapQrQuota(buildingId, floorNum, map_data);
+        if (!mapQrQuota.ok) {
+            return res.status(403).json({
+                message: mapQrQuota.message,
+                code: mapQrQuota.code,
+                usage: mapQrQuota.usage
             });
         }
 

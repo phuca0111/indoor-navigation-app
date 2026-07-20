@@ -14,6 +14,7 @@ const {
   listPlansHandler,
   createPlan,
   updatePlan,
+  deletePlan,
   listInvoices,
   createManualInvoice,
   updateInvoice,
@@ -44,6 +45,7 @@ router.delete('/expenses/:id', deleteExpense);
 router.get('/plans', listPlansHandler);
 router.post('/plans', createPlan);
 router.patch('/plans/:id', updatePlan);
+router.delete('/plans/:id', deletePlan);
 router.get('/invoices', listInvoices);
 router.post('/invoices', createManualInvoice);
 router.patch('/invoices/:id', updateInvoice);

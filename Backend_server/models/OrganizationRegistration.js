@@ -10,7 +10,8 @@ const organizationRegistrationSchema = new mongoose.Schema({
   slug: { type: String, required: true, trim: true, lowercase: true },
   plan: {
     type: String,
-    enum: ['FREE', 'PRO', 'ENTERPRISE'],
+    uppercase: true,
+    trim: true,
     default: 'FREE'
   },
   contact_name: { type: String, required: true, trim: true },
