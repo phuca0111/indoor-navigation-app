@@ -696,6 +696,15 @@ async function expireCurrentSubscription(org, options = {}) {
       expired_at: org.billing_expired_at
     }
   }, { session: options.session });
+  // Email billing đi qua claim idempotent; event chỉ fan-out in-app/platform.
+  if (options.session == null) {
+    try {
+      const { notifySubscriptionExpired } = require('./billingNotificationService');
+      await notifySubscriptionExpired({ subscription, org });
+    } catch (error) {
+      console.warn('notifySubscriptionExpired (expireCurrentSubscription):', error.message);
+    }
+  }
   return { organization: org, subscription };
 }
 

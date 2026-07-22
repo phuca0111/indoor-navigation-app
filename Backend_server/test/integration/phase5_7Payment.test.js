@@ -32,7 +32,9 @@ const { runBillingSchedulerOnce } = require('../../services/billingScheduler');
 const { buildSecureHash } = require('../../services/vnpayService');
 const { setTestTransporter, resetMailServiceCache } = require('../../services/mailService');
 const { processPending: processPendingEvents } = require('../../shared/events/eventBus');
-const { processPending: processPendingNotifications } = require('../../services/notificationDispatcher');
+const {
+  processPending: processPendingNotifications
+} = require('../../application/notification/notificationDeliveryApplicationService');
 
 const BILLING_API = '/api/billing';
 const ORG_API = '/api/organizations';
@@ -49,6 +51,33 @@ function tokenFor(userId, role, organizationId, sessionVersion = 0) {
   };
   if (organizationId) payload.organization_id = String(organizationId);
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
+}
+
+async function drainEvents(ownerPrefix) {
+  let total = 0;
+  for (let round = 0; round < 20 && total < 400; round += 1) {
+    const result = await processPendingEvents(50, `${ownerPrefix}-events-${round}`);
+    const processed = Number(result?.processed || 0);
+    if (!processed) break;
+    total += processed;
+  }
+  return total;
+}
+
+async function drainNotifications(ownerPrefix) {
+  let total = 0;
+  for (let round = 0; round < 20 && total < 400; round += 1) {
+    const result = await processPendingNotifications(50, `${ownerPrefix}-notify-${round}`);
+    const processed = Number(result?.processed || 0);
+    if (!processed) break;
+    total += processed;
+  }
+  return total;
+}
+
+function mailsMatching(slice, needle) {
+  const target = String(needle || '').toLowerCase();
+  return slice.filter((mail) => String(mail.subject || '').toLowerCase().includes(target));
 }
 
 describe('Phase 5.7 — Payment + self-service', () => {
@@ -238,8 +267,8 @@ describe('Phase 5.7 — Payment + self-service', () => {
   });
 
   test('TC-5.7-08 completeCheckoutPayment idempotent', async () => {
-    await processPendingEvents(20, 'phase57-before-idempotency-test');
-    await processPendingNotifications(20, 'phase57-before-idempotency-notification-test');
+    await drainEvents('phase57-before-idempotency');
+    await drainNotifications('phase57-before-idempotency');
     const mailCountBefore = sentMail.length;
     const checkout = await request(app)
       .post(`${BILLING_API}/checkout`)
@@ -263,11 +292,9 @@ describe('Phase 5.7 — Payment + self-service', () => {
       note: 'phase57 idempotent retry'
     });
     expect(second.duplicated).toBe(true);
-    await processPendingEvents(20, 'phase57-idempotency-test');
-    await processPendingNotifications(20, 'phase57-idempotency-notification-test');
-    expect(sentMail.slice(mailCountBefore).filter((mail) =>
-      String(mail.subject).includes('Thanh toán thành công')
-    )).toHaveLength(1);
+    await drainEvents('phase57-idempotency');
+    await drainNotifications('phase57-idempotency');
+    expect(mailsMatching(sentMail.slice(mailCountBefore), 'thanh toán thành công')).toHaveLength(1);
   });
 
   test('TC-5.7-09 cùng VNPay IPN 2 lần chỉ tạo 1 event, 1 subscription và 1 ledger', async () => {
@@ -318,16 +345,16 @@ describe('Phase 5.7 — Payment + self-service', () => {
   });
 
   test('TC-5.7-10 hết hạn gọi lặp chỉ gửi email 1 lần', async () => {
+    await drainEvents('phase57-before-expiry');
+    await drainNotifications('phase57-before-expiry');
     const org = await Organization.findById(testOrgId);
     const mailCountBefore = sentMail.length;
     await expireCurrentSubscription(org, { note: 'phase57 expiry mail' });
     await expireCurrentSubscription(await Organization.findById(testOrgId), {
       note: 'phase57 expiry retry'
     });
-    await processPendingEvents(20, 'phase57-test');
-    await processPendingNotifications(20, 'phase57-notification-test');
-    expect(sentMail.slice(mailCountBefore).filter((mail) =>
-      String(mail.subject).includes('đã hết hạn')
-    )).toHaveLength(1);
+    await drainEvents('phase57-expiry');
+    await drainNotifications('phase57-expiry');
+    expect(mailsMatching(sentMail.slice(mailCountBefore), 'hết hạn')).toHaveLength(1);
   });
 });

@@ -94,7 +94,7 @@ function registerEventHandlers() {
         dedupe_key: event.event_key,
         data: { subscription_id: String(subscription._id) },
         category: 'BILLING',
-        channels: ['IN_APP', 'EMAIL'],
+        channels: ['IN_APP'],
         template_key: 'SUBSCRIPTION_EXPIRED'
       });
       await createForPlatformAdmins(platformEventNotification(event));
