@@ -7,6 +7,8 @@ module.exports = defineConfig({
   retries: 1,
   timeout: 30_000,
   expect: { timeout: 7_000 },
+  // Avoid OS-specific snapshot suffixes (win32 vs linux) breaking CI.
+  snapshotPathTemplate: '{testDir}/{testFilePath}-snapshots/{arg}{ext}',
   reporter: [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],
   use: {
     baseURL: 'http://127.0.0.1:4178',

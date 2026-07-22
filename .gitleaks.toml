@@ -1,0 +1,14 @@
+title = "gitleaks config"
+
+[allowlist]
+description = "Placeholders and CI ephemeral patterns"
+paths = [
+  '''(.*?)(\.env\.example|\.env\.staging\.example)$''',
+  '''ops/secrets/.*\.example$''',
+  '''e2e/tests/.*-snapshots/.*'''
+]
+regexes = [
+  '''<generate-[^>]+>''',
+  '''staging\.example\.invalid''',
+  '''stagingciaccesskey123456'''
+]
