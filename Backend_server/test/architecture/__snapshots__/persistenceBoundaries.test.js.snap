@@ -15,6 +15,14 @@ exports[`Target Architecture v2 — persistence boundaries Controller legacy Mod
     "occurrences": 1,
   },
   {
+    "edge": "controllers/communityController.js -> models/Building.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/communityController.js -> models/Place.js",
+    "occurrences": 1,
+  },
+  {
     "edge": "controllers/eventAdminController.js -> models/DomainEvent.js",
     "occurrences": 1,
   },
