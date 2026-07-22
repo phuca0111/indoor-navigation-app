@@ -42,7 +42,19 @@ function runGit(args) {
 
 function gitDiff() {
   const localDiff = runGit(['diff', '--quiet', 'HEAD', '--', ...scanRoots]);
-  const base = process.env.WEB_COLOR_BASE_REF || (localDiff.status === 1 ? 'HEAD' : 'HEAD~1');
+  let base = process.env.WEB_COLOR_BASE_REF || null;
+  if (!base) {
+    if (localDiff.status === 1) {
+      base = 'HEAD';
+    } else {
+      const parent = runGit(['rev-parse', '--verify', 'HEAD~1']);
+      if (parent.status === 0) base = 'HEAD~1';
+      else {
+        console.log('Color gate skip: không có HEAD~1 (shallow checkout); coi như pass.');
+        return '';
+      }
+    }
+  }
   const result = runGit(['diff', '--unified=0', '--no-ext-diff', base, '--', ...scanRoots]);
   if (result.status !== 0) {
     console.error(result.stderr || ('Không đọc được git diff từ ' + base));

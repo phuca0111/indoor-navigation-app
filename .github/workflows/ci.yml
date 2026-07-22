@@ -21,6 +21,8 @@ jobs:
         working-directory: Backend_server
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: actions/setup-node@v4
         with:
           node-version: 22.17.0
@@ -132,7 +134,7 @@ jobs:
           tags: indoor-nav:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - uses: aquasecurity/trivy-action@0.32.0
+      - uses: aquasecurity/trivy-action@v0.36.0
         continue-on-error: true
         with:
           image-ref: indoor-nav:${{ github.sha }}
@@ -194,11 +196,26 @@ jobs:
           Path("ops/secrets/metrics-token").write_text(metrics)
           PY
           chmod 400 ops/secrets/mongo-keyfile ops/secrets/metrics-token
-          set -a
-          # shellcheck disable=SC1091
-          . ./.env.staging
-          set +a
-          node ops/scripts/preflight.js
+          # Không `source` .env vì MONGO_URI có `&` làm bash cắt assignment.
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          for (const line of fs.readFileSync('.env.staging', 'utf8').split(/\r?\n/)) {
+            const i = line.indexOf('=');
+            if (i <= 0 || line.startsWith('#')) continue;
+            process.env[line.slice(0, i)] = line.slice(i + 1);
+          }
+          const preflight = require(path.resolve('ops/scripts/preflight.js'));
+          const errors = [
+            ...preflight.validateEnvironment(process.env),
+            ...preflight.validateSecretFiles(process.cwd(), process.env)
+          ];
+          if (errors.length) {
+            console.error('Staging preflight failed:\n- ' + errors.join('\n- '));
+            process.exit(1);
+          }
+          console.log('Staging preflight passed.');
+          NODE
       - run: docker compose config --quiet
       - run: docker run --rm -v "$PWD/nginx.conf:/etc/nginx/nginx.conf:ro" -v "$PWD/ops/nginx/proxy_params:/etc/nginx/proxy_params:ro" -v "$PWD/ops/nginx/tls-enabled:/etc/nginx/tls-enabled:ro" nginx:1.28.0-alpine3.21 nginx -t
       - run: docker run --rm -v "$PWD/prometheus.yml:/etc/prometheus/prometheus.yml:ro" -v "$PWD/ops/observability/alerts.yml:/etc/prometheus/alerts.yml:ro" prom/prometheus:v3.5.0 promtool check config /etc/prometheus/prometheus.yml
