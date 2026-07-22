@@ -29,7 +29,10 @@ const legacyAllowlist = new Set((
   '#dbe4ee #1e293b #94a3b8 ' +
   '#172554 #3b82f6 #e11d48 #475569 #22c55e #f59e0b #ef4444 #ffffff ' +
   '#3498db #9b59b6 #27ae60 #e67e22 #92400e #dc2626 #0ea5e9 #14b8a6 ' +
-  '#8b5cf6 #ff0000 #00ff00'
+  '#8b5cf6 #ff0000 #00ff00 ' +
+  // Map governance / org modal / landing-article baseline (files đã ship)
+  '#8e44ad #4e44ad #d1fae5 #065f46 #059669 #b91c1c #fef3c7 #7f1d1d ' +
+  '#f6f8fb #243244'
 ).split(/\s+/));
 
 function runGit(args) {
