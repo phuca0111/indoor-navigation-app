@@ -31,7 +31,13 @@ data class MapData(
     @SerializedName("bgX") val bgX: Float = 0f,
     @SerializedName("bgY") val bgY: Float = 0f,
     @SerializedName("bgScale") val bgScale: Float = 1f,
-    @SerializedName("bgRotation") val bgRotation: Float = 0f
+    @SerializedName("bgRotation") val bgRotation: Float = 0f,
+    /**
+     * Góc lệch giữa Bắc địa lý (cảm biến) và trục “lên” của map (độ).
+     * mapHeading = deviceHeading − mapBearingOffset
+     * Web Editor: ô "Căn Bắc (°)" → Publish `map_bearing_offset`.
+     */
+    @SerializedName("map_bearing_offset") val mapBearingOffset: Float = 0f,
 )
 
 data class Room(
@@ -50,7 +56,12 @@ data class Room(
     val radius: Float? = null,
     @SerializedName("labelRotation") val labelRotation: Float = 0f,
     @SerializedName("labelFontSize") val labelFontSize: Float = 14f,
-    @SerializedName("labelAutoScale") val labelAutoScale: Boolean = true
+    @SerializedName("labelAutoScale") val labelAutoScale: Boolean = true,
+    /** W7 — mô tả / đánh giá / giờ mở (optional từ map JSON). */
+    val description: String? = null,
+    val rating: Float? = null,
+    @SerializedName("rating_count") val ratingCount: Int? = null,
+    @SerializedName("opening_hours") val openingHours: String? = null,
 )
 
 data class PathNode(
@@ -146,5 +157,6 @@ fun MapData.sanitized(): MapData = copy(
     bgX = bgX ?: 0f,
     bgY = bgY ?: 0f,
     bgScale = bgScale ?: 1f,
-    bgRotation = bgRotation ?: 0f
+    bgRotation = bgRotation ?: 0f,
+    mapBearingOffset = mapBearingOffset ?: 0f,
 )

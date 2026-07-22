@@ -44,6 +44,7 @@ import com.khoaluan.indoornav.ui.theme.NavLightBlue
  * @param isPathPreview    True khi đã có đường preview, chưa bắt đầu điều hướng
  * @param navigationError  Thông báo lỗi khi không tìm được đường
  * @param onPreviewPath    Callback nút "Xem đường"
+ * @param instructionText  W1 — chỉ dẫn rẽ / đi thẳng
  */
 @Composable
 fun BottomInfoCard(
@@ -62,6 +63,12 @@ fun BottomInfoCard(
     onPreviewPath: (() -> Unit)? = null,
     onStartNavigation: (() -> Unit)? = null,
     onStopNavigation: (() -> Unit)? = null,
+    /** W1 — chỉ dẫn text (“Rẽ trái sau 12 m”…). */
+    instructionText: String? = null,
+    /** W3 — path có cầu thang/thang máy. */
+    pathHasFloorConnector: Boolean = false,
+    /** W3 — mở sheet chọn tầng. */
+    onOpenFloorPicker: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val etaMinutes = (etaSeconds / 60f).coerceAtLeast(0f)
@@ -162,6 +169,28 @@ fun BottomInfoCard(
                     }
                     isNavigating -> {
                         Column {
+                            if (!instructionText.isNullOrBlank()) {
+                                Text(
+                                    text = instructionText,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF1565C0),
+                                    maxLines = 2,
+                                )
+                                Spacer(modifier.height(4.dp))
+                            }
+                            if (pathHasFloorConnector && onOpenFloorPicker != null) {
+                                TextButton(
+                                    onClick = onOpenFloorPicker,
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                ) {
+                                    Text(
+                                        text = "Lộ trình có đổi tầng · Chọn tầng",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF6A1B9A),
+                                    )
+                                }
+                            }
                             Text(
                                 text = "Đang điều hướng · ETA $etaLabel · $distanceLabel",
                                 fontSize = 11.sp,
@@ -221,6 +250,15 @@ fun BottomInfoCard(
                     }
                     isPathPreview -> {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (!instructionText.isNullOrBlank() && distanceMeters > 0f) {
+                                Text(
+                                    text = instructionText,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFF1565C0),
+                                    maxLines = 2,
+                                )
+                            }
                             if (distanceMeters <= 0f && navigationError == null) {
                                 Text(
                                     text = "Đã chọn điểm đến. Nhấn \"Xem đường\" để hiện lộ trình.",

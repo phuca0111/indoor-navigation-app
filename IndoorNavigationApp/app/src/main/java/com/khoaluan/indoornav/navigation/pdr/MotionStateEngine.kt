@@ -8,45 +8,75 @@ enum class MotionState {
 }
 
 /**
- * FILE: MotionStateEngine.kt
- * MỤC ĐÍCH: Xác định người dùng có đang di chuyển hay không bằng cách phân tích năng lượng dao động liên tục (Continuous Motion Energy).
- * Không phụ thuộc vào sự kiện "Bước chân" rời rạc.
- * Dùng Linear Acceleration (Gia tốc tuyến tính đã loại bỏ trọng lực).
+ * G3a/G3c: STILL ↔ WALKING với hysteresis.
+ * - Vào WALKING khó (ngưỡng cao + giữ 450ms) → ngồi rung không dễ thành đi.
+ * - Ra STILL chậm (ngưỡng thấp + keepAlive dài) → đang đi không khựng giữa các bước.
+ * - [noteStep] gia hạn WALKING mỗi bước thật.
  */
-class MotionStateEngine {
+class MotionStateEngine(
+    private val walkEnterThreshold: Float = 1.35f,
+    private val walkExitThreshold: Float = 0.65f,
+    private val enterWalkingHoldMs: Long = 450L,
+    private val keepAliveWalkingMs: Long = 2200L,
+    private val energyAlpha: Float = 0.85f,
+    private val nowMs: () -> Long = { System.currentTimeMillis() }
+) {
     var currentState: MotionState = MotionState.STILL
         private set
 
-    // Lọc nhiễu cho năng lượng
-    private var filteredEnergy = 0f
-    private val alpha = 0.85f // LPF hệ số (tăng lên để mượt hơn)
+    var filteredEnergy: Float = 0f
+        private set
 
-    // Ngưỡng năng lượng để xác định là đang đi (m/s^2)
-    // 1.3f: Gia tốc tuyến tính của đi bộ thật thường dao động từ 1.5 - 4.0 m/s^2.
-    // Đặt 1.3f để loại bỏ triệt để nhiễu xoay tay hoặc rung tay khi đứng yên.
-    private val walkThreshold = 1.3f
-
-    // Bộ đếm thời gian để tránh giật cục trạng thái
     private var lastWalkTimeMs = 0L
-    private val keepAliveWalkingMs = 300L // Giữ trạng thái WALKING thêm 0.3s để dừng ngay lập tức khi đứng yên
+    private var highEnergySinceMs = 0L
 
-    fun onLinearAccel(x: Float, y: Float, z: Float) {
-        // Tính năng lượng chuyển động (Magnitude của gia tốc tuyến tính)
+    val allowsPositionUpdate: Boolean
+        get() = currentState == MotionState.WALKING
+
+    fun onLinearAccel(x: Float, y: Float, z: Float): Boolean {
         val rawEnergy = sqrt(x * x + y * y + z * z)
-        
-        // Làm mượt năng lượng bằng LPF
-        filteredEnergy = alpha * filteredEnergy + (1f - alpha) * rawEnergy
+        filteredEnergy = energyAlpha * filteredEnergy + (1f - energyAlpha) * rawEnergy
 
-        val now = System.currentTimeMillis()
+        val previous = currentState
+        val now = nowMs()
 
-        if (filteredEnergy > walkThreshold) {
-            currentState = MotionState.WALKING
-            lastWalkTimeMs = now
-        } else {
-            // Nếu năng lượng giảm dưới ngưỡng, đợi hết khoảng keepAlive mới chuyển về STILL
-            if (now - lastWalkTimeMs > keepAliveWalkingMs) {
-                currentState = MotionState.STILL
+        when (currentState) {
+            MotionState.STILL -> {
+                if (filteredEnergy > walkEnterThreshold) {
+                    if (highEnergySinceMs == 0L) highEnergySinceMs = now
+                    if (now - highEnergySinceMs >= enterWalkingHoldMs) {
+                        currentState = MotionState.WALKING
+                        lastWalkTimeMs = now
+                    }
+                } else {
+                    highEnergySinceMs = 0L
+                }
+            }
+            MotionState.WALKING -> {
+                if (filteredEnergy > walkExitThreshold) {
+                    lastWalkTimeMs = now
+                } else if (now - lastWalkTimeMs > keepAliveWalkingMs) {
+                    currentState = MotionState.STILL
+                    highEnergySinceMs = 0L
+                }
             }
         }
+
+        return previous != currentState
+    }
+
+    /** Mỗi bước chân thật → giữ WALKING (tránh khựng giữa chu kỳ bước). */
+    fun noteStep() {
+        val now = nowMs()
+        currentState = MotionState.WALKING
+        lastWalkTimeMs = now
+        highEnergySinceMs = now
+    }
+
+    fun reset() {
+        currentState = MotionState.STILL
+        filteredEnergy = 0f
+        lastWalkTimeMs = 0L
+        highEnergySinceMs = 0L
     }
 }

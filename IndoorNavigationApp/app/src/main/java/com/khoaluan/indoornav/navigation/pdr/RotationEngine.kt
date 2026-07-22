@@ -26,6 +26,31 @@ class RotationEngine {
     // Throttle updateOutput để tránh gọi 2 lần nếu rotation vector và gyro cùng fire trong cùng frame (~50Hz)
     private var lastOutputTimeNs = 0L
 
+    /** Game RV: đảo yaw 180° cho khớp mũi tên với hướng cầm máy. */
+    var invertAzimuth180: Boolean
+        get() = headingEstimator.invertAzimuth180
+        set(value) {
+            headingEstimator.invertAzimuth180 = value
+        }
+
+    /** Surface.ROTATION_* — đồng bộ xoay màn hình (đầu/đít theo UI). */
+    var displayRotation: Int
+        get() = headingEstimator.displayRotation
+        set(value) {
+            headingEstimator.displayRotation = value
+        }
+
+    /** Pitch gần nhất — khóa QR chờ máy nằm (đầu máy chỉ ngang). */
+    val lastPitchDeg: Float
+        get() = headingEstimator.lastPitchDeg
+
+    val isHeadAxisUsableForWalk: Boolean
+        get() = headingEstimator.isHeadAxisUsableForWalk
+
+    /** rad/s — dùng gate xoay tại chỗ / bước ảo khi quay vòng. */
+    val gyroMagnitude: Float
+        get() = lastGyroMagnitude
+
     /**
      * Cập nhật từ Rotation Vector (La bàn + Gia tốc + Gyro nội bộ)
      */
@@ -46,6 +71,11 @@ class RotationEngine {
         updateOutput()
     }
 
+    /** G3: WALKING → smoother bám heading nhanh hơn (HEADING_UP ít lệch khi đi). */
+    fun setWalking(walking: Boolean) {
+        rotationSmoother.isWalking = walking
+    }
+
     private fun updateOutput() {
         val now = System.nanoTime()
         // Chỉ update nếu đã qua ít nhất 10ms so với lần cuối
@@ -61,5 +91,29 @@ class RotationEngine {
 
     fun reset() {
         headingEstimator.reset()
+        rotationSmoother.reset()
+        lastGyroMagnitude = 0f
+        lastOutputTimeNs = 0L
+        _smoothHeading.value = 0f
+    }
+
+    /** Sau QR trong map: nhảy ngay về azimuth thô (bỏ trễ smoother ~10°). */
+    fun snapToRawHeading() {
+        val raw = headingEstimator.getHeading()
+        rotationSmoother.reset()
+        // Init smoother tại raw
+        rotationSmoother.getSmoothRotation(raw, 0f)
+        _smoothHeading.value = raw
+    }
+
+    /**
+     * Buộc mẫu Rotation Vector kế tiếp khởi tạo lại azimuth tuyệt đối
+     * (dùng sau resume app / đổi tab — tránh gyro/smoother giữ góc trôi).
+     */
+    fun invalidateAbsoluteHeading() {
+        headingEstimator.reset()
+        rotationSmoother.reset()
+        lastGyroMagnitude = 0f
+        lastOutputTimeNs = 0L
     }
 }

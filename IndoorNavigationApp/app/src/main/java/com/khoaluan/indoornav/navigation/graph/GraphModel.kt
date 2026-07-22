@@ -195,10 +195,50 @@ class GraphModel(private val mapData: MapData) {
     }
 
     /**
+     * Hướng “vào trong nhà” tại node QR (độ map: 0 = lên ảnh, 90 = phải).
+     * Chọn cạnh xuất phát khớp nhất với hướng từ node → tâm đồ thị.
+     * Ví dụ: QR cửa phía Bắc nhà, tâm ở dưới → ~180° (vào Nam trên map).
+     */
+    fun inferInwardFacingMapHeadingDeg(nodeId: String): Float? {
+        val node = nodeMap[nodeId] ?: return null
+        val outs = adjacency[nodeId].orEmpty()
+        if (outs.isEmpty()) return null
+
+        var sx = 0.0
+        var sy = 0.0
+        var n = 0
+        for (p in nodeMap.values) {
+            sx += p.x
+            sy += p.y
+            n++
+        }
+        if (n == 0) return null
+        val cx = (sx / n).toFloat()
+        val cy = (sy / n).toFloat()
+        val toCentroidRad = atan2(cx - node.x.toFloat(), -(cy - node.y.toFloat()))
+
+        val best = outs.maxByOrNull { edge ->
+            cos((edge.angleRad - toCentroidRad).toDouble()).toFloat()
+        } ?: return null
+
+        var deg = Math.toDegrees(best.angleRad.toDouble()).toFloat()
+        deg = ((deg + 180f) % 360f) - 180f
+        return deg
+    }
+
+    /**
      * Lấy tất cả các Edge xuất phát từ Node — trả về danh sách hướng có thể đi
      */
     fun getEdgesFromNode(nodeId: String): List<GraphEdge> =
         adjacency[nodeId] ?: emptyList()
+
+    /** true nếu đoạn (x1,y1)→(x2,y2) cắt bất kỳ tường nào. */
+    fun crossesWall(x1: Float, y1: Float, x2: Float, y2: Float): Boolean {
+        if (wallSegments.isEmpty()) return false
+        return wallSegments.any { ws ->
+            segmentsIntersect(x1, y1, x2, y2, ws.x1, ws.y1, ws.x2, ws.y2)
+        }
+    }
 
     private fun buildWallSegments(): List<WallSegment> {
         val segments = mutableListOf<WallSegment>()

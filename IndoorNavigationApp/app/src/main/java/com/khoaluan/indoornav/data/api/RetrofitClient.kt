@@ -50,4 +50,11 @@ object RetrofitClient {
         }
         return retrofit!!.create(ApiService::class.java)
     }
+
+    fun getAuthApi(): AuthApi {
+        if (retrofit == null) {
+            getApiService()
+        }
+        return retrofit!!.create(AuthApi::class.java)
+    }
 }

@@ -7,6 +7,7 @@ package com.khoaluan.indoornav.data.api
 
 import com.khoaluan.indoornav.BuildConfig
 import com.khoaluan.indoornav.data.model.Building
+import com.khoaluan.indoornav.data.model.MapData
 import com.khoaluan.indoornav.data.model.MapResponse
 import retrofit2.Response
 import retrofit2.http.GET
@@ -27,12 +28,11 @@ interface ApiService {
         @Path("floor") floor: Int
     ): Response<MapResponse>
 
-    // GET /api/maps/download/{buildingId} - Lay toan bo ban do toa nha (tat ca tang)
-// Tra ve: Any (raw JSON) -> chua duoc su dung rong trong app hien tai
-    @GET("maps/download/{buildingId}")
+    // GET /api/maps/{buildingId}/download — toàn bộ tầng (W3 multi-floor)
+    @GET("maps/{buildingId}/download")
     suspend fun getFullBuildingMap(
         @Path("buildingId") buildingId: String
-    ): Response<Any>
+    ): Response<BuildingFloorsResponse>
 
     // GET /api/qr/{qrCode} - Tra cuu thong tin QR code (public endpoint)
 // Backend: qrController.js lookupQr() -> QrCode.findOne({qr_code})
@@ -47,6 +47,19 @@ interface ApiService {
         val BASE_URL = BuildConfig.BASE_URL
     }
 }
+
+data class BuildingFloorsResponse(
+    val building_id: String? = null,
+    val total_floors: Int = 0,
+    val floors_count: Int = 0,
+    val floors: List<FloorMapDocument> = emptyList(),
+)
+
+data class FloorMapDocument(
+    val floor_number: Int = 0,
+    val version: Int = 1,
+    val map_data: MapData? = null,
+)
 
 // QR Lookup Response -- matches backend GET /api/qr/:qrCode
 // Backend: qrController.js lookupQr() returns {qr_code, building_id, floor_number, x, y, node_id, label}

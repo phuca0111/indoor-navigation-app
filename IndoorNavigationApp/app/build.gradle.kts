@@ -23,12 +23,15 @@ android {
             dimension = "env"
             // Bản test nội bộ: điện thoại gọi backend đang chạy trên laptop.
             buildConfigField("String", "BASE_URL", "\"http://192.168.2.29:5000/api/\"")
+            // W8 — Web Client ID OAuth (để trống = fallback demo token)
+            buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"\"")
         }
 
         create("prod") {
             dimension = "env"
             // Bản gửi người khác dùng: gọi backend Render online.
             buildConfigField("String", "BASE_URL", "\"https://indoor-navigation-app-sqiu.onrender.com/api/\"")
+            buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"\"")
         }
     }
 
@@ -77,6 +80,11 @@ dependencies {
 
     // ML Kit Barcode
     implementation(libs.com.google.mlkit.barcode.scanning)
+
+    // W8 Google Sign-In
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockito.core)
