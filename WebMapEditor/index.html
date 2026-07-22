@@ -124,7 +124,7 @@
 
         <!-- Phase UI ribbon -->
         <nav class="shell-ribbon" id="shellRibbon" aria-label="Ribbon công cụ">
-            <div class="ribbon-tabs">
+            <div class="ribbon-tabs" role="tablist" aria-label="Nhóm công cụ ribbon">
                 <button type="button" class="ribbon-tab" data-tab="home">Chọn</button>
                 <button type="button" class="ribbon-tab active" data-tab="draw">Vẽ</button>
                 <button type="button" class="ribbon-tab" data-tab="edit">Sửa</button>
@@ -338,7 +338,7 @@
                     <span class="ribbon-hint" id="currentToolStatus">Sẵn sàng</span>
                 </div>
                 <div class="canvas-wrapper">
-                    <canvas id="mapCanvas"></canvas>
+                    <canvas id="mapCanvas" aria-label="Bản vẽ tầng"></canvas>
                 </div>
             </section>
 

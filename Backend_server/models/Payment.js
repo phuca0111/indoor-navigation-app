@@ -6,10 +6,11 @@ const PAYMENT_STATUSES = ['PENDING', 'SUCCESS', 'FAILED', 'REFUNDED', 'CANCELLED
 
 const paymentSchema = new mongoose.Schema(
   {
+    // null = thanh toán cá nhân (PersonalPayment → Invoice PERSONAL-*)
     organization_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Organization',
-      required: true,
+      default: null,
       index: true
     },
     invoice_id: {
@@ -18,7 +19,8 @@ const paymentSchema = new mongoose.Schema(
       default: null,
       index: true
     },
-    amount: { type: Number, required: true, min: 0 },
+    // Dương = thu; âm = hoàn tiền (refund ledger line)
+    amount: { type: Number, required: true },
     currency: { type: String, default: 'VND' },
     method: {
       type: String,
@@ -33,6 +35,8 @@ const paymentSchema = new mongoose.Schema(
       index: true
     },
     paid_at: { type: Date, default: null },
+    provider: { type: String, default: '', uppercase: true, trim: true, index: true },
+    provider_ref: { type: String, default: '', trim: true },
     external_ref: { type: String, default: '', trim: true },
     note: { type: String, default: '', trim: true },
     idempotency_key: { type: String, default: '' },
@@ -49,6 +53,16 @@ const paymentSchema = new mongoose.Schema(
 paymentSchema.index(
   { idempotency_key: 1 },
   { unique: true, partialFilterExpression: { idempotency_key: { $type: 'string', $ne: '' } } }
+);
+paymentSchema.index(
+  { provider: 1, provider_ref: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      provider: { $type: 'string', $ne: '' },
+      provider_ref: { $type: 'string', $ne: '' }
+    }
+  }
 );
 
 module.exports = mongoose.model('Payment', paymentSchema);

@@ -1,0 +1,39 @@
+name: Production deploy gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_digest:
+        description: "Approved immutable image digest (sha256:...)"
+        required: true
+        type: string
+      change_ticket:
+        description: "Approved change/release ticket"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  provider-ready-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate immutable release input
+        env:
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          CHANGE_TICKET: ${{ inputs.change_ticket }}
+        run: |
+          echo "$IMAGE_DIGEST" | grep -Eq '^sha256:[a-f0-9]{64}$'
+          test -n "$CHANGE_TICKET"
+      - name: Provider adapter placeholder
+        run: |
+          echo "Production approval passed."
+          echo "No provider adapter is configured; no deployment was performed."

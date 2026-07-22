@@ -23,7 +23,21 @@ const draftSchema = new mongoose.Schema({
   },
   version: {
     type: Number,
-    default: 1 // Tăng mỗi lần save
+    default: 1 // Revision optimistic concurrency, tăng mỗi lần save
+  },
+  payload_fingerprint: {
+    type: String,
+    default: '',
+    index: true
+  },
+  deleted_at: {
+    type: Date,
+    default: null,
+    index: true
+  },
+  purge_after: {
+    type: Date,
+    default: null
   },
   created_by: {
     type: mongoose.Schema.Types.ObjectId,
@@ -40,5 +54,7 @@ const draftSchema = new mongoose.Schema({
 
 // Một building + floor = một draft
 draftSchema.index({ building_id: 1, floor_number: 1 }, { unique: true });
+// Mongo tự dọn sau retention; service GC vẫn tồn tại để audit/provider scheduling.
+draftSchema.index({ purge_after: 1 }, { expireAfterSeconds: 0 });
 
 module.exports = mongoose.model('Draft', draftSchema);

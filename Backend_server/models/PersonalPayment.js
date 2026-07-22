@@ -32,6 +32,11 @@ const personalPaymentSchema = new mongoose.Schema({
   token: { type: String, required: true, index: true },
   expires_at: { type: Date, required: true },
   paid_at: { type: Date, default: null },
+  invoice_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null, index: true },
+  payment_ledger_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment', default: null },
+  fulfillment_error: { type: String, default: '' },
+  processing_started_at: { type: Date, default: null },
+  processing_lease_expires_at: { type: Date, default: null, index: true },
 
   // Thông tin liên hệ/hóa đơn người dùng nhập (đều tùy chọn)
   contact: {

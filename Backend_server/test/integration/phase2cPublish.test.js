@@ -13,6 +13,7 @@ const Building = require('../../models/Building');
 const Floor = require('../../models/Floor');
 const PublishJob = require('../../models/PublishJob');
 const MapVersion = require('../../models/MapVersion');
+const ActivityLog = require('../../models/ActivityLog');
 const { validateMapData } = require('../../services/publishMapValidate');
 const { processPublishJob } = require('../../services/publishService');
 
@@ -83,6 +84,10 @@ describe('Phase 2c — Publish validate + async', () => {
 
   afterAll(async () => {
     if (testBuildingId) {
+      await ActivityLog.deleteMany({
+        action: { $in: ['PUBLISH_MAP', 'ROLLBACK_MAP'] },
+        target: { $regex: String(testBuildingId) }
+      });
       await PublishJob.deleteMany({ building_id: testBuildingId });
       await MapVersion.deleteMany({ building_id: testBuildingId });
       await Floor.deleteMany({ building_id: testBuildingId });
@@ -156,6 +161,21 @@ describe('Phase 2c — Publish validate + async', () => {
     const pub = await request(app).get(`/api/maps/${testBuildingId}/0/public`);
     expect(pub.statusCode).toBe(200);
     expect(pub.body.map_data?.rooms?.[0]?.name).toBe('Async Room');
+
+    const audit = await ActivityLog.findOne({
+      action: 'PUBLISH_MAP',
+      target: { $regex: String(testBuildingId) }
+    }).sort({ createdAt: -1 }).lean();
+    expect(audit.details.operation).toBe('publish');
+    expect(audit.details.before).toEqual(expect.objectContaining({
+      version: expect.any(Number),
+      snapshot_sha256: expect.any(String)
+    }));
+    expect(audit.details.after).toEqual(expect.objectContaining({
+      version: job.body.version,
+      rooms_count: 1,
+      snapshot_sha256: expect.any(String)
+    }));
   });
 
   test('TC-2c-05 enqueue map lỗi → 400 (không tạo job)', async () => {
@@ -190,7 +210,31 @@ describe('Phase 2c — Publish validate + async', () => {
     expect(res.body.version || res.body.map?.version).toBe(prev + 1);
   });
 
-  test('TC-2c-07 ORG_ADMIN không xem job của SUPER → 403', async () => {
+  test('TC-2c-06b public/download không lộ tầng chỉ có draft', async () => {
+    const draft = await authReq(superToken)(
+      'put',
+      `/api/maps/${testBuildingId}/1/draft`
+    ).send({
+      map_data: {
+        rooms: [{ id: 'draft-only', name: 'Draft Only Floor' }],
+        nodes: [],
+        edges: []
+      }
+    });
+    expect(draft.statusCode).toBe(200);
+
+    const publicFloor = await request(app).get(`/api/maps/${testBuildingId}/1/public`);
+    expect(publicFloor.statusCode).toBe(404);
+
+    const download = await request(app).get(`/api/maps/${testBuildingId}/download`);
+    expect(download.statusCode).toBe(200);
+    expect(download.body.floors).toHaveLength(1);
+    expect(download.body.floors[0].floor_number).toBe(0);
+    expect(download.body.floors[0].draft_map_data).toBeUndefined();
+    expect(download.body.floors[0].draft_updated_at).toBeUndefined();
+  });
+
+  test('TC-2c-07 ORG_ADMIN cùng org được xem job publish của building mình', async () => {
     const enq = await authReq(superToken)(
       'post',
       `${API}/buildings/${testBuildingId}/floors/1/publish`
@@ -200,7 +244,96 @@ describe('Phase 2c — Publish validate + async', () => {
     expect(enq.statusCode).toBe(202);
     await processPublishJob(enq.body.job_id);
 
-    const peek = await authReq(orgToken)('get', `${API}/publish-jobs/${enq.body.job_id}`);
-    expect(peek.statusCode).toBe(403);
+    const peek = await waitJobSuccess(orgToken, enq.body.job_id);
+    expect(peek.statusCode).toBe(200);
+    expect(peek.body.status).toBe('SUCCESS');
+  });
+
+  test('TC-2c-09 job FAILED + retry với map_data hợp lệ → SUCCESS', async () => {
+    const job = await PublishJob.create({
+      building_id: testBuildingId,
+      floor_number: 0,
+      status: 'QUEUED',
+      requested_by: superUser._id,
+      map_data: {
+        rooms: [{ id: 'bad', name: 'Bad' }],
+        nodes: [{ id: 'n1' }],
+        edges: [{ from: 'n1', to: 'missing-node' }]
+      }
+    });
+
+    const failed = await processPublishJob(String(job._id));
+    expect(failed.status).toBe('FAILED');
+    expect(failed.attempts).toBeGreaterThanOrEqual(1);
+
+    const peek = await authReq(superToken)('get', `${API}/publish-jobs/${job._id}`);
+    expect(peek.statusCode).toBe(200);
+    expect(peek.body.status).toBe('FAILED');
+
+    const retry = await authReq(superToken)('post', `${API}/publish-jobs/${job._id}/retry`).send({
+      map_data: {
+        rooms: [{ id: 'ok', name: 'OK Retry' }],
+        nodes: [],
+        edges: []
+      }
+    });
+    expect(retry.statusCode).toBe(202);
+    expect(retry.body.status).toBe('QUEUED');
+
+    await processPublishJob(String(job._id));
+    const done = await waitJobSuccess(superToken, String(job._id));
+    expect(done.body.status).toBe('SUCCESS');
+  });
+
+  test('TC-2c-10 list publish-jobs + filter FAILED', async () => {
+    const list = await authReq(superToken)('get', `${API}/publish-jobs?limit=20`);
+    expect(list.statusCode).toBe(200);
+    expect(Array.isArray(list.body.jobs)).toBe(true);
+
+    const failed = await authReq(superToken)('get', `${API}/publish-jobs?status=FAILED&limit=10`);
+    expect(failed.statusCode).toBe(200);
+    (failed.body.jobs || []).forEach((j) => expect(j.status).toBe('FAILED'));
+  });
+
+  test('TC-2c-08 rollback tạo version mới + audit before/after; public chỉ đọc bản rollback đã publish', async () => {
+    const versions = await MapVersion.find({
+      building_id: testBuildingId,
+      floor_number: 0,
+      map_snapshot: { $ne: null }
+    }).sort({ version: 1 }).lean();
+    expect(versions.length).toBeGreaterThanOrEqual(2);
+
+    const target = versions[0];
+    const before = await Floor.findOne({
+      building_id: testBuildingId,
+      floor_number: 0
+    }).lean();
+
+    const rollback = await authReq(superToken)(
+      'post',
+      `/api/map-versions/${testBuildingId}/0/${target.version}/rollback`
+    );
+    expect(rollback.statusCode).toBe(200);
+    expect(rollback.body.map.version).toBe(before.version + 1);
+
+    const pub = await request(app).get(`/api/maps/${testBuildingId}/0/public`);
+    expect(pub.statusCode).toBe(200);
+    expect(pub.body.version).toBe(rollback.body.map.version);
+    expect(pub.body.map_data?.rooms?.[0]?.name).toBe(
+      target.map_snapshot?.rooms?.[0]?.name
+    );
+    expect(pub.body.draft_map_data).toBeUndefined();
+
+    const audit = await ActivityLog.findOne({
+      action: 'ROLLBACK_MAP',
+      target: { $regex: String(testBuildingId) }
+    }).sort({ createdAt: -1 }).lean();
+    expect(audit.details.operation).toBe('rollback');
+    expect(audit.details.rollback_from_version).toBe(target.version);
+    expect(audit.details.before.version).toBe(before.version);
+    expect(audit.details.after.version).toBe(rollback.body.map.version);
+    expect(audit.details.before.snapshot_sha256).not.toBe(
+      audit.details.after.snapshot_sha256
+    );
   });
 });

@@ -1,0 +1,49 @@
+/* IndoorNav Landing tokens v1.0 — ánh xạ màu hiện hữu. */
+:root {
+  --ds-landing-color-brand: #0077ff;
+  --ds-landing-color-brand-hover: #0056b3;
+  --ds-landing-color-navy: #0a192f;
+  --ds-landing-color-surface: #ffffff;
+  --ds-landing-color-canvas: #f8f9fa;
+  --ds-landing-color-text: #333333;
+  --ds-landing-color-on-dark: #e6f1ff;
+  --ds-landing-radius-sm: 6px;
+  --ds-landing-radius-md: 12px;
+
+  --landing-primary: var(--ds-landing-color-brand);
+  --landing-secondary: var(--ds-landing-color-navy);
+  --landing-radius: var(--ds-landing-radius-md);
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 10000;
+  top: 8px;
+  left: 8px;
+  padding: 10px 14px;
+  border-radius: var(--ds-landing-radius-sm);
+  background: var(--ds-landing-color-surface);
+  color: var(--ds-landing-color-navy);
+  transform: translateY(-160%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.landing-sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+:focus-visible {
+  outline: 3px solid var(--ds-landing-color-brand);
+  outline-offset: 3px;
+}

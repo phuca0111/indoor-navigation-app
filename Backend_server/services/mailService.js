@@ -107,21 +107,23 @@ async function sendPasswordResetEmail(opts) {
 async function sendPlanExpiryReminderEmail(opts) {
   const { to, orgName, expiresAt, daysLeft } = opts || {};
   if (!to) return null;
-  if (!isSmtpConfigured() && !_testTransporter) {
-    return null;
-  }
 
-  const transporter = getTransporter();
-  if (!transporter) return null;
-
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
   const expiresText = expiresAt
     ? new Date(expiresAt).toLocaleString('vi-VN')
     : 'sắp tới';
   const days = Number(daysLeft);
   const daysText = Number.isFinite(days) ? String(days) : '?';
   const name = orgName || 'Tổ chức của bạn';
+  const details =
+    `Gói của "${name}" hết hạn ${expiresText} (còn khoảng ${daysText} ngày).`;
 
+  const transporter = getTransporter();
+  if (!transporter) {
+    console.log(`[Mail:stub] would send PLAN_EXPIRY_REMINDER to ${to}: ${details}`);
+    return { stub: true };
+  }
+
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
   const subject = `Nhắc hạn gói — ${name} còn khoảng ${daysText} ngày`;
   const text =
     `Xin chào,\n\n` +
@@ -151,6 +153,72 @@ async function sendPlanExpiryReminderEmail(opts) {
   }
 }
 
+async function sendBillingEventEmail(opts = {}) {
+  const { to, orgName, event, plan, amount, expiresAt } = opts;
+  if (!to) return { sent: false, skipped: true };
+
+  const eventLabel = event === 'PAYMENT_SUCCEEDED'
+    ? 'Thanh toán thành công'
+    : 'Gói dịch vụ đã hết hạn';
+  const subject = `${eventLabel} — ${orgName || 'Indoor Nav SaaS'}`;
+  const details = event === 'PAYMENT_SUCCEEDED'
+    ? `Gói ${plan || ''} đã được thanh toán thành công${amount != null ? ` (${Number(amount).toLocaleString('vi-VN')} VND)` : ''}.`
+    : `Gói ${plan || ''} đã hết hạn${expiresAt ? ` vào ${new Date(expiresAt).toLocaleString('vi-VN')}` : ''}.`;
+
+  const transporter = getTransporter();
+  if (!transporter) {
+    console.log(`[Mail:stub] would send ${event} to ${to}: ${details}`);
+    return { sent: false, stub: true };
+  }
+
+  const info = await transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to,
+    subject,
+    text: `${eventLabel}\n\nTổ chức: ${orgName || '—'}\n${details}\n`,
+    html: `<h3>${eventLabel}</h3><p>Tổ chức: <strong>${orgName || '—'}</strong></p><p>${details}</p>`
+  });
+  console.log('[Mail] Billing event sent to', to, 'event=', event);
+  return { sent: true, info };
+}
+
+/**
+ * B5 — email lời mời thành viên tổ chức.
+ */
+async function sendOrgInviteEmail(opts = {}) {
+  const { to, orgName, role, acceptUrl, expiresAt } = opts;
+  if (!to) return { sent: false, skipped: true };
+
+  const roleLabel = role === 'ORG_ADMIN' ? 'Quản trị tổ chức' : 'Quản trị tòa nhà';
+  const expiresText = expiresAt
+    ? new Date(expiresAt).toLocaleString('vi-VN')
+    : '7 ngày tới';
+  const details =
+    `Bạn được mời vào tổ chức "${orgName || '—'}" với vai trò ${roleLabel}. ` +
+    `Hạn nhận lời mời: ${expiresText}.`;
+
+  const transporter = getTransporter();
+  if (!transporter) {
+    console.log(`[Mail:stub] would send ORG_INVITE to ${to}: ${details} url=${acceptUrl || ''}`);
+    return { sent: false, stub: true };
+  }
+
+  const info = await transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to,
+    subject: `Lời mời tham gia tổ chức — ${orgName || 'Indoor Nav SaaS'}`,
+    text:
+      `${details}\n\n` +
+      `Mở liên kết sau khi đăng nhập bằng đúng email này:\n${acceptUrl || ''}\n`,
+    html:
+      `<p>${details}</p>` +
+      `<p><a href="${acceptUrl || '#'}">Nhận lời mời</a></p>` +
+      `<p>Đăng nhập bằng đúng email <strong>${to}</strong> trước khi nhận lời mời.</p>`
+  });
+  console.log('[Mail] Org invite sent to', to);
+  return { sent: true, info };
+}
+
 module.exports = {
   isSmtpConfigured,
   getTransporter,
@@ -158,6 +226,8 @@ module.exports = {
   buildPasswordResetLink,
   sendPasswordResetEmail,
   sendPlanExpiryReminderEmail,
+  sendBillingEventEmail,
+  sendOrgInviteEmail,
   setTestTransporter,
   resetMailServiceCache
 };

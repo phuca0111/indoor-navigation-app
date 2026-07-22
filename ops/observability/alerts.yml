@@ -1,0 +1,80 @@
+groups:
+  - name: indoor-nav-staging
+    rules:
+      - alert: ApiHighErrorRate
+        expr: |
+          sum(rate(indoor_nav_http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(indoor_nav_http_requests_total[5m])), 0.001) > 0.05
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "API 5xx rate above 5%"
+          runbook: "docs/operations/INCIDENT_RUNBOOK.md#api-errors"
+
+      - alert: ApiHighP95Latency
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(indoor_nav_http_request_duration_seconds_bucket[5m]))
+          ) > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "API p95 latency above one second"
+          runbook: "docs/operations/INCIDENT_RUNBOOK.md#latency"
+
+      - alert: PublishQueueUnavailable
+        expr: indoor_nav_worker_queue_up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Publish worker queue unavailable"
+          runbook: "docs/operations/INCIDENT_RUNBOOK.md#queue"
+
+      - alert: PublishQueueBacklog
+        expr: indoor_nav_worker_queue_backlog > 50
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Publish queue backlog above 50"
+          runbook: "docs/operations/INCIDENT_RUNBOOK.md#queue"
+
+      - alert: PublishQueueDeadJobs
+        expr: indoor_nav_worker_queue_failed > 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Publish queue contains failed jobs"
+          runbook: "docs/operations/INCIDENT_RUNBOOK.md#queue"
+
+      - alert: MongoUnavailable
+        expr: indoor_nav_dependency_mongo_up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "MongoDB unavailable"
+          runbook: "docs/operations/INCIDENT_RUNBOOK.md#dependencies"
+
+      - alert: RedisUnavailable
+        expr: indoor_nav_dependency_redis_up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Redis unavailable"
+          runbook: "docs/operations/INCIDENT_RUNBOOK.md#dependencies"
+
+      - alert: StorageUnavailable
+        expr: indoor_nav_dependency_storage_up == 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Object storage unavailable"
+          runbook: "docs/operations/INCIDENT_RUNBOOK.md#dependencies"
+
+      - alert: BackupStale
+        expr: time() - indoor_nav_backup_last_success_timestamp_seconds > 90000
+        for: 30m
+        labels: { severity: critical }
+        annotations:
+          summary: "No successful backup in 25 hours"
+          runbook: "docs/operations/BACKUP_RESTORE_RUNBOOK.md"

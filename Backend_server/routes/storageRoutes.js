@@ -8,7 +8,7 @@ const express = require('express');
 const multer = require('multer');
 const router = express.Router();
 const { uploadBackground, deleteBackground } = require('../controllers/storageController');
-const { auth } = require('../middlewares/auth');
+const { auth, requirePermission, P } = require('../middlewares/auth');
 const { requireBuildingAccess } = require('../middlewares/buildingAccess');
 const { getMaxBytes, isAllowedMime } = require('../services/objectStorage');
 
@@ -46,6 +46,7 @@ function multerErrorHandler(err, req, res, next) {
 router.post(
   '/buildings/:buildingId/floors/:floor/assets/background',
   auth,
+  requirePermission(P.STORAGE_ASSET_WRITE),
   requireBuildingAccess,
   (req, res, next) => {
     upload.single('file')(req, res, (err) => multerErrorHandler(err, req, res, next));
@@ -56,6 +57,7 @@ router.post(
 router.delete(
   '/buildings/:buildingId/floors/:floor/assets/background',
   auth,
+  requirePermission(P.STORAGE_ASSET_WRITE),
   requireBuildingAccess,
   deleteBackground
 );

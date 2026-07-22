@@ -1,7 +1,8 @@
-// Finance Dashboard KPI (Super / Finance Admin)
-const Invoice = require('../models/Invoice');
-const Organization = require('../models/Organization');
-const Expense = require('../models/Expense');
+// Finance Dashboard KPI (Super / Finance Admin) — Phase 7 read repository
+const financeRead = require('../repositories/financeReadRepository');
+
+/** Đồng bộ với financeReports / overview — bucket theo ngày giờ VN */
+const REPORT_TZ = process.env.REPORT_TIMEZONE || 'Asia/Ho_Chi_Minh';
 
 function startOfDay(d = new Date()) {
   const x = new Date(d);
@@ -29,7 +30,7 @@ function monthKey(d) {
 }
 
 async function sumPaidAmount(start, end) {
-  const rows = await Invoice.aggregate([
+  const rows = await financeRead.aggregateInvoices([
     {
       $match: {
         status: 'PAID',
@@ -47,14 +48,19 @@ async function sumPaidAmount(start, end) {
       }
     }
   ]);
-  return {
+  const legacy = {
     amount: rows[0]?.amount || 0,
     count: rows[0]?.count || 0
   };
+  const { isLedgerReadV2, ledgerTotals } = require('./ledgerReadService');
+  if (!isLedgerReadV2()) return legacy;
+  const ledger = await ledgerTotals(start, end);
+  return { amount: ledger.revenue, count: ledger.revenue_count };
 }
 
 async function sumExpenseAmount(start, end) {
-  const rows = await Expense.aggregate([
+  // C1 — tổng chi = tổng dòng sổ (EXPENSE + REVERSAL âm)
+  const rows = await financeRead.aggregateExpenseLedger([
     {
       $match: {
         expense_date: { $gte: start, $lte: end }
@@ -68,10 +74,14 @@ async function sumExpenseAmount(start, end) {
       }
     }
   ]);
-  return {
+  const legacy = {
     amount: rows[0]?.amount || 0,
     count: rows[0]?.count || 0
   };
+  const { isLedgerReadV2, ledgerTotals } = require('./ledgerReadService');
+  if (!isLedgerReadV2()) return legacy;
+  const ledger = await ledgerTotals(start, end);
+  return { amount: ledger.expense, count: ledger.expense_count };
 }
 
 async function revenueByMonth(monthsBack = 12) {
@@ -79,7 +89,7 @@ async function revenueByMonth(monthsBack = 12) {
   const start = startOfMonth();
   start.setMonth(start.getMonth() - (monthsBack - 1));
 
-  const rows = await Invoice.aggregate([
+  const rows = await financeRead.aggregateInvoices([
     {
       $match: {
         status: 'PAID',
@@ -96,7 +106,9 @@ async function revenueByMonth(monthsBack = 12) {
     },
     {
       $group: {
-        _id: { $dateToString: { format: '%Y-%m', date: '$paidDay' } },
+        _id: {
+          $dateToString: { format: '%Y-%m', date: '$paidDay', timezone: REPORT_TZ }
+        },
         amount: { $sum: '$amount' },
         count: { $sum: 1 }
       }
@@ -120,7 +132,7 @@ async function revenueByMonth(monthsBack = 12) {
 }
 
 async function revenueByPlan() {
-  const rows = await Invoice.aggregate([
+  const rows = await financeRead.aggregateInvoices([
     { $match: { status: 'PAID' } },
     {
       $group: {
@@ -138,7 +150,7 @@ async function revenueByPlan() {
 }
 
 async function expenseByCategory(start, end) {
-  const rows = await Expense.aggregate([
+  const rows = await financeRead.aggregateExpenseLedger([
     { $match: { expense_date: { $gte: start, $lte: end } } },
     {
       $group: {
@@ -157,11 +169,9 @@ async function expenseByCategory(start, end) {
 }
 
 async function orgBillingSnapshot() {
-  const orgs = await Organization.find({})
-    .select(
+  const orgs = await financeRead.listOrganizationsForBilling(
       'name slug plan billing_status is_active plan_expires_at grace_ends_at plan_started_at createdAt'
-    )
-    .lean();
+    );
 
   const counts = {
     total: orgs.length,
@@ -212,35 +222,42 @@ async function orgBillingSnapshot() {
 }
 
 async function pendingInvoices(limit = 20) {
-  return Invoice.find({ status: 'OPEN' })
-    .sort({ due_at: 1, createdAt: -1 })
-    .limit(limit)
-    .populate('organization_id', 'name slug plan')
-    .lean();
+  return financeRead.findInvoices({ status: 'OPEN' }, {
+    sort: { due_at: 1, createdAt: -1 },
+    limit,
+    populate: { path: 'organization_id', select: 'name slug plan' }
+  });
 }
 
 async function recentFinanceActivity(limit = 15) {
   const [paid, expenses] = await Promise.all([
-    Invoice.find({ status: 'PAID' })
-      .sort({ paid_at: -1, updatedAt: -1 })
-      .limit(limit)
-      .populate('organization_id', 'name')
-      .lean(),
-    Expense.find({})
-      .sort({ expense_date: -1, createdAt: -1 })
-      .limit(limit)
-      .lean()
+    financeRead.findInvoices({ status: 'PAID' }, {
+      sort: { paid_at: -1, updatedAt: -1 },
+      limit,
+      populate: { path: 'organization_id', select: 'name' }
+    }),
+    financeRead.findExpenses({ voided_at: null }, {
+      sort: { expense_date: -1, createdAt: -1 },
+      limit
+    })
   ]);
 
   const events = [];
   paid.forEach((inv) => {
+    const isPersonal =
+      !inv.organization_id ||
+      inv.metadata?.scope === 'personal' ||
+      String(inv.external_ref || '').startsWith('PERSONAL-');
+    const personalLabel = inv.metadata?.user_email
+      ? `Cá nhân (${inv.metadata.user_email})`
+      : 'Cá nhân';
     events.push({
       type: 'PAID',
       at: inv.paid_at || inv.updatedAt,
       amount: inv.amount,
       label: `Hóa đơn ${inv.invoice_number || inv._id}`,
-      org_name: inv.organization_id?.name || '',
-      meta: { invoice_id: inv._id, plan: inv.plan }
+      org_name: inv.organization_id?.name || (isPersonal ? personalLabel : ''),
+      meta: { invoice_id: inv._id, plan: inv.plan, scope: isPersonal ? 'personal' : 'org' }
     });
   });
   expenses.forEach((ex) => {
@@ -379,7 +396,7 @@ async function listOrgsForBilling(filter = {}) {
     list = list.filter((o) => o.is_active === false);
   }
 
-  const invoiceAgg = await Invoice.aggregate([
+  const invoiceAgg = await financeRead.aggregateInvoices([
     {
       $group: {
         _id: '$organization_id',

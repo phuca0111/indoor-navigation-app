@@ -50,6 +50,17 @@ const expenseSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       default: null
+    },
+    // C1 — không xóa vật lý; đảo sổ thì gắn mốc này
+    voided_at: {
+      type: Date,
+      default: null,
+      index: true
+    },
+    void_reason: {
+      type: String,
+      default: '',
+      trim: true
     }
   },
   { timestamps: true }

@@ -26,7 +26,8 @@ const landingPageSchema = new mongoose.Schema({
   draft_sections: { type: [sectionSchema], default: [] },
   published_sections: { type: [sectionSchema], default: [] },
   published_at: { type: Date, default: null },
-  updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
+  updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  revision: { type: Number, default: 1, min: 1 }
 }, { timestamps: true });
 
 module.exports = mongoose.model('LandingPage', landingPageSchema);

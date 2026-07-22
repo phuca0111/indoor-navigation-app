@@ -1,7 +1,8 @@
 // Phase 5.6 — Subscription lifecycle + sync về Organization
-const Subscription = require('../models/Subscription');
-const Invoice = require('../models/Invoice');
-const OrganizationPlanHistory = require('../models/OrganizationPlanHistory');
+const subscriptionRepository = require('../repositories/subscriptionRepository');
+const invoiceRepository = require('../repositories/invoiceRepository');
+const billingOrganizationRepository = require('../repositories/billingOrganizationRepository');
+const organizationPlanHistoryRepository = require('../repositories/organizationPlanHistoryRepository');
 const { countActiveBuildings, countActiveUsers } = require('../utils/planQuota');
 const {
   isPaidPlan,
@@ -15,6 +16,8 @@ const {
   GRACE_PERIOD_MS,
   ARCHIVE_AFTER_EXPIRED_MS
 } = require('../utils/billingConstants');
+const eventBus = require('../shared/events/eventBus');
+const EVENT_TYPES = require('../shared/events/eventTypes');
 
 /** @deprecated dùng getKnownPlanCodes() — giữ alias tương thích test cũ */
 const VALID_PLANS = ['FREE', 'PRO', 'ENTERPRISE'];
@@ -38,7 +41,7 @@ async function recordPlanHistory(org, meta) {
       countActiveBuildings(org._id),
       countActiveUsers(org._id)
     ]);
-    await OrganizationPlanHistory.create({
+    await organizationPlanHistoryRepository.recordPlanChange({
       organization_id: org._id,
       from_plan: meta.from_plan ?? null,
       to_plan: meta.to_plan,
@@ -48,18 +51,33 @@ async function recordPlanHistory(org, meta) {
       source: meta.source || 'PAYMENT',
       note: meta.note || '',
       snapshot: { buildings_active: buildingsActive, users_active: usersActive }
-    });
+    }, { session: meta.session });
   } catch (e) {
     console.warn('subscriptionLifecycle.recordPlanHistory:', e.message);
   }
 }
 
-async function getCurrentSubscription(organizationId) {
+async function getCurrentSubscription(organizationId, options = {}) {
   if (!organizationId) return null;
-  return Subscription.findOne({
-    organization_id: organizationId,
-    is_current: true
-  });
+  return subscriptionRepository.findCurrentByOrganization(organizationId, options);
+}
+
+async function persistSubscription(subscription, options = {}) {
+  return subscriptionRepository.updateState(
+    subscription._id,
+    {
+      plan: subscription.plan,
+      status: subscription.status,
+      current_period_start: subscription.current_period_start || null,
+      current_period_end: subscription.current_period_end || null,
+      cancel_at_period_end: Boolean(subscription.cancel_at_period_end),
+      canceled_at: subscription.canceled_at || null,
+      note: subscription.note || '',
+      metadata: subscription.metadata || {},
+      is_current: subscription.is_current !== false
+    },
+    { session: options.session }
+  );
 }
 
 /**
@@ -99,11 +117,19 @@ async function syncOrganizationFromSubscription(org, subscription, options = {})
     org.billing_status = 'GRACE_PERIOD';
     org.grace_ends_at = org.grace_ends_at || graceEndsAtFromNow();
     org.archived_at = null;
-  } else if (status === 'EXPIRED' || status === 'CANCELED') {
+  } else if (status === 'EXPIRED') {
     // Giữ plan đã mua để UI/renew; khóa bằng billing_status (không xóa dữ liệu)
     if (subscription.plan && subscription.plan !== 'FREE') {
       org.plan = subscription.plan;
     }
+    org.billing_status = 'EXPIRED';
+    org.grace_ends_at = null;
+    if (!org.billing_expired_at) org.billing_expired_at = new Date();
+    org.plan_started_at = subscription.current_period_start || org.plan_started_at;
+    org.plan_expires_at = subscription.current_period_end || org.plan_expires_at || new Date();
+  } else if (status === 'CANCELED') {
+    // Hủy ngay chủ động đặt subscription về FREE; đồng bộ cùng giá trị sang Organization.
+    org.plan = subscription.plan || 'FREE';
     org.billing_status = 'EXPIRED';
     org.grace_ends_at = null;
     if (!org.billing_expired_at) org.billing_expired_at = new Date();
@@ -119,9 +145,19 @@ async function syncOrganizationFromSubscription(org, subscription, options = {})
     if (!org.billing_expired_at) org.billing_expired_at = org.plan_expires_at || new Date();
   }
 
-  if (typeof org.save === 'function') {
-    await org.save();
-  }
+  const savedOrg = await billingOrganizationRepository.updateBillingState(
+    org._id,
+    {
+      plan: org.plan,
+      billing_status: org.billing_status,
+      grace_ends_at: org.grace_ends_at || null,
+      billing_expired_at: org.billing_expired_at || null,
+      archived_at: org.archived_at || null,
+      plan_started_at: org.plan_started_at || null,
+      plan_expires_at: org.plan_expires_at || null
+    },
+    { session: options.session }
+  );
 
   const changed =
     prev.plan !== org.plan ||
@@ -137,11 +173,12 @@ async function syncOrganizationFromSubscription(org, subscription, options = {})
       to_billing_status: org.billing_status,
       changed_by: options.changed_by || null,
       source: options.source || 'PAYMENT',
-      note: options.note || `[SUBSCRIPTION:${status}] ${subscription.note || ''}`.trim()
+      note: options.note || `[SUBSCRIPTION:${status}] ${subscription.note || ''}`.trim(),
+      session: options.session
     });
   }
 
-  return org;
+  return savedOrg;
 }
 
 /**
@@ -166,9 +203,9 @@ async function refreshSubscriptionStatus(org, subscription) {
   if (subscription.status === 'ARCHIVED' || org.billing_status === 'ARCHIVED') {
     if (subscription.status !== 'ARCHIVED') {
       subscription.status = 'ARCHIVED';
-      await subscription.save();
+      subscription = await persistSubscription(subscription);
     }
-    await syncOrganizationFromSubscription(org, subscription, {
+    org = await syncOrganizationFromSubscription(org, subscription, {
       source: 'SYSTEM',
       note: 'Đồng bộ ARCHIVED',
       recordHistory: false
@@ -182,9 +219,9 @@ async function refreshSubscriptionStatus(org, subscription) {
       : (org.plan_expires_at ? new Date(org.plan_expires_at).getTime() : null);
     if (expiredAt && expiredAt + ARCHIVE_AFTER_EXPIRED_MS <= now) {
       subscription.status = 'ARCHIVED';
-      await subscription.save();
+      subscription = await persistSubscription(subscription);
       org.archived_at = new Date();
-      await syncOrganizationFromSubscription(org, subscription, {
+      org = await syncOrganizationFromSubscription(org, subscription, {
         source: 'SYSTEM',
         note: 'Hết 90 ngày EXPIRED → ARCHIVED (auto)'
       });
@@ -192,8 +229,8 @@ async function refreshSubscriptionStatus(org, subscription) {
     }
     if (subscription.status !== 'EXPIRED') {
       subscription.status = 'EXPIRED';
-      await subscription.save();
-      await syncOrganizationFromSubscription(org, subscription, {
+      subscription = await persistSubscription(subscription);
+      org = await syncOrganizationFromSubscription(org, subscription, {
         source: 'SYSTEM',
         note: 'Đồng bộ EXPIRED',
         recordHistory: false
@@ -205,12 +242,18 @@ async function refreshSubscriptionStatus(org, subscription) {
   if (subscription.status === 'GRACE_PERIOD' && graceEnd && graceEnd <= now) {
     subscription.status = 'EXPIRED';
     // Giữ plan trên subscription để renew / hiển thị
-    await subscription.save();
+    subscription = await persistSubscription(subscription);
     org.billing_expired_at = new Date();
-    await syncOrganizationFromSubscription(org, subscription, {
+    org = await syncOrganizationFromSubscription(org, subscription, {
       source: 'SYSTEM',
       note: `Hết thời gian gia hạn ${GRACE_PERIOD_DAYS} ngày (auto)`
     });
+    try {
+      const { notifySubscriptionExpired } = require('./billingNotificationService');
+      await notifySubscriptionExpired({ subscription, org });
+    } catch (e) {
+      console.warn('notifySubscriptionExpired (grace auto):', e.message);
+    }
     return { org, subscription };
   }
 
@@ -223,8 +266,8 @@ async function refreshSubscriptionStatus(org, subscription) {
     subscription.status = 'GRACE_PERIOD';
     subscription.metadata = { ...(subscription.metadata || {}), grace_ends_at: gEnd.toISOString() };
     org.grace_ends_at = gEnd;
-    await subscription.save();
-    await syncOrganizationFromSubscription(org, subscription, {
+    subscription = await persistSubscription(subscription);
+    org = await syncOrganizationFromSubscription(org, subscription, {
       source: 'SYSTEM',
       note: `Chu kỳ hết hạn → gia hạn ${GRACE_PERIOD_DAYS} ngày (auto)`
     });
@@ -237,12 +280,18 @@ async function refreshSubscriptionStatus(org, subscription) {
     graceEnd <= now
   ) {
     subscription.status = 'EXPIRED';
-    await subscription.save();
+    subscription = await persistSubscription(subscription);
     org.billing_expired_at = new Date();
-    await syncOrganizationFromSubscription(org, subscription, {
+    org = await syncOrganizationFromSubscription(org, subscription, {
       source: 'SYSTEM',
       note: 'PAST_DUE hết grace (auto)'
     });
+    try {
+      const { notifySubscriptionExpired } = require('./billingNotificationService');
+      await notifySubscriptionExpired({ subscription, org });
+    } catch (e) {
+      console.warn('notifySubscriptionExpired (past_due auto):', e.message);
+    }
   }
 
   return { org, subscription };
@@ -264,14 +313,16 @@ async function createOpenInvoice({
   idempotencyKey = '',
   note = '',
   createdBy = null,
-  metadata = {}
+  metadata = {},
+  session = null
 }) {
   let key = idempotencyKey;
   if (key) {
-    const existed = await Invoice.findOne({
-      organization_id: org._id,
-      idempotency_key: key
-    });
+    const existed = await invoiceRepository.findByOrganizationIdempotency(
+      org._id,
+      key,
+      { session }
+    );
     if (existed) {
       if (existed.status === 'OPEN') {
         return { invoice: existed, duplicated: true };
@@ -280,7 +331,7 @@ async function createOpenInvoice({
     }
   }
 
-  const invoice = await Invoice.create({
+  const invoice = await invoiceRepository.createInvoice({
     organization_id: org._id,
     subscription_id: null,
     billing_event_id: null,
@@ -288,6 +339,16 @@ async function createOpenInvoice({
     status: 'OPEN',
     plan: plan || org.plan,
     amount: Number(amount) || 0,
+    line_items_snapshot: Array.isArray(metadata?.line_items)
+      ? metadata.line_items
+      : [{ code: plan || org.plan, description: note || `Gói ${plan || org.plan}`, quantity: 1, unit_amount: Number(amount) || 0 }],
+    tax_snapshot: metadata?.tax_snapshot || {},
+    customer_snapshot: metadata?.customer_snapshot || {
+      organization_id: String(org._id),
+      name: org.name || '',
+      slug: org.slug || ''
+    },
+    seller_snapshot: metadata?.seller_snapshot || {},
     currency: String(currency || 'VND').toUpperCase(),
     period_start: periodStart || null,
     period_end: periodEnd || null,
@@ -298,32 +359,50 @@ async function createOpenInvoice({
     note: note || '',
     metadata: metadata || {},
     created_by: createdBy
-  });
+  }, { session });
 
   return { invoice, duplicated: false };
 }
 
-async function markInvoicePaid(invoice, { externalRef = '', subscriptionId = null, billingEventId = null, provider = 'MANUAL', createdBy = null } = {}) {
+async function markInvoicePaid(invoice, {
+  externalRef = '',
+  subscriptionId = null,
+  billingEventId = null,
+  provider = 'MANUAL',
+  createdBy = null,
+  session = null
+} = {}) {
   if (!invoice) return null;
-  if (invoice.status === 'PAID') return invoice;
-  invoice.status = 'PAID';
-  invoice.paid_at = new Date();
-  if (externalRef) invoice.external_ref = externalRef;
-  if (subscriptionId) invoice.subscription_id = subscriptionId;
-  if (billingEventId) invoice.billing_event_id = billingEventId;
-  await invoice.save();
-
-  try {
-    const { recordPaymentFromInvoice } = require('./paymentLedger');
-    await recordPaymentFromInvoice(invoice, {
-      method: provider,
-      external_ref: externalRef || invoice.external_ref || '',
-      created_by: createdBy,
-      note: `Thanh toán ${provider}`
-    });
-  } catch (e) {
-    console.warn('paymentLedger record failed:', e.message);
+  const changes = {};
+  if (invoice.status !== 'PAID') {
+    changes.status = 'PAID';
+    changes.paid_at = invoice.paid_at || new Date();
   }
+  if (externalRef && !invoice.external_ref) {
+    changes.external_ref = externalRef;
+  }
+  if (subscriptionId && !invoice.subscription_id) {
+    changes.subscription_id = subscriptionId;
+  }
+  if (billingEventId && !invoice.billing_event_id) {
+    changes.billing_event_id = billingEventId;
+  }
+  if (Object.keys(changes).length) {
+    invoice = await invoiceRepository.updateInvoice(invoice._id, changes, { session });
+  }
+
+  const { recordPaymentFromInvoice } = require('./paymentLedger');
+  await recordPaymentFromInvoice(invoice, {
+    method: provider,
+    provider,
+    provider_ref: externalRef || invoice.external_ref || '',
+    external_ref: externalRef || invoice.external_ref || '',
+    created_by: createdBy,
+    session,
+    note: `Thanh toán ${provider}`
+  });
+  const { captureReceipt } = require('./receiptService');
+  await captureReceipt(invoice, { provider, externalRef, session });
 
   return invoice;
 }
@@ -340,17 +419,19 @@ async function createPaidInvoice({
   billingEventId = null,
   note = '',
   createdBy = null,
-  metadata = {}
+  metadata = {},
+  session = null
 }) {
   if (idempotencyKey) {
-    const existed = await Invoice.findOne({
-      organization_id: org._id,
-      idempotency_key: idempotencyKey
-    });
+    const existed = await invoiceRepository.findByOrganizationIdempotency(
+      org._id,
+      idempotencyKey,
+      { session }
+    );
     if (existed) return { invoice: existed, duplicated: true };
   }
 
-  const invoice = await Invoice.create({
+  const invoice = await invoiceRepository.createInvoice({
     organization_id: org._id,
     subscription_id: subscription?._id || null,
     billing_event_id: billingEventId,
@@ -358,6 +439,21 @@ async function createPaidInvoice({
     status: 'PAID',
     plan: subscription?.plan || org.plan,
     amount: Number(amount) || 0,
+    line_items_snapshot: Array.isArray(metadata?.line_items)
+      ? metadata.line_items
+      : [{
+          code: subscription?.plan || org.plan,
+          description: note || `Gói ${subscription?.plan || org.plan}`,
+          quantity: 1,
+          unit_amount: Number(amount) || 0
+        }],
+    tax_snapshot: metadata?.tax_snapshot || {},
+    customer_snapshot: metadata?.customer_snapshot || {
+      organization_id: String(org._id),
+      name: org.name || '',
+      slug: org.slug || ''
+    },
+    seller_snapshot: metadata?.seller_snapshot || {},
     currency: String(currency || 'VND').toUpperCase(),
     period_start: periodStart || null,
     period_end: periodEnd || null,
@@ -368,18 +464,21 @@ async function createPaidInvoice({
     note: note || '',
     metadata: metadata || {},
     created_by: createdBy
-  });
+  }, { session });
 
-  try {
-    const { recordPaymentFromInvoice } = require('./paymentLedger');
-    await recordPaymentFromInvoice(invoice, {
-      method: (metadata && metadata.provider) || 'MANUAL',
-      created_by: createdBy,
-      note: note || 'Manual paid invoice'
-    });
-  } catch (e) {
-    console.warn('paymentLedger record (paid invoice) failed:', e.message);
-  }
+  const paidProvider = (metadata && metadata.provider) || 'MANUAL';
+  const { recordPaymentFromInvoice } = require('./paymentLedger');
+  await recordPaymentFromInvoice(invoice, {
+    method: paidProvider,
+    provider: paidProvider,
+    provider_ref: externalRef,
+    external_ref: externalRef,
+    created_by: createdBy,
+    session,
+    note: note || 'Manual paid invoice'
+  });
+  const { captureReceipt } = require('./receiptService');
+  await captureReceipt(invoice, { provider: paidProvider, externalRef, session });
 
   return { invoice, duplicated: false };
 }
@@ -403,7 +502,8 @@ async function activateOrRenewSubscription({
   note = '',
   createdBy = null,
   metadata = {},
-  recordHistory = true
+  recordHistory = true,
+  session = null
 }) {
   const nextPlan = await assertPlanCode(plan || 'PRO', { mustBePaid: true });
 
@@ -419,13 +519,41 @@ async function activateOrRenewSubscription({
     throw Object.assign(new Error('period_end phải lớn hơn period_start.'), { status: 400 });
   }
 
-  // Hạ is_current cũ
-  await Subscription.updateMany(
-    { organization_id: org._id, is_current: true },
-    { $set: { is_current: false } }
-  );
+  // Một billing event chỉ được tạo đúng một subscription. Đây là điểm khôi phục
+  // khi worker/webhook dừng sau khi đã tạo subscription nhưng chưa đánh dấu event xong.
+  if (billingEventId) {
+    const existingSubscription = await subscriptionRepository.findByBillingEvent(
+      billingEventId,
+      { session }
+    );
+    if (existingSubscription) {
+      const existingInvoice = await invoiceRepository.findByBillingEvent(
+        billingEventId,
+        { session }
+      );
+      if (existingInvoice) {
+        await markInvoicePaid(existingInvoice, {
+          externalRef: existingInvoice.external_ref,
+          subscriptionId: existingSubscription._id,
+          billingEventId,
+          provider,
+          createdBy,
+          session
+        });
+      }
+      return {
+        subscription: existingSubscription,
+        invoice: existingInvoice,
+        organization: org,
+        duplicated: true
+      };
+    }
+  }
 
-  const subscription = await Subscription.create({
+  // Hạ is_current cũ
+  await subscriptionRepository.deactivateCurrentForOrganization(org._id, { session });
+
+  const subscription = await subscriptionRepository.createCurrent({
     organization_id: org._id,
     plan: nextPlan,
     status: 'ACTIVE',
@@ -435,43 +563,66 @@ async function activateOrRenewSubscription({
     canceled_at: null,
     provider: provider || 'MANUAL',
     provider_subscription_id: providerSubscriptionId || '',
+    billing_event_id: billingEventId || null,
     is_current: true,
     note: note || '',
     metadata: metadata || {},
     created_by: createdBy
-  });
+  }, { session });
 
-  await syncOrganizationFromSubscription(org, subscription, {
+  org = await syncOrganizationFromSubscription(org, subscription, {
     changed_by: createdBy,
     source: 'PAYMENT',
     note: note || `Kích hoạt subscription ${nextPlan}`,
-    recordHistory
+    recordHistory,
+    session
   });
 
-  const { invoice } = await createPaidInvoice({
-    org,
-    subscription,
-    amount,
-    currency,
-    periodStart: period.start,
-    periodEnd: period.end,
-    externalRef,
-    idempotencyKey: idempotencyKey ? `inv-${idempotencyKey}` : '',
-    billingEventId,
-    note,
-    createdBy,
-    metadata
-  });
+  let invoice = null;
+  // Checkout/webhook đã có Invoice OPEN. Không tạo thêm Invoice PAID thứ hai,
+  // nếu không doanh thu và Payment ledger sẽ bị ghi đôi cho cùng một giao dịch.
+  if (metadata?.invoice_id) {
+    invoice = await invoiceRepository.findById(metadata.invoice_id, { session });
+    if (invoice) {
+      invoice = await invoiceRepository.updateInvoice(invoice._id, {
+        subscription_id: subscription._id,
+        billing_event_id: billingEventId || invoice.billing_event_id
+      }, { session });
+    }
+  }
+  if (!invoice) {
+    const created = await createPaidInvoice({
+      org,
+      subscription,
+      amount,
+      currency,
+      periodStart: period.start,
+      periodEnd: period.end,
+      externalRef,
+      idempotencyKey: idempotencyKey ? `inv-${idempotencyKey}` : '',
+      billingEventId,
+      note,
+      createdBy,
+      metadata,
+      session
+    });
+    invoice = created.invoice;
+  }
 
   return { subscription, invoice, organization: org };
 }
 
 async function markSubscriptionPastDue(org, options = {}) {
-  let subscription = await getCurrentSubscription(org._id);
+  let subscription = await getCurrentSubscription(org._id, {
+    session: options.session
+  });
   if (!subscription) {
     org.billing_status = 'GRACE_PERIOD';
     org.grace_ends_at = graceEndsAtFromNow();
-    await org.save();
+    org = await billingOrganizationRepository.updateBillingState(org._id, {
+      billing_status: org.billing_status,
+      grace_ends_at: org.grace_ends_at
+    }, { session: options.session });
     return { organization: org, subscription: null };
   }
 
@@ -480,28 +631,31 @@ async function markSubscriptionPastDue(org, options = {}) {
   subscription.metadata = { ...(subscription.metadata || {}), grace_ends_at: gEnd.toISOString() };
   if (options.note) subscription.note = options.note;
   org.grace_ends_at = gEnd;
-  await subscription.save();
-  await syncOrganizationFromSubscription(org, subscription, {
+  subscription = await persistSubscription(subscription, options);
+  org = await syncOrganizationFromSubscription(org, subscription, {
     changed_by: options.createdBy || null,
     source: options.source || 'PAYMENT',
     note: options.note || 'Thanh toán thất bại → gia hạn 7 ngày',
-    recordHistory: options.recordHistory !== false
+    recordHistory: options.recordHistory !== false,
+    session: options.session
   });
   return { organization: org, subscription };
 }
 
 async function expireCurrentSubscription(org, options = {}) {
-  let subscription = await getCurrentSubscription(org._id);
+  let subscription = await getCurrentSubscription(org._id, {
+    session: options.session
+  });
   const keepPlan = (subscription && subscription.plan && subscription.plan !== 'FREE')
     ? subscription.plan
     : (org.plan && org.plan !== 'FREE' ? org.plan : 'FREE');
 
   if (!subscription) {
-    await Subscription.updateMany(
-      { organization_id: org._id, is_current: true },
-      { $set: { is_current: false } }
+    await subscriptionRepository.deactivateCurrentForOrganization(
+      org._id,
+      { session: options.session }
     );
-    subscription = await Subscription.create({
+    subscription = await subscriptionRepository.createCurrent({
       organization_id: org._id,
       plan: keepPlan,
       status: 'EXPIRED',
@@ -511,28 +665,53 @@ async function expireCurrentSubscription(org, options = {}) {
       provider: 'MANUAL',
       note: options.note || 'Hết hạn gói',
       created_by: options.createdBy || null
-    });
+    }, { session: options.session });
   } else {
     subscription.status = 'EXPIRED';
     // Giữ plan đã mua — không xóa dữ liệu; khóa bằng billing_status
     if (!subscription.current_period_end) subscription.current_period_end = new Date();
     if (options.note) subscription.note = options.note;
-    await subscription.save();
+    subscription = await persistSubscription(subscription, options);
   }
 
   org.billing_expired_at = org.billing_expired_at || new Date();
-  await syncOrganizationFromSubscription(org, subscription, {
+  org = await syncOrganizationFromSubscription(org, subscription, {
     changed_by: options.createdBy || null,
     source: options.source || 'PAYMENT',
     note: options.note || 'Subscription hết hạn (giữ dữ liệu + plan)',
-    recordHistory: options.recordHistory !== false
+    recordHistory: options.recordHistory !== false,
+    session: options.session
   });
-
+  await eventBus.publish({
+    type: EVENT_TYPES.SUBSCRIPTION_EXPIRED,
+    event_key: `subscription-expired:${subscription._id}:${subscription.current_period_end?.toISOString?.() || 'current'}`,
+    aggregate_type: 'Subscription',
+    aggregate_id: subscription._id,
+    organization_id: org._id,
+    actor_user_id: options.createdBy || null,
+    payload: {
+      subscription_id: String(subscription._id),
+      organization_id: String(org._id),
+      plan: subscription.plan,
+      expired_at: org.billing_expired_at
+    }
+  }, { session: options.session });
+  // Email billing đi qua claim idempotent; event chỉ fan-out in-app/platform.
+  if (options.session == null) {
+    try {
+      const { notifySubscriptionExpired } = require('./billingNotificationService');
+      await notifySubscriptionExpired({ subscription, org });
+    } catch (error) {
+      console.warn('notifySubscriptionExpired (expireCurrentSubscription):', error.message);
+    }
+  }
   return { organization: org, subscription };
 }
 
 async function cancelCurrentSubscription(org, options = {}) {
-  const subscription = await getCurrentSubscription(org._id);
+  const subscription = await getCurrentSubscription(org._id, {
+    session: options.session
+  });
   if (!subscription) {
     throw Object.assign(new Error('Không có subscription hiện hành để hủy.'), { status: 404 });
   }
@@ -543,27 +722,28 @@ async function cancelCurrentSubscription(org, options = {}) {
     subscription.canceled_at = new Date();
     subscription.cancel_at_period_end = false;
     subscription.plan = 'FREE';
-    await subscription.save();
-    await syncOrganizationFromSubscription(org, subscription, {
+    const updated = await persistSubscription(subscription, options);
+    const savedOrg = await syncOrganizationFromSubscription(org, updated, {
       changed_by: options.createdBy || null,
       source: options.source || 'MANUAL_SUPER_ADMIN',
       note: options.note || 'Hủy subscription ngay',
-      recordHistory: true
+      recordHistory: true,
+      session: options.session
     });
+    return { organization: savedOrg, subscription: updated };
   } else {
     subscription.cancel_at_period_end = true;
     subscription.canceled_at = new Date();
-    await subscription.save();
+    const updated = await persistSubscription(subscription, options);
+    return { organization: org, subscription: updated };
   }
-
-  return { organization: org, subscription };
 }
 
 /**
  * Áp billing event → subscription lifecycle.
  * Gọi sau khi đã lưu OrganizationBillingEvent.
  */
-async function applyBillingEventToSubscription(org, event) {
+async function applyBillingEventToSubscription(org, event, options = {}) {
   const paymentStatus = String(event.payment_status || '').toUpperCase();
   const plan = event.plan ? String(event.plan).toUpperCase() : null;
 
@@ -582,7 +762,8 @@ async function applyBillingEventToSubscription(org, event) {
       createdBy: event.created_by,
       metadata: event.metadata || {},
       // History đã có thể được ghi từ billing event path — tránh double nếu caller tắt
-      recordHistory: false
+      recordHistory: false,
+      session: options.session
     });
   }
 
@@ -591,7 +772,8 @@ async function applyBillingEventToSubscription(org, event) {
       createdBy: event.created_by,
       note: event.note || `[${event.event_type}]`,
       source: 'PAYMENT',
-      recordHistory: false
+      recordHistory: false,
+      session: options.session
     });
   }
 
@@ -600,12 +782,15 @@ async function applyBillingEventToSubscription(org, event) {
       createdBy: event.created_by,
       note: event.note || `[${event.event_type}]`,
       source: 'PAYMENT',
-      recordHistory: false
+      recordHistory: false,
+      session: options.session
     });
   }
 
   // PENDING / khác — không đổi subscription
-  const subscription = await getCurrentSubscription(org._id);
+  const subscription = await getCurrentSubscription(org._id, {
+    session: options.session
+  });
   return { organization: org, subscription, invoice: null };
 }
 

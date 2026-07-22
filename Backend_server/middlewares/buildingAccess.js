@@ -100,7 +100,9 @@ async function requireBuildingAccess(req, res, next) {
         }
 
         if (req.user.role === 'BUILDING_ADMIN') {
-            const assignedIds = (user.assigned_buildings || []).map(id => String(id));
+            const assignedIds = Array.isArray(req.user.member_building_ids)
+                ? req.user.member_building_ids
+                : (user.assigned_buildings || []).map(id => String(id));
             if (!assignedIds.includes(String(buildingId))) {
                 logAccessDenied(req, buildingId, 'not_assigned');
                 return res.status(403).json({ message: 'Bạn không có quyền truy cập tòa nhà này.' });

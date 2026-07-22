@@ -76,7 +76,7 @@ async function exchangeCode(code) {
     const payload = ticket.getPayload() || {};
     const email = String(payload.email || '').toLowerCase().trim();
     const googleId = String(payload.sub || '');
-    if (!email || !googleId) {
+    if (!email || !googleId || payload.email_verified !== true) {
       const err = new Error('Không lấy được email/Google ID từ token.');
       err.status = 400;
       throw err;
@@ -100,7 +100,7 @@ async function exchangeCode(code) {
   const data = await res.json();
   const email = String(data.email || '').toLowerCase().trim();
   const googleId = String(data.id || '');
-  if (!email || !googleId) {
+  if (!email || !googleId || data.verified_email !== true) {
     const err = new Error('Không lấy được email/Google ID.');
     err.status = 400;
     throw err;

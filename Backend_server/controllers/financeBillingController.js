@@ -1,23 +1,18 @@
 /**
  * Finance — Gói / Hóa đơn / PDF / thu tiền (Super + Finance Admin)
  */
-const Plan = require('../models/Plan');
-const Invoice = require('../models/Invoice');
-const Organization = require('../models/Organization');
 const {
   ensureDefaultPlans,
   refreshPlanCache,
   listPlans,
   PLAN_CODE_RE
 } = require('../services/planCatalog');
-const { createOpenInvoice } = require('../services/subscriptionLifecycle');
-const { listPayments } = require('../services/paymentLedger');
 const { getPlanPrice } = require('../config/planPricing');
-const Subscription = require('../models/Subscription');
-const ActivityLog = require('../models/ActivityLog');
+const billingApplication = require('../application/billing/financeBillingApplicationService');
+const financeAdminApplication = require('../application/billing/financeAdminApplicationService');
 
 function logActivity(data) {
-  ActivityLog.create(data).catch(() => {});
+  billingApplication.recordActivity(data).catch(() => {});
 }
 
 function invoiceTotal(inv) {
@@ -91,7 +86,7 @@ async function createPlan(req, res) {
         message: 'Mã gói không hợp lệ (chữ hoa, số, gạch dưới; bắt đầu bằng chữ).'
       });
     }
-    const doc = await Plan.create({
+    const doc = await billingApplication.createCatalogPlan({
       code,
       name: String(body.name || code).trim(),
       description: String(body.description || '').trim(),
@@ -137,38 +132,41 @@ async function createPlan(req, res) {
 
 async function updatePlan(req, res) {
   try {
-    const doc = await Plan.findById(req.params.id);
+    let doc = await billingApplication.findCatalogPlan(req.params.id);
     if (!doc) return res.status(404).json({ message: 'Không tìm thấy gói.' });
     const body = req.body || {};
-    if (body.name !== undefined) doc.name = String(body.name).trim();
-    if (body.description !== undefined) doc.description = String(body.description).trim();
-    if (body.price_vnd !== undefined) doc.price_vnd = Number(body.price_vnd) || 0;
-    if (body.period_days !== undefined) doc.period_days = Number(body.period_days) || 30;
+    const changes = {};
+    if (body.name !== undefined) changes.name = String(body.name).trim();
+    if (body.description !== undefined) changes.description = String(body.description).trim();
+    if (body.price_vnd !== undefined) changes.price_vnd = Number(body.price_vnd) || 0;
+    if (body.period_days !== undefined) changes.period_days = Number(body.period_days) || 30;
     if (body.max_buildings !== undefined) {
-      doc.max_buildings = parseNullableLimit(body.max_buildings);
+      changes.max_buildings = parseNullableLimit(body.max_buildings);
     }
     if (body.max_users !== undefined) {
-      doc.max_users = parseNullableLimit(body.max_users);
+      changes.max_users = parseNullableLimit(body.max_users);
     }
-    if (body.is_personal !== undefined) doc.is_personal = !!body.is_personal;
-    if (body.is_organization !== undefined) doc.is_organization = !!body.is_organization;
-    if (body.show_on_landing !== undefined) doc.show_on_landing = !!body.show_on_landing;
+    if (body.is_personal !== undefined) changes.is_personal = !!body.is_personal;
+    if (body.is_organization !== undefined) changes.is_organization = !!body.is_organization;
+    if (body.show_on_landing !== undefined) changes.show_on_landing = !!body.show_on_landing;
     if (body.personal_max_buildings !== undefined) {
-      doc.personal_max_buildings = parseNullableLimit(body.personal_max_buildings);
+      changes.personal_max_buildings = parseNullableLimit(body.personal_max_buildings);
     }
     if (body.personal_max_floors_per_building !== undefined) {
-      doc.personal_max_floors_per_building = parseNullableLimit(body.personal_max_floors_per_building);
+      changes.personal_max_floors_per_building = parseNullableLimit(body.personal_max_floors_per_building);
     }
     if (body.personal_max_maps !== undefined) {
-      doc.personal_max_maps = parseNullableLimit(body.personal_max_maps);
+      changes.personal_max_maps = parseNullableLimit(body.personal_max_maps);
     }
     if (body.personal_max_qr !== undefined) {
-      doc.personal_max_qr = parseNullableLimit(body.personal_max_qr);
+      changes.personal_max_qr = parseNullableLimit(body.personal_max_qr);
     }
-    if (body.is_active !== undefined) doc.is_active = !!body.is_active;
-    if (body.sort_order !== undefined) doc.sort_order = Number(body.sort_order) || 0;
-    if (body.features !== undefined) doc.features = Array.isArray(body.features) ? body.features : [];
-    await doc.save();
+    if (body.is_active !== undefined) changes.is_active = !!body.is_active;
+    if (body.sort_order !== undefined) changes.sort_order = Number(body.sort_order) || 0;
+    if (body.features !== undefined) {
+      changes.features = Array.isArray(body.features) ? body.features : [];
+    }
+    doc = await billingApplication.updateCatalogPlan(doc._id, changes);
     await refreshPlanCache();
     logActivity({
       user_id: req.user.userId,
@@ -194,16 +192,15 @@ async function updatePlan(req, res) {
 
 async function deletePlan(req, res) {
   try {
-    const doc = await Plan.findById(req.params.id);
+    const doc = await billingApplication.findCatalogPlan(req.params.id);
     if (!doc) return res.status(404).json({ message: 'Không tìm thấy gói.' });
     const code = String(doc.code || '').toUpperCase();
     if (code === 'FREE') {
       return res.status(400).json({ message: 'Không thể xóa gói FREE (bắt buộc hệ thống).' });
     }
-    const [orgCount, subCount] = await Promise.all([
-      Organization.countDocuments({ plan: code }),
-      Subscription.countDocuments({ plan: code, is_current: true })
-    ]);
+    const removal = await billingApplication.removeUnusedCatalogPlan(doc._id);
+    const orgCount = removal.organizationCount;
+    const subCount = removal.subscriptionCount;
     if (orgCount > 0 || subCount > 0) {
       return res.status(400).json({
         message:
@@ -211,7 +208,6 @@ async function deletePlan(req, res) {
           'Hãy chuyển org sang gói khác hoặc chọn «Ngừng bán».'
       });
     }
-    await Plan.deleteOne({ _id: doc._id });
     await refreshPlanCache();
     logActivity({
       user_id: req.user.userId,
@@ -231,15 +227,12 @@ async function deletePlan(req, res) {
 
 async function listInvoices(req, res) {
   try {
-    const filter = {};
-    if (req.query.status) filter.status = String(req.query.status).toUpperCase();
-    if (req.query.organization_id) filter.organization_id = req.query.organization_id;
     const limit = Math.min(Number(req.query.limit) || 100, 500);
-    const invoices = await Invoice.find(filter)
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .populate('organization_id', 'name slug plan')
-      .lean();
+    const invoices = await billingApplication.listBillingInvoices({
+      status: req.query.status,
+      organization_id: req.query.organization_id,
+      limit
+    });
     res.status(200).json({
       invoices: invoices.map((inv) => ({
         ...inv,
@@ -258,7 +251,7 @@ async function createManualInvoice(req, res) {
     const body = req.body || {};
     const orgId = body.organization_id;
     if (!orgId) return res.status(400).json({ message: 'Thiếu organization_id.' });
-    const org = await Organization.findById(orgId);
+    const org = await billingApplication.findBillingOrganization(orgId);
     if (!org) return res.status(404).json({ message: 'Không tìm thấy tổ chức.' });
 
     const plan = String(body.plan || org.plan || 'PRO').toUpperCase();
@@ -283,7 +276,7 @@ async function createManualInvoice(req, res) {
       });
     }
 
-    const { invoice } = await createOpenInvoice({
+    let { invoice } = await billingApplication.createManualOpenInvoice({
       org,
       plan,
       amount,
@@ -296,10 +289,22 @@ async function createManualInvoice(req, res) {
       idempotencyKey: body.idempotency_key || `manual-${orgId}-${Date.now()}`
     });
 
-    if (body.tax_amount !== undefined) invoice.tax_amount = Number(body.tax_amount) || 0;
-    if (body.discount_amount !== undefined) invoice.discount_amount = Number(body.discount_amount) || 0;
-    if (body.due_at) invoice.due_at = new Date(body.due_at);
-    await invoice.save();
+    const invoiceChanges = {};
+    if (body.tax_amount !== undefined) {
+      invoiceChanges.tax_amount = Number(body.tax_amount) || 0;
+      invoiceChanges.tax_snapshot = {
+        tax_amount: invoiceChanges.tax_amount,
+        tax_percent: body.tax_percent == null ? null : Number(body.tax_percent),
+        captured_from: 'MANUAL_INVOICE'
+      };
+    }
+    if (body.discount_amount !== undefined) {
+      invoiceChanges.discount_amount = Number(body.discount_amount) || 0;
+    }
+    if (body.due_at) invoiceChanges.due_at = new Date(body.due_at);
+    if (Object.keys(invoiceChanges).length) {
+      invoice = await billingApplication.updateInvoice(invoice._id, invoiceChanges);
+    }
 
     logActivity({
       user_id: req.user.userId,
@@ -320,7 +325,7 @@ async function createManualInvoice(req, res) {
 
     res.status(201).json({
       message: 'Đã tạo hóa đơn OPEN.',
-      invoice: { ...invoice.toObject(), total: invoiceTotal(invoice) }
+      invoice: { ...invoice, total: invoiceTotal(invoice) }
     });
   } catch (e) {
     console.error('createManualInvoice:', e);
@@ -330,7 +335,7 @@ async function createManualInvoice(req, res) {
 
 async function updateInvoice(req, res) {
   try {
-    const inv = await Invoice.findById(req.params.id);
+    let inv = await billingApplication.findInvoice(req.params.id);
     if (!inv) return res.status(404).json({ message: 'Không tìm thấy hóa đơn.' });
     if (inv.status !== 'OPEN' && inv.status !== 'DRAFT') {
       return res.status(400).json({
@@ -339,24 +344,25 @@ async function updateInvoice(req, res) {
       });
     }
     const body = req.body || {};
+    const changes = {};
     if (body.amount !== undefined) {
       const amount = Number(body.amount);
       if (!Number.isFinite(amount) || amount < 0) {
         return res.status(400).json({ message: 'amount không hợp lệ.' });
       }
-      inv.amount = amount;
+      changes.amount = amount;
     }
-    if (body.tax_amount !== undefined) inv.tax_amount = Number(body.tax_amount) || 0;
-    if (body.discount_amount !== undefined) inv.discount_amount = Number(body.discount_amount) || 0;
-    if (body.note !== undefined) inv.note = String(body.note || '');
+    if (body.tax_amount !== undefined) changes.tax_amount = Number(body.tax_amount) || 0;
+    if (body.discount_amount !== undefined) changes.discount_amount = Number(body.discount_amount) || 0;
+    if (body.note !== undefined) changes.note = String(body.note || '');
     if (body.due_at !== undefined) {
-      inv.due_at = body.due_at ? new Date(body.due_at) : null;
+      changes.due_at = body.due_at ? new Date(body.due_at) : null;
     }
-    if (body.plan !== undefined) inv.plan = String(body.plan).toUpperCase();
-    await inv.save();
+    if (body.plan !== undefined) changes.plan = String(body.plan).toUpperCase();
+    inv = await billingApplication.updateInvoice(inv._id, changes);
     res.status(200).json({
       message: 'Đã cập nhật hóa đơn.',
-      invoice: { ...inv.toObject(), total: invoiceTotal(inv) }
+      invoice: { ...inv, total: invoiceTotal(inv) }
     });
   } catch (e) {
     console.error('updateInvoice:', e);
@@ -366,7 +372,7 @@ async function updateInvoice(req, res) {
 
 async function voidInvoice(req, res) {
   try {
-    const inv = await Invoice.findById(req.params.id);
+    let inv = await billingApplication.findInvoice(req.params.id);
     if (!inv) return res.status(404).json({ message: 'Không tìm thấy hóa đơn.' });
     if (inv.status === 'PAID') {
       return res.status(400).json({ message: 'Không hủy hóa đơn đã PAID.', code: 'INVOICE_PAID' });
@@ -374,9 +380,7 @@ async function voidInvoice(req, res) {
     if (inv.status === 'VOID') {
       return res.status(200).json({ message: 'Hóa đơn đã VOID.', invoice: inv });
     }
-    inv.status = 'VOID';
-    inv.note = (inv.note ? inv.note + ' | ' : '') + (req.body?.reason || 'Super void');
-    await inv.save();
+    inv = await billingApplication.voidInvoice(inv, req.body?.reason);
     logActivity({
       user_id: req.user.userId,
       action: 'VOID_INVOICE',
@@ -405,12 +409,12 @@ async function voidInvoice(req, res) {
  */
 async function markInvoicePaidHandler(req, res) {
   try {
-    const inv = await Invoice.findById(req.params.id);
+    const inv = await billingApplication.findInvoice(req.params.id);
     if (!inv) return res.status(404).json({ message: 'Không tìm thấy hóa đơn.' });
     if (inv.status === 'PAID') {
       return res.status(200).json({
         message: 'Hóa đơn đã PAID.',
-        invoice: { ...inv.toObject(), total: invoiceTotal(inv) },
+        invoice: { ...inv, total: invoiceTotal(inv) },
         already_paid: true
       });
     }
@@ -429,8 +433,7 @@ async function markInvoicePaidHandler(req, res) {
 
     const body = req.body || {};
     const provider = String(body.method || body.provider || 'MANUAL').toUpperCase();
-    const { markInvoicePaid } = require('../services/subscriptionLifecycle');
-    const paid = await markInvoicePaid(inv, {
+    const paid = await billingApplication.collectInvoice(inv, {
       externalRef: body.external_ref || body.externalRef || '',
       provider,
       createdBy: req.user.userId
@@ -454,7 +457,7 @@ async function markInvoicePaidHandler(req, res) {
 
     res.status(200).json({
       message: 'Đã ghi nhận thu hóa đơn (PAID).',
-      invoice: { ...paid.toObject(), total: invoiceTotal(paid) },
+      invoice: { ...paid, total: invoiceTotal(paid) },
       already_paid: false
     });
   } catch (e) {
@@ -465,13 +468,12 @@ async function markInvoicePaidHandler(req, res) {
 
 async function getInvoicePdf(req, res) {
   try {
-    const inv = await Invoice.findById(req.params.id).lean();
+    const inv = await billingApplication.findInvoice(req.params.id);
     if (!inv) return res.status(404).json({ message: 'Không tìm thấy hóa đơn.' });
-    const org = await Organization.findById(inv.organization_id).select('name slug').lean();
+    const org = await billingApplication.findBillingOrganization(inv.organization_id);
     let settings = null;
     try {
-      const { getOrCreateSettings } = require('./financeAdminController');
-      settings = await getOrCreateSettings();
+      settings = await financeAdminApplication.getOrCreateSettings();
     } catch (_) { /* optional */ }
     const html = buildInvoiceHtml(inv, org, settings);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -488,17 +490,12 @@ async function getInvoicePdf(req, res) {
 
 async function sendInvoiceEmail(req, res) {
   try {
-    const inv = await Invoice.findById(req.params.id);
+    const inv = await billingApplication.findInvoice(req.params.id);
     if (!inv) return res.status(404).json({ message: 'Không tìm thấy hóa đơn.' });
-    const User = require('../models/User');
-    const org = await Organization.findById(inv.organization_id).select('name').lean();
-    const admin = await User.findOne({
-      organization_id: inv.organization_id,
-      role: 'ORG_ADMIN',
-      is_active: { $ne: false }
-    })
-      .select('email')
-      .lean();
+    const {
+      organization: org,
+      recipient: admin
+    } = await billingApplication.getInvoiceEmailContext(inv);
 
     if (!admin?.email) {
       return res.status(400).json({ message: 'Org chưa có ORG_ADMIN email để gửi.' });
@@ -537,7 +534,7 @@ async function sendInvoiceEmail(req, res) {
 
 async function listPaymentsHandler(req, res) {
   try {
-    const payments = await listPayments(
+    const payments = await billingApplication.listBillingPayments(
       {
         organization_id: req.query.organization_id,
         status: req.query.status,

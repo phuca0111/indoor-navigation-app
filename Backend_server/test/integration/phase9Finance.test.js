@@ -101,12 +101,13 @@ describe('Phase 9 — Finance Dashboard + Expense', () => {
     );
   });
 
-  test('TC-9.3 CRUD expense + profit đổi theo chi', async () => {
+  test('TC-9.3 append-only expense + profit đổi theo chi / đảo', async () => {
     const before = await request(app)
       .get(`${API}/overview`)
       .set('Authorization', `Bearer ${superToken}`);
     expect(before.status).toBe(200);
     const profitBefore = Number(before.body.kpi.profit_month);
+    const expenseBefore = Number(before.body.kpi.expense_month);
 
     const create = await request(app)
       .post(`${API}/expenses`)
@@ -121,15 +122,14 @@ describe('Phase 9 — Finance Dashboard + Expense', () => {
     expect(create.status).toBe(201);
     const expenseId = create.body.expense?._id;
     expect(expenseId).toBeTruthy();
+    expect(create.body.ledger_entry).toBeTruthy();
     createdExpenseIds.push(expenseId);
 
     const after = await request(app)
       .get(`${API}/overview`)
       .set('Authorization', `Bearer ${superToken}`);
     expect(after.status).toBe(200);
-    expect(Number(after.body.kpi.expense_month)).toBeGreaterThanOrEqual(
-      Number(before.body.kpi.expense_month) + 50000
-    );
+    expect(Number(after.body.kpi.expense_month)).toBeGreaterThanOrEqual(expenseBefore + 50000);
     expect(Number(after.body.kpi.profit_month)).toBe(profitBefore - 50000);
 
     const list = await request(app)
@@ -142,14 +142,27 @@ describe('Phase 9 — Finance Dashboard + Expense', () => {
       .patch(`${API}/expenses/${expenseId}`)
       .set('Authorization', `Bearer ${superToken}`)
       .send({ amount: 60000, note: 'updated' });
-    expect(patch.status).toBe(200);
-    expect(patch.body.expense.amount).toBe(60000);
+    expect(patch.status).toBe(405);
+    expect(patch.body.code).toBe('EXPENSE_APPEND_ONLY');
 
     const del = await request(app)
       .delete(`${API}/expenses/${expenseId}`)
       .set('Authorization', `Bearer ${superToken}`);
-    expect(del.status).toBe(200);
-    createdExpenseIds = createdExpenseIds.filter((id) => String(id) !== String(expenseId));
+    expect(del.status).toBe(405);
+    expect(del.body.code).toBe('EXPENSE_APPEND_ONLY');
+
+    const rev = await request(app)
+      .post(`${API}/expenses/${expenseId}/reverse`)
+      .set('Authorization', `Bearer ${superToken}`)
+      .send({ note: 'phase9 reverse' });
+    expect(rev.status).toBe(200);
+    expect(rev.body.expense?.voided_at).toBeTruthy();
+
+    const restored = await request(app)
+      .get(`${API}/overview`)
+      .set('Authorization', `Bearer ${superToken}`);
+    expect(restored.status).toBe(200);
+    expect(Number(restored.body.kpi.profit_month)).toBe(profitBefore);
   });
 
   test('TC-9.4 list orgs billing filter', async () => {

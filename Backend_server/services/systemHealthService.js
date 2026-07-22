@@ -4,6 +4,8 @@
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
+const https = require('https');
 const mongoose = require('mongoose');
 const { ensureRedis, getRedisUrl } = require('../utils/redisClient');
 
@@ -77,6 +79,51 @@ function measureDisk() {
   };
 }
 
+function probeUrl(url, timeoutMs = 2000) {
+  return new Promise((resolve) => {
+    const transport = url.startsWith('https:') ? https : http;
+    const request = transport.get(url, { timeout: timeoutMs }, (response) => {
+      response.resume();
+      resolve(response.statusCode >= 200 && response.statusCode < 400);
+    });
+    request.on('timeout', () => request.destroy());
+    request.on('error', () => resolve(false));
+  });
+}
+
+async function measureObjectStorage() {
+  const backend = String(process.env.STORAGE_BACKEND || 'local').toLowerCase();
+  if (backend === 'minio') {
+    const protocol = String(process.env.MINIO_USE_SSL).toLowerCase() === 'true' ? 'https' : 'http';
+    const host = process.env.MINIO_ENDPOINT || 'localhost';
+    const port = Number(process.env.MINIO_PORT) || 9000;
+    return { backend, ok: await probeUrl(`${protocol}://${host}:${port}/minio/health/live`) };
+  }
+  if (backend === 's3') {
+    return { backend, ok: Boolean(process.env.S3_BUCKET && process.env.S3_REGION) };
+  }
+  return { backend, ok: measureDisk().ok };
+}
+
+async function measureQueue() {
+  if (String(process.env.PUBLISH_QUEUE || '').toLowerCase() !== 'bullmq') {
+    return { backend: process.env.PUBLISH_QUEUE || 'memory', ok: true, waiting: 0, failed: 0 };
+  }
+  try {
+    const { getQueue } = require('./publishQueueBull');
+    const counts = await getQueue().getJobCounts('wait', 'active', 'delayed', 'failed');
+    return {
+      backend: 'bullmq',
+      ok: true,
+      waiting: Number(counts.wait || 0) + Number(counts.delayed || 0),
+      active: Number(counts.active || 0),
+      failed: Number(counts.failed || 0)
+    };
+  } catch (_) {
+    return { backend: 'bullmq', ok: false, waiting: null, active: null, failed: null };
+  }
+}
+
 async function buildSystemHealth() {
   const totalMem = os.totalmem();
   const freeMem = os.freemem();
@@ -88,13 +135,20 @@ async function buildSystemHealth() {
   const cpuPct = Math.min(100, round((load[0] / cpuCount) * 100));
 
   const procMem = process.memoryUsage();
-  const [db, redis] = await Promise.all([measureDbLatency(), measureRedis()]);
+  const [db, redis, objectStorage, queue] = await Promise.all([
+    measureDbLatency(),
+    measureRedis(),
+    measureObjectStorage(),
+    measureQueue()
+  ]);
   const disk = measureDisk();
 
   const checks = [
     { key: 'api', ok: true },
     { key: 'db', ok: !!db.ok },
     { key: 'redis', ok: redis.configured ? !!redis.ok : true },
+    { key: 'storage', ok: !!objectStorage.ok },
+    { key: 'queue', ok: !!queue.ok },
     { key: 'disk', ok: disk.ok !== false || disk.used_pct == null }
   ];
   const failed = checks.filter((c) => !c.ok).length;
@@ -130,6 +184,8 @@ async function buildSystemHealth() {
       latency_ms: redis.latency_ms != null ? round(redis.latency_ms, 2) : null
     },
     storage: disk,
+    object_storage: objectStorage,
+    worker_queue: queue,
     api: {
       ok: true,
       latency_ms: db.latency_ms != null ? round(db.latency_ms, 2) : null

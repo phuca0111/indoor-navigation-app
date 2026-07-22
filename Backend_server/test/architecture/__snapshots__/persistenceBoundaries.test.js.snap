@@ -1,0 +1,142 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Target Architecture v2 — persistence boundaries Controller legacy Model imports không được tăng ngoài baseline đã review 1`] = `
+[
+  {
+    "edge": "controllers/activityLogController.js -> models/ActivityLog.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/activityLogController.js -> models/User.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/auditController.js -> models/AuditLog.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/communityController.js -> models/Building.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/communityController.js -> models/Place.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/eventAdminController.js -> models/DomainEvent.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/featureFlagController.js -> models/FeatureFlag.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/mapModerationController.js -> models/ActivityLog.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/mapModerationController.js -> models/Building.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/mapModerationController.js -> models/MapModerationReport.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/mapModerationController.js -> models/MapReviewRequest.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/mapModerationController.js -> models/Place.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/mapModerationController.js -> models/User.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/mapReviewController.js -> models/ActivityLog.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/mapReviewController.js -> models/Building.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/mapReviewController.js -> models/MapReviewRequest.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/mapReviewController.js -> models/Place.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/orgRegistrationController.js -> models/ActivityLog.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/orgRegistrationController.js -> models/Organization.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/orgRegistrationController.js -> models/OrganizationRegistration.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/orgRegistrationController.js -> models/User.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeController.js -> models/ActivityLog.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeController.js -> models/Building.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeController.js -> models/Organization.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeController.js -> models/Place.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeMergeController.js -> models/ActivityLog.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeMergeController.js -> models/Place.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeMergeController.js -> models/PlaceMergeRequest.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeOwnershipController.js -> models/ActivityLog.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeOwnershipController.js -> models/Organization.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeOwnershipController.js -> models/Place.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeOwnershipController.js -> models/PlaceOwnershipRequest.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/qrController.js -> models/QrCode.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/qrController.js -> models/QrScanLog.js",
+    "occurrences": 1,
+  },
+]
+`;

@@ -17,6 +17,7 @@ const User = require('../../models/User');
 const Building = require('../../models/Building');
 const Floor = require('../../models/Floor');
 const Draft = require('../../models/Draft');
+const Asset = require('../../models/Asset');
 const {
   assertNoBase64Background,
   getLocalRoot,
@@ -110,6 +111,7 @@ describe('Phase 2d — Storage ảnh nền', () => {
 
   afterAll(async () => {
     for (const id of createdIds) {
+      await Asset.deleteMany({ 'metadata.building_id': String(id) });
       await Draft.deleteMany({ building_id: id });
       await Floor.deleteMany({ building_id: id });
       await Building.findByIdAndDelete(id);

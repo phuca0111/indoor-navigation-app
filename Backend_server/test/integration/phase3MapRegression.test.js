@@ -18,9 +18,9 @@ const MapVersion = require('../../models/MapVersion');
 
 const API = '/api';
 
-function tokenFor(userId, role) {
+function tokenFor(userId, role, sv = 0) {
   return jwt.sign(
-    { userId: String(userId), role },
+    { userId: String(userId), role, sv },
     process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
@@ -67,9 +67,9 @@ describe('Phase 3.9 — Map workflow regression', () => {
     if (!orgUser) throw new Error('Thiếu ORG_ADMIN active trong DB — không chạy được Phase 3.9');
     if (!baUser) throw new Error('Thiếu BUILDING_ADMIN có assigned_buildings — không chạy được Phase 3.9');
 
-    superToken = tokenFor(superUser._id, 'SUPER_ADMIN');
-    orgToken = tokenFor(orgUser._id, 'ORG_ADMIN');
-    baToken = tokenFor(baUser._id, 'BUILDING_ADMIN');
+    superToken = tokenFor(superUser._id, 'SUPER_ADMIN', Number(superUser.session_version) || 0);
+    orgToken = tokenFor(orgUser._id, 'ORG_ADMIN', Number(orgUser.session_version) || 0);
+    baToken = tokenFor(baUser._id, 'BUILDING_ADMIN', Number(baUser.session_version) || 0);
 
     baAssignedId = String(baUser.assigned_buildings[0]);
 
@@ -92,28 +92,67 @@ describe('Phase 3.9 — Map workflow regression', () => {
     }).select('_id').lean();
     draftBuildingId = draft ? String(draft._id) : null;
 
-    const rollbackCandidates = await MapVersion.find({
-      'map_snapshot.rooms': { $type: 'array' }
-    }).sort({ version: 1 }).lean();
-
-    const orgBuildingIds = await Building.find({
+    // Luôn seed snapshot rollback tự đủ — không phụ thuộc MapVersion orphan từ suite khác.
+    const seedBuildingId = (await Building.findOne({
       organization_id: orgUser.organization_id,
       is_active: { $ne: false }
-    }).distinct('_id');
+    }).select('_id').lean())?._id || baAssignedId;
 
-    const rollbackCandidate = rollbackCandidates.find((v) =>
-      orgBuildingIds.some((id) => String(id) === String(v.building_id))
-    ) || rollbackCandidates[0];
+    if (seedBuildingId) {
+      let floorDoc = await Floor.findOne({
+        building_id: seedBuildingId,
+        floor_number: 0
+      });
+      if (!floorDoc) {
+        floorDoc = await Floor.create({
+          building_id: seedBuildingId,
+          floor_number: 0,
+          floor_name: 'Tầng trệt',
+          version: 1,
+          map_data: { rooms: [{ id: 'r-seed' }], nodes: [], edges: [] },
+          published_at: new Date()
+        });
+      } else if (!floorDoc.map_data || !Array.isArray(floorDoc.map_data.rooms)) {
+        floorDoc = await Floor.findOneAndUpdate(
+          { _id: floorDoc._id },
+          {
+            $set: {
+              map_data: { rooms: [{ id: 'r-seed' }], nodes: [], edges: [] },
+              published_at: floorDoc.published_at || new Date()
+            }
+          },
+          { new: true }
+        );
+      }
 
-    if (rollbackCandidate) {
-      rollbackBuildingId = String(rollbackCandidate.building_id);
-      rollbackFloor = rollbackCandidate.floor_number;
-      rollbackTargetVersion = rollbackCandidate.version;
-      const floorDoc = await Floor.findOne({
-        building_id: rollbackCandidate.building_id,
-        floor_number: rollbackFloor
-      }).select('version').lean();
-      versionBeforeRollback = floorDoc ? floorDoc.version : null;
+      const seedVersion = Number(floorDoc.version) || 1;
+      await MapVersion.findOneAndUpdate(
+        {
+          building_id: seedBuildingId,
+          floor_number: 0,
+          version: seedVersion
+        },
+        {
+          $set: {
+            rooms_count: 1,
+            nodes_count: 0,
+            edges_count: 0,
+            map_snapshot: {
+              rooms: [{ id: 'r-seed', name: 'Seed Room' }],
+              nodes: [],
+              edges: []
+            },
+            graph_snapshot: { nodes: [], edges: [] },
+            published_at: new Date()
+          }
+        },
+        { upsert: true, setDefaultsOnInsert: true }
+      );
+
+      rollbackBuildingId = String(seedBuildingId);
+      rollbackFloor = 0;
+      rollbackTargetVersion = seedVersion;
+      versionBeforeRollback = seedVersion;
     }
   });
 

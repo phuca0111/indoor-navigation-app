@@ -1,5 +1,20 @@
 // Phase 9.5 — Ghi sổ Payment (idempotent)
-const Payment = require('../models/Payment');
+const paymentRepository = require('../repositories/paymentRepository');
+
+function deterministicPaymentId(idempotencyKey) {
+  return paymentRepository.deterministicPaymentId('payment', idempotencyKey);
+}
+
+async function postUnifiedPayment(payment, invoiceId, session = null) {
+  const { postBusinessEvent } = require('./unifiedLedger');
+  await postBusinessEvent('INCOME', payment, {
+    source_type: 'PAYMENT',
+    posting_key: `payment:${payment._id}`,
+    amount: payment.amount,
+    metadata: { invoice_id: String(invoiceId), provider: payment.provider },
+    deps: session ? { session } : undefined
+  });
+}
 
 /**
  * Ghi ledger khi hóa đơn được thanh toán.
@@ -21,6 +36,15 @@ async function recordPaymentFromInvoice(invoice, opts = {}) {
   else if (raw.includes('MANUAL')) method = 'MANUAL';
 
   try {
+    const existed = await paymentRepository.findByIdempotencyKey(
+      idempotencyKey,
+      { session: opts.session }
+    );
+    if (existed) {
+      await postUnifiedPayment(existed, invoiceId, opts.session);
+      return { payment: existed, duplicated: true };
+    }
+
     const amount =
       opts.amount !== undefined && opts.amount !== null
         ? Number(opts.amount) || 0
@@ -31,7 +55,10 @@ async function recordPaymentFromInvoice(invoice, opts = {}) {
               (Number(invoice.tax_amount) || 0)
           );
 
-    const doc = await Payment.create({
+    const doc = await paymentRepository.createPayment({
+      // _id tất định bảo đảm chống race ngay cả khi DB cũ chưa có unique index
+      // idempotency_key (MongoDB luôn unique trên _id).
+      _id: deterministicPaymentId(idempotencyKey),
       organization_id: invoice.organization_id,
       invoice_id: invoiceId,
       amount,
@@ -39,6 +66,8 @@ async function recordPaymentFromInvoice(invoice, opts = {}) {
       method,
       status: opts.status || 'SUCCESS',
       paid_at: opts.paid_at || invoice.paid_at || new Date(),
+      provider: String(opts.provider || raw || '').toUpperCase(),
+      provider_ref: opts.provider_ref || opts.external_ref || invoice.external_ref || '',
       external_ref: opts.external_ref || invoice.external_ref || '',
       note: opts.note || '',
       idempotency_key: idempotencyKey,
@@ -49,11 +78,23 @@ async function recordPaymentFromInvoice(invoice, opts = {}) {
         raw_method: raw
       },
       created_by: opts.created_by || invoice.created_by || null
-    });
+    }, { session: opts.session });
+    await postUnifiedPayment(doc, invoiceId, opts.session);
     return { payment: doc, duplicated: false };
   } catch (err) {
     if (err?.code === 11000) {
-      const existed = await Payment.findOne({ idempotency_key: idempotencyKey });
+      const existed = await paymentRepository.findByIdentityOrIdempotency({
+        paymentId: deterministicPaymentId(idempotencyKey),
+        idempotencyKey,
+        session: opts.session
+      });
+      if (!existed) {
+        throw Object.assign(new Error('Provider reference đã được dùng cho giao dịch khác.'), {
+          status: 409,
+          code: 'PROVIDER_REFERENCE_CONFLICT'
+        });
+      }
+      await postUnifiedPayment(existed, invoiceId, opts.session);
       return { payment: existed, duplicated: true };
     }
     throw err;
@@ -61,18 +102,13 @@ async function recordPaymentFromInvoice(invoice, opts = {}) {
 }
 
 async function listPayments(filter = {}, limit = 100) {
-  const q = {};
-  if (filter.organization_id) q.organization_id = filter.organization_id;
-  if (filter.status) q.status = String(filter.status).toUpperCase();
-  if (filter.method) q.method = String(filter.method).toUpperCase();
-  if (filter.invoice_id) q.invoice_id = filter.invoice_id;
-
-  return Payment.find(q)
-    .sort({ paid_at: -1, createdAt: -1 })
-    .limit(Math.min(Number(limit) || 100, 500))
-    .populate('organization_id', 'name slug plan')
-    .populate('invoice_id', 'invoice_number status plan amount')
-    .lean();
+  return paymentRepository.listPayments({
+    organizationId: filter.organization_id,
+    status: filter.status,
+    method: filter.method,
+    invoiceId: filter.invoice_id,
+    limit
+  });
 }
 
 module.exports = {

@@ -86,9 +86,12 @@ describe('Finance — billing (gói / hóa đơn / sổ thu)', () => {
     const codes = res.body.plans.map((p) => p.code);
     expect(codes).toEqual(expect.arrayContaining(['FREE', 'PRO', 'ENTERPRISE']));
 
+    const pro = res.body.plans.find((plan) => plan.code === 'PRO');
     const limits = getPlanLimits('PRO');
-    expect(limits.maxBuildings).toBe(20);
-    expect(getPlanPrice('PRO')).toBeGreaterThan(0);
+    expect(limits.maxBuildings).toBe(
+      pro.max_buildings == null ? null : Number(pro.max_buildings)
+    );
+    expect(getPlanPrice('PRO')).toBe(Number(pro.price_vnd));
   });
 
   test('TC-S2.3 update plan price reflects getPlanPrice', async () => {

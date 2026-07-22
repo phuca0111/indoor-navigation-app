@@ -11,18 +11,20 @@ const {
   getContactStats,
   getContactUnread
 } = require('../controllers/contactController');
-const { auth, requireSuperAdmin } = require('../middlewares/auth');
+const { auth, requirePermission, P } = require('../middlewares/auth');
 const { contactLimiter } = require('../middlewares/rateLimit');
 
 router.post('/', contactLimiter, submitContact);
 
-router.get('/', auth, requireSuperAdmin, listContacts);
-router.get('/stats', auth, requireSuperAdmin, getContactStats);
-router.get('/unread-count', auth, requireSuperAdmin, getContactUnread);
-router.get('/:id', auth, requireSuperAdmin, getContact);
-router.patch('/:id', auth, requireSuperAdmin, updateContact);
-router.patch('/:id/status', auth, requireSuperAdmin, updateContactStatus);
-router.post('/:id/reply', auth, requireSuperAdmin, replyContact);
-router.delete('/:id', auth, requireSuperAdmin, removeContact);
+const contactAdmin = [auth, requirePermission(P.PLATFORM_CONTACTS_MANAGE)];
+
+router.get('/', ...contactAdmin, listContacts);
+router.get('/stats', ...contactAdmin, getContactStats);
+router.get('/unread-count', ...contactAdmin, getContactUnread);
+router.get('/:id', ...contactAdmin, getContact);
+router.patch('/:id', ...contactAdmin, updateContact);
+router.patch('/:id/status', ...contactAdmin, updateContactStatus);
+router.post('/:id/reply', ...contactAdmin, replyContact);
+router.delete('/:id', ...contactAdmin, removeContact);
 
 module.exports = router;

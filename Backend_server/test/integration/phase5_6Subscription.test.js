@@ -15,9 +15,9 @@ const Invoice = require('../../models/Invoice');
 
 const API = '/api/organizations';
 
-function tokenFor(userId, role) {
+function tokenFor(userId, role, sv = 0) {
   return jwt.sign(
-    { userId: String(userId), role },
+    { userId: String(userId), role, sv },
     process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
@@ -38,8 +38,10 @@ describe('Phase 5.6 — Subscription lifecycle', () => {
     const orgAdmin = await User.findOne({ role: 'ORG_ADMIN', is_active: { $ne: false } }).lean();
     if (!superUser) throw new Error('Thiếu SUPER_ADMIN trong DB');
 
-    superToken = tokenFor(superUser._id, 'SUPER_ADMIN');
-    if (orgAdmin) orgAdminToken = tokenFor(orgAdmin._id, 'ORG_ADMIN');
+    superToken = tokenFor(superUser._id, 'SUPER_ADMIN', Number(superUser.session_version) || 0);
+    if (orgAdmin) {
+      orgAdminToken = tokenFor(orgAdmin._id, 'ORG_ADMIN', Number(orgAdmin.session_version) || 0);
+    }
 
     const org = await Organization.findOne({
       slug: { $nin: ['legacy', 'thailan'] },
@@ -140,13 +142,13 @@ describe('Phase 5.6 — Subscription lifecycle', () => {
     expect(res.body.invoice).toBeDefined();
   });
 
-  test('TC-5.6-05 Expire subscription → FREE', async () => {
+  test('TC-5.6-05 Expire subscription giữ plan và khóa bằng billing status', async () => {
     const res = await request(app)
       .post(`${API}/${testOrgId}/subscription/expire`)
       .set('Authorization', `Bearer ${superToken}`)
       .send({ note: 'Phase 5.6 expire test' });
     expect(res.status).toBe(200);
-    expect(res.body.organization.plan).toBe('FREE');
+    expect(res.body.organization.plan).toBe('ENTERPRISE');
     expect(res.body.organization.billing_status).toBe('EXPIRED');
     expect(res.body.current_subscription.status).toBe('EXPIRED');
   });

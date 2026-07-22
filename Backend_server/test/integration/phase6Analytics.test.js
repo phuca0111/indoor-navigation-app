@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken');
 
 const app = require('../../server');
 const User = require('../../models/User');
+const { parseRange } = require('../../services/analyticsService');
 
 const API = '/api/analytics';
 
@@ -70,7 +71,9 @@ describe('Phase 6 — Analytics', () => {
         logins: expect.any(Number),
         publishes: expect.any(Number),
         paid_invoices: expect.any(Number),
-        paid_amount: expect.any(Number)
+        paid_amount: expect.any(Number),
+        expense_amount: expect.any(Number),
+        profit_amount: expect.any(Number)
       })
     );
     expect(res.body.plan_distribution).toEqual(
@@ -89,12 +92,15 @@ describe('Phase 6 — Analytics', () => {
       paid_amount: expect.any(Number)
     }));
     expect(Array.isArray(res.body.series?.qr_scan)).toBe(true);
+    expect(Array.isArray(res.body.series?.expense)).toBe(true);
     expect(Array.isArray(res.body.growth?.building)).toBe(true);
     expect(Array.isArray(res.body.revenue_by_plan)).toBe(true);
     expect(res.body.subscription).toEqual(expect.objectContaining({
       mrr: expect.any(Number),
       arr: expect.any(Number),
-      arpu: expect.any(Number)
+      arpu: expect.any(Number),
+      personal_paid_count: expect.any(Number),
+      recurring_customer_count: expect.any(Number)
     }));
     expect(res.body.rankings).toEqual(expect.objectContaining({
       organizations: expect.any(Array),
@@ -103,6 +109,14 @@ describe('Phase 6 — Analytics', () => {
     }));
     expect(Array.isArray(res.body.insights)).toBe(true);
     expect(Array.isArray(res.body.paid_by_month)).toBe(true);
+    expect(res.headers['cache-control']).toContain('no-store');
+  });
+
+  test('TC-6.1-03b khoảng tùy chọn dùng biên ngày Việt Nam', () => {
+    const parsed = parseRange('custom', '2026-07-01', '2026-07-03');
+    expect(parsed.days).toBe(3);
+    expect(parsed.start.toISOString()).toBe('2026-06-30T17:00:00.000Z');
+    expect(parsed.end.toISOString()).toBe('2026-07-03T16:59:59.999Z');
   });
 
   test('TC-6.1-04 SUPER_ADMIN alerts', async () => {
@@ -112,6 +126,7 @@ describe('Phase 6 — Analytics', () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.alerts)).toBe(true);
     expect(typeof res.body.count).toBe('number');
+    expect(res.headers['cache-control']).toContain('no-store');
   });
 
   test('TC-6.2-01 timeseries login / publish / paid', async () => {
@@ -151,5 +166,52 @@ describe('Phase 6 — Analytics', () => {
       .set('Authorization', `Bearer ${orgAdminToken}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.alerts)).toBe(true);
+  });
+
+  test('TC-6.3-01 POST telemetry nav_complete → overview series.navigation tăng', async () => {
+    const Building = require('../../models/Building');
+    const TelemetryEvent = require('../../models/TelemetryEvent');
+    const building = await Building.findOne({}).select('_id organization_id').lean();
+    expect(building).toBeTruthy();
+
+    const ingest = await request(app)
+      .post(`${API}/telemetry`)
+      .set('Authorization', `Bearer ${superToken}`)
+      .send({
+        events: [
+          {
+            event_type: 'nav_complete',
+            building_id: String(building._id),
+            session_id: 'c4-test-' + Date.now()
+          },
+          {
+            event_type: 'session_start',
+            building_id: String(building._id),
+            session_id: 'c4-test-' + Date.now()
+          }
+        ]
+      });
+    expect(ingest.status).toBe(201);
+    expect(ingest.body.inserted).toBeGreaterThanOrEqual(2);
+
+    const overview = await request(app)
+      .get(`${API}/overview?range=7d`)
+      .set('Authorization', `Bearer ${superToken}`);
+    expect(overview.status).toBe(200);
+    expect(Array.isArray(overview.body.series?.navigation)).toBe(true);
+    expect(Number(overview.body.totals?.navigation_requests) || 0).toBeGreaterThanOrEqual(1);
+
+    await TelemetryEvent.deleteMany({ session_id: { $regex: /^c4-test-/ } });
+  });
+
+  test('TC-6.3-02 SUPER filter organization_id trên overview', async () => {
+    const Organization = require('../../models/Organization');
+    const org = await Organization.findOne({}).select('_id').lean();
+    if (!org) return;
+    const res = await request(app)
+      .get(`${API}/overview?range=7d&organization_id=${org._id}`)
+      .set('Authorization', `Bearer ${superToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.organization?.id).toBe(String(org._id));
   });
 });

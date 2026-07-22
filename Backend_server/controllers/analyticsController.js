@@ -1,21 +1,20 @@
-// Phase 6 — Analytics API
 const {
-  resolveOrgScope,
-  buildOverview,
-  buildAlerts,
-  buildTimeseries
-} = require('../services/analyticsService');
+  getOverview,
+  getAlerts,
+  getTimeseries,
+  getConversionFunnel
+} = require('../application/read/analyticsQueryService');
+const { ingestTelemetryEvents } = require('../services/telemetryService');
 
-async function getOverview(req, res) {
+function disableAnalyticsCache(res) {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.set('Pragma', 'no-cache');
+}
+
+async function getOverviewHttp(req, res) {
   try {
-    const scope = await resolveOrgScope(req);
-    const data = await buildOverview({
-      role: scope.role,
-      orgId: scope.orgId,
-      range: req.query.range,
-      from: req.query.from,
-      to: req.query.to
-    });
+    disableAnalyticsCache(res);
+    const data = await getOverview(req);
     res.json(data);
   } catch (e) {
     const status = e.status || 500;
@@ -24,10 +23,10 @@ async function getOverview(req, res) {
   }
 }
 
-async function getAlerts(req, res) {
+async function getAlertsHttp(req, res) {
   try {
-    const scope = await resolveOrgScope(req);
-    const data = await buildAlerts({ role: scope.role, orgId: scope.orgId });
+    disableAnalyticsCache(res);
+    const data = await getAlerts(req);
     res.json(data);
   } catch (e) {
     const status = e.status || 500;
@@ -36,17 +35,10 @@ async function getAlerts(req, res) {
   }
 }
 
-async function getTimeseries(req, res) {
+async function getTimeseriesHttp(req, res) {
   try {
-    const scope = await resolveOrgScope(req);
-    const data = await buildTimeseries({
-      role: scope.role,
-      orgId: scope.orgId,
-      metric: req.query.metric,
-      range: req.query.range,
-      from: req.query.from,
-      to: req.query.to
-    });
+    disableAnalyticsCache(res);
+    const data = await getTimeseries(req);
     res.json(data);
   } catch (e) {
     const status = e.status || 500;
@@ -55,8 +47,39 @@ async function getTimeseries(req, res) {
   }
 }
 
+/** POST /api/analytics/telemetry — batch ingest (JWT) */
+async function postTelemetry(req, res) {
+  try {
+    const events = req.body?.events || req.body;
+    const result = await ingestTelemetryEvents(events, {
+      user_id: req.user?.userId || null,
+      organization_id: req.user?.organization_id || null
+    });
+    res.status(201).json({ message: 'Đã ghi telemetry.', ...result });
+  } catch (e) {
+    const status = e.status || 500;
+    if (status >= 500) console.error('analytics telemetry:', e);
+    res.status(status).json({
+      message: e.message || 'Lỗi ghi telemetry.',
+      code: e.code
+    });
+  }
+}
+
+async function getConversionFunnelHttp(req, res, next) {
+  try {
+    disableAnalyticsCache(res);
+    const data = await getConversionFunnel(req);
+    res.json(data);
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
-  getOverview,
-  getAlerts,
-  getTimeseries
+  getOverview: getOverviewHttp,
+  getAlerts: getAlertsHttp,
+  getTimeseries: getTimeseriesHttp,
+  postTelemetry,
+  getConversionFunnel: getConversionFunnelHttp
 };

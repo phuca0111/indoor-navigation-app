@@ -1,12 +1,12 @@
 // Phase 5.7 — Billing self-service (ORG_ADMIN) + checkout
-const Organization = require('../models/Organization');
-const Invoice = require('../models/Invoice');
-const OrganizationBillingEvent = require('../models/OrganizationBillingEvent');
+const billingSelfService = require('../application/billing/billingSelfServiceApplicationService');
 const {
   getOrgQuotaSnapshot,
   refreshOrgBillingStatus
 } = require('../utils/overQuotaLock');
-const { getCurrentSubscription } = require('../services/subscriptionLifecycle');
+const {
+  getCurrentSubscription
+} = require('../application/billing/subscriptionApplicationService');
 const { createCheckoutSession } = require('../services/paymentCheckout');
 const { getPlanPrice, getPlanPeriodDays } = require('../config/planPricing');
 const {
@@ -26,11 +26,11 @@ const {
   getPersonalPaymentStatus,
   buildQrPayload
 } = require('../services/personalPaymentService');
-const User = require('../models/User');
-const ActivityLog = require('../models/ActivityLog');
+const { issueAuthSession } = require('../application/identity/sessionApplicationService');
+const { ActorContext } = require('../application/identity/ActorContext');
 
 function logActivity(data) {
-  ActivityLog.create(data).catch(() => {});
+  billingSelfService.recordActivity(data).catch(() => {});
 }
 
 /** GET /api/billing/plans — public catalog cho Landing (WL2), không cần auth */
@@ -68,7 +68,7 @@ async function listPublicPlans(req, res) {
 async function resolveOrgForBilling(req, orgIdParam) {
   const role = req.user?.role;
   if (role === 'SUPER_ADMIN' && orgIdParam) {
-    const org = await Organization.findById(orgIdParam);
+    const org = await billingSelfService.findOrganization(orgIdParam);
     if (!org) return { error: { status: 404, message: 'Không tìm thấy tổ chức.' } };
     return { org };
   }
@@ -80,7 +80,7 @@ async function resolveOrgForBilling(req, orgIdParam) {
     if (orgIdParam && String(orgIdParam) !== String(oid)) {
       return { error: { status: 403, message: 'Chỉ được xem billing tổ chức của bạn.' } };
     }
-    const org = await Organization.findById(oid);
+    const org = await billingSelfService.findOrganization(oid);
     if (!org) return { error: { status: 404, message: 'Không tìm thấy tổ chức.' } };
     return { org };
   }
@@ -96,14 +96,8 @@ async function getMyBilling(req, res) {
     await refreshOrgBillingStatus(org);
     const subscription = await getCurrentSubscription(org._id);
     const quota = await getOrgQuotaSnapshot(org);
-    const invoices = await Invoice.find({ organization_id: org._id })
-      .sort({ createdAt: -1 })
-      .limit(20)
-      .lean();
-    const events = await OrganizationBillingEvent.find({ organization_id: org._id })
-      .sort({ createdAt: -1 })
-      .limit(20)
-      .lean();
+    const { invoices, events } =
+      await billingSelfService.getOrganizationBillingData(org._id);
 
     res.json({
       organization: {
@@ -168,7 +162,10 @@ async function postCheckout(req, res) {
       if (cAddress) {
         org.contact_address = [cAddress, cCity, cCountry].filter(Boolean).join(', ');
       }
-      if (org.isModified && org.isModified()) await org.save();
+      await billingSelfService.updateOrganizationContact(org._id, {
+        contact_phone: org.contact_phone || '',
+        contact_address: org.contact_address || ''
+      });
       try {
         const { saveUserBillingProfile } = require('../utils/userBillingProfile');
         await saveUserBillingProfile(req.user.userId, contact);
@@ -179,8 +176,7 @@ async function postCheckout(req, res) {
 
     // Phase 8.5 — KYC tối thiểu khi mua gói trả phí
     if (isPaidPlan(plan)) {
-      const User = require('../models/User');
-      const me = await User.findById(req.user.userId).select('phone').lean();
+      const me = await billingSelfService.findPersonalBillingUser(req.user.userId);
       const phone = String(org.contact_phone || me?.phone || '').trim();
       const address = String(org.contact_address || '').trim();
       if (!phone || address.length < 5) {
@@ -249,7 +245,7 @@ async function getPersonalBilling(req, res) {
     if (!req.user || req.user.role !== 'REGISTERED_USER') {
       return res.status(403).json({ message: 'Chỉ tài khoản cá nhân dùng được.' });
     }
-    const user = await User.findById(req.user.userId).select('plan plan_expires_at').lean();
+    const user = await billingSelfService.findPersonalBillingUser(req.user.userId);
     const plan = String(user?.plan || 'FREE').toUpperCase();
     const planActive = hasActivePaidPersonalPlan({ plan, plan_expires_at: user?.plan_expires_at });
     const currentPrice = planActive ? (getPlanPrice(plan) || 0) : 0;
@@ -306,32 +302,7 @@ async function getPersonalBilling(req, res) {
 }
 
 async function listPersonalInvoicesForUser(userId) {
-  const Invoice = require('../models/Invoice');
-  const uid = String(userId || '');
-  if (!uid) return [];
-  const rows = await Invoice.find({
-    status: { $in: ['PAID', 'OPEN', 'VOID'] },
-    $or: [
-      { 'metadata.user_id': uid },
-      { 'metadata.user_id': userId },
-      { created_by: userId, organization_id: null }
-    ]
-  })
-    .sort({ paid_at: -1, createdAt: -1 })
-    .limit(30)
-    .select('invoice_number status plan amount currency paid_at createdAt note metadata')
-    .lean();
-  return rows.map((inv) => ({
-    id: String(inv._id),
-    invoice_number: inv.invoice_number,
-    status: inv.status,
-    plan: inv.plan || inv.metadata?.plan || '',
-    amount: inv.amount || 0,
-    currency: inv.currency || 'VND',
-    paid_at: inv.paid_at || null,
-    created_at: inv.createdAt || null,
-    note: inv.note || ''
-  }));
+  return billingSelfService.listPersonalInvoices(userId);
 }
 
 // POST /api/billing/personal/upgrade — REGISTERED_USER mua/gia hạn gói cá nhân qua ví TPTPbank
@@ -347,7 +318,7 @@ async function personalUpgrade(req, res) {
     if (personalCodes.length && !personalCodes.includes(plan)) {
       return res.status(400).json({ message: 'Gói này không dành cho tài khoản cá nhân.' });
     }
-    const me = await User.findById(req.user.userId).select('plan plan_expires_at').lean();
+    const me = await billingSelfService.findPersonalBillingUser(req.user.userId);
     const cur = String(me?.plan || 'FREE').toUpperCase();
     if (hasActivePaidPersonalPlan(me) && cur !== 'FREE' && cur !== plan) {
       const curPrice = getPlanPrice(cur) || 0;
@@ -381,7 +352,10 @@ async function personalUpgrade(req, res) {
     const bankUserId = bankLogin.user.id;
 
     // Trừ ví trực tiếp (không tạo Invoice/Subscription org)
-    const idem = `personal-${plan}-${req.user.userId}-${Date.now()}`;
+    const clientKey = String(req.get('Idempotency-Key') || req.body?.idempotency_key || '').trim();
+    const idem = clientKey
+      ? `personal-direct-${req.user.userId}-${clientKey}`
+      : `personal-${plan}-${req.user.userId}-${months}-${Math.floor(Date.now() / (5 * 60 * 1000))}`;
     let charge;
     try {
       charge = await chargeWalletDirect({
@@ -394,25 +368,15 @@ async function personalUpgrade(req, res) {
       return res.status(err.status || 400).json({ message: err.message, code: err.code });
     }
 
-    // Ghi thẳng User.plan + gia hạn
-    const user = await User.findById(req.user.userId);
-    const periodDays = getPlanPeriodDays(plan) * months;
-    const base = user.plan === plan && user.plan_expires_at && new Date(user.plan_expires_at) > new Date()
-      ? new Date(user.plan_expires_at)
-      : new Date();
-    base.setDate(base.getDate() + periodDays);
-    user.plan = plan;
-    user.plan_expires_at = base;
-    await user.save();
-
-    logActivity({
-      user_id: user._id,
-      action: 'PERSONAL_PLAN_UPGRADE',
-      target_type: 'user',
-      target_id: String(user._id),
-      target: user.email,
-      details: { plan, months, amount: total, wallet_tx: String(charge.transaction?._id || '') },
-      ip_address: req.ip || ''
+    const { user } = await billingSelfService.fulfillDirectPersonalPayment({
+      transactionId: charge.transaction._id,
+      userId: req.user.userId,
+      plan,
+      months,
+      amount: total,
+      bankUserId,
+      idempotencyKey: idem,
+      ip: req.ip || ''
     });
 
     return res.status(200).json({
@@ -475,7 +439,9 @@ async function personalCheckout(req, res) {
     const { plan = 'PRO', months = 1, contact = {}, purpose = 'UPGRADE', org_meta = {} } = req.body || {};
     const normPurpose = purpose === 'CREATE_ORG' ? 'CREATE_ORG' : 'UPGRADE';
     if (normPurpose === 'CREATE_ORG') {
-      const meUser = await User.findById(req.user.userId).select('organization_id plan plan_expires_at').lean();
+      const meUser = await billingSelfService.findPersonalBillingUser(
+        req.user.userId
+      );
       if (meUser?.organization_id) {
         return res.status(400).json({ message: 'Tài khoản đã thuộc một tổ chức.', code: 'ALREADY_IN_ORG' });
       }
@@ -556,7 +522,10 @@ async function personalCheckout(req, res) {
       plan: payment.plan,
       status: payment.status,
       already_paid: alreadyPaid === true,
-      plan_expires_at: alreadyPaid ? (await User.findById(req.user.userId).select('plan_expires_at').lean())?.plan_expires_at || null : null,
+      plan_expires_at: alreadyPaid
+        ? (await billingSelfService.findPersonalBillingUser(req.user.userId))
+            ?.plan_expires_at || null
+        : null,
       expires_at: payment.expires_at,
       pay_url: payUrl,
       qr_data_url: qrDataUrl
@@ -601,7 +570,7 @@ async function personalCheckoutActive(req, res) {
 // GET /api/billing/checkout/:invoiceId/status — poll trạng thái hóa đơn tổ chức
 async function getCheckoutStatus(req, res) {
   try {
-    const invoice = await Invoice.findById(req.params.invoiceId).lean();
+    const invoice = await billingSelfService.findInvoice(req.params.invoiceId);
     if (!invoice) return res.status(404).json({ message: 'Không tìm thấy hóa đơn.' });
     // Chỉ SUPER_ADMIN hoặc ORG_ADMIN của chính tổ chức được xem
     const role = req.user?.role;
@@ -611,7 +580,9 @@ async function getCheckoutStatus(req, res) {
     }
     const out = { status: invoice.status, invoice_status: invoice.status };
     if (invoice.status === 'PAID') {
-      const org = await Organization.findById(invoice.organization_id).select('plan plan_expires_at').lean();
+      const org = await billingSelfService.findOrganization(
+        invoice.organization_id
+      );
       out.plan = org?.plan || invoice.plan;
       out.plan_expires_at = org?.plan_expires_at || null;
     }
@@ -630,12 +601,16 @@ async function personalCheckoutStatus(req, res) {
     const out = await getPersonalPaymentStatus(req.params.id, req.query.token || '');
     // Tạo tổ chức xong → cấp phiên mới (role ORG_ADMIN) để frontend chuyển chế độ ngay
     if (out.status === 'PAID' && out.purpose === 'CREATE_ORG' && out.organization) {
-      const user = await User.findById(req.user.userId);
+      const user = await billingSelfService.findPersonalBillingUser(
+        req.user.userId
+      );
       if (user && user.role === 'ORG_ADMIN') {
-        user.session_version = (Number(user.session_version) || 0) + 1;
-        await user.save();
-        const { issueAuthSession } = require('./authController');
-        const session = await issueAuthSession(user, req);
+        const actor = ActorContext.fromRequest(req, req.effectivePrincipal);
+        const session = await issueAuthSession(user, {
+          req,
+          actorUserId: actor.userId,
+          ipAddress: actor.ipAddress
+        });
         out.reauth = true;
         out.token = session.token;
         out.refreshToken = session.refreshToken;

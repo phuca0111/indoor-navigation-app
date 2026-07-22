@@ -91,6 +91,10 @@ const organizationSchema = new mongoose.Schema({
         type: Date,
         default: null
     },
+    plan_expiry_reminder_claimed_at: {
+        type: Date,
+        default: null
+    },
 
     // Trạng thái organization
     is_active: {

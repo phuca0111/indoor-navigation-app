@@ -22,6 +22,7 @@ const FloorEditLock = require('../../models/FloorEditLock');
 const MapVersion = require('../../models/MapVersion');
 const ActivityLog = require('../../models/ActivityLog');
 const OrganizationRegistration = require('../../models/OrganizationRegistration');
+const Invoice = require('../../models/Invoice');
 const { sendExpiryReminders } = require('../../services/billingScheduler');
 const { clearLocksForBuilding } = require('../../services/floorEditLock');
 const memoryStore = require('../../services/floorLockMemoryStore');
@@ -188,7 +189,7 @@ describe('Phase 8 — Web upgrades', () => {
     expect(dashHtml).toMatch(/id="adminPageTitle"/);
     expect(dashHtml).toMatch(/id="btnAdminTheme"/);
     expect(dashHtml).toMatch(/indoorNavAdminTheme/);
-    expect(dashHtml).toMatch(/admin-theme\.css\?v=20260718ad61/);
+    expect(dashHtml).toMatch(/admin-theme\.css\?v=[a-z0-9]+/i);
     expect(dashHtml).toMatch(/data-overview-force-hidden="1"/);
     expect(dashHtml).toMatch(/admin-menu-icon/);
     expect(dashHtml).toMatch(/admin-theme-icon-light/);
@@ -251,15 +252,15 @@ describe('Phase 8 — Web upgrades', () => {
     expect(adminCss).toMatch(/max-height 0\.32s/);
     expect(adminThemeCss).toMatch(/TailAdmin-inspired component theme/);
     expect(adminThemeCss).toMatch(/data-admin-theme="dark"/);
-    expect(adminThemeCss).toMatch(/AD5 — Unify remaining surfaces/);
+    expect(adminThemeCss).toMatch(/\.admin-main \.status-published/);
     expect(adminThemeCss).toMatch(/billing-state-paid_active/);
-    expect(adminThemeCss).toMatch(/AD6 — Icons, sticky headers/);
-    expect(adminThemeCss).toMatch(/AD7 — Toast, page progress, skeleton loading/);
-    expect(adminThemeCss).toMatch(/AD8 — Empty states \+ Finance tab polish/);
-    expect(adminThemeCss).toMatch(/AD10 — Nav groups, billing list-first/);
-    expect(adminThemeCss).toMatch(/AD14 — Tab Tổng quan mặc định/);
-    expect(adminThemeCss).toMatch(/AD15 — Overview widget dashboard/);
-    expect(adminThemeCss).toMatch(/AD16 — health, nav, delta\/spark/);
+    expect(adminThemeCss).toMatch(/\.admin-menu-icon/);
+    expect(adminThemeCss).toMatch(/\.admin-page-progress/);
+    expect(adminThemeCss).toMatch(/\.admin-empty-state/);
+    expect(adminThemeCss).toMatch(/\.finance-subnav/);
+    expect(adminThemeCss).toMatch(/\.overview-kpi-grid/);
+    expect(adminThemeCss).toMatch(/\.overview-toolbar/);
+    expect(adminThemeCss).toMatch(/\.overview-custom-range/);
     expect(adminUiJs).toMatch(/admin-toast/);
     expect(adminUiJs).toMatch(/wrapSwitchTab/);
     expect(dashJs).toMatch(/dashUiLoading/);
@@ -277,11 +278,11 @@ describe('Phase 8 — Web upgrades', () => {
     expect(dashJs).toMatch(/buildOverviewDonut/);
     expect(dashJs).toMatch(/buildOverviewProgressRing/);
     expect(dashJs).toMatch(/buildOverviewStatusGauge/);
-    expect(adminThemeCss).toMatch(/AD17 — KPI cards dùng mini chart/);
+    expect(adminThemeCss).toMatch(/AD17/);
     expect(dashJs).toMatch(/buildOverviewOrgGrowthChart/);
     expect(dashJs).toMatch(/handleOverviewOrgGrowthWheel/);
     expect(dashJs).toMatch(/shiftOverviewOrgGrowth/);
-    expect(adminThemeCss).toMatch(/AD18 — Area chart tăng trưởng tổ chức/);
+    expect(adminThemeCss).toMatch(/AD18/);
     expect(dashJs).toMatch(/buildOverviewDonutChart/);
     expect(dashJs).toMatch(/buildOverviewSubscriptionTable/);
     expect(dashJs).toMatch(/buildOverviewSubscriptionRevenue/);
@@ -290,19 +291,19 @@ describe('Phase 8 — Web upgrades', () => {
     expect(dashJs).toMatch(/buildOverviewNewSubscriptionChart/);
     expect(dashJs).toMatch(/buildOverviewUpgradeFlow/);
     expect(dashJs).toMatch(/setOverviewSubscriptionRange/);
-    expect(adminThemeCss).toMatch(/AD26 — Subscription dashboard/);
+    expect(adminThemeCss).toMatch(/AD26/);
     expect(dashJs).toMatch(/setOverviewDashboardSection/);
     expect(dashHtml).toMatch(/data-overview-section-btn="priority"/);
-    expect(adminThemeCss).toMatch(/AD27 — Dashboard ngắn gọn/);
+    expect(adminThemeCss).toMatch(/AD27/);
     expect(dashJs).toMatch(/formatOverviewPeriodLabel/);
     expect(dashHtml).toMatch(/id="overviewRangeSummary"/);
     expect(dashHtml).toMatch(/Trạng thái tòa nhà/);
     expect(dashJs).toMatch(/buildOverviewMapStats/);
     expect(dashJs).toMatch(/Bản đồ hiện hành/);
-    expect(adminThemeCss).toMatch(/AD20 — Overview chart hierarchy/);
+    expect(adminThemeCss).toMatch(/AD20/);
     expect(dashHtml).toMatch(/data-revexp-period="weekly"/);
     expect(dashJs).toMatch(/'overview'/);
-    expect(adminThemeCss).toMatch(/AD13 — Tinh gọn cột thao tác/);
+    expect(adminThemeCss).toMatch(/AD13/);
     expect(dashJs).toMatch(/title="Mở trình soạn bản đồ tầng"/);
     expect(dashJs).toMatch(/Mở quản lý gói & thanh toán/);
 
@@ -517,34 +518,52 @@ describe('Phase 8 — Web upgrades', () => {
   });
 
   test('TC-8.7 checkout PROFILE_INCOMPLETE then OK after contact', async () => {
-    process.env.TPTP_SANDBOX_ENABLED = 'true';
-    await Organization.findByIdAndUpdate(testOrg._id, {
-      contact_phone: '',
-      contact_address: ''
-    });
+    const prevSandbox = process.env.TPTP_SANDBOX_ENABLED;
+    const originalOrg = await Organization.findById(testOrg._id).lean();
     const prevPhone = orgUser.phone;
-    await User.findByIdAndUpdate(orgUser._id, { phone: '' });
+    let invoiceId;
+    try {
+      process.env.TPTP_SANDBOX_ENABLED = 'true';
+      await Organization.findByIdAndUpdate(testOrg._id, {
+        plan: 'FREE',
+        billing_status: 'ACTIVE',
+        contact_phone: '',
+        contact_address: ''
+      });
+      await User.findByIdAndUpdate(orgUser._id, { phone: '' });
 
-    const res = await authReq(orgToken)('post', `${API}/billing/checkout`).send({
-      plan: 'PRO',
-      action: 'upgrade'
-    });
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe('PROFILE_INCOMPLETE');
+      const res = await authReq(orgToken)('post', `${API}/billing/checkout`).send({
+        plan: 'PRO',
+        action: 'upgrade'
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('PROFILE_INCOMPLETE');
 
-    await authReq(orgToken)('put', `${API}/organizations/me/contact`).send({
-      contact_phone: '0911222333',
-      contact_address: 'So 1 Le Loi Q1'
-    });
+      const contact = await authReq(orgToken)('put', `${API}/organizations/me/contact`).send({
+        contact_phone: '0911222333',
+        contact_address: 'So 1 Le Loi Q1'
+      });
+      expect(contact.status).toBe(200);
 
-    const ok = await authReq(orgToken)('post', `${API}/billing/checkout`).send({
-      plan: 'PRO',
-      action: 'upgrade'
-    });
-    expect(ok.status).toBe(201);
-    expect(ok.body.checkout_url || ok.body.invoice).toBeTruthy();
-
-    await User.findByIdAndUpdate(orgUser._id, { phone: prevPhone || '' });
+      const ok = await authReq(orgToken)('post', `${API}/billing/checkout`).send({
+        plan: 'PRO',
+        action: 'upgrade'
+      });
+      expect(ok.status).toBe(201);
+      expect(ok.body.checkout_url || ok.body.invoice).toBeTruthy();
+      invoiceId = ok.body.invoice?._id;
+    } finally {
+      if (invoiceId) await Invoice.findByIdAndDelete(invoiceId);
+      await User.findByIdAndUpdate(orgUser._id, { phone: prevPhone || '' });
+      await Organization.findByIdAndUpdate(testOrg._id, {
+        plan: originalOrg.plan,
+        billing_status: originalOrg.billing_status,
+        contact_phone: originalOrg.contact_phone || '',
+        contact_address: originalOrg.contact_address || ''
+      });
+      if (prevSandbox === undefined) delete process.env.TPTP_SANDBOX_ENABLED;
+      else process.env.TPTP_SANDBOX_ENABLED = prevSandbox;
+    }
   });
 
   test('TC-8.8 trial self-service không bắt SĐT', async () => {

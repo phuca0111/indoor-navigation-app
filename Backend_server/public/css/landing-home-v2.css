@@ -154,6 +154,38 @@
   overflow: hidden;
 }
 
+.landing-home .cms-hero-video {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.landing-home .cms-hero-video iframe {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 177.78vh;
+  min-width: 100%;
+  height: 56.25vw;
+  min-height: 100%;
+  border: 0;
+  transform: translate(-50%, -50%);
+}
+
+.landing-home .cms-hero-video video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.landing-home .cms-hero-video-shade {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 9, 14, 0.58);
+}
+
 .landing-home .hero-atmosphere {
   position: absolute;
   inset: 0;

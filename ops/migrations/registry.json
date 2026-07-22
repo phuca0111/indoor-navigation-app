@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "migrations": [
+    {
+      "id": "20260721-password-hashes",
+      "file": "Backend_server/scripts/migrate-password-hashes.js",
+      "checksum": "721e2c2d26b28031522839e268f0dd105c4f6bf520428e8fe782b8f400ba3528",
+      "rollback": "restore_from_backup",
+      "owner": "backend",
+      "notes": "Dry-run by default; verify before removing legacy hashes."
+    },
+    {
+      "id": "20260721-organization-members",
+      "file": "Backend_server/scripts/backfill-organization-members.js",
+      "checksum": "f481599288096393f1fd5669b1612e911c05663f928aa4d643417c68de687051",
+      "rollback": "restore_from_backup",
+      "owner": "backend",
+      "notes": "Idempotent membership backfill."
+    },
+    {
+      "id": "20260721-finance-v2",
+      "file": "Backend_server/scripts/backfill-finance-v2.js",
+      "checksum": "bcb6a777ec4c018dbb3672f1822b39e6e700ce0e9d991b014d63df669380dc7c",
+      "rollback": "disable_flags_then_restore",
+      "owner": "finance",
+      "notes": "Keep v2 reads disabled until verifier passes."
+    },
+    {
+      "id": "20260721-unified-audit",
+      "file": "Backend_server/scripts/backfill-unified-audit.js",
+      "checksum": "456749f050dedd32d43594d9f7346fe66fcbb683ff69f02036b3ef684a40ca96",
+      "rollback": "delete_backfill_batch_or_restore",
+      "owner": "platform",
+      "notes": "Batch metadata is required for targeted rollback."
+    }
+  ]
+}

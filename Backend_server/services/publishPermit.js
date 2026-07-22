@@ -1,6 +1,6 @@
 // Phase 8 — Publish permit / contract key (opt-in via env)
 const crypto = require('crypto');
-const Organization = require('../models/Organization');
+const organizations = require('../repositories/mapLifecycleRepository');
 
 function isPermitRequired() {
   return process.env.PUBLISH_PERMIT_REQUIRED === 'true';
@@ -46,7 +46,7 @@ function assertOrgCanPublish(org) {
 }
 
 async function setPermit(orgId, { key, expiresAt } = {}) {
-  const org = await Organization.findById(orgId);
+  const org = await organizations.findOrganization(orgId);
   if (!org) {
     const err = new Error('Không tìm thấy tổ chức.');
     err.status = 404;
@@ -57,23 +57,23 @@ async function setPermit(orgId, { key, expiresAt } = {}) {
     ? String(key).trim()
     : crypto.randomBytes(16).toString('hex');
 
-  org.publish_permit_key = permitKey;
-  org.publish_permit_expires_at = expiresAt ? new Date(expiresAt) : null;
-  await org.save();
-  return org;
+  return organizations.updatePublishPermit(orgId, {
+    publish_permit_key: permitKey,
+    publish_permit_expires_at: expiresAt ? new Date(expiresAt) : null
+  });
 }
 
 async function clearPermit(orgId) {
-  const org = await Organization.findById(orgId);
+  const org = await organizations.findOrganization(orgId);
   if (!org) {
     const err = new Error('Không tìm thấy tổ chức.');
     err.status = 404;
     throw err;
   }
-  org.publish_permit_key = '';
-  org.publish_permit_expires_at = null;
-  await org.save();
-  return org;
+  return organizations.updatePublishPermit(orgId, {
+    publish_permit_key: '',
+    publish_permit_expires_at: null
+  });
 }
 
 module.exports = {

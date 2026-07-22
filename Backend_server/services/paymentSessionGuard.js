@@ -1,5 +1,5 @@
 // Phase 5.8 — Xác minh token + invoice (TPTPpay / legacy mock guard)
-const Invoice = require('../models/Invoice');
+const invoiceRepository = require('../repositories/invoiceRepository');
 const { getPlanPrice } = require('../config/planPricing');
 const { verifyPaymentAccessToken } = require('./paymentAccessToken');
 
@@ -9,7 +9,7 @@ async function assertPaymentAccess(invoiceId, token) {
     throw Object.assign(new Error(verified.message), { status: 403, code: verified.code });
   }
 
-  const invoice = await Invoice.findById(invoiceId);
+  const invoice = await invoiceRepository.findById(invoiceId);
   if (!invoice) {
     throw Object.assign(new Error('Không tìm thấy hóa đơn.'), { status: 404 });
   }
@@ -50,8 +50,7 @@ async function consumePaymentNonce(invoice) {
   const meta = { ...(invoice.metadata || {}) };
   delete meta.payment_nonce;
   meta.payment_completed_at = new Date().toISOString();
-  invoice.metadata = meta;
-  await invoice.save();
+  return invoiceRepository.updateInvoice(invoice._id, { metadata: meta });
 }
 
 module.exports = {

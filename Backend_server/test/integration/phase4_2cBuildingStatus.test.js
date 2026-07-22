@@ -14,9 +14,9 @@ const Organization = require('../../models/Organization');
 
 const API = '/api/organizations';
 
-function tokenFor(userId, role) {
+function tokenFor(userId, role, sv = 0) {
   return jwt.sign(
-    { userId: String(userId), role },
+    { userId: String(userId), role, sv },
     process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
@@ -32,7 +32,11 @@ describe('Phase 4.2c — building status counts in list', () => {
 
     const superUser = await User.findOne({ role: 'SUPER_ADMIN', is_active: { $ne: false } }).lean();
     if (!superUser) throw new Error('Thiếu SUPER_ADMIN');
-    superToken = tokenFor(superUser._id, 'SUPER_ADMIN');
+    superToken = tokenFor(
+      superUser._id,
+      'SUPER_ADMIN',
+      Number(superUser.session_version) || 0
+    );
   });
 
   afterAll(async () => {
@@ -59,7 +63,7 @@ describe('Phase 4.2c — building status counts in list', () => {
   test('TC-4.2c-02 tổng published + draft khớp đếm trực tiếp DB (org có tòa)', async () => {
     const orgWithBuildings = await Building.aggregate([
       { $group: { _id: '$organization_id', count: { $sum: 1 } } },
-      { $match: { count: { $gt: 0 } } },
+      { $match: { _id: { $ne: null }, count: { $gt: 0 } } },
       { $limit: 1 }
     ]);
     if (!orgWithBuildings.length) {
