@@ -13,8 +13,8 @@ const Organization = require('../../models/Organization');
 const Building = require('../../models/Building');
 const { PLAN_LIMITS } = require('../../utils/planQuota');
 
-function tokenFor(userId, role, organizationId) {
-  const payload = { userId: String(userId), role };
+function tokenFor(userId, role, organizationId, sv = 0) {
+  const payload = { userId: String(userId), role, sv };
   if (organizationId) payload.organization_id = String(organizationId);
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
 }
@@ -35,7 +35,12 @@ describe('Phase 5.3 — over quota soft lock', () => {
 
     const superUser = await User.findOne({ role: 'SUPER_ADMIN', is_active: { $ne: false } }).lean();
     if (!superUser) throw new Error('Thiếu SUPER_ADMIN trong DB');
-    superToken = tokenFor(superUser._id, 'SUPER_ADMIN');
+    superToken = tokenFor(
+      superUser._id,
+      'SUPER_ADMIN',
+      null,
+      Number(superUser.session_version) || 0
+    );
 
     let org = await Organization.findOne({ slug }).lean();
     if (!org) {
@@ -79,7 +84,12 @@ describe('Phase 5.3 — over quota soft lock', () => {
       organization_id: orgId,
       is_active: true
     });
-    orgAdminToken = tokenFor(orgAdmin._id, 'ORG_ADMIN', orgId);
+    orgAdminToken = tokenFor(
+      orgAdmin._id,
+      'ORG_ADMIN',
+      orgId,
+      Number(orgAdmin.session_version) || 0
+    );
 
     await User.deleteMany({ organization_id: orgId, email: /^phase53_ba_/ });
     extraUserIds = [];
@@ -127,7 +137,7 @@ describe('Phase 5.3 — over quota soft lock', () => {
   test('TC-5.3-02 trong grace: publish tòa thứ 4 vẫn được', async () => {
     const targetId = buildingIds[3];
     const res = await request(app)
-      .post(`/api/maps/${targetId}/1/publish`)
+      .post(`/api/maps/${targetId}/0/publish`)
       .set('Authorization', `Bearer ${superToken}`)
       .send({ map_data: { rooms: [], nodes: [], edges: [] } });
     expect(res.status).toBeGreaterThanOrEqual(200);
@@ -143,7 +153,7 @@ describe('Phase 5.3 — over quota soft lock', () => {
     });
 
     const pub = await request(app)
-      .post(`/api/maps/${buildingIds[3]}/1/publish`)
+      .post(`/api/maps/${buildingIds[3]}/0/publish`)
       .set('Authorization', `Bearer ${orgAdminToken}`)
       .send({ map_data: { rooms: [], nodes: [], edges: [] } });
     expect(pub.status).toBe(403);

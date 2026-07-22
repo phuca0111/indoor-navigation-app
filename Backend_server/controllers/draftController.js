@@ -4,12 +4,11 @@
 // Route: /api/v1/buildings/:buildingId/floors/:floor/draft
 // ============================================
 
-const Building = require('../models/Building');
-const Organization = require('../models/Organization');
-const { assertFloorInRange } = require('../services/floorLifecycle');
-const { assertBuildingWritable } = require('../utils/overQuotaLock');
-const { loadOrCreate, save } = require('../services/draftService');
-const { assertNoBase64Background } = require('../services/objectStorage');
+const {
+  loadDraft,
+  saveDraft,
+  draftEtag
+} = require('../application/mapLifecycle/draftApplicationService');
 
 // GET /api/v1/buildings/:buildingId/floors/:floor/draft
 const getDraft = async (req, res) => {
@@ -20,47 +19,26 @@ const getDraft = async (req, res) => {
       return res.status(400).json({ message: 'Số tầng không hợp lệ.' });
     }
 
-    const buildingMeta = await Building.findById(buildingId)
-      .select('organization_id total_floors')
-      .lean();
-    if (!buildingMeta) {
-      return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
-    }
-
-    try {
-      assertFloorInRange(floorNum, buildingMeta.total_floors);
-    } catch (e) {
-      return res.status(e.status || 400).json({
-        message: e.message,
-        code: e.code || 'FLOOR_OUT_OF_RANGE',
-        floor_number: e.floor_number,
-        total_floors: e.total_floors
-      });
-    }
-
-    if (req.user?.role !== 'SUPER_ADMIN') {
-      if (buildingMeta.organization_id) {
-        const org = await Organization.findById(buildingMeta.organization_id);
-        const writable = await assertBuildingWritable(buildingId, org);
-        if (!writable.ok) {
-          return res.status(403).json({
-            message: writable.message,
-            code: writable.code
-          });
-        }
-      }
-    }
-
-    const draft = await loadOrCreate(buildingId, floorNum, req.user?.userId || null);
+    const draft = await loadDraft({
+      actor: req.user,
+      buildingId,
+      floorNumber: floorNum
+    });
+    const version = draft?.version ?? 0;
+    res.setHeader('ETag', draftEtag(version));
 
     res.status(200).json({
-      payload: draft.payload,
-      version: draft.version,
-      updatedAt: draft.updatedAt,
-      updated_by: draft.updated_by
+      payload: draft?.payload ?? null,
+      version,
+      updatedAt: draft?.updatedAt ?? null,
+      updated_by: draft?.updated_by ?? null,
+      source: draft?.source ?? null
     });
   } catch (error) {
-    res.status(500).json({ message: 'Lỗi tải nháp: ' + error.message });
+    res.status(error.status || 500).json({
+      message: error.status ? error.message : 'Lỗi tải nháp: ' + error.message,
+      code: error.code
+    });
   }
 };
 
@@ -78,46 +56,21 @@ const putDraft = async (req, res) => {
       return res.status(400).json({ message: 'Thiếu map_data trong body.' });
     }
 
-    const bgCheck = assertNoBase64Background(payload);
-    if (!bgCheck.ok) {
-      return res.status(400).json({
-        message: bgCheck.message,
-        code: bgCheck.code
-      });
-    }
-
-    const buildingMeta = await Building.findById(buildingId)
-      .select('organization_id total_floors')
-      .lean();
-    if (!buildingMeta) {
-      return res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
-    }
-
-    try {
-      assertFloorInRange(floorNum, buildingMeta.total_floors);
-    } catch (e) {
-      return res.status(e.status || 400).json({
-        message: e.message,
-        code: e.code || 'FLOOR_OUT_OF_RANGE',
-        floor_number: e.floor_number,
-        total_floors: e.total_floors
-      });
-    }
-
-    if (req.user?.role !== 'SUPER_ADMIN') {
-      if (buildingMeta.organization_id) {
-        const org = await Organization.findById(buildingMeta.organization_id);
-        const writable = await assertBuildingWritable(buildingId, org);
-        if (!writable.ok) {
-          return res.status(403).json({
-            message: writable.message,
-            code: writable.code
-          });
-        }
-      }
-    }
-
-    const draft = await save(buildingId, floorNum, payload, req.user?.userId || null);
+    const editSessionId = String(
+      req.headers['x-edit-session'] || req.body?.edit_session_id || req.body?.session_id || ''
+    ).trim();
+    const expectedVersion =
+      req.headers['if-match'] ?? req.body?.expected_version ?? req.body?.revision;
+    const draft = await saveDraft({
+      actor: req.user,
+      buildingId,
+      floorNumber: floorNum,
+      payload,
+      expectedRevision: expectedVersion,
+      editSessionId,
+      ip: req.ip || ''
+    });
+    res.setHeader('ETag', draftEtag(draft.version));
 
     res.status(200).json({
       message: 'Đã lưu nháp tầng ' + floor + '.',
@@ -126,7 +79,12 @@ const putDraft = async (req, res) => {
       updated_by: draft.updated_by
     });
   } catch (error) {
-    res.status(500).json({ message: 'Lỗi lưu nháp: ' + error.message });
+    const status = error.status || 500;
+    res.status(status).json({
+      message: error.message || 'Lỗi lưu nháp.',
+      code: error.code,
+      current: error.current || undefined
+    });
   }
 };
 

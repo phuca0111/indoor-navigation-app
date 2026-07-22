@@ -1,0 +1,3 @@
+# Install only on the staging backup host after configuring a protected env file.
+# Daily at 02:15; flock prevents overlapping backups.
+15 2 * * * flock -n /var/lock/indoor-nav-backup.lock /usr/bin/env -S bash -lc 'set -a; . /etc/indoor-nav/backup.env; set +a; cd /opt/indoor-nav && node ops/backup/backup.js'

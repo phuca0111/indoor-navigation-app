@@ -10,8 +10,12 @@ const jwt = require('jsonwebtoken');
 const app = require('../../server');
 const User = require('../../models/User');
 
-function tokenFor(userId, role) {
-  return jwt.sign({ userId: String(userId), role }, process.env.JWT_SECRET, { expiresIn: '1h' });
+function tokenFor(userId, role, sv = 0) {
+  return jwt.sign(
+    { userId: String(userId), role, sv },
+    process.env.JWT_SECRET,
+    { expiresIn: '1h' }
+  );
 }
 
 describe('Phase 4.2a — Org overview data smoke', () => {
@@ -23,7 +27,11 @@ describe('Phase 4.2a — Org overview data smoke', () => {
     if (mongoose.connection.readyState === 0) await mongoose.connect(uri);
     const superUser = await User.findOne({ role: 'SUPER_ADMIN', is_active: { $ne: false } }).lean();
     if (!superUser) throw new Error('Thiếu SUPER_ADMIN');
-    superToken = tokenFor(superUser._id, 'SUPER_ADMIN');
+    superToken = tokenFor(
+      superUser._id,
+      'SUPER_ADMIN',
+      Number(superUser.session_version) || 0
+    );
   });
 
   afterAll(async () => {
@@ -59,7 +67,11 @@ describe('Phase 4.2a — Org overview data smoke', () => {
   test('TC-4.2a-smoke-02 ORG_ADMIN không gọi được list org', async () => {
     const orgAdmin = await User.findOne({ role: 'ORG_ADMIN', is_active: { $ne: false } }).lean();
     if (!orgAdmin) return;
-    const token = tokenFor(orgAdmin._id, 'ORG_ADMIN');
+    const token = tokenFor(
+      orgAdmin._id,
+      'ORG_ADMIN',
+      Number(orgAdmin.session_version) || 0
+    );
     const res = await request(app)
       .get('/api/organizations?with_counts=true')
       .set('Authorization', `Bearer ${token}`);

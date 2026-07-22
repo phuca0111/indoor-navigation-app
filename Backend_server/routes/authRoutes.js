@@ -18,9 +18,10 @@ const {
   resetPassword,
   googleStatus,
   googleAuthStart,
-  googleAuthCallback
+  googleAuthCallback,
+  completeTwoFactorLogin
 } = require('../controllers/authController');
-const { auth, requireAdmin } = require('../middlewares/auth');
+const { auth, requireAdmin, requirePermission, P } = require('../middlewares/auth');
 const {
   loginLimiter,
   publicRegisterLimiter,
@@ -28,13 +29,16 @@ const {
   forgotPasswordLimiter,
   resetPasswordLimiter
 } = require('../middlewares/rateLimit');
+const { confirmEmailVerificationPublic } = require('../controllers/identityController');
 
 router.post('/login', loginLimiter, login);
 router.post('/register', auth, requireAdmin, register);
 router.post('/public-register', publicRegisterLimiter, registerPublic);
 router.post('/refresh', refreshLimiter, refresh);
+router.post('/2fa/complete', loginLimiter, completeTwoFactorLogin);
+router.post('/email-verification/confirm', loginLimiter, confirmEmailVerificationPublic);
 router.post('/logout', logout);
-router.post('/logout-all', auth, logoutAll);
+router.post('/logout-all', auth, requirePermission(P.IDENTITY_SESSION_REVOKE), logoutAll);
 router.post('/unlock-session', auth, unlockSession);
 router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
 router.post('/reset-password', resetPasswordLimiter, resetPassword);

@@ -1,11 +1,9 @@
 // Thanh toán gói cá nhân (REGISTERED_USER) qua QR — quét bằng điện thoại, xác nhận trên trang ví.
 const crypto = require('crypto');
-const mongoose = require('mongoose');
 const QRCode = require('qrcode');
-const PersonalPayment = require('../models/PersonalPayment');
-const User = require('../models/User');
-const Invoice = require('../models/Invoice');
-const ActivityLog = require('../models/ActivityLog');
+const personalPaymentRepository = require('../repositories/personalPaymentRepository');
+const billingUserRepository = require('../repositories/billingUserRepository');
+const invoiceRepository = require('../repositories/invoiceRepository');
 const { getPlanPrice, getPlanPeriodDays } = require('../config/planPricing');
 const { chargeWalletDirect } = require('./bankWalletService');
 const { getBaseUrl } = require('./vnpayService');
@@ -25,10 +23,7 @@ function buildPersonalDeepLink(paymentId, token) {
 }
 
 function toObjectId(id) {
-  if (!id) return null;
-  if (id instanceof mongoose.Types.ObjectId) return id;
-  if (mongoose.Types.ObjectId.isValid(String(id))) return new mongoose.Types.ObjectId(String(id));
-  return null;
+  return personalPaymentRepository.normalizeId(id);
 }
 
 async function cancelPendingForUser(userId, { exceptId = null } = {}) {
@@ -39,7 +34,10 @@ async function cancelPendingForUser(userId, { exceptId = null } = {}) {
     status: { $in: ['PENDING', 'PROCESSING'] }
   };
   if (exceptId) filter._id = { $ne: toObjectId(exceptId) };
-  await PersonalPayment.updateMany(filter, { $set: { status: 'CANCELLED' } });
+  await personalPaymentRepository.cancelPendingForUser(
+    uid,
+    exceptId ? toObjectId(exceptId) : null
+  );
 }
 
 async function buildQrPayload(payment, baseUrl) {
@@ -63,7 +61,7 @@ async function findActivePersonalPayment(userId, { purpose = 'UPGRADE', plan = n
     expires_at: { $gt: new Date() }
   };
   if (plan) filter.plan = String(plan).toUpperCase();
-  return PersonalPayment.findOne(filter).sort({ createdAt: -1 });
+  return personalPaymentRepository.findLatest(filter, { createdAt: -1 });
 }
 
 /**
@@ -110,7 +108,7 @@ async function createPersonalPayment({ userId, plan = 'PRO', months = 1, contact
       );
     }
     // Chặn hạ cấp khi gói hiện tại còn hiệu lực (chỉ gia hạn cùng gói hoặc nâng lên gói đắt hơn)
-    const me = await User.findById(uid).select('plan plan_expires_at').lean();
+    const me = await billingUserRepository.findPersonalPlanById(uid);
     const cur = String(me?.plan || 'FREE').toUpperCase();
     if (hasActivePaidPersonalPlan(me) && cur !== 'FREE' && cur !== normPlan) {
       const curPrice = catalogPrice(cur) || 0;
@@ -134,55 +132,60 @@ async function createPersonalPayment({ userId, plan = 'PRO', months = 1, contact
   }
 
   // Vừa thanh toán xong vài phút trước → trả lại đơn PAID (frontend hiện success, không tạo QR mới)
-  const recentPaid = await PersonalPayment.findOne({
+  const recentPaid = await personalPaymentRepository.findLatest({
     user_id: uid,
     status: 'PAID',
     purpose: normPurpose,
     plan: normPlan,
     months: m,
     paid_at: { $gte: new Date(Date.now() - RECENT_PAID_WINDOW_MS) }
-  }).sort({ paid_at: -1 });
+  }, { paid_at: -1 });
   if (recentPaid) {
     return buildQrPayload(recentPaid, baseUrl);
   }
 
   // Tái sử dụng PENDING cùng gói/kỳ hạn còn hạn (F5 / bấm Thanh toán lại)
-  const existing = await PersonalPayment.findOne({
+  const existing = await personalPaymentRepository.findLatest({
     user_id: uid,
     status: 'PENDING',
     purpose: normPurpose,
     plan: normPlan,
     months: m,
     expires_at: { $gt: new Date() }
-  }).sort({ createdAt: -1 });
+  }, { createdAt: -1 });
 
   if (existing) {
     // Hủy mọi PENDING khác (gói khác / đơn cũ lệch)
     await cancelPendingForUser(uid, { exceptId: existing._id });
-    existing.expires_at = new Date(Date.now() + PAYMENT_TTL_MS);
-    existing.contact = {
+    const changes = {
+      expires_at: new Date(Date.now() + PAYMENT_TTL_MS),
+      contact: {
       full_name: String(contact.full_name || existing.contact?.full_name || '').trim(),
       company: String(contact.company || existing.contact?.company || '').trim(),
       address: String(contact.address || existing.contact?.address || '').trim(),
       city: String(contact.city || existing.contact?.city || '').trim(),
       country: String(contact.country || existing.contact?.country || '').trim(),
       phone: String(contact.phone || existing.contact?.phone || '').trim()
+      }
     };
     if (normPurpose === 'CREATE_ORG') {
-      existing.org_meta = {
+      changes.org_meta = {
         name: String(orgMeta.name || existing.org_meta?.name || '').trim(),
         slug: String(orgMeta.slug || existing.org_meta?.slug || '').trim()
       };
     }
-    await existing.save();
-    return buildQrPayload(existing, baseUrl);
+    const updated = await personalPaymentRepository.updatePayment(
+      existing._id,
+      changes
+    );
+    return buildQrPayload(updated, baseUrl);
   }
 
   // Không còn PENDING phù hợp → hủy toàn bộ PENDING/PROCESSING cũ rồi tạo mới
   await cancelPendingForUser(uid);
 
   const token = crypto.randomBytes(24).toString('hex');
-  const payment = await PersonalPayment.create({
+  const payment = await personalPaymentRepository.createPayment({
     user_id: uid,
     plan: normPlan,
     months: m,
@@ -209,7 +212,7 @@ async function createPersonalPayment({ userId, plan = 'PRO', months = 1, contact
 }
 
 async function findValidPayment(paymentId, token) {
-  const payment = await PersonalPayment.findById(paymentId);
+  const payment = await personalPaymentRepository.findById(paymentId);
   if (!payment) throw Object.assign(new Error('Không tìm thấy đơn thanh toán.'), { status: 404 });
   if (payment.token !== token) {
     throw Object.assign(new Error('Token thanh toán không hợp lệ.'), { status: 403 });
@@ -219,8 +222,10 @@ async function findValidPayment(paymentId, token) {
 
 async function expireIfNeeded(payment) {
   if (payment.status === 'PENDING' && payment.expires_at && payment.expires_at.getTime() < Date.now()) {
-    payment.status = 'EXPIRED';
-    await payment.save();
+    payment = await personalPaymentRepository.updatePayment(
+      payment._id,
+      { status: 'EXPIRED' }
+    );
   }
   return payment;
 }
@@ -228,9 +233,7 @@ async function expireIfNeeded(payment) {
 /** Kiểm tra một ID có phải đơn thanh toán cá nhân không (để phân luồng ở app/bank). */
 async function isPersonalPayment(id) {
   try {
-    if (!mongoose.Types.ObjectId.isValid(id)) return false;
-    const exists = await PersonalPayment.exists({ _id: id });
-    return !!exists;
+    return personalPaymentRepository.existsById(id);
   } catch (_) {
     return false;
   }
@@ -277,14 +280,16 @@ async function getPersonalPaymentStatus(paymentId, token) {
   const out = { status: payment.status, purpose: payment.purpose || 'UPGRADE' };
   if (payment.status === 'PAID') {
     if (payment.purpose === 'CREATE_ORG' && payment.org_id_created) {
-      const Organization = require('../models/Organization');
-      const org = await Organization.findById(payment.org_id_created).select('name slug plan plan_expires_at').lean();
+      const billingOrganizationRepository = require('../repositories/billingOrganizationRepository');
+      const org = await billingOrganizationRepository.findBillingOrganizationById(
+        payment.org_id_created
+      );
       if (org) {
         out.organization = { _id: String(org._id), name: org.name, slug: org.slug, plan: org.plan };
         out.plan_expires_at = org.plan_expires_at || null;
       }
     } else {
-      const user = await User.findById(payment.user_id).select('plan_expires_at').lean();
+      const user = await billingUserRepository.findPersonalPlanById(payment.user_id);
       out.plan_expires_at = user?.plan_expires_at || null;
     }
   }
@@ -295,41 +300,90 @@ async function getPersonalPaymentStatus(paymentId, token) {
  * Ghi nhận doanh thu nâng cấp PRO cá nhân vào Invoice (organization_id = null),
  * để hiển thị đồng nhất trên biểu đồ Thu/Chi, tab Tài chính và xuất CSV.
  * Idempotent theo external_ref = PERSONAL-<paymentId>.
+ * Đồng thời ghi Payment ledger để tab «Thanh toán» / KPI payments_success khớp.
  */
-async function createPersonalUpgradeInvoice(payment, user) {
+async function createPersonalUpgradeInvoice(payment, user, options = {}) {
   const planCode = String(payment.plan || 'PRO').toUpperCase();
   const externalRef = `PERSONAL-${payment._id}`;
-  const existing = await Invoice.findOne({ external_ref: externalRef }).lean();
-  if (existing) return existing;
+  let invoice = await invoiceRepository.findByTransactionReference(
+    externalRef,
+    { session: options.session }
+  );
+  if (!invoice) {
+    const paidAt = payment.paid_at || new Date();
+    const months = payment.months || 1;
+    const periodDays = getPlanPeriodDays(planCode) * months;
+    const periodEnd = new Date(paidAt);
+    periodEnd.setDate(periodEnd.getDate() + periodDays);
 
-  const paidAt = payment.paid_at || new Date();
-  const months = payment.months || 1;
-  const periodDays = getPlanPeriodDays(planCode) * months;
-  const periodEnd = new Date(paidAt);
-  periodEnd.setDate(periodEnd.getDate() + periodDays);
+    invoice = await invoiceRepository.createInvoice({
+      organization_id: null,
+      invoice_number: `PP-${String(user._id).slice(-6)}-${payment._id}`,
+      status: 'PAID',
+      plan: planCode,
+      amount: payment.amount || 0,
+      line_items_snapshot: [{
+        code: planCode,
+        description: `Nâng cấp ${planCode} cá nhân (${months} tháng)`,
+        quantity: months,
+        unit_amount: months ? Math.round((payment.amount || 0) / months) : payment.amount || 0
+      }],
+      tax_snapshot: { tax_amount: 0, included: false },
+      customer_snapshot: {
+        user_id: String(user._id),
+        email: user.email || '',
+        ...(payment.contact?.toObject ? payment.contact.toObject() : (payment.contact || {}))
+      },
+      seller_snapshot: { name: process.env.BILLING_SELLER_NAME || 'Indoor Navigation SaaS' },
+      currency: payment.currency || 'VND',
+      period_start: paidAt,
+      period_end: periodEnd,
+      paid_at: paidAt,
+      external_ref: externalRef,
+      idempotency_key: externalRef,
+      note: `Nâng cấp ${planCode} cá nhân (${months} tháng)`,
+      metadata: {
+        source: 'PERSONAL_UPGRADE',
+        scope: 'personal',
+        payment_id: String(payment._id),
+        user_id: String(user._id),
+        user_email: user.email || ''
+      },
+      created_by: user._id
+    }, { session: options.session });
+  }
 
-  return Invoice.create({
-    organization_id: null,
-    invoice_number: `PP-${String(user._id).slice(-6)}-${payment._id}`,
-    status: 'PAID',
-    plan: planCode,
-    amount: payment.amount || 0,
-    currency: payment.currency || 'VND',
-    period_start: paidAt,
-    period_end: periodEnd,
-    paid_at: paidAt,
-    external_ref: externalRef,
-    idempotency_key: externalRef,
-    note: `Nâng cấp ${planCode} cá nhân (${months} tháng)`,
-    metadata: {
-      source: 'PERSONAL_UPGRADE',
-      scope: 'personal',
-      payment_id: String(payment._id),
-      user_id: String(user._id),
-      user_email: user.email || ''
-    },
-    created_by: user._id
+  const { recordPaymentFromInvoice } = require('./paymentLedger');
+  const ledgerResult = await recordPaymentFromInvoice(invoice, {
+      method: 'TPTP',
+      provider: 'TPTPPAY',
+      provider_ref: externalRef,
+      paid_at: invoice.paid_at || payment.paid_at || new Date(),
+      external_ref: externalRef,
+      note: invoice.note || `Thanh toán cá nhân ${planCode}`,
+      created_by: user._id,
+      metadata: {
+        scope: 'personal',
+        payment_id: String(payment._id),
+        user_id: String(user._id),
+        user_email: user.email || '',
+        plan: planCode
+      },
+      session: options.session
+    });
+  const { captureReceipt } = require('./receiptService');
+  await captureReceipt(invoice, {
+    provider: 'TPTPPAY',
+    externalRef,
+    session: options.session
   });
+  await personalPaymentRepository.updatePayment(payment._id, {
+    invoice_id: invoice._id,
+    payment_ledger_id: ledgerResult?.payment?._id || null,
+    fulfillment_error: ''
+  }, { session: options.session });
+
+  return invoice;
 }
 
 /**
@@ -338,17 +392,19 @@ async function createPersonalUpgradeInvoice(payment, user) {
  */
 async function confirmPersonalPayment({ bankUserId, paymentId, token }) {
   // Claim atomic: chỉ 1 lần confirm được trừ tiền; đơn CANCELLED/PAID/EXPIRED bị từ chối trước khi charge
-  const claimed = await PersonalPayment.findOneAndUpdate(
-    { _id: paymentId, token, status: 'PENDING' },
-    { $set: { status: 'PROCESSING' } },
-    { returnDocument: 'after' }
-  );
+  const claimed = await personalPaymentRepository.claimPending(paymentId, token);
 
   if (!claimed) {
     const payment = await findValidPayment(paymentId, token);
     const planCode = String(payment.plan || 'PRO').toUpperCase();
     const purpose = payment.purpose || 'UPGRADE';
     if (payment.status === 'PAID') {
+      if (purpose === 'UPGRADE') {
+        const paidUser = await billingUserRepository.findBillingUserById(
+          payment.user_id
+        );
+        if (paidUser) await createPersonalUpgradeInvoice(payment, paidUser);
+      }
       return { duplicated: true, amount: payment.amount, plan: planCode, purpose };
     }
     if (payment.status === 'PROCESSING') {
@@ -368,26 +424,31 @@ async function confirmPersonalPayment({ bankUserId, paymentId, token }) {
 
   let payment = claimed;
   if (payment.expires_at && payment.expires_at.getTime() < Date.now()) {
-    payment.status = 'EXPIRED';
-    await payment.save();
+    payment = await personalPaymentRepository.updatePayment(
+      payment._id,
+      { status: 'EXPIRED' }
+    );
     throw Object.assign(new Error('Đơn thanh toán đã hết hạn hoặc bị hủy.'), { status: 400, code: 'PAYMENT_NOT_PENDING' });
   }
 
   const planCode = String(payment.plan || 'PRO').toUpperCase();
   const purpose = payment.purpose || 'UPGRADE';
 
-  const user = await User.findById(payment.user_id);
+  let user = await billingUserRepository.findBillingUserById(payment.user_id);
   if (!user) {
-    payment.status = 'CANCELLED';
-    await payment.save().catch(() => {});
+    await personalPaymentRepository
+      .updatePayment(payment._id, { status: 'CANCELLED' })
+      .catch(() => {});
     throw Object.assign(new Error('Không tìm thấy người dùng.'), { status: 404 });
   }
 
   const releaseClaim = async () => {
     try {
       if (payment.status === 'PROCESSING') {
-        payment.status = 'PENDING';
-        await payment.save();
+        payment = await personalPaymentRepository.updatePayment(
+          payment._id,
+          { status: 'PENDING' }
+        );
       }
     } catch (_) {}
   };
@@ -411,40 +472,30 @@ async function confirmPersonalPayment({ bankUserId, paymentId, token }) {
       throw err;
     }
 
-    const { createOrgForUserCore } = require('../controllers/organizationController');
-    const { org } = await createOrgForUserCore(user, {
-      name: payment.org_meta?.name,
-      slug: payment.org_meta?.slug,
-      plan: planCode,
-      activatePaid: false,
-      source: 'PAID_CHECKOUT',
-      ip: ''
-    });
-
+    const {
+      finalizeCreateOrganizationPayment
+    } = require('../application/billing/personalPaymentApplicationService');
+    let finalized;
     try {
-      const { activateOrRenewSubscription } = require('./subscriptionLifecycle');
-      await activateOrRenewSubscription({
-        org,
+      finalized = await finalizeCreateOrganizationPayment({
+        paymentId: payment._id,
         plan: planCode,
-        amount: payment.amount,
-        currency: payment.currency || 'VND',
-        provider: 'TPTPPAY',
-        externalRef: `TPTP-personal-${payment._id}`,
-        idempotencyKey: `create-org-${payment._id}`,
-        note: 'Tạo tổ chức + kích hoạt gói qua ví TPTPbank',
-        createdBy: user._id,
-        metadata: { source: 'CREATE_ORG_QR', payment_id: String(payment._id), provider: 'TPTPPAY' }
+        bankUserId,
+        bankTransactionId: charge.transaction?._id || null
       });
-    } catch (subErr) {
-      console.error('createOrg activateSubscription:', subErr.message);
+    } catch (finalizeError) {
+      await personalPaymentRepository.updatePayment(payment._id, {
+        status: 'PENDING',
+        fulfillment_error: String(
+          finalizeError.message || finalizeError
+        ).slice(0, 1000)
+      }).catch(() => {});
+      throw Object.assign(finalizeError, {
+        code: finalizeError.code || 'POST_DEBIT_FULFILLMENT_FAILED'
+      });
     }
-
-    payment.status = 'PAID';
-    payment.paid_at = new Date();
-    payment.bank_user_id = bankUserId;
-    payment.bank_tx_id = charge.transaction?._id || null;
-    payment.org_id_created = org._id;
-    await payment.save();
+    payment = finalized.payment;
+    const org = finalized.organization;
 
     try {
       const { saveUserBillingProfile } = require('../utils/userBillingProfile');
@@ -472,8 +523,9 @@ async function confirmPersonalPayment({ bankUserId, paymentId, token }) {
       const curPrice = catalogPrice(cur) || 0;
       const nextPrice = catalogPrice(planCode) || 0;
       if (nextPrice < curPrice) {
-        payment.status = 'CANCELLED';
-        await payment.save().catch(() => {});
+        payment = await personalPaymentRepository
+          .updatePayment(payment._id, { status: 'CANCELLED' })
+          .catch(() => payment);
         throw Object.assign(
           new Error(
             `Bạn đang dùng gói ${cur} còn hiệu lực. Không thể thanh toán gói thấp hơn (${planCode}). Quét lại QR gia hạn/nâng cấp.`
@@ -497,30 +549,28 @@ async function confirmPersonalPayment({ bankUserId, paymentId, token }) {
     throw err;
   }
 
+  const {
+    finalizePersonalUpgrade
+  } = require('../application/billing/personalPaymentApplicationService');
   try {
-    const periodDays = getPlanPeriodDays(planCode) * payment.months;
-    const base = user.plan === planCode && user.plan_expires_at && new Date(user.plan_expires_at) > new Date()
-      ? new Date(user.plan_expires_at)
-      : new Date();
-    base.setDate(base.getDate() + periodDays);
-    user.plan = planCode;
-    user.plan_expires_at = base;
-    await user.save();
-
-    payment.status = 'PAID';
-    payment.paid_at = new Date();
-    payment.bank_user_id = bankUserId;
-    payment.bank_tx_id = charge.transaction?._id || null;
-    await payment.save();
-  } catch (err) {
-    console.error('confirmPersonalPayment fulfill failed after charge:', err.message);
-    // Đã trừ tiền — cố ghi nhận PAID để không mất gói; invoice có thể tạo sau
-    payment.status = 'PAID';
-    payment.paid_at = payment.paid_at || new Date();
-    payment.bank_user_id = bankUserId;
-    payment.bank_tx_id = charge.transaction?._id || null;
-    await payment.save().catch(() => {});
-    throw err;
+    const finalized = await finalizePersonalUpgrade({
+      paymentId: payment._id,
+      plan: planCode,
+      bankUserId,
+      bankTransactionId: charge.transaction?._id || null
+    });
+    payment = finalized.payment;
+    user = finalized.user;
+  } catch (finalizeError) {
+    await personalPaymentRepository.updatePayment(payment._id, {
+      status: 'PENDING',
+      fulfillment_error: String(
+        finalizeError.message || finalizeError
+      ).slice(0, 1000)
+    }).catch(() => {});
+    throw Object.assign(finalizeError, {
+      code: finalizeError.code || 'POST_DEBIT_ACCOUNTING_FAILED'
+    });
   }
 
   try {
@@ -529,29 +579,6 @@ async function confirmPersonalPayment({ bankUserId, paymentId, token }) {
   } catch (e) {
     console.warn('saveUserBillingProfile on personal PAID:', e.message);
   }
-
-  try {
-    await createPersonalUpgradeInvoice(payment, user);
-  } catch (invErr) {
-    console.error('personal upgrade invoice:', invErr.message);
-  }
-
-  ActivityLog.create({
-    user_id: user._id,
-    action: 'PERSONAL_PLAN_UPGRADE',
-    target_type: 'user',
-    target_id: String(user._id),
-    target: user.email,
-    details: {
-      plan: planCode,
-      months: payment.months,
-      amount: payment.amount,
-      via: 'QR',
-      payment_id: String(payment._id),
-      wallet_tx: String(charge.transaction?._id || '')
-    },
-    ip_address: ''
-  }).catch(() => {});
 
   return {
     duplicated: false,

@@ -8,8 +8,12 @@ const {
   confirmBankPayment,
   listTransactions,
   TOPUP_MIN,
-  TOPUP_MAX
-} = require('../services/bankWalletService');
+  TOPUP_MAX,
+  isPersonalPayment,
+  resolvePersonalPaymentForApp,
+  resolvePersonalPayment,
+  confirmPersonalPayment
+} = require('../application/billing/bankWalletApplicationService');
 
 async function postRegister(req, res) {
   try {
@@ -77,10 +81,6 @@ async function getResolvePayment(req, res) {
       return res.status(400).json({ message: 'Thiếu invoiceId hoặc token.' });
     }
     // Đơn thanh toán gói cá nhân dùng chung schema QR (invoiceId = paymentId)
-    const {
-      isPersonalPayment,
-      resolvePersonalPaymentForApp
-    } = require('../services/personalPaymentService');
     if (await isPersonalPayment(invoiceId)) {
       const data = await resolvePersonalPaymentForApp(invoiceId, token);
       return res.json(data);
@@ -99,10 +99,6 @@ async function postConfirmPayment(req, res) {
       return res.status(400).json({ message: 'Thiếu invoice_id hoặc payment_token.' });
     }
     // Đơn thanh toán gói cá nhân (dùng chung endpoint confirm với app)
-    const {
-      isPersonalPayment,
-      confirmPersonalPayment
-    } = require('../services/personalPaymentService');
     if (await isPersonalPayment(invoice_id)) {
       const r = await confirmPersonalPayment({
         bankUserId: req.bankUserId,
@@ -138,11 +134,6 @@ function getTopupLimits(req, res) {
 }
 
 // ===== Thanh toán gói cá nhân qua QR (không gắn Invoice/Organization) =====
-const {
-  resolvePersonalPayment,
-  confirmPersonalPayment
-} = require('../services/personalPaymentService');
-
 async function getResolvePersonal(req, res) {
   try {
     const { paymentId, token } = req.query;

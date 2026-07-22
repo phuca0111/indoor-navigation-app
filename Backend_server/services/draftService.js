@@ -1,54 +1,46 @@
-// ============================================
-// FILE: draftService.js
-// MỤC ĐÍCH: Business logic cho Draft API
-// Pattern: Service layer — không chứa HTTP logic
-// ============================================
-
-const Draft = require('../models/Draft');
+const application = require('../application/mapLifecycle/draftApplicationService');
+const drafts = require('../repositories/draftRepository');
+const {
+  draftEtag,
+  parseExpectedRevision
+} = require('../domain/mapLifecyclePolicies');
 
 async function getByFloor(buildingId, floorNumber) {
-  return Draft.findOne({
-    building_id: buildingId,
-    floor_number: floorNumber
-  }).lean();
+  return drafts.findActive(buildingId, floorNumber);
 }
 
-async function loadOrCreate(buildingId, floorNumber, userId) {
-  let draft = await getByFloor(buildingId, floorNumber);
-  if (!draft) {
-    draft = await Draft.create({
-      building_id: buildingId,
-      floor_number: floorNumber,
-      payload: { rooms: [], nodes: [], edges: [] },
-      version: 1,
-      created_by: userId,
-      updated_by: userId
-    });
-  }
-  return draft;
+async function load(buildingId, floorNumber, actor = { role: 'SUPER_ADMIN' }) {
+  return application.loadDraft({ actor, buildingId, floorNumber });
 }
 
-async function save(buildingId, floorNumber, payload, userId) {
-  // Upsert: field version thiếu → $inc = 1; lần sau ++version
-  const draft = await Draft.findOneAndUpdate(
-    { building_id: buildingId, floor_number: floorNumber },
-    {
-      $set: {
-        payload,
-        updated_by: userId
-      },
-      $setOnInsert: {
-        created_by: userId
-      },
-      $inc: { version: 1 }
-    },
-    { new: true, upsert: true }
+async function save(buildingId, floorNumber, payload, userId, options = {}) {
+  return application.saveDraft({
+    actor: { userId, role: options.role || 'SUPER_ADMIN' },
+    buildingId,
+    floorNumber,
+    payload,
+    expectedRevision: options.expectedVersion,
+    editSessionId: options.editSessionId,
+    ip: options.ip
+  });
+}
+
+async function softDelete(buildingId, floorNumber, userId, retentionDays = 30) {
+  const days = Math.max(1, Number(retentionDays) || 30);
+  return drafts.softDelete(
+    buildingId,
+    floorNumber,
+    userId,
+    new Date(Date.now() + days * 86400000)
   );
-  return draft;
 }
 
 module.exports = {
   getByFloor,
-  loadOrCreate,
-  save
+  load,
+  save,
+  softDelete,
+  purgeExpired: drafts.purgeExpired,
+  draftEtag,
+  parseExpectedVersion: parseExpectedRevision
 };

@@ -52,7 +52,8 @@ const websiteConfigSchema = new mongoose.Schema({
     cta_href: { type: String, default: '/login' },
     background: { type: String, default: '' }
   },
-  updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
+  updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  revision: { type: Number, default: 1, min: 1 }
 }, { timestamps: true });
 
 module.exports = mongoose.model('WebsiteConfig', websiteConfigSchema);

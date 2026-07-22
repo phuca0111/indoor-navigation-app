@@ -15,8 +15,9 @@
         } catch (e) { /* ignore */ }
       })();
     </script>
-    <link rel="stylesheet" href="css/admin.css?v=20260721ad88">
-    <link rel="stylesheet" href="css/admin-theme.css?v=20260721ad88">
+    <link rel="stylesheet" href="css/admin.css?v=20260721navfix1">
+    <link rel="stylesheet" href="css/admin-theme.css?v=20260721audit1">
+    <link rel="stylesheet" href="css/admin-tokens.css?v=20260721wq1">
 </head>
 <body class="admin-shell-body">
     <div id="adminPageProgress" class="admin-page-progress" aria-hidden="true">
@@ -45,7 +46,7 @@
 
         <p class="admin-menu-label">MENU QUẢN TRỊ</p>
 
-        <!-- AD33: c�y menu � T?ng quan / V?n h�nh / Kh�ch h�ng / T�i ch�nh / C� nh�n -->
+        <!-- AD33: cây menu — Tổng quan / Vận hành / Khách hàng / Tài chính / Cá nhân -->
         <div id="tabNav" class="tab-nav admin-sidebar-nav" style="display:none;">
             <div class="admin-nav-group is-open" data-nav-group="overview">
               <button type="button" class="admin-nav-group-toggle" aria-expanded="true">
@@ -100,7 +101,7 @@
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18"/><path d="M6 21V5h5v16"/><path d="M11 10h7v11"/><path d="M14 7h4"/><path d="M14 13h4"/></svg></span>
                   <span>Tổ chức của tôi</span>
                 </button>
-                <button type="button" class="tab-btn super-admin-only" data-tab="organizations" onclick="switchTab('organizations')">
+                <button type="button" class="tab-btn super-admin-only" data-tab="organizations" data-permission="platform.orgs.manage" onclick="switchTab('organizations')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18"/><path d="M6 21V5h5v16"/><path d="M11 10h7v11"/><path d="M14 7h4"/><path d="M14 13h4"/></svg></span>
                   <span>Tổ chức</span>
                 </button>
@@ -108,7 +109,7 @@
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
                   <span>Tài khoản</span>
                 </button>
-                <button type="button" class="tab-btn super-admin-only" data-tab="registrations" onclick="switchTab('registrations')">
+                <button type="button" class="tab-btn super-admin-only" data-tab="registrations" data-permission="platform.registrations.manage" onclick="switchTab('registrations')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg></span>
                   <span>Hồ sơ đăng ký</span>
                 </button>
@@ -126,7 +127,7 @@
               <div class="admin-nav-group-items">
                 <button type="button" class="tab-btn billing-tab-btn" data-tab="billing" onclick="switchTab('billing')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
-                  <span>Gói đăng ký</span>
+                  <span>Gói của tôi</span>
                 </button>
                 <button type="button" class="tab-btn registered-user-only" data-tab="buildings" onclick="openPersonalBillingNav()" title="Gói cá nhân và hóa đơn thanh toán của bạn" style="display:none;">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
@@ -136,7 +137,7 @@
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 4v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V7z"/><path d="M9 12l2 2 4-4"/></svg></span>
                   <span>Danh mục gói</span>
                 </button>
-                <button type="button" class="tab-btn finance-tab-btn" data-tab="finance" data-finance-sub="invoices" onclick="openFinanceInvoicesNav()" title="Danh sách hóa đơn">
+                <button type="button" class="tab-btn finance-tab-btn" data-tab="finance" data-finance-sub="invoices" data-permission="finance.access" onclick="openFinanceInvoicesNav()" title="Danh sách hóa đơn">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16l4-2 4 2 4-2 4 2V8z"/><path d="M14 2v6h6"/><path d="M8 13h5"/><path d="M8 17h5"/></svg></span>
                   <span>Hóa đơn</span>
                 </button>
@@ -151,6 +152,58 @@
               </div>
             </div>
 
+            <div class="admin-nav-group is-open super-admin-only" data-nav-group="map-governance">
+              <button type="button" class="admin-nav-group-toggle" aria-expanded="true">
+                <span class="admin-nav-group-label">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg></span>
+                  <span>Quản trị bản đồ</span>
+                </span>
+                <span class="admin-nav-chevron" aria-hidden="true">▾</span>
+              </button>
+              <div class="admin-nav-group-items">
+                <button type="button" class="tab-btn super-admin-only places-tab-btn" data-tab="places" onclick="switchTab('places')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s7-4.5 7-11a7 7 0 1 0-14 0c0 6.5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></span>
+                  <span>Địa điểm</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only map-reviews-tab-btn" data-tab="map-reviews" onclick="switchTab('map-reviews')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+                  <span>Bản đồ chờ duyệt</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only map-duplicates-tab-btn" data-tab="map-duplicates" onclick="switchTab('map-duplicates')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>
+                  <span>Bản đồ trùng</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only map-ownership-tab-btn" data-tab="map-ownership" onclick="switchTab('map-ownership')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 4v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V7z"/></svg></span>
+                  <span>Quyền sở hữu</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only map-merges-tab-btn" data-tab="map-merges" onclick="switchTab('map-merges')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg></span>
+                  <span>Yêu cầu gộp</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only map-moderation-tab-btn" data-tab="map-moderation" onclick="switchTab('map-moderation')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+                  <span>Kiểm duyệt</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only map-stats-tab-btn" data-tab="map-stats" onclick="switchTab('map-stats')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15v-4"/><path d="M12 15V8"/><path d="M16 15v-7"/></svg></span>
+                  <span>Thống kê</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only map-versions-tab-btn" data-tab="map-versions" onclick="switchTab('map-versions')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/></svg></span>
+                  <span>Phiên bản bản đồ</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only map-verify-tab-btn" data-tab="map-verify" onclick="switchTab('map-verify')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></span>
+                  <span>Xác minh</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only map-community-tab-btn" data-tab="map-community" onclick="switchTab('map-community')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/></svg></span>
+                  <span>Cộng đồng</span>
+                </button>
+              </div>
+            </div>
+
             <div class="admin-nav-group is-open" data-nav-group="website">
               <button type="button" class="admin-nav-group-toggle" aria-expanded="true">
                 <span class="admin-nav-group-label">
@@ -160,38 +213,46 @@
                 <span class="admin-nav-chevron" aria-hidden="true">▾</span>
               </button>
               <div class="admin-nav-group-items">
-                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="pages" onclick="openWebsiteSub('pages')">
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="pages" data-permission="platform.cms.manage" onclick="openWebsiteSub('pages')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>
                   <span>Landing Pages</span>
                 </button>
-                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="banner" onclick="openWebsiteSub('banner')">
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="articles" data-permission="platform.cms.manage" onclick="openWebsiteSub('articles')">
+                  <span class="admin-menu-icon" aria-hidden="true">📰</span>
+                  <span>Blog &amp; News</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.cms.manage" data-tab="website" data-website-sub="banner" onclick="openWebsiteSub('banner')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 15l5-4 4 3 3-2 6 5"/></svg></span>
                   <span>Banner &amp; Hero</span>
                 </button>
-                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="navigation" onclick="openWebsiteSub('navigation')">
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.cms.manage" data-tab="website" data-website-sub="navigation" onclick="openWebsiteSub('navigation')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg></span>
                   <span>Navigation</span>
                 </button>
-                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="media" onclick="openWebsiteSub('media')">
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.cms.manage" data-tab="website" data-website-sub="media" onclick="openWebsiteSub('media')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10.5" r="1.5"/><path d="M21 16l-5-5-8 8"/></svg></span>
                   <span>Media</span>
                 </button>
-                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="forms" onclick="openWebsiteSub('forms')">
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.contacts.manage" data-tab="website" data-website-sub="forms" onclick="openWebsiteSub('forms')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/></svg></span>
                   <span>Liên hệ</span>
                   <span id="websiteContactBadge" class="admin-nav-badge" hidden>0</span>
                 </button>
-                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="seo" onclick="openWebsiteSub('seo')">
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.cms.manage" data-tab="website" data-website-sub="seo" onclick="openWebsiteSub('seo')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
                   <span>SEO</span>
                 </button>
-                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="theme" onclick="openWebsiteSub('theme')">
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.cms.manage" data-tab="website" data-website-sub="theme" onclick="openWebsiteSub('theme')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 9 9h-9V3z"/><path d="M19 5l-2 2"/></svg></span>
                   <span>Theme</span>
                 </button>
-                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="settings" onclick="openWebsiteSub('settings')">
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.cms.manage" data-tab="website" data-website-sub="settings" onclick="openWebsiteSub('settings')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c0 .7.4 1.3 1 1.5H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span>
                   <span>Cài đặt Website</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.cms.manage" data-tab="website" data-website-sub="audit" onclick="openWebsiteSub('audit')">
+                  <span class="admin-menu-icon" aria-hidden="true">🧾</span>
+                  <span>Nhật ký CMS</span>
                 </button>
               </div>
             </div>
@@ -232,11 +293,21 @@
         <div class="admin-navbar-title">
             <button id="btnOpenSidebar" class="admin-icon-btn admin-menu-toggle" type="button" aria-label="Mở menu">☰</button>
             <div>
-              <h2 id="adminPageTitle">Bảng Điều Khiển</h2>
-              <p>Quản lý hệ thống dẫn đường trong nhà</p>
+              <h1 id="adminPageTitle">Bảng Điều Khiển</h1>
+              <p class="admin-breadcrumb" aria-label="Breadcrumb">
+                <span>Quản trị</span><span aria-hidden="true">/</span>
+                <span id="adminBreadcrumbCurrent">Tổng quan</span>
+              </p>
             </div>
         </div>
         <div class="nav-right">
+            <button id="btnAdminCommandPalette" class="admin-icon-btn" type="button" aria-label="Tìm tab nhanh (Ctrl+K)" title="Tìm tab nhanh (Ctrl+K)">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            </button>
+            <button id="btnAdminNotifications" class="admin-icon-btn admin-notif-btn" type="button" aria-label="Cảnh báo vận hành" title="Cảnh báo vận hành" aria-expanded="false">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 9a6 6 0 1 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
+              <span id="adminNotifBadge" class="admin-notif-badge" hidden>0</span>
+            </button>
             <button id="btnAdminTheme" class="admin-icon-btn admin-theme-toggle" type="button" aria-label="Bật giao diện tối" aria-pressed="false">
               <span class="admin-theme-icon admin-theme-icon-dark" aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 14.5A8.5 8.5 0 1 1 9.5 3 7 7 0 0 0 21 14.5z"/></svg>
@@ -253,7 +324,28 @@
         </div>
     </nav>
 
+    <!-- B6 — Cmd+K tìm tab -->
+    <div id="adminCommandPalette" class="admin-command-palette" hidden>
+      <div class="admin-command-palette-backdrop" data-close-command-palette></div>
+      <div class="admin-command-palette-panel" role="dialog" aria-modal="true" aria-label="Tìm tab nhanh">
+        <input id="adminCommandInput" type="search" placeholder="Tìm tab, tổ chức, tòa nhà, người dùng… (Ctrl+K)" autocomplete="off">
+        <ul id="adminCommandList" class="admin-command-list" role="listbox"></ul>
+        <p class="admin-command-hint">Enter để mở · Esc để đóng · Org switcher không áp dụng (mỗi user một tổ chức)</p>
+      </div>
+    </div>
+
+    <!-- B6 — Drawer cảnh báo vận hành -->
+    <aside id="adminNotifDrawer" class="admin-notif-drawer" hidden aria-hidden="true">
+      <div class="admin-notif-drawer-head">
+        <strong>Trung tâm thông báo</strong>
+        <button type="button" class="btn-edit" id="btnReadAllAdminNotif">Đánh dấu tất cả đã đọc</button>
+        <button type="button" class="admin-icon-btn" id="btnCloseAdminNotif" aria-label="Đóng">×</button>
+      </div>
+      <div id="adminNotifList" class="admin-notif-list"></div>
+    </aside>
+
         <main class="dashboard-content">
+        <h2 class="sr-only">Nội dung quản trị</h2>
 
         <!-- Thông tin chào mừng -->
         <div class="welcome-box">
@@ -267,14 +359,14 @@
             <p id="quotaAlertLine" class="quota-alert-line" style="display:none;"></p>
         </div>
 
-        <!-- Phase 4.6 cu: kh?i t?ng quan m?i tab � AD14 ?n, chuy?n sang tab overview -->
+        <!-- Phase 4.6 cũ: khối tổng quan mỗi tab — AD14 ẩn, chuyển sang tab overview -->
         <div id="platformOverviewSection" class="platform-overview-section" style="display:none;" hidden aria-hidden="true">
             <h4 id="platformOverviewTitle" class="platform-overview-title">📊 Tổng quan</h4>
             <p class="platform-overview-hint">Bấm thẻ để mở tab tương ứng và lọc dữ liệu</p>
             <div id="platformOverviewCards" class="org-overview-grid" aria-label="Thống kê tổng quan"></div>
         </div>
 
-        <!-- ===== TAB: OVERVIEW (AD15 � widget dashboard) ===== -->
+        <!-- ===== TAB: OVERVIEW (AD15 — widget dashboard) ===== -->
         <div id="tab-overview" class="tab-content overview-tab">
           <div class="admin-section overview-tab-section">
             <div class="section-header analytics-header-row overview-header-row">
@@ -285,12 +377,11 @@
               <div class="analytics-toolbar overview-toolbar">
                 <label class="overview-range-label" for="overviewRangeSelect">Khoảng thời gian</label>
                 <select id="overviewRangeSelect" class="overview-range-select" onchange="onOverviewRangeChange()" title="Lọc theo khoảng thời gian">
-                  <option value="today">Hôm nay</option>
-                  <option value="7d">7 ngày</option>
-                  <option value="30d" selected>30 ngày</option>
-                  <option value="90d">90 ngày</option>
-                  <option value="month">Tháng này</option>
-                  <option value="year">Năm nay</option>
+                  <option value="1m" selected>1 tháng</option>
+                  <option value="2m">2 tháng</option>
+                  <option value="3m">3 tháng</option>
+                  <option value="6m">6 tháng</option>
+                  <option value="1y">1 năm</option>
                   <option value="custom">Tùy chọn</option>
                 </select>
                 <span id="overviewCustomRange" class="overview-custom-range" hidden>
@@ -324,7 +415,6 @@
                 <div class="overview-widget-head">
                   <div>
                     <h4>Tăng trưởng tổ chức</h4>
-                    <p class="overview-widget-subtitle">Tổng tích lũy và số tổ chức mới trong khoảng đã chọn</p>
                   </div>
                   <div class="overview-revexp-tools">
                     <button type="button" class="overview-widget-retry" onclick="switchTab('analytics')" title="Mở trang phân tích">Mở phân tích</button>
@@ -339,8 +429,8 @@
                   <div class="overview-revexp-tools">
                     <div class="overview-period-seg" role="group" aria-label="Khoảng Thu–Chi">
                       <button type="button" class="overview-period-btn" data-revexp-period="monthly" onclick="setOverviewRevExpPeriod('monthly')">Tháng</button>
-                      <button type="button" class="overview-period-btn is-active" data-revexp-period="weekly" onclick="setOverviewRevExpPeriod('weekly')">Tuần</button>
-                      <button type="button" class="overview-period-btn" data-revexp-period="today" onclick="setOverviewRevExpPeriod('today')">Hôm nay</button>
+                      <button type="button" class="overview-period-btn" data-revexp-period="weekly" onclick="setOverviewRevExpPeriod('weekly')">Tuần</button>
+                      <button type="button" class="overview-period-btn is-active" data-revexp-period="today" onclick="setOverviewRevExpPeriod('today')">Ngày</button>
                     </div>
                     <button type="button" class="overview-widget-retry" onclick="retryOverviewWidget('revenue_expense')" title="Thử lại">Thử lại</button>
                   </div>
@@ -372,21 +462,19 @@
                 </div>
                 <div class="overview-subscription-toolbar" aria-label="Bộ lọc thời gian gói đăng ký">
                   <select id="subscriptionRangeSelect" class="overview-range-select" onchange="onSubscriptionRangeSelect()" title="Chọn khoảng thời gian">
-                    <option value="today">Hôm nay</option>
-                    <option value="7d">7 ngày</option>
-                    <option value="30d" selected>30 ngày</option>
-                    <option value="90d">90 ngày</option>
-                    <option value="month">Tháng này</option>
-                    <option value="year">Năm nay</option>
+                    <option value="1m" selected>1 tháng</option>
+                    <option value="2m">2 tháng</option>
+                    <option value="3m">3 tháng</option>
+                    <option value="6m">6 tháng</option>
+                    <option value="1y">1 năm</option>
                     <option value="custom">Tùy chọn</option>
                   </select>
                   <div class="overview-subscription-quick-filter" role="group" aria-label="Chọn nhanh khoảng thời gian">
-                    <button type="button" data-sub-range="today" onclick="setOverviewSubscriptionRange('today')">Hôm nay</button>
-                    <button type="button" data-sub-range="7d" onclick="setOverviewSubscriptionRange('7d')">7 ngày</button>
-                    <button type="button" class="is-active" data-sub-range="30d" onclick="setOverviewSubscriptionRange('30d')">30 ngày</button>
-                    <button type="button" data-sub-range="90d" onclick="setOverviewSubscriptionRange('90d')">90 ngày</button>
-                    <button type="button" data-sub-range="month" onclick="setOverviewSubscriptionRange('month')">Tháng này</button>
-                    <button type="button" data-sub-range="year" onclick="setOverviewSubscriptionRange('year')">Năm nay</button>
+                    <button type="button" class="is-active" data-sub-range="1m" onclick="setOverviewSubscriptionRange('1m')">1 tháng</button>
+                    <button type="button" data-sub-range="2m" onclick="setOverviewSubscriptionRange('2m')">2 tháng</button>
+                    <button type="button" data-sub-range="3m" onclick="setOverviewSubscriptionRange('3m')">3 tháng</button>
+                    <button type="button" data-sub-range="6m" onclick="setOverviewSubscriptionRange('6m')">6 tháng</button>
+                    <button type="button" data-sub-range="1y" onclick="setOverviewSubscriptionRange('1y')">1 năm</button>
                     <button type="button" data-sub-range="custom" onclick="setOverviewSubscriptionRange('custom')">Tùy chọn</button>
                   </div>
                   <span id="subscriptionCustomRange" class="overview-custom-range" hidden>
@@ -423,7 +511,7 @@
                 </div>
                 <div class="overview-widget-body" id="ov-body-billing_care"></div>
               </div>
-              <!-- T?m ?n widget S?c kh?e h? th?ng � b? data-overview-force-hidden + hidden d? hi?n l?i -->
+              <!-- Tạm ẩn widget Sức khỏe hệ thống — bỏ data-overview-force-hidden + hidden để hiện lại -->
               <div class="analytics-chart-card overview-widget" id="ov-w-system_health" data-ov-widget="system_health" data-overview-section="priority system" data-overview-force-hidden="1" hidden>
                 <div class="overview-widget-head">
                   <h4>Sức khỏe hệ thống</h4>
@@ -465,7 +553,7 @@
           </div>
         </div>
 
-        <!-- ===== TAB: MAPS � profile chi ti?t t�a nh� ===== -->
+        <!-- ===== TAB: MAPS — profile chi tiết tòa nhà ===== -->
         <div id="tab-maps" class="tab-content" style="display:none;">
           <div class="buildings-section building-detail-section">
             <div class="section-header building-detail-header">
@@ -498,7 +586,10 @@
             <div class="buildings-section">
                 <div class="section-header">
                     <h3>🏢 Danh Sách Tòa Nhà</h3>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                      <button type="button" class="btn-edit" onclick="openPublishJobsModal()" title="Job xuất bản / retry">Job xuất bản</button>
                     <button id="btnAddBuilding" class="btn-add" onclick="openAddBuildingModal()">+ Thêm Tòa Nhà Mới</button>
+                    </div>
                 </div>
 
                 <!-- Personal Workspace: chỉ REGISTERED_USER -->
@@ -554,10 +645,37 @@
                 <!-- Yêu cầu tham gia: chỉ ORG_ADMIN -->
                 <div id="orgJoinPanel" style="display:none; background:#fffdf5; border:1px solid #f0e6c8; border-radius:10px; padding:14px 16px; margin-bottom:14px;">
                     <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
-                        <strong style="color:#b8860b;">📥 Yêu cầu tham gia tổ chức</strong>
+                        <strong style="color:#b8860b;">Yêu cầu tham gia tổ chức</strong>
                         <button class="btn-add" style="background:#b8860b; padding:6px 12px;" onclick="loadOrgJoinRequests()">Làm mới</button>
                     </div>
                     <div id="orgJoinRequestsList" style="margin-top:10px;"></div>
+                </div>
+
+                <!-- Lời mời thành viên (B5): chỉ ORG_ADMIN — đẩy (invite), khác với pull join-request -->
+                <div id="orgInvitePanel" style="display:none; background:#f5faff; border:1px solid #cfe2ff; border-radius:10px; padding:14px 16px; margin-bottom:14px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+                        <strong style="color:#1d4ed8;">Mời thành viên tổ chức</strong>
+                        <button type="button" class="btn-add" style="background:#1d4ed8; padding:6px 12px;" onclick="loadOrgInvites()">Làm mới</button>
+                    </div>
+                    <p style="margin:6px 0 10px; color:#64748b; font-size:12px;">
+                        Khác với «Yêu cầu tham gia»: bạn chủ động gửi lời mời theo email. Người nhận phải đăng nhập đúng email rồi nhận lời mời.
+                    </p>
+                    <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin-bottom:10px;">
+                        <div>
+                            <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Email</label>
+                            <input id="orgInviteEmail" type="email" placeholder="user@example.com" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:200px;">
+                        </div>
+                        <div>
+                            <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Vai trò</label>
+                            <select id="orgInviteRole" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd;">
+                                <option value="BUILDING_ADMIN">Quản trị tòa nhà</option>
+                                <option value="ORG_ADMIN">Quản trị tổ chức</option>
+                            </select>
+                        </div>
+                        <button type="button" class="btn-create" style="padding:6px 12px;" onclick="createOrgInvite()">Gửi lời mời</button>
+                    </div>
+                    <div id="orgInviteMsg" style="font-size:13px; margin-bottom:8px; display:none;"></div>
+                    <div id="orgInvitesList"></div>
                 </div>
 
                 <div class="filter-bar" style="display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin-bottom:10px;">
@@ -660,6 +778,7 @@
       <option value="">Tất cả</option>
       <option value="SUPER_ADMIN">Quản trị hệ thống</option>
       <option value="FINANCE_ADMIN">Quản trị tài chính</option>
+      <option value="MARKETING_MANAGER">Quản trị nội dung</option>
       <option value="ORG_ADMIN">Quản trị tổ chức</option>
       <option value="BUILDING_ADMIN">Quản trị tòa nhà</option>
       <option value="REGISTERED_USER">Tài khoản cá nhân</option>
@@ -877,7 +996,7 @@
   </div>
 </div>
 
-<!-- ===== TAB: BILLING / SUBSCRIPTION (AD10 � list-first) ===== -->
+<!-- ===== TAB: BILLING / SUBSCRIPTION (AD10 — list-first) ===== -->
 <div id="tab-billing" class="tab-content" style="display:none;">
   <div class="admin-section billing-tab-section">
     <div class="section-header">
@@ -943,7 +1062,7 @@
           <option value="7d">7 ngày</option>
           <option value="30d" selected>30 ngày</option>
           <option value="90d">90 ngày</option>
-          <option value="1y">1 nam</option>
+          <option value="1y">1 năm</option>
           <option value="custom">Tùy chọn</option>
         </select>
         <div id="analyticsCustomRange" class="analytics-custom-range" hidden>
@@ -952,6 +1071,10 @@
           <input type="date" id="analyticsToDate" aria-label="Đến ngày">
           <button type="button" class="btn-create" onclick="loadAnalyticsTab()">Áp dụng</button>
         </div>
+        <label class="billing-field-label super-admin-only" for="analyticsOrgFilter">Tổ chức</label>
+        <select id="analyticsOrgFilter" class="super-admin-only" onchange="loadAnalyticsTab()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; max-width:200px;">
+          <option value="">Tất cả (platform)</option>
+        </select>
         <button type="button" class="btn-edit" onclick="loadAnalyticsTab()">Làm mới</button>
       </div>
     </div>
@@ -971,6 +1094,11 @@
       <div class="analytics-chart-card analytics-chart-card--hero">
         <div id="analyticsRevenueTrend" class="analytics-line-chart"></div>
       </div>
+      <div id="analyticsBillingHint"></div>
+      <div class="analytics-chart-card analytics-ranking-card">
+        <div class="analytics-card-head"><h4 id="analyticsPaidMonthTitle">Doanh thu PAID theo tháng</h4></div>
+        <div id="analyticsPaidMonth"></div>
+      </div>
     </section>
 
     <section class="analytics-saas-section" aria-labelledby="analyticsUsageTitle">
@@ -978,7 +1106,7 @@
         <div><h4 id="analyticsUsageTitle">Mức sử dụng nền tảng</h4><p>Đăng nhập, xuất bản bản đồ, quét mã QR và yêu cầu tìm đường.</p></div>
       </div>
       <div class="analytics-saas-grid analytics-saas-grid--2">
-        <div class="analytics-chart-card"><div class="analytics-card-head"><h4>Đang nháp</h4><button type="button" class="linkish" onclick="switchTab('logs')">Xem nhật ký</button></div><div id="analyticsLoginChart" class="analytics-line-chart"></div></div>
+        <div class="analytics-chart-card"><div class="analytics-card-head"><h4>Lượt đăng nhập</h4><button type="button" class="linkish" onclick="switchTab('logs')">Xem nhật ký</button></div><div id="analyticsLoginChart" class="analytics-line-chart"></div></div>
         <div class="analytics-chart-card"><div class="analytics-card-head"><h4>Xuất bản bản đồ</h4><button type="button" class="linkish" onclick="switchTab('buildings')">Xem tòa nhà</button></div><div id="analyticsPublishChart" class="analytics-column-chart"></div></div>
         <div class="analytics-chart-card"><div class="analytics-card-head"><h4>Quét mã QR</h4></div><div id="analyticsQrChart" class="analytics-column-chart"></div></div>
         <div class="analytics-chart-card"><div class="analytics-card-head"><h4>Yêu cầu tìm đường</h4></div><div id="analyticsNavigationChart" class="analytics-column-chart"></div></div>
@@ -990,7 +1118,7 @@
       <div id="analyticsBusinessMetrics" class="analytics-business-metrics"></div>
       <div class="analytics-saas-grid analytics-saas-grid--3">
         <div class="analytics-chart-card"><div class="analytics-card-head"><h4>Doanh thu theo gói</h4></div><div id="analyticsRevenueByPlan" class="analytics-donut-wrap"></div></div>
-        <div class="analytics-chart-card"><div class="analytics-card-head"><h4>Xu hướng đăng ký gói</h4></div><div id="analyticsSubscriptionTrend" class="analytics-line-chart"></div></div>
+        <div class="analytics-chart-card"><div class="analytics-card-head"><h4>Khách phát sinh gói theo ngày</h4></div><div id="analyticsSubscriptionTrend" class="analytics-line-chart"></div></div>
         <div class="analytics-chart-card"><div class="analytics-card-head"><h4>Phễu chuyển đổi</h4></div><div id="analyticsConversionFunnel" class="analytics-funnel"></div></div>
       </div>
     </section>
@@ -1018,10 +1146,373 @@
       <div class="analytics-saas-section-head"><div><h4 id="analyticsInsightTitle">Nhận định</h4><p>Tóm tắt biến động và vấn đề đáng chú ý từ dữ liệu.</p></div></div>
       <div id="analyticsInsights" class="analytics-insights"></div>
     </section>
+
+    <section class="analytics-saas-section" aria-labelledby="analyticsAlertsTitle">
+      <div class="analytics-saas-section-head"><div><h4 id="analyticsAlertsTitle">Cảnh báo vận hành</h4><p>Gói hết hạn, thời gian gia hạn và hồ sơ đang chờ xử lý.</p></div></div>
+      <div id="analyticsAlerts"></div>
+    </section>
   </div>
 </div>
 
-<!-- ===== TAB: WEBSITE CMS (Landing � Super only) ===== -->
+<!-- ===== TAB: Map Governance — Places (P0, Super only) ===== -->
+<div id="tab-places" class="tab-content" style="display:none;">
+  <div class="buildings-section">
+    <div class="section-header">
+      <div>
+        <h3>Quản trị bản đồ — Địa điểm</h3>
+        <p class="analytics-tab-intro" style="margin:6px 0 0;">Địa điểm vật lý (chuẩn hóa). Tòa nhà gắn <code>place_id</code>. Hiển thị: Riêng tư / Không liệt kê / Cộng đồng / Chính thức.</p>
+      </div>
+      <button type="button" class="btn-add" onclick="MapGovernance.openCreate()">+ Thêm địa điểm</button>
+    </div>
+
+    <div class="filter-bar" style="display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin-bottom:10px;">
+      <div>
+        <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Từ khóa</label>
+        <input id="filterPlaceKeyword" type="text" placeholder="Tên / alias / địa chỉ" oninput="MapGovernance.loadPlaces()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:180px;">
+      </div>
+      <div>
+        <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Trạng thái</label>
+        <select id="filterPlaceStatus" onchange="MapGovernance.loadPlaces()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:130px;">
+          <option value="">Tất cả</option>
+          <option value="ACTIVE">ACTIVE</option>
+          <option value="DRAFT">DRAFT</option>
+          <option value="LOCKED">LOCKED</option>
+          <option value="MERGED">MERGED</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Xác minh</label>
+        <select id="filterPlaceVerified" onchange="MapGovernance.loadPlaces()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:110px;">
+          <option value="">Tất cả</option>
+          <option value="true">Có</option>
+          <option value="false">Chưa</option>
+        </select>
+      </div>
+      <button type="button" class="btn-edit" onclick="MapGovernance.loadPlaces()">Làm mới</button>
+      <span id="placesMeta" style="font-size:12px; color:#667085; align-self:center;"></span>
+    </div>
+
+    <div id="placeDetailBox" style="display:none; background:#fff; border:1px solid #eaecf0; border-radius:12px; padding:16px; margin-bottom:14px;"></div>
+
+    <div class="table-wrap">
+      <table class="buildings-table">
+        <thead>
+          <tr>
+            <th>Tên</th>
+            <th>Tên gọi khác</th>
+            <th>Danh mục</th>
+            <th>GPS</th>
+            <th>Trạng thái</th>
+            <th>Xác minh</th>
+            <th>Tòa nhà</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="placesList">
+          <tr><td colspan="8">Chọn tab để tải…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: Bản đồ chờ duyệt (P1) ===== -->
+<div id="tab-map-reviews" class="tab-content" style="display:none;">
+  <div class="buildings-section">
+    <div class="section-header">
+      <div>
+        <h3>Bản đồ chờ duyệt</h3>
+        <p class="analytics-tab-intro" style="margin:6px 0 0;">Duyệt yêu cầu mở COMMUNITY / OFFICIAL. Duyệt xong sẽ cập nhật hiển thị (và xuất bản nếu đang nháp).</p>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button type="button" class="btn-add" onclick="MapGovernance.openSubmitReview()">+ Gửi duyệt</button>
+        <button type="button" class="btn-edit" onclick="MapGovernance.loadReviews()">Làm mới</button>
+      </div>
+    </div>
+    <div class="filter-bar" style="display:flex; gap:8px; margin-bottom:10px; align-items:flex-end;">
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">Trạng thái</label>
+        <select id="filterReviewStatus" onchange="MapGovernance.loadReviews()" style="padding:6px 10px;border-radius:6px;border:1px solid #ddd;">
+          <option value="PENDING">Chờ duyệt</option>
+          <option value="APPROVED">Đã duyệt</option>
+          <option value="REJECTED">Từ chối</option>
+          <option value="MERGED">Đã merge</option>
+          <option value="ALL">Tất cả</option>
+        </select>
+      </div>
+      <span id="reviewsMeta" style="font-size:12px;color:#667085;"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="buildings-table">
+        <thead>
+          <tr>
+            <th>Tòa nhà</th>
+            <th>Địa điểm</th>
+            <th>Yêu cầu</th>
+            <th>Trạng thái</th>
+            <th>Ghi chú</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="mapReviewsList"><tr><td colspan="6">Chọn tab để tải…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: Bản đồ trùng (P1) ===== -->
+<div id="tab-map-duplicates" class="tab-content" style="display:none;">
+  <div class="buildings-section">
+    <div class="section-header">
+      <div>
+        <h3>Bản đồ trùng</h3>
+        <p class="analytics-tab-intro" style="margin:6px 0 0;">Quét cặp địa điểm có độ giống ≥ ngưỡng (mặc định 95%). Dựa trên tên/alias + GPS.</p>
+      </div>
+      <button type="button" class="btn-edit" onclick="MapGovernance.loadDuplicates()">Quét lại</button>
+    </div>
+    <p id="duplicatesMeta" style="font-size:12px;color:#667085;"></p>
+    <div class="table-wrap">
+      <table class="buildings-table">
+        <thead>
+          <tr>
+            <th>Độ giống</th>
+            <th>Địa điểm A</th>
+            <th>Địa điểm B</th>
+            <th>Tên</th>
+            <th>GPS (m)</th>
+            <th>Gợi ý</th>
+          </tr>
+        </thead>
+        <tbody id="mapDuplicatesList"><tr><td colspan="6">Chọn tab để tải…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: Quyền sở hữu (P2) ===== -->
+<div id="tab-map-ownership" class="tab-content" style="display:none;">
+  <div class="buildings-section">
+    <div class="section-header">
+      <div>
+        <h3>Quyền sở hữu địa điểm</h3>
+        <p class="analytics-tab-intro" style="margin:6px 0 0;">CLAIM / CHANGE / TRANSFER. Place có chủ → cộng đồng sửa qua Change Request, không sửa trực tiếp.</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn-add" onclick="MapGovernance.openOwnershipCreate()">+ Tạo yêu cầu</button>
+        <button type="button" class="btn-edit" onclick="MapGovernance.loadOwnership()">Làm mới</button>
+      </div>
+    </div>
+    <div class="filter-bar" style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:flex-end;">
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">Trạng thái</label>
+        <select id="filterOwnershipStatus" onchange="MapGovernance.loadOwnership()" style="padding:6px 10px;border-radius:6px;border:1px solid #ddd;">
+          <option value="PENDING">Chờ duyệt</option>
+          <option value="APPROVED">Đã duyệt</option>
+          <option value="REJECTED">Từ chối</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">Loại</label>
+        <select id="filterOwnershipType" onchange="MapGovernance.loadOwnership()" style="padding:6px 10px;border-radius:6px;border:1px solid #ddd;">
+          <option value="">Tất cả</option>
+          <option value="CLAIM">CLAIM</option>
+          <option value="CHANGE">CHANGE</option>
+          <option value="TRANSFER">TRANSFER</option>
+        </select>
+      </div>
+      <span id="ownershipMeta" style="font-size:12px;color:#667085;"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="buildings-table">
+        <thead>
+          <tr>
+            <th>Loại</th>
+            <th>Địa điểm</th>
+            <th>Tổ chức</th>
+            <th>Chi tiết</th>
+            <th>Trạng thái</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="mapOwnershipList"><tr><td colspan="6">Chọn tab để tải…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: Yêu cầu gộp (P2) ===== -->
+<div id="tab-map-merges" class="tab-content" style="display:none;">
+  <div class="buildings-section">
+    <div class="section-header">
+      <div>
+        <h3>Yêu cầu gộp địa điểm</h3>
+        <p class="analytics-tab-intro" style="margin:6px 0 0;">Gộp Place nguồn → đích: chuyển tòa nhà, gộp alias/GPS/chủ. Nguồn thành MERGED.</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn-add" onclick="MapGovernance.openMergeCreate()">+ Tạo / gộp ngay</button>
+        <button type="button" class="btn-edit" onclick="MapGovernance.loadMerges()">Làm mới</button>
+      </div>
+    </div>
+    <div class="filter-bar" style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-end;">
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">Trạng thái</label>
+        <select id="filterMergeStatus" onchange="MapGovernance.loadMerges()" style="padding:6px 10px;border-radius:6px;border:1px solid #ddd;">
+          <option value="PENDING">Chờ duyệt</option>
+          <option value="COMPLETED">Đã gộp</option>
+          <option value="REJECTED">Từ chối</option>
+          <option value="ALL">Tất cả</option>
+        </select>
+      </div>
+      <span id="mergesMeta" style="font-size:12px;color:#667085;"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="buildings-table">
+        <thead>
+          <tr>
+            <th>Nguồn</th>
+            <th>Đích</th>
+            <th>Độ giống</th>
+            <th>Trạng thái</th>
+            <th>Kết quả</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="mapMergesList"><tr><td colspan="6">Chọn tab để tải…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: Kiểm duyệt (P3) ===== -->
+<div id="tab-map-moderation" class="tab-content" style="display:none;">
+  <div class="buildings-section">
+    <div class="section-header">
+      <div>
+        <h3>Kiểm duyệt / Báo cáo</h3>
+        <p class="analytics-tab-intro" style="margin:6px 0 0;">Spam → Report → Lock / Ban. Gắn reputation (cảnh cáo −5, ban −20).</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn-add" onclick="MapGovernance.openCreateReport()">+ Báo cáo</button>
+        <button type="button" class="btn-edit" onclick="MapGovernance.loadModeration()">Làm mới</button>
+      </div>
+    </div>
+    <div class="filter-bar" style="margin-bottom:10px;">
+      <select id="filterModerationStatus" onchange="MapGovernance.loadModeration()" style="padding:6px 10px;border-radius:6px;border:1px solid #ddd;">
+        <option value="OPEN">Đang mở</option>
+        <option value="RESOLVED">Đã xử lý</option>
+        <option value="DISMISSED">Bỏ qua</option>
+        <option value="ALL">Tất cả</option>
+      </select>
+      <span id="moderationMeta" style="margin-left:10px;font-size:12px;color:#667085;"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="buildings-table">
+        <thead>
+          <tr>
+            <th>Đối tượng</th>
+            <th>Lý do</th>
+            <th>Chi tiết</th>
+            <th>Trạng thái</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="mapModerationList"><tr><td colspan="5">Chọn tab để tải…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: Thống kê MGC (P3) ===== -->
+<div id="tab-map-stats" class="tab-content" style="display:none;">
+  <div class="buildings-section">
+    <div class="section-header">
+      <h3>Thống kê Quản trị bản đồ</h3>
+      <button type="button" class="btn-edit" onclick="MapGovernance.loadMapStats()">Làm mới</button>
+    </div>
+    <div id="mapStatsBox" class="org-overview-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;"></div>
+  </div>
+</div>
+
+<!-- ===== TAB: Phiên bản bản đồ (P4) ===== -->
+<div id="tab-map-versions" class="tab-content" style="display:none;">
+  <div class="buildings-section">
+    <div class="section-header">
+      <h3>Version Manager — Phiên bản bản đồ</h3>
+      <button type="button" class="btn-edit" onclick="MapGovernance.loadMapVersions()">Làm mới</button>
+    </div>
+    <p class="analytics-tab-intro">Chọn tòa nhà để xem lịch sử phiên bản / rollback (dùng API <code>/api/map-versions</code>).</p>
+    <div class="admin-filter-row" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+      <input id="mapVersionBuildingFilter" type="search" placeholder="Lọc tên tòa…" style="min-width:220px;" oninput="MapGovernance.filterVersionBuildings()">
+    </div>
+    <div class="table-container">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Tòa nhà</th>
+            <th>Trạng thái</th>
+            <th>Visibility</th>
+            <th>Tầng</th>
+            <th>Place</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="mapVersionsBuildingList"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: Xác minh Place (P4) ===== -->
+<div id="tab-map-verify" class="tab-content" style="display:none;">
+  <div class="buildings-section">
+    <div class="section-header">
+      <h3>Xác minh địa điểm</h3>
+      <button type="button" class="btn-edit" onclick="MapGovernance.loadVerification()">Làm mới</button>
+    </div>
+    <p class="analytics-tab-intro">Queue Place <code>PENDING</code> — duyệt / từ chối xác minh.</p>
+    <div class="table-container">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Tên</th>
+            <th>Trạng thái XM</th>
+            <th>Ghi chú</th>
+            <th>GPS</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="mapVerifyList"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: Cộng đồng (P4) ===== -->
+<div id="tab-map-community" class="tab-content" style="display:none;">
+  <div class="buildings-section">
+    <div class="section-header">
+      <h3>Bản đồ cộng đồng</h3>
+      <button type="button" class="btn-edit" onclick="MapGovernance.loadCommunityHub()">Làm mới</button>
+    </div>
+    <p class="analytics-tab-intro">Building <code>PUBLISHED</code> + <code>COMMUNITY/OFFICIAL</code> (cùng filter public API).</p>
+    <div id="mapCommunityMeta" class="analytics-muted" style="margin-bottom:8px;"></div>
+    <div class="table-container">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Tòa nhà</th>
+            <th>Visibility</th>
+            <th>Địa chỉ</th>
+            <th>Place</th>
+          </tr>
+        </thead>
+        <tbody id="mapCommunityList"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: WEBSITE CMS (Landing — Super only) ===== -->
 <div id="tab-website" class="tab-content" style="display:none;">
   <div class="admin-section website-cms-section">
     <div class="section-header analytics-header-row">
@@ -1060,17 +1551,58 @@
       </div>
     </div>
 
+    <div id="website-panel-articles" class="website-subpanel" data-website-panel="articles" hidden>
+      <form id="cmsArticleForm" class="website-form-grid" onsubmit="return WebsiteCms.saveArticle(event)">
+        <input id="caId" type="hidden">
+        <div><label>Loại</label><select id="caType"><option value="BLOG">Blog</option><option value="NEWS">News</option></select></div>
+        <div><label>Trạng thái</label><select id="caStatus" onchange="WebsiteCms.toggleArticleSchedule()"><option value="DRAFT">Nháp</option><option value="PUBLISHED">Xuất bản</option><option value="SCHEDULED">Hẹn lịch</option></select></div>
+        <div class="span-2"><label>Tiêu đề</label><input id="caTitle" required type="text"></div>
+        <div><label>Slug</label><input id="caSlug" type="text" placeholder="Tự sinh từ tiêu đề"></div>
+        <div><label>Ảnh đại diện (Media URL)</label><input id="caImage" type="text"></div>
+        <div id="caScheduleWrap" hidden><label>Giờ xuất bản</label><input id="caPublishAt" type="datetime-local"></div>
+        <div class="span-2"><label>Tóm tắt</label><textarea id="caExcerpt" rows="2"></textarea></div>
+        <div class="span-2"><label>Nội dung</label><textarea id="caContent" rows="8"></textarea></div>
+        <div><label>SEO title</label><input id="caSeoTitle" type="text"></div>
+        <div><label>SEO keywords</label><input id="caSeoKeywords" type="text" placeholder="saas, indoor, map"></div>
+        <div class="span-2"><label>SEO description</label><textarea id="caSeoDescription" rows="2"></textarea></div>
+        <div><label>Canonical URL</label><input id="caCanonical" type="text"></div>
+        <div><label>OG image</label><input id="caOgImage" type="text"></div>
+        <div class="span-2">
+          <button type="submit" class="btn-create">Lưu bài viết</button>
+          <button type="button" class="btn-edit" onclick="WebsiteCms.resetArticleForm()">Bài mới</button>
+        </div>
+      </form>
+      <div id="cmsArticleList" class="website-pages-list"></div>
+    </div>
+
     <div id="website-panel-banner" class="website-subpanel" data-website-panel="banner" hidden>
       <form id="websiteBannerForm" class="website-form-grid" onsubmit="return WebsiteCms.saveBanner(event)">
         <div><label>Tiêu đề Banner</label><input id="wbTitle" type="text"></div>
         <div class="span-2"><label>Mô tả Hero</label><textarea id="wbSubtitle" rows="3"></textarea></div>
-        <div><label>Hero Image URL</label><input id="wbImage" type="text"></div>
-        <div><label>Hero Video URL</label><input id="wbVideo" type="text"></div>
+        <div><label>Hero Image URL</label><input id="wbImage" type="url" placeholder="https://..."></div>
+        <div><label>Hero Video URL</label><input id="wbVideo" type="url" placeholder="YouTube, .mp4, .webm hoặc .ogg"></div>
         <div><label>CTA Button</label><input id="wbCtaLabel" type="text"></div>
         <div><label>CTA Link</label><input id="wbCtaHref" type="text"></div>
         <div class="span-2"><label>Background</label><input id="wbBackground" type="text"></div>
         <div><button type="submit" class="btn-create">Luu Banner &amp; Hero</button></div>
       </form>
+      <hr style="margin:24px 0;">
+      <h4>Banner có lịch hiển thị</h4>
+      <form id="cmsBannerForm" class="website-form-grid" onsubmit="return WebsiteCms.saveScheduledBanner(event)">
+        <input id="cbId" type="hidden">
+        <div><label>Tên nội bộ</label><input id="cbName" required type="text"></div>
+        <div><label>Vị trí</label><input id="cbPlacement" type="text" value="HOME"></div>
+        <div class="span-2"><label>Tiêu đề</label><input id="cbTitle" required type="text"></div>
+        <div class="span-2"><label>Mô tả</label><textarea id="cbSubtitle" rows="2"></textarea></div>
+        <div><label>Image URL (Media)</label><input id="cbImage" type="text"></div>
+        <div><label>Link</label><input id="cbLink" type="text"></div>
+        <div><label>Bắt đầu</label><input id="cbStarts" type="datetime-local"></div>
+        <div><label>Kết thúc</label><input id="cbEnds" type="datetime-local"></div>
+        <div><label>Ưu tiên</label><input id="cbPriority" type="number" value="0"></div>
+        <div><label><input id="cbEnabled" type="checkbox" checked> Đang bật</label></div>
+        <div class="span-2"><button type="submit" class="btn-create">Lưu banner lịch</button></div>
+      </form>
+      <div id="cmsBannerList" class="website-pages-list"></div>
     </div>
 
     <div id="website-panel-navigation" class="website-subpanel" data-website-panel="navigation" hidden>
@@ -1083,10 +1615,11 @@
 
     <div id="website-panel-media" class="website-subpanel" data-website-panel="media" hidden>
       <form id="websiteMediaForm" class="website-form-grid" onsubmit="return WebsiteCms.addMedia(event)">
-        <div><label>Tên</label><input id="wmName" required type="text"></div>
-        <div><label>URL</label><input id="wmUrl" required type="url" placeholder="https://... hoặc /uploads/..."></div>
+        <div><label for="wmName">Tên</label><input id="wmName" required type="text"></div>
+        <div><label for="wmFile">Upload file</label><input id="wmFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,video/mp4"></div>
+        <div><label for="wmUrl">URL fallback</label><input id="wmUrl" type="url" placeholder="https://... hoặc /uploads/..."></div>
         <div>
-          <label>Loại</label>
+          <label for="wmKind">Loại</label>
           <select id="wmKind">
             <option value="logo">Logo</option>
             <option value="icon">Icon</option>
@@ -1096,9 +1629,14 @@
             <option value="other">Khác</option>
           </select>
         </div>
-        <div><label>Alt</label><input id="wmAlt" type="text"></div>
+        <div><label for="wmAlt">Alt</label><input id="wmAlt" type="text" placeholder="Bắt buộc khi dùng trong nội dung"></div>
         <div><button type="submit" class="btn-create">Thêm media</button></div>
+        <div class="span-2"><progress id="wmProgress" max="100" value="0" hidden style="width:100%"></progress><p id="wmUploadStatus" role="status"></p></div>
       </form>
+      <div class="website-panel-actions">
+        <input id="wmSearch" type="search" placeholder="Tìm media…" oninput="WebsiteCms.searchMedia()">
+        <button type="button" class="btn-edit" onclick="WebsiteCms.loadMedia()">Làm mới</button>
+      </div>
       <div id="websiteMediaList" class="website-media-list"></div>
     </div>
 
@@ -1150,11 +1688,11 @@
       <form id="websiteSeoForm" class="website-form-grid" onsubmit="return WebsiteCms.saveSeo(event)">
         <div class="span-2"><label>Meta Title</label><input id="wsTitle" type="text"></div>
         <div class="span-2"><label>Description</label><textarea id="wsDescription" rows="3"></textarea></div>
-        <div><label>OG Image</label><input id="wsOg" type="text"></div>
+        <div><label>OG Image (URL ảnh)</label><input id="wsOg" type="url" placeholder="https://..."></div>
         <div><label>Keywords</label><input id="wsKeywords" type="text"></div>
         <div><label>robots</label><input id="wsRobots" type="text"></div>
-        <div><label>favicon</label><input id="wsFavicon" type="text"></div>
-        <div class="span-2"><label>Analytics Code</label><textarea id="wsAnalytics" rows="4" placeholder="&lt;script&gt;...&lt;/script&gt;"></textarea></div>
+        <div><label>Favicon (URL ảnh)</label><input id="wsFavicon" type="url" placeholder="https://.../favicon.ico"></div>
+        <div class="span-2"><label>Google Analytics Measurement ID</label><textarea id="wsAnalytics" rows="2" placeholder="G-XXXXXXXXXX"></textarea></div>
         <div><button type="submit" class="btn-create">Luu SEO</button></div>
       </form>
     </div>
@@ -1176,15 +1714,30 @@
     <div id="website-panel-settings" class="website-subpanel" data-website-panel="settings" hidden>
       <form id="websiteSettingsForm" class="website-form-grid" onsubmit="return WebsiteCms.saveSettings(event)">
         <div><label>Tên website</label><input id="wsetName" type="text"></div>
-        <div><label>Logo URL</label><input id="wsetLogo" type="text"></div>
+        <div><label>Logo URL</label><input id="wsetLogo" type="url" placeholder="https://..."></div>
         <div><label>Email</label><input id="wsetEmail" type="email"></div>
         <div><label>Hotline</label><input id="wsetHotline" type="text"></div>
-        <div><label>Facebook</label><input id="wsetFacebook" type="text"></div>
-        <div><label>Youtube</label><input id="wsetYoutube" type="text"></div>
-        <div class="span-2"><label>Google Map</label><input id="wsetMap" type="text"></div>
+        <div><label>Facebook</label><input id="wsetFacebook" type="url" placeholder="https://facebook.com/..."></div>
+        <div><label>YouTube</label><input id="wsetYoutube" type="url" placeholder="https://youtube.com/..."></div>
+        <div class="span-2"><label>Google Map (URL hoặc iframe nhúng)</label><input id="wsetMap" type="text" placeholder="https://www.google.com/maps/embed?..."></div>
         <div class="span-2"><label>Footer</label><textarea id="wsetFooter" rows="2"></textarea></div>
         <div><button type="submit" class="btn-create">Lưu cài đặt</button></div>
       </form>
+      <section class="super-admin-only" style="margin-top:20px; padding:16px; border:1px solid var(--admin-border, #ddd); border-radius:12px;">
+        <h4 style="margin:0 0 6px;">Chế độ bảo trì</h4>
+        <p style="margin:0 0 12px; color:#64748b;">Tạm khóa API cho người dùng; SUPER_ADMIN vẫn truy cập để kiểm tra và tắt bảo trì.</p>
+        <label style="display:flex; gap:10px; align-items:center;">
+          <input id="maintenanceModeToggle" type="checkbox" onchange="saveMaintenanceMode(this.checked)">
+          <span id="maintenanceModeLabel">Đang tải…</span>
+        </label>
+      </section>
+    </div>
+
+    <div id="website-panel-audit" class="website-subpanel" data-website-panel="audit" hidden>
+      <div class="website-panel-actions">
+        <button type="button" class="btn-edit" onclick="WebsiteCms.loadAudit()">Làm mới</button>
+      </div>
+      <div id="cmsAuditList" class="website-pages-list"></div>
     </div>
   </div>
 </div>
@@ -1332,6 +1885,7 @@
         <button type="button" class="btn-create" onclick="loadFinanceReportSummary()">Xem báo cáo</button>
         <button type="button" class="btn-edit" onclick="exportFinanceReport('invoices')">Tải danh sách hóa đơn</button>
         <button type="button" class="btn-edit" onclick="exportFinanceReport('expenses')">Tải danh sách chi phí</button>
+        <button type="button" class="btn-edit" onclick="exportFinanceReport('ledger')">Tải sổ chi (ledger)</button>
         <button type="button" class="btn-edit" onclick="exportFinanceReport('payments')">Tải sổ thu tiền</button>
       </div>
       <div id="financeReportSummary"></div>
@@ -1356,6 +1910,7 @@
     <div id="finance-panel-expenses" class="finance-subpanel" data-finance-panel="expenses">
     <div class="analytics-chart-card finance-panel">
       <h4>Chi phí vận hành</h4>
+      <p class="analytics-muted finance-panel-hint">Sổ chi append-only: không sửa/xóa. Muốn hủy khoản → Đảo sổ (ghi dòng âm).</p>
       <form id="financeExpenseForm" class="finance-form-grid" onsubmit="return submitFinanceExpense(event)" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:14px; align-items:end;">
         <div><label class="billing-field-label">Ngày</label><input type="date" id="expenseDate" required style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
         <div>
@@ -1379,6 +1934,11 @@
         <div><button type="submit" class="btn-create" title="Thêm khoản chi">Thêm chi phí</button></div>
       </form>
       <div id="financeExpenseList"></div>
+    </div>
+    <div class="analytics-chart-card finance-panel">
+      <h4>Sổ chi (ledger)</h4>
+      <p class="analytics-muted finance-panel-hint">Dòng EXPENSE / REVERSAL — nguồn KPI chi phí.</p>
+      <div id="financeExpenseLedgerList"></div>
     </div>
     </div>
   </div>
@@ -1734,7 +2294,7 @@
                 </div>
                 <p id="editBuildingFloorHint" style="font-size:12px; color:#666; margin:8px 0 0;">Tầng hợp lệ: 0 .. N-1 (0 = trệt). Chỉ bớt được tầng cao nhất khi chưa có bản đồ.</p>
                 <p id="editBuildingFloorMsg" style="font-size:13px; color:#c0392b; margin:6px 0 0; display:none;"></p>
-                <!-- Gi? input ?n d? kh�ng ph� form cu; giá trị sync từ API -->
+                <!-- Giữ input ẩn để không phá form cũ; giá trị sync từ API -->
                 <input type="hidden" id="editBuildingFloors" value="1">
             </div>
             <div style="display:flex; gap:10px;">
@@ -1787,6 +2347,7 @@
             <option value="ORG_ADMIN">Quản trị tổ chức</option>
             <option value="SUPER_ADMIN">Quản trị hệ thống</option>
             <option value="FINANCE_ADMIN">Quản trị tài chính</option>
+            <option value="MARKETING_MANAGER">Quản trị nội dung</option>
           </select>
         </div>
 
@@ -1842,6 +2403,7 @@
             <option value="ORG_ADMIN">Quản trị tổ chức</option>
             <option value="SUPER_ADMIN">Quản trị hệ thống</option>
             <option value="FINANCE_ADMIN">Quản trị tài chính</option>
+            <option value="MARKETING_MANAGER">Quản trị nội dung</option>
           </select>
         </div>
 
@@ -1870,6 +2432,41 @@
         <div class="modal-actions">
           <button type="button" onclick="closeUpdateUserModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
           <button type="button" id="btnUpdateUser" class="btn-create">Lưu Thay Đổi</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== MODAL: PUBLISH JOBS (C2) ===== -->
+    <div id="publishJobsModal" class="modal publish-jobs-modal" style="display:none;">
+      <div class="modal-content publish-jobs-dialog">
+        <div class="publish-jobs-head">
+          <div>
+            <span class="publish-jobs-eyebrow">Hàng đợi hệ thống</span>
+            <h3>Job xuất bản bản đồ</h3>
+            <p>Theo dõi tiến trình chạy nền và thử lại job thất bại.</p>
+          </div>
+          <button type="button" class="publish-jobs-close" onclick="closePublishJobsModal()" aria-label="Đóng">×</button>
+        </div>
+        <div class="publish-jobs-toolbar">
+          <div class="publish-jobs-filter">
+            <label for="publishJobsStatusFilter">Trạng thái</label>
+            <select id="publishJobsStatusFilter" onchange="loadPublishJobsModal()">
+              <option value="">Tất cả</option>
+              <option value="FAILED">FAILED</option>
+              <option value="QUEUED">QUEUED</option>
+              <option value="RUNNING">RUNNING</option>
+              <option value="SUCCESS">SUCCESS</option>
+            </select>
+          </div>
+          <button type="button" class="publish-jobs-refresh" onclick="loadPublishJobsModal()">
+            <span aria-hidden="true">↻</span> Làm mới
+          </button>
+          <div id="publishJobsSummary" class="publish-jobs-summary" aria-live="polite"></div>
+        </div>
+        <div id="publishJobsList" class="publish-jobs-list"></div>
+        <div class="publish-jobs-foot">
+          <span>Job thành công được lưu để đối soát phiên bản và thời gian xuất bản.</span>
+          <button type="button" onclick="closePublishJobsModal()" class="publish-jobs-done">Đóng</button>
         </div>
       </div>
     </div>
@@ -1956,7 +2553,7 @@
       </div>
     </div>
 
-    <!-- ===== MODAL: TH�M / S?A G�I ===== -->
+    <!-- ===== MODAL: THÊM / SỬA GÓI ===== -->
     <div id="planEditorModal" class="modal" style="display:none;">
       <div class="modal-content plan-editor-modal">
         <h3 id="planEditorTitle">Thêm gói dịch vụ</h3>
@@ -2094,11 +2691,71 @@
       </div>
     </div>
 
+    <script src="../js/dashboard-router.js?v=20260721wq1"></script>
+    <script src="../js/dashboard-session.js?v=20260721wq1"></script>
+    <script src="../js/dashboard-accessibility.js?v=20260721wq1"></script>
+    <script src="../js/website-cms-api.js?v=20260721wq1"></script>
+    <script src="../js/website-cms-router.js?v=20260721wq1"></script>
+    <script src="../js/website-cms-media.js?v=20260721wq1"></script>
+    <script src="../js/website-cms-audit.js?v=20260721wq1"></script>
     <script src="../js/admin-shell.js?v=20260717ad33"></script>
     <script src="../js/orgListSort.js?v=20260708l"></script>
     <script src="../js/dashboardTableSort.js?v=20260708l"></script>
-    <script src="../js/dashboard.js?v=20260721ad94"></script>
-    <script src="../js/website-cms.js?v=20260718ad61"></script>
+    <script src="../js/dashboard.js?v=20260722mgc7"></script>
+    <script src="../js/map-governance.js?v=20260722mgc7"></script>
+    <script src="../js/website-cms.js?v=20260721audit1"></script>
     <script src="../js/admin-ui.js?v=20260717ad32"></script>
+
+    <!-- Place modal (Map Governance P0) -->
+    <div id="placeModal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1200; align-items:center; justify-content:center; padding:16px;">
+      <div style="background:#fff; border-radius:12px; width:min(560px,100%); max-height:90vh; overflow:auto; padding:20px 22px; box-shadow:0 20px 50px rgba(0,0,0,.18);">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px;">
+          <h3 id="placeModalTitle" style="margin:0;">Thêm địa điểm</h3>
+          <button type="button" class="btn-logout" style="background:#95a5a6;" onclick="MapGovernance.closeModal()">Đóng</button>
+        </div>
+        <form onsubmit="MapGovernance.savePlace(event)">
+          <div style="display:grid; gap:10px;">
+            <label style="font-size:12px; color:#667085;">Tên chuẩn *
+              <input id="placeFormName" required style="display:block; width:100%; margin-top:4px; padding:8px 10px; border:1px solid #d0d5dd; border-radius:8px;">
+            </label>
+            <label style="font-size:12px; color:#667085;">Tên gọi khác (phẩy tách)
+              <input id="placeFormAliases" placeholder="AEON, AEON Mall, AEON BD" style="display:block; width:100%; margin-top:4px; padding:8px 10px; border:1px solid #d0d5dd; border-radius:8px;">
+            </label>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+              <label style="font-size:12px; color:#667085;">Latitude
+                <input id="placeFormLat" type="number" step="any" style="display:block; width:100%; margin-top:4px; padding:8px 10px; border:1px solid #d0d5dd; border-radius:8px;">
+              </label>
+              <label style="font-size:12px; color:#667085;">Longitude
+                <input id="placeFormLng" type="number" step="any" style="display:block; width:100%; margin-top:4px; padding:8px 10px; border:1px solid #d0d5dd; border-radius:8px;">
+              </label>
+            </div>
+            <label style="font-size:12px; color:#667085;">Địa chỉ
+              <input id="placeFormAddress" style="display:block; width:100%; margin-top:4px; padding:8px 10px; border:1px solid #d0d5dd; border-radius:8px;">
+            </label>
+            <label style="font-size:12px; color:#667085;">Danh mục
+              <input id="placeFormCategory" placeholder="trung tâm thương mại, bệnh viện, trường…" style="display:block; width:100%; margin-top:4px; padding:8px 10px; border:1px solid #d0d5dd; border-radius:8px;">
+            </label>
+            <label style="font-size:12px; color:#667085;">Trạng thái
+              <select id="placeFormStatus" style="display:block; width:100%; margin-top:4px; padding:8px 10px; border:1px solid #d0d5dd; border-radius:8px;">
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="DRAFT">DRAFT</option>
+                <option value="LOCKED">LOCKED</option>
+                <option value="MERGED">MERGED</option>
+              </select>
+            </label>
+            <label style="font-size:13px; color:#344054; display:flex; align-items:center; gap:8px;">
+              <input id="placeFormVerified" type="checkbox"> Đã xác minh
+            </label>
+            <label style="font-size:12px; color:#667085;">Ghi chú
+              <textarea id="placeFormNotes" rows="2" style="display:block; width:100%; margin-top:4px; padding:8px 10px; border:1px solid #d0d5dd; border-radius:8px;"></textarea>
+            </label>
+            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:6px;">
+              <button type="button" class="btn-logout" style="background:#95a5a6;" onclick="MapGovernance.closeModal()">Hủy</button>
+              <button type="submit" class="btn-create">Lưu</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
 </body>
 </html>

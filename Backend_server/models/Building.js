@@ -82,6 +82,24 @@ const buildingSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         default: null
+    },
+
+    // Map Governance P0 — Place là gốc địa lý; Building là bản đồ kỹ thuật.
+    // Nullable khi migrate; backfill bằng scripts/backfill-places.js.
+    place_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Place',
+        default: null,
+        index: true
+    },
+
+    // Visibility cộng đồng (tách khỏi status DRAFT/PUBLISHED).
+    // PRIVATE | UNLISTED | COMMUNITY | OFFICIAL
+    visibility: {
+        type: String,
+        enum: ['PRIVATE', 'UNLISTED', 'COMMUNITY', 'OFFICIAL'],
+        default: 'PRIVATE',
+        index: true
     }
 
 }, {

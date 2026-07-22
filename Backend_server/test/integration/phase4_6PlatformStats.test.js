@@ -10,9 +10,9 @@ const jwt = require('jsonwebtoken');
 const app = require('../../server');
 const User = require('../../models/User');
 
-function tokenFor(userId, role) {
+function tokenFor(userId, role, sv = 0) {
   return jwt.sign(
-    { userId: String(userId), role },
+    { userId: String(userId), role, sv },
     process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
@@ -33,9 +33,17 @@ describe('Phase 4.6 — platform stats', () => {
     const buildingAdmin = await User.findOne({ role: 'BUILDING_ADMIN', is_active: { $ne: false } }).lean();
     if (!superUser) throw new Error('Thiếu SUPER_ADMIN');
 
-    superToken = tokenFor(superUser._id, 'SUPER_ADMIN');
-    if (orgAdmin) orgAdminToken = tokenFor(orgAdmin._id, 'ORG_ADMIN');
-    if (buildingAdmin) buildingAdminToken = tokenFor(buildingAdmin._id, 'BUILDING_ADMIN');
+    superToken = tokenFor(superUser._id, 'SUPER_ADMIN', Number(superUser.session_version) || 0);
+    if (orgAdmin) {
+      orgAdminToken = tokenFor(orgAdmin._id, 'ORG_ADMIN', Number(orgAdmin.session_version) || 0);
+    }
+    if (buildingAdmin) {
+      buildingAdminToken = tokenFor(
+        buildingAdmin._id,
+        'BUILDING_ADMIN',
+        Number(buildingAdmin.session_version) || 0
+      );
+    }
   });
 
   afterAll(async () => {

@@ -22,6 +22,15 @@ const refreshTokenSchema = new mongoose.Schema({
         index: true
     },
 
+    family_id: {
+        type: String,
+        required: true,
+        index: true,
+        default: () => require('crypto').randomUUID()
+    },
+    parent_token_hash: { type: String, default: null, select: false },
+    replaced_by_hash: { type: String, default: null, select: false },
+
     // Thời điểm hết hạn — MongoDB TTL index dùng field này để tự xóa document
     expires_at: {
         type: Date,
@@ -34,12 +43,21 @@ const refreshTokenSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    revoked_at: { type: Date, default: null },
+    revoked_reason: {
+        type: String,
+        enum: ['ROTATED', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_CHANGED', 'REUSE_DETECTED', 'SESSION_REVOKED', null],
+        default: null
+    },
 
     // IP lúc tạo token — dùng để phát hiện bất thường
     ip_address: {
         type: String,
         default: ''
     },
+    user_agent: { type: String, default: '', maxlength: 500 },
+    device_name: { type: String, default: '', maxlength: 120 },
+    last_used_at: { type: Date, default: Date.now },
 
     createdAt: {
         type: Date,

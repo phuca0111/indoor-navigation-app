@@ -9,9 +9,13 @@
 // ============================================
 
 const fs = require('fs');
-const fsp = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
+const {
+  createStorageAdapter,
+  validateBuffer,
+  assertSafeKey
+} = require('./storagePlatform');
 
 const ALLOWED_MIME = new Set([
   'image/png',
@@ -88,18 +92,7 @@ function assertNoBase64Background(map_data) {
 }
 
 function publicUrlForKey(key, req) {
-  const base =
-    (process.env.STORAGE_PUBLIC_BASE_URL || '').replace(/\/$/, '') ||
-    (req
-      ? `${req.protocol}://${req.get('host')}`
-      : '');
-  const rel = key.replace(/\\/g, '/').replace(/^\/+/, '');
-  if (!base) return `/uploads/${rel}`;
-  return `${base}/uploads/${rel}`;
-}
-
-async function ensureDir(dir) {
-  await fsp.mkdir(dir, { recursive: true });
+  return createStorageAdapter('local', { root: getLocalRoot() }).publicUrl(key, req);
 }
 
 /**
@@ -114,68 +107,58 @@ async function putMapBackground({
   originalName = '',
   req = null
 }) {
-  if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
-    const err = new Error('File trống.');
-    err.code = 'STORAGE_EMPTY';
-    err.status = 400;
-    throw err;
-  }
-  if (buffer.length > getMaxBytes()) {
-    const err = new Error(`File vượt giới hạn ${getMaxBytes()} bytes.`);
-    err.code = 'STORAGE_TOO_LARGE';
-    err.status = 413;
-    throw err;
-  }
-  if (!isAllowedMime(mime)) {
-    const err = new Error('Chỉ chấp nhận PNG/JPEG/WebP/GIF.');
-    err.code = 'STORAGE_MIME';
-    err.status = 400;
-    throw err;
-  }
+  const verified = validateBuffer(buffer, mime, {
+    maxBytes: getMaxBytes(),
+    allowedMime: Array.from(ALLOWED_MIME).map((value) => value.replace('image/jpg', 'image/jpeg'))
+  });
+  mime = verified.mime;
 
   const backend = getBackend();
-  if (backend === 's3' || backend === 'minio') {
-    const err = new Error(
-      'STORAGE_BACKEND=s3/minio chưa cấu hình credentials. Dùng local hoặc set env S3 sau.'
-    );
-    err.code = 'STORAGE_S3_NOT_CONFIGURED';
-    err.status = 501;
-    throw err;
-  }
-
   const ext = EXT_BY_MIME[String(mime).toLowerCase()] || path.extname(originalName) || '.bin';
   const id = crypto.randomBytes(8).toString('hex');
   const key = path
     .join('map-backgrounds', String(buildingId), `floor-${floorNumber}-${id}${ext}`)
     .replace(/\\/g, '/');
 
-  const abs = path.join(getLocalRoot(), key);
-  await ensureDir(path.dirname(abs));
-  await fsp.writeFile(abs, buffer);
-
-  return {
+  const adapter = createStorageAdapter(backend, backend === 'local'
+    ? { root: getLocalRoot() }
+    : {});
+  const result = await adapter.put({
     key,
-    url: publicUrlForKey(key, req),
+    buffer,
+    mime,
+    checksum: verified.checksum
+  });
+  return {
+    ...result,
+    url: adapter.publicUrl(key, req),
     bytes: buffer.length,
-    mime: String(mime).toLowerCase(),
-    backend: 'local'
+    mime,
+    checksum: verified.checksum,
+    backend
   };
 }
 
 async function deleteByKey(key) {
-  if (!key || key.includes('..')) return false;
-  const abs = path.join(getLocalRoot(), key);
   try {
-    await fsp.unlink(abs);
-    return true;
+    key = assertSafeKey(key);
   } catch {
     return false;
   }
+  const backend = getBackend();
+  return createStorageAdapter(
+    backend,
+    backend === 'local' ? { root: getLocalRoot() } : {}
+  ).delete({ key });
 }
 
 function fileExists(key) {
-  if (!key || key.includes('..')) return false;
-  return fs.existsSync(path.join(getLocalRoot(), key));
+  try {
+    key = assertSafeKey(key);
+  } catch {
+    return false;
+  }
+  return getBackend() === 'local' && fs.existsSync(path.join(getLocalRoot(), key));
 }
 
 module.exports = {

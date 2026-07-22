@@ -14,9 +14,9 @@ const Building = require('../../models/Building');
 
 const API = '/api/buildings';
 
-function tokenFor(userId, role) {
+function tokenFor(userId, role, sv = 0) {
   return jwt.sign(
-    { userId: String(userId), role },
+    { userId: String(userId), role, sv },
     process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
@@ -40,9 +40,17 @@ describe('Phase 4.4 — restore building (soft delete)', () => {
     const buildingAdmin = await User.findOne({ role: 'BUILDING_ADMIN', is_active: { $ne: false } }).lean();
     if (!superUser) throw new Error('Thiếu SUPER_ADMIN trong DB');
 
-    superToken = tokenFor(superUser._id, 'SUPER_ADMIN');
-    if (orgAdmin) orgAdminToken = tokenFor(orgAdmin._id, 'ORG_ADMIN');
-    if (buildingAdmin) buildingAdminToken = tokenFor(buildingAdmin._id, 'BUILDING_ADMIN');
+    superToken = tokenFor(superUser._id, 'SUPER_ADMIN', Number(superUser.session_version) || 0);
+    if (orgAdmin) {
+      orgAdminToken = tokenFor(orgAdmin._id, 'ORG_ADMIN', Number(orgAdmin.session_version) || 0);
+    }
+    if (buildingAdmin) {
+      buildingAdminToken = tokenFor(
+        buildingAdmin._id,
+        'BUILDING_ADMIN',
+        Number(buildingAdmin.session_version) || 0
+      );
+    }
 
     const org = await Organization.findOne({ is_active: { $ne: false } }).lean();
     if (!org) throw new Error('Thiếu org active để test');

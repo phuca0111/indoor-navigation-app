@@ -12,6 +12,7 @@ const bcrypt = require('bcryptjs');
 // Import app & models
 const app = require('../../server'); // Assuming server.js exports app
 const User = require('../../models/User');
+const Organization = require('../../models/Organization');
 
 // Test config
 const API_BASE = '/api';
@@ -20,11 +21,22 @@ let buildingAdminToken;
 let superAdminId;
 let buildingAdminId;
 let tempUserId;
+let testOrganizationId;
+
+const TEST_USER_EMAILS = [
+  'admin@test.com',
+  'toanha1@test.com',
+  'test_active_1a6@test.com',
+  'test_inactive_1a6@test.com',
+  'test_inactive_flow@test.com',
+  'test_update_validation@test.com',
+  'test_activity_activate@test.com'
+];
 
 // Helper: generate JWT token for user
-function generateToken(userId, role) {
+function generateToken(userId, role, sv = 0) {
   return jwt.sign(
-    { userId, role },
+    { userId, role, sv },
     process.env.JWT_SECRET || 'test-secret',
     { expiresIn: '1h' }
   );
@@ -37,12 +49,17 @@ describe('1A.6 Admin User Management API', () => {
     await mongoose.connect(mongoUri);
 
     // Clean up test users
-    await User.deleteMany({ email: { $in: [
-      'admin@test.com',
-      'toanha1@test.com',
-      'test_active_1a6@test.com',
-      'test_inactive_1a6@test.com'
-    ]}});
+    await User.deleteMany({ email: { $in: TEST_USER_EMAILS } });
+    await Organization.deleteMany({ slug: 'user-api-integration-test' });
+
+    const testOrganization = await Organization.create({
+      name: 'User API Integration Test',
+      slug: 'user-api-integration-test',
+      plan: 'ENTERPRISE',
+      billing_status: 'ACTIVE',
+      is_active: true
+    });
+    testOrganizationId = testOrganization._id;
 
     // Create SUPER_ADMIN
     const superAdmin = await User.create({
@@ -52,20 +69,31 @@ describe('1A.6 Admin User Management API', () => {
       is_active: true
     });
     superAdminId = superAdmin._id;
-    superAdminToken = generateToken(superAdminId, 'SUPER_ADMIN');
+    superAdminToken = generateToken(
+      superAdminId,
+      'SUPER_ADMIN',
+      Number(superAdmin.session_version) || 0
+    );
 
     // Create BUILDING_ADMIN active
     const buildingAdmin = await User.create({
       email: 'toanha1@test.com',
       password: await bcrypt.hash('123456', 10),
       role: 'BUILDING_ADMIN',
+      organization_id: testOrganizationId,
       is_active: true
     });
     buildingAdminId = buildingAdmin._id;
-    buildingAdminToken = generateToken(buildingAdminId, 'BUILDING_ADMIN');
+    buildingAdminToken = generateToken(
+      buildingAdminId,
+      'BUILDING_ADMIN',
+      Number(buildingAdmin.session_version) || 0
+    );
   });
 
   afterAll(async () => {
+    await User.deleteMany({ email: { $in: TEST_USER_EMAILS } });
+    if (testOrganizationId) await Organization.findByIdAndDelete(testOrganizationId);
     await mongoose.connection.close();
   });
 
@@ -158,6 +186,7 @@ describe('1A.6 Admin User Management API', () => {
         email: 'test_inactive_1a6@test.com',
         password: await bcrypt.hash('123456', 10),
         role: 'BUILDING_ADMIN',
+        organization_id: testOrganizationId,
         is_active: false
       });
 
@@ -188,7 +217,7 @@ describe('1A.6 Admin User Management API', () => {
       const user = await User.create({
         email: 'test_inactive_flow@test.com',
         password: await bcrypt.hash('123456', 10),
-        role: 'BUILDING_ADMIN',
+        role: 'REGISTERED_USER',
         is_active: false
       });
       inactiveUser = user;
@@ -200,7 +229,7 @@ describe('1A.6 Admin User Management API', () => {
         .send({ email: inactiveUser.email, password: '123456' });
       expect([400, 403]).toContain(res.status);
       if (res.body.message) {
-        expect(res.body.message).toMatch(/chờ|khóa|inactive/i);
+        expect(res.body.message).toMatch(/chờ|khóa|inactive|không thể đăng nhập/i);
       }
     });
 

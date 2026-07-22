@@ -94,12 +94,14 @@ describe('Phase 2a — Draft API (collection drafts)', () => {
     }
   });
 
-  test('TC-2a-01 GET draft mới → 200, tạo draft rỗng', async () => {
+  test('TC-2a-01 GET draft mới → 200 nhưng không tạo record', async () => {
     const res = await authReq(superToken)('get', draftUrl(testBuildingId, 0));
     expect(res.statusCode).toBe(200);
     expect(res.body).toHaveProperty('payload');
     expect(res.body).toHaveProperty('version');
-    expect(res.body.version).toBe(1);
+    expect(res.body.version).toBe(0);
+    expect(res.body.payload).toBeNull();
+    expect(await Draft.countDocuments({ building_id: testBuildingId })).toBe(0);
   });
 
   test('TC-2a-02 PUT draft → 200, version++', async () => {
@@ -146,5 +148,24 @@ describe('Phase 2a — Draft API (collection drafts)', () => {
   test('TC-2a-06 ORG_ADMIN đọc draft → 200', async () => {
     const res = await authReq(orgToken)('get', draftUrl(testBuildingId, 0));
     expect(res.statusCode).toBe(200);
+  });
+
+  test('TC-2a-07 ETag khóa revision và legacy/new API dùng cùng source of truth', async () => {
+    const first = await authReq(superToken)('put', draftUrl(testBuildingId, 0))
+      .set('If-Match', '"draft-0"')
+      .send({ map_data: { rooms: [{ id: 'etag', name: 'v1' }], nodes: [], edges: [] } });
+    expect(first.statusCode).toBe(200);
+    expect(first.headers.etag).toBe('"draft-1"');
+
+    const stale = await authReq(superToken)('put', draftUrl(testBuildingId, 0))
+      .set('If-Match', '"draft-0"')
+      .send({ map_data: { rooms: [{ id: 'etag', name: 'stale' }], nodes: [], edges: [] } });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.body.code).toBe('DRAFT_CONFLICT');
+
+    const legacy = await authReq(superToken)('get', `/api/maps/${testBuildingId}/0/draft`);
+    expect(legacy.statusCode).toBe(200);
+    expect(legacy.headers.etag).toBe('"draft-1"');
+    expect(legacy.body.draft_map_data.rooms[0].name).toBe('v1');
   });
 });

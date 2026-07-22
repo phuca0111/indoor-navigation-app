@@ -1,7 +1,6 @@
 // Phase 5.8 — TPTPpay merchant page + status API
 const QRCode = require('qrcode');
-const Invoice = require('../models/Invoice');
-const Organization = require('../models/Organization');
+const billingSelfService = require('../application/billing/billingSelfServiceApplicationService');
 const { assertPaymentAccess } = require('../services/paymentSessionGuard');
 const {
   buildTptpBankQrPayload,
@@ -29,7 +28,7 @@ async function getPayPage(req, res) {
     const { invoiceId } = req.params;
     const { token } = req.query;
     const { invoice } = await assertPaymentAccess(invoiceId, token);
-    const org = await Organization.findById(invoice.organization_id).select('name slug').lean();
+    const org = await billingSelfService.findOrganization(invoice.organization_id);
     const amount = Number(invoice.amount || 0).toLocaleString('vi-VN');
     const plan = invoice.plan || 'PRO';
     const merchant = org?.name || org?.slug || 'Indoor Nav SaaS';
@@ -98,12 +97,12 @@ async function getPaymentStatus(req, res) {
     const { token } = req.query;
     await assertPaymentAccess(invoiceId, token).catch(async (e) => {
       if (e.code === 'ALREADY_PAID') {
-        const inv = await Invoice.findById(invoiceId);
+        const inv = await billingSelfService.findInvoice(invoiceId);
         if (inv?.status === 'PAID') return { invoice: inv };
       }
       throw e;
     });
-    const invoice = await Invoice.findById(invoiceId);
+    const invoice = await billingSelfService.findInvoice(invoiceId);
     if (!invoice) return res.status(404).json({ message: 'Không tìm thấy hóa đơn.' });
     if (invoice.status === 'PAID') {
       return res.json({ status: 'PAID', invoice_number: invoice.invoice_number });
@@ -111,7 +110,7 @@ async function getPaymentStatus(req, res) {
     res.json({ status: invoice.status, invoice_number: invoice.invoice_number });
   } catch (e) {
     if (e.code === 'ALREADY_PAID') {
-      const invoice = await Invoice.findById(req.params.invoiceId);
+      const invoice = await billingSelfService.findInvoice(req.params.invoiceId);
       return res.json({ status: 'PAID', invoice_number: invoice?.invoice_number });
     }
     res.status(e.status || 500).json({ message: e.message });

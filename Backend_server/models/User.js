@@ -33,11 +33,19 @@ const userSchema = new mongoose.Schema({
         sparse: true
     },
 
+    email_verified_at: { type: Date, default: null },
+    two_factor: {
+        enabled: { type: Boolean, default: false },
+        provider: { type: String, enum: ['email', 'totp'], default: 'email' },
+        enabled_at: { type: Date, default: null },
+        recovery_code_hashes: { type: [String], default: [], select: false }
+    },
+
     // Cột 3: Vai trò của người dùng
     // REGISTERED_USER: tài khoản cá nhân (không thuộc Organization), có Personal Workspace
     role: {
         type: String,
-        enum: ['SUPER_ADMIN', 'FINANCE_ADMIN', 'ORG_ADMIN', 'BUILDING_ADMIN', 'REGISTERED_USER'],
+        enum: ['SUPER_ADMIN', 'FINANCE_ADMIN', 'MARKETING_MANAGER', 'ORG_ADMIN', 'BUILDING_ADMIN', 'REGISTERED_USER'],
         default: 'BUILDING_ADMIN'
     },
 
@@ -54,6 +62,12 @@ const userSchema = new mongoose.Schema({
     plan_expires_at: {
         type: Date,
         default: null
+    },
+    // Khóa fulfillment giữ retry thanh toán trực tiếp không gia hạn cùng giao dịch hai lần.
+    personal_payment_fulfillments: {
+        type: [String],
+        default: [],
+        select: false
     },
 
     // Cột 4: Danh sách các tòa nhà được gán cho Admin này quản lý
@@ -85,6 +99,21 @@ const userSchema = new mongoose.Schema({
     phone: {
         type: String,
         default: ''
+    },
+
+    avatar: {
+        url: { type: String, default: '', maxlength: 2048 },
+        object_key: { type: String, default: '', maxlength: 512 }
+    },
+    preferences: {
+        locale: { type: String, default: 'vi', maxlength: 10 },
+        timezone: { type: String, default: 'Asia/Ho_Chi_Minh', maxlength: 64 },
+        theme: { type: String, enum: ['system', 'light', 'dark'], default: 'system' }
+    },
+    notification_preferences: {
+        email_security: { type: Boolean, default: true },
+        email_product: { type: Boolean, default: true },
+        in_app: { type: Boolean, default: true }
     },
 
     // Hồ sơ thanh toán / hóa đơn — tự điền form checkout lần sau
@@ -130,6 +159,33 @@ const userSchema = new mongoose.Schema({
         type: Date,
         default: null,
         select: false
+    },
+
+    // Map Governance P3 — reputation cộng đồng
+    map_trust_score: {
+        type: Number,
+        default: 50,
+        min: 0,
+        max: 100
+    },
+    map_trust_level: {
+        type: Number,
+        default: 3,
+        min: 1,
+        max: 5
+    },
+    map_banned_until: {
+        type: Date,
+        default: null
+    },
+    map_ban_permanent: {
+        type: Boolean,
+        default: false
+    },
+    map_ban_reason: {
+        type: String,
+        default: '',
+        maxlength: 500
     }
 
 }, {

@@ -21,7 +21,15 @@ const {
   clearOrganizationPublishPermit,
   updateMyOrganizationContact
 } = require('../controllers/organizationController');
-const { auth, requireSuperAdmin } = require('../middlewares/auth');
+const { auth, requireSuperAdmin, requirePermission, P } = require('../middlewares/auth');
+const {
+  listMembers,
+  upsertMember,
+  removeMember,
+  listDepartments,
+  createDepartment,
+  updateDepartment
+} = require('../controllers/organizationMemberController');
 
 // Tất cả routes organization đều yêu cầu xác thực
 router.use(auth);
@@ -40,6 +48,13 @@ router.post('/me/create', createOrganizationFromPersonal);
 
 // POST /api/organizations/with-admin — Super Admin tạo org + ORG_ADMIN (2.7)
 router.post('/with-admin', requireSuperAdmin, createWithAdmin);
+
+router.get('/:organizationId/members', requirePermission(P.ORG_MEMBERS_READ), listMembers);
+router.put('/:organizationId/members', requirePermission(P.ORG_MEMBERS_MANAGE), upsertMember);
+router.delete('/:organizationId/members/:memberId', requirePermission(P.ORG_MEMBERS_MANAGE), removeMember);
+router.get('/:organizationId/departments', requirePermission(P.ORG_MEMBERS_READ), listDepartments);
+router.post('/:organizationId/departments', requirePermission(P.ORG_DEPARTMENTS_MANAGE), createDepartment);
+router.patch('/:organizationId/departments/:departmentId', requirePermission(P.ORG_DEPARTMENTS_MANAGE), updateDepartment);
 
 // Subscription lifecycle (đặt trước /:id để tránh xung đột route nếu cần)
 router.get('/:id/subscription', requireSuperAdmin, getOrganizationSubscription);

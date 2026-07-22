@@ -50,7 +50,7 @@ async function refreshOrgBillingStatus(org) {
     const {
       getCurrentSubscription,
       refreshSubscriptionStatus
-    } = require('../services/subscriptionLifecycle');
+    } = require('../application/billing/subscriptionApplicationService');
     const subscription = await getCurrentSubscription(org._id);
     if (subscription) {
       await refreshSubscriptionStatus(org, subscription);
@@ -342,7 +342,9 @@ async function handlePlanChangeBilling(org, oldPlan, newPlan, options = {}) {
     org.plan_expires_at = new Date(Date.now() + PAID_PLAN_DEFAULT_DAYS * 24 * 60 * 60 * 1000);
 
     try {
-      const { activateOrRenewSubscription } = require('../services/subscriptionLifecycle');
+      const {
+        activateOrRenewSubscription
+      } = require('../application/billing/subscriptionApplicationService');
       await activateOrRenewSubscription({
         org,
         plan: newPlan,
@@ -368,13 +370,18 @@ async function handlePlanChangeBilling(org, oldPlan, newPlan, options = {}) {
     org.plan_expires_at = new Date();
 
     try {
-      const { expireCurrentSubscription } = require('../services/subscriptionLifecycle');
+      const {
+        expireCurrentSubscription
+      } = require('../application/billing/subscriptionApplicationService');
       await expireCurrentSubscription(org, {
         createdBy: options.changedBy || null,
         note: options.note || `Super Admin hạ gói ${oldPlan} → ${newPlan}`,
         source: 'MANUAL_SUPER_ADMIN',
         recordHistory: false
       });
+      // expireCurrentSubscription giữ gói trả phí để phục vụ luồng hết hạn tự động.
+      // Với thao tác hạ gói thủ công, gói đích của Super Admin mới là source of truth.
+      org.plan = newPlan;
       // Giữ ACTIVE để khóa quota ngay theo chính sách hạ gói thủ công.
       org.billing_status = 'ACTIVE';
       if (typeof org.save === 'function') await org.save();

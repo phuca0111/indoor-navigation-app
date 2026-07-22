@@ -230,7 +230,8 @@ body.admin-shell-body {
 }
 
 .admin-nav-group.is-open .admin-nav-group-items {
-  max-height: 420px;
+  /* Website/CMS có nhiều mục hơn các nhóm khác; 420px làm mục cuối bị cắt. */
+  max-height: 720px;
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
@@ -709,7 +710,7 @@ body {
 }
 
 .table-scroll-wrapper .buildings-table {
-    min-width: 900px;
+    min-width: 1100px;
 }
 
 .cell-ellipsis {
@@ -722,14 +723,27 @@ body {
 }
 
 .building-actions {
-    display: flex;
-    flex-wrap: wrap;
+    display: inline-flex;
+    flex-wrap: nowrap;
     gap: 6px;
     align-items: center;
+    white-space: nowrap;
 }
 
-.building-actions .btn-edit {
+.building-actions .btn-edit,
+.building-actions .btn-logout,
+.building-actions .btn-create,
+.building-actions button {
+    flex: 0 0 auto;
     white-space: nowrap;
+}
+
+#buildingsTable th:last-child,
+#buildingsTable td.actions-cell {
+    min-width: 420px;
+    width: 1%;
+    white-space: nowrap;
+    overflow: visible;
 }
 
 .org-plan-select {

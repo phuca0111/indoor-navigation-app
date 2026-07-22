@@ -97,6 +97,7 @@
     function setStatus(el, text, kind) {
         if (!el) return;
         el.textContent = text || '';
+        el.hidden = !text;
         el.className = 'pricing-status' + (kind ? ' is-' + kind : '');
     }
 
@@ -123,7 +124,7 @@
             .then(function (data) {
                 var plans = (data && data.plans) || [];
                 if (!plans.length) throw new Error('empty');
-                paint(plans, statusEl, 'Đồng bộ từ catalog Billing (planCatalog).');
+                paint(plans, statusEl, '');
             })
             .catch(function () {
                 paint(FALLBACK_PLANS, statusEl, 'API tạm lỗi — đang dùng bảng giá dự phòng (khớp FALLBACK Billing).');

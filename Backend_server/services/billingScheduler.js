@@ -1,11 +1,11 @@
 // Phase 5.7 — Job định kỳ: grace / hết hạn subscription
 // Phase 8 — nhắc email sắp hết hạn gói
-const Organization = require('../models/Organization');
-const User = require('../models/User');
+const billingOrganizationRepository = require('../repositories/billingOrganizationRepository');
+const billingRecipientRepository = require('../repositories/billingRecipientRepository');
 const {
   getCurrentSubscription,
   refreshSubscriptionStatus
-} = require('./subscriptionLifecycle');
+} = require('../application/billing/subscriptionApplicationService');
 const { refreshOrgBillingStatus } = require('../utils/overQuotaLock');
 const { sendPlanExpiryReminderEmail } = require('./mailService');
 
@@ -38,11 +38,10 @@ async function sendExpiryReminders(stats) {
   const now = Date.now();
   const windowEnd = now + remindDays * 24 * 60 * 60 * 1000;
 
-  const candidates = await Organization.find({
-    is_active: { $ne: false },
-    billing_status: 'ACTIVE',
-    plan_expires_at: { $ne: null, $gte: new Date(now), $lte: new Date(windowEnd) }
-  }).select('_id name plan_expires_at plan_expiry_reminded_at');
+  const candidates = await billingOrganizationRepository.listExpiryReminderCandidates(
+    new Date(now),
+    new Date(windowEnd)
+  );
 
   for (const org of candidates) {
     try {
@@ -50,31 +49,38 @@ async function sendExpiryReminders(stats) {
         continue;
       }
 
-      const expiresAt = org.plan_expires_at;
+      const claimed = await billingOrganizationRepository.claimExpiryReminder(
+        org._id,
+        new Date(new Date().setUTCHours(0, 0, 0, 0)),
+        new Date(Date.now() - 5 * 60 * 1000)
+      );
+      if (!claimed) continue;
+      const expiresAt = claimed.plan_expires_at;
       const daysLeft = Math.max(
         0,
         Math.ceil((new Date(expiresAt).getTime() - now) / (24 * 60 * 60 * 1000))
       );
 
-      const admin = await User.findOne({
-        organization_id: org._id,
-        role: 'ORG_ADMIN',
-        is_active: { $ne: false }
-      }).select('email').lean();
+      const admin = await billingRecipientRepository
+        .findActiveOrganizationAdmin(org._id);
 
+      let sent = false;
       if (admin?.email) {
-        await sendPlanExpiryReminderEmail({
+        const result = await sendPlanExpiryReminderEmail({
           to: admin.email,
-          orgName: org.name,
+          orgName: claimed.name,
           expiresAt,
           daysLeft
         });
-        stats.reminders = (stats.reminders || 0) + 1;
+        sent = !result?.skipped;
+        if (sent) stats.reminders = (stats.reminders || 0) + 1;
       }
 
-      org.plan_expiry_reminded_at = new Date();
-      await org.save();
+      await billingOrganizationRepository.completeExpiryReminder(org._id, sent);
     } catch (e) {
+      await billingOrganizationRepository
+        .completeExpiryReminder(org._id, false)
+        .catch(() => {});
       stats.errors += 1;
       console.warn('billingScheduler reminder org', org._id, e.message);
     }
@@ -87,14 +93,14 @@ async function runBillingSchedulerOnce() {
   const stats = { scanned: 0, refreshed: 0, reminders: 0, errors: 0 };
 
   try {
-    const orgs = await Organization.find({ is_active: { $ne: false } })
-      .select('_id plan billing_status grace_ends_at plan_expires_at')
-      .lean();
+    const orgs = await billingOrganizationRepository
+      .listActiveBillingOrganizations();
 
     for (const row of orgs) {
       stats.scanned += 1;
       try {
-        const org = await Organization.findById(row._id);
+        const org = await billingOrganizationRepository
+          .findBillingOrganizationById(row._id);
         if (!org) continue;
         const subscription = await getCurrentSubscription(org._id);
         if (subscription) {

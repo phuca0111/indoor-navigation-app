@@ -15,6 +15,7 @@ node_modules/
 .env
 .env.*
 !.env.example
+!.env.staging.example
 !**/.env.example
 Backend_server/.env
 *_token.json
@@ -27,6 +28,9 @@ Backend_server/coverage/
 
 # Phase 2d — uploaded objects (local storage)
 Backend_server/uploads/
+backups/
+ops/secrets/*
+!ops/secrets/*.example
 
 # File tạm & dữ liệu test local
 Backend_server/temp_map.json
@@ -43,6 +47,38 @@ Backend_server/test_get_data*.js
 
 # Gradle cache local (JDK zip, rất nặng)
 IndoorNavigationApp/.gradle-user-home/
+.gradle-local/
+
+# Script patch / backup tạm (không commit)
+Backend_server/admin/fix_*.py
+Backend_server/admin/inject_*.py
+Backend_server/js/fix_*.py
+Backend_server/js/apply_*.py
+Backend_server/js/patch_*.py
+Backend_server/js/*.bak
+Backend_server/js/*.broken
+Backend_server/js/*.pre*
+Backend_server/js/_debug.txt
+Backend_server/print_*.js
+Backend_server/fix_qr_nodeids.js
+old_dashboard.js
+_git_0716.html
+tailadmin-free-tailwind-dashboard-template-main/
+
+# Báo cáo phase local (không bắt buộc lên Git)
+BAO_CAO_PHASE_*.md
+HUONG_DAN_PUSH_*.md
+TEST_THUC_NGHIEM_*.md
+TEST_VERIFY_ANDROID_*.md
+nang-cap-he-thong-chuan-thuong-mai-saas.md
+webedit_nangcap.md
+test5.6-6.md
+WebMapEditor/GITHUB_PR_HANDOFF.md
+WebMapEditor/PHASE*_SMOKE_TEST.md
+WebMapEditor/PHASE_UI_HOP_AGENDA.md
+WebMapEditor/WEBEDIT_COORDINATION.md
+IndoorNavigationApp/BAO_CAO_FIX*.md
+IndoorNavigationApp/compile_errors.txt
 
 # Script patch Python một lần (AI debug Android)
 IndoorNavigationApp/patch_*.py

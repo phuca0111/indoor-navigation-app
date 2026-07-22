@@ -7,6 +7,8 @@ const jwt = require('jsonwebtoken');
 const app = require('../../server');
 const User = require('../../models/User');
 const LandingPage = require('../../models/LandingPage');
+const WebsiteConfig = require('../../models/WebsiteConfig');
+const { ensureWebsiteConfig } = require('../../services/websiteCmsService');
 
 const API = '/api/website';
 
@@ -37,12 +39,19 @@ describe('Website CMS', () => {
     if (mongoose.connection.readyState !== 0) await mongoose.connection.close();
   });
 
-  test('public bundle trả navigation + pages', async () => {
+  test('public bundle trả navigation + pages (không Demo)', async () => {
     const res = await request(app).get(`${API}/public`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.navigation)).toBe(true);
     expect(Array.isArray(res.body.pages)).toBe(true);
-    expect(res.body.pages.length).toBeGreaterThanOrEqual(5);
+    expect(res.body.pages.length).toBeGreaterThanOrEqual(4);
+    expect(res.body.pages.some((p) => p.slug === 'demo')).toBe(false);
+    expect(
+      (res.body.navigation || []).some((n) =>
+        String(n.href || '').toLowerCase().includes('demo') ||
+        String(n.label || '').toLowerCase() === 'demo'
+      )
+    ).toBe(false);
   });
 
   test('ORG_ADMIN không sửa pages', async () => {
@@ -53,15 +62,14 @@ describe('Website CMS', () => {
     expect(res.status).toBe(403);
   });
 
-  test('SUPER_ADMIN list 5 trang cố định + draft/publish', async () => {
+  test('SUPER_ADMIN list 4 trang cố định + draft/publish', async () => {
     const list = await request(app)
       .get(`${API}/pages`)
       .set('Authorization', `Bearer ${superToken}`);
     expect(list.status).toBe(200);
-    expect(list.body.pages).toHaveLength(5);
-    expect(list.body.pages.map((p) => p.slug).sort()).toEqual(
-      ['contact', 'demo', 'features', 'home', 'pricing'].sort()
-    );
+    const slugs = list.body.pages.map((p) => p.slug).sort();
+    expect(slugs).toEqual(['contact', 'features', 'home', 'pricing'].sort());
+    expect(slugs).not.toContain('demo');
 
     const draft = await request(app)
       .put(`${API}/pages/home/draft`)
@@ -88,5 +96,43 @@ describe('Website CMS', () => {
 
     const page = await LandingPage.findOne({ slug: 'home' }).lean();
     expect(page.published_sections[0].props.title).toBe('Tiêu đề test CMS');
+  });
+
+  test('C6 ensureWebsiteConfig strip Demo nav + updateConfig không ghi lại Demo', async () => {
+    const doc = await WebsiteConfig.findOne({ key: 'default' });
+    expect(doc).toBeTruthy();
+    doc.navigation = [
+      { id: 'n1', label: 'Home', href: '/', order: 1, enabled: true },
+      { id: 'n2', label: 'Demo', href: '/demo', order: 2, enabled: true }
+    ];
+    await doc.save();
+
+    await ensureWebsiteConfig();
+    const cleaned = await WebsiteConfig.findOne({ key: 'default' }).lean();
+    expect((cleaned.navigation || []).some((n) => String(n.href).includes('demo'))).toBe(false);
+
+    const put = await request(app)
+      .put(`${API}/config`)
+      .set('Authorization', `Bearer ${superToken}`)
+      .send({
+        navigation: [
+          { label: 'Home', href: '/', order: 1 },
+          { label: 'Demo', href: '/demo', order: 2 },
+          { label: 'Giá', href: '/pricing', order: 3 }
+        ]
+      });
+    expect(put.status).toBe(200);
+    expect((put.body.navigation || put.body.config?.navigation || []).some?.((n) =>
+      String(n.href || '').includes('demo')
+    ) || false).toBe(false);
+
+    const after = await WebsiteConfig.findOne({ key: 'default' }).lean();
+    expect((after.navigation || []).some((n) => String(n.href).includes('demo'))).toBe(false);
+  });
+
+  test('C6 /demo redirect → /login', async () => {
+    const res = await request(app).get('/demo');
+    expect([301, 302]).toContain(res.status);
+    expect(String(res.headers.location || '')).toMatch(/\/login/);
   });
 });

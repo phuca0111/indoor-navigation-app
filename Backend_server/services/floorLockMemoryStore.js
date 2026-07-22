@@ -5,6 +5,7 @@
 // ============================================
 
 const store = new Map(); // key -> { payload, expiresAtMs }
+const fences = new Map();
 
 function lockKey(buildingId, floorNumber) {
   return `lock:floor:${buildingId}:${floorNumber}`;
@@ -39,12 +40,15 @@ async function kvSetNx(buildingId, floorNumber, payload, ttlSec) {
   const key = lockKey(buildingId, floorNumber);
   if (getEntry(key)) return null;
   const expiresAtMs = nowMs() + ttlSec * 1000;
+  const fencing_token = (fences.get(key) || 0) + 1;
+  fences.set(key, fencing_token);
   const body = {
     building_id: String(buildingId),
     floor_number: Number(floorNumber),
     user_id: String(payload.user_id),
     user_email: payload.user_email || '',
-    session_id: String(payload.session_id)
+    session_id: String(payload.session_id),
+    fencing_token
   };
   store.set(key, { payload: body, expiresAtMs });
   return { ...body, expires_at: new Date(expiresAtMs) };
@@ -53,12 +57,15 @@ async function kvSetNx(buildingId, floorNumber, payload, ttlSec) {
 async function kvSet(buildingId, floorNumber, payload, ttlSec) {
   const key = lockKey(buildingId, floorNumber);
   const expiresAtMs = nowMs() + ttlSec * 1000;
+  const fencing_token = (fences.get(key) || 0) + 1;
+  fences.set(key, fencing_token);
   const body = {
     building_id: String(buildingId),
     floor_number: Number(floorNumber),
     user_id: String(payload.user_id),
     user_email: payload.user_email || '',
-    session_id: String(payload.session_id)
+    session_id: String(payload.session_id),
+    fencing_token
   };
   store.set(key, { payload: body, expiresAtMs });
   return { ...body, expires_at: new Date(expiresAtMs) };
@@ -86,6 +93,7 @@ async function kvClearBuilding(buildingId) {
 
 function kvClearAll() {
   store.clear();
+  fences.clear();
 }
 
 module.exports = {

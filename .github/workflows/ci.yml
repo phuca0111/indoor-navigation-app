@@ -1,0 +1,197 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: Backend_server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.17.0
+          cache: npm
+          cache-dependency-path: Backend_server/package-lock.json
+      - run: npm ci
+      - run: npm run test:architecture
+      - run: npm run test:unit
+      - run: npm run typecheck
+      - run: npm run check:web-colors
+      - run: npm audit --omit=dev --audit-level=high
+
+  web-editor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: WebMapEditor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.17.0
+          cache: npm
+          cache-dependency-path: WebMapEditor/package-lock.json
+      - run: npm ci
+      - run: npm run test:pre-release
+
+  browser-quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.17.0
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:list
+      - run: npm test
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 7
+
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      redis:
+        image: redis:7.4.5-alpine3.21
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 3s --health-retries 10
+    env:
+      NODE_ENV: test
+      TEST_MONGO_URI: mongodb://127.0.0.1:27017/indoor_nav_test?replicaSet=rs0
+      MONGO_URI: mongodb://127.0.0.1:27017/indoor_nav_test?replicaSet=rs0
+      REDIS_URL: redis://127.0.0.1:6379/15
+      JWT_SECRET: ci-only-not-a-real-secret-000000000000000
+      PAYMENT_TOKEN_SECRET: ci-only-not-a-real-secret-111111111111
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.17.0
+          cache: npm
+          cache-dependency-path: Backend_server/package-lock.json
+      - run: docker run -d --name mongo-test -p 27017:27017 mongo:8.0.12 --replSet rs0 --bind_ip_all
+      - run: |
+          for i in {1..30}; do
+            docker exec mongo-test mongosh --quiet --eval "db.adminCommand('ping').ok" && break
+            sleep 2
+          done
+          docker exec mongo-test mongosh --quiet --eval "rs.initiate({_id:'rs0',members:[{_id:0,host:'127.0.0.1:27017'}]})"
+          sleep 5
+      - working-directory: Backend_server
+        run: npm ci
+      - working-directory: Backend_server
+        run: npm run test:integration:safe
+
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Backend_server/Dockerfile
+          push: false
+          load: true
+          tags: indoor-nav:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: aquasecurity/trivy-action@0.32.0
+        with:
+          image-ref: indoor-nav:${{ github.sha }}
+          format: sarif
+          output: trivy.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+      - uses: anchore/sbom-action@v0
+        with:
+          image: indoor-nav:${{ github.sha }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-sbom
+          path: sbom.spdx.json
+          retention-days: 14
+
+  staging-config-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate ephemeral CI-only staging values
+        run: |
+          TOKEN=ci0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJK
+          cat > .env.staging <<EOF
+          NODE_ENV=production
+          DEPLOY_ENV=staging
+          HTTP_PORT=8080
+          MONGO_INITDB_ROOT_USERNAME=staging_root
+          MONGO_INITDB_ROOT_PASSWORD=$TOKEN
+          MONGO_URI=mongodb://staging_root:$TOKEN@mongo:27017/indoor_nav_staging?authSource=admin&replicaSet=rs0
+          MONGO_KEYFILE_PATH=./ops/secrets/mongo-keyfile
+          REDIS_PASSWORD=$TOKEN
+          REDIS_URL=redis://:$TOKEN@redis:6379/0
+          MINIO_ROOT_USER=stagingciaccesskey123456
+          MINIO_ROOT_PASSWORD=$TOKEN
+          MINIO_ACCESS_KEY=stagingciaccesskey123456
+          MINIO_SECRET_KEY=$TOKEN
+          MINIO_BUCKET=indoor-nav-staging
+          MINIO_PUBLIC_URL=/storage
+          JWT_SECRET=$TOKEN
+          PAYMENT_TOKEN_SECRET=$TOKEN
+          OAUTH_STATE_SECRET=$TOKEN
+          IDENTITY_CHALLENGE_SECRET=$TOKEN
+          METRICS_TOKEN=$TOKEN
+          AUTH_RESET_TOKEN_IN_RESPONSE=false
+          MOCK_PAYMENT_ENABLED=false
+          EOF
+          python - <<'PY'
+          from pathlib import Path
+          Path("ops/secrets/mongo-keyfile").write_text("A" * 800)
+          Path("ops/secrets/metrics-token").write_text("ci0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJK")
+          PY
+          chmod 400 ops/secrets/mongo-keyfile ops/secrets/metrics-token
+      - run: docker compose config --quiet
+      - run: docker run --rm -v "$PWD/nginx.conf:/etc/nginx/nginx.conf:ro" -v "$PWD/ops/nginx/proxy_params:/etc/nginx/proxy_params:ro" -v "$PWD/ops/nginx/tls-enabled:/etc/nginx/tls-enabled:ro" nginx:1.28.0-alpine3.21 nginx -t
+      - run: docker run --rm -v "$PWD/prometheus.yml:/etc/prometheus/prometheus.yml:ro" -v "$PWD/ops/observability/alerts.yml:/etc/prometheus/alerts.yml:ro" prom/prometheus:v3.5.0 promtool check config /etc/prometheus/prometheus.yml
+      - run: docker run --rm -v "$PWD/ops/observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro" prom/alertmanager:v0.28.1 amtool check-config /etc/alertmanager/alertmanager.yml
+      - run: docker compose up -d --build --wait
+      - run: |
+          curl --fail http://127.0.0.1:8080/api/live
+          curl --fail http://127.0.0.1:8080/api/ready
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/metrics)" = "404"
+      - if: always()
+        run: docker compose down -v --remove-orphans

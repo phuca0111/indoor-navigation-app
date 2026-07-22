@@ -1,0 +1,43 @@
+<!-- ===== MODAL: THÊM TỔ CHỨC ===== -->
+<div id="addOrgModal" class="modal" style="display:none;">
+<div class="modal-content">
+<h3>🏛️ Thêm Tổ Chức Mới</h3>
+
+<p style="font-size:13px; color:#666; margin:0 0 12px 0; font-weight:600;">Thông tin tổ chức</p>
+<div class="form-group">
+<label>Tên tổ chức <span style="color:#e74c3c;">*</span>:</label>
+<input type="text" id="addOrgName" placeholder="Ví dụ: AEON Tân Phú..." onblur="prefillSlug()">
+</div>
+<div class="form-group">
+<label>Slug <span style="color:#e74c3c;">*</span>:</label>
+<input type="text" id="addOrgSlug" placeholder="aeon-tan-phu (tự sinh khi nhập tên)">
+</div>
+<div class="form-group">
+<label>Gói:</label>
+<select id="addOrgPlan">
+<option value="FREE">FREE</option>
+<option value="PRO">PRO</option>
+<option value="ENTERPRISE">ENTERPRISE</option>
+</select>
+</div>
+
+<p style="font-size:13px; color:#666; margin:0 0 12px 0; font-weight:600;">Tài khoản quản trị (ORG_ADMIN)</p>
+<div class="form-group">
+<label>Họ tên <span style="color:#e74c3c;">*</span>:</label>
+<input type="text" id="addOrgAdminName" placeholder="Nguyễn Văn A">
+</div>
+<div class="form-group">
+<label>Email <span style="color:#e74c3c;">*</span>:</label>
+<input type="email" id="addOrgAdminEmail" placeholder="admin@example.com">
+</div>
+<div class="form-group">
+<label>Mật khẩu <span style="color:#e74c3c;">*</span>:</label>
+<input type="password" id="addOrgAdminPassword" placeholder="Ít nhất 8 ký tự">
+</div>
+
+<div class="modal-actions">
+<button type="button" onclick="closeAddOrgModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
+<button type="button" onclick="createOrganization()" class="btn-create" style="background:#8e44ad;">Tạo Tổ Chức</button>
+</div>
+</div>
+</div>

@@ -1,14 +1,12 @@
 // Phase 8 — Floor edit lock HTTP handlers
-const User = require('../models/User');
-const Building = require('../models/Building');
 const {
   acquire,
   heartbeat,
   release,
-  getStatus,
+  status,
   getTtlSec,
   getBackendName
-} = require('../services/floorEditLock');
+} = require('../application/mapLifecycle/lockApplicationService');
 
 function parseFloor(params) {
   const floorNum = parseInt(params.floor, 10);
@@ -18,34 +16,21 @@ function parseFloor(params) {
   return { floorNum };
 }
 
-async function assertBuildingExists(buildingId, res) {
-  const b = await Building.findById(buildingId).select('_id').lean();
-  if (!b) {
-    res.status(404).json({ message: 'Không tìm thấy tòa nhà!' });
-    return false;
-  }
-  return true;
-}
-
 // POST /:buildingId/:floor/lock
 async function acquireLock(req, res) {
   try {
     const { buildingId } = req.params;
     const { floorNum, error } = parseFloor(req.params);
     if (error) return res.status(error.status).json({ message: error.message });
-    if (!(await assertBuildingExists(buildingId, res))) return;
-
     const sessionId = String(req.body?.session_id || '').trim();
     if (!sessionId) {
       return res.status(400).json({ message: 'Thiếu session_id.', code: 'LOCK_BAD_REQUEST' });
     }
 
-    const me = await User.findById(req.user.userId).select('email').lean();
     const result = await acquire({
       buildingId,
-      floor: floorNum,
-      userId: req.user.userId,
-      email: me?.email || '',
+      floorNumber: floorNum,
+      actor: req.user,
       sessionId,
       force: !!req.body?.force,
       callerRole: req.user.role
@@ -69,11 +54,12 @@ async function acquireLock(req, res) {
         user_id: result.lock.user_id,
         user_email: result.lock.user_email,
         session_id: result.lock.session_id,
-        expires_at: result.lock.expires_at
+        expires_at: result.lock.expires_at,
+        fencing_token: result.lock.fencing_token
       }
     });
   } catch (e) {
-    res.status(500).json({ message: 'Lỗi lock tầng: ' + e.message });
+    res.status(e.status || 500).json({ message: 'Lỗi lock tầng: ' + e.message, code: e.code });
   }
 }
 
@@ -91,8 +77,8 @@ async function heartbeatLock(req, res) {
 
     const result = await heartbeat({
       buildingId,
-      floor: floorNum,
-      userId: req.user.userId,
+      floorNumber: floorNum,
+      actor: req.user,
       sessionId
     });
 
@@ -110,7 +96,7 @@ async function heartbeatLock(req, res) {
       expires_at: result.lock.expires_at
     });
   } catch (e) {
-    res.status(500).json({ message: 'Lỗi heartbeat lock: ' + e.message });
+    res.status(e.status || 500).json({ message: 'Lỗi heartbeat lock: ' + e.message, code: e.code });
   }
 }
 
@@ -124,8 +110,8 @@ async function releaseLock(req, res) {
     const sessionId = String(req.body?.session_id || '').trim();
     const result = await release({
       buildingId,
-      floor: floorNum,
-      userId: req.user.userId,
+      floorNumber: floorNum,
+      actor: req.user,
       sessionId,
       force: !!req.body?.force,
       callerRole: req.user.role
@@ -144,7 +130,7 @@ async function releaseLock(req, res) {
       released: !!result.released
     });
   } catch (e) {
-    res.status(500).json({ message: 'Lỗi release lock: ' + e.message });
+    res.status(e.status || 500).json({ message: 'Lỗi release lock: ' + e.message, code: e.code });
   }
 }
 
@@ -155,25 +141,26 @@ async function getLockStatus(req, res) {
     const { floorNum, error } = parseFloor(req.params);
     if (error) return res.status(error.status).json({ message: error.message });
 
-    const status = await getStatus(buildingId, floorNum);
+    const result = await status({ buildingId, floorNumber: floorNum, actor: req.user });
     res.status(200).json({
-      held: status.held,
+      held: result.held,
       ttl_sec: getTtlSec(),
       backend: getBackendName(),
-      holder: status.holder || null,
-      lock: status.held
+      holder: result.holder || null,
+      lock: result.held
         ? {
-            building_id: status.lock.building_id,
-            floor_number: status.lock.floor_number,
-            expires_at: status.lock.expires_at,
-            session_id: status.lock.session_id,
-            user_id: status.lock.user_id,
-            user_email: status.lock.user_email
+            building_id: result.lock.building_id,
+            floor_number: result.lock.floor_number,
+            expires_at: result.lock.expires_at,
+            session_id: result.lock.session_id,
+            user_id: result.lock.user_id,
+            user_email: result.lock.user_email,
+            fencing_token: result.lock.fencing_token
           }
         : null
     });
   } catch (e) {
-    res.status(500).json({ message: 'Lỗi lấy trạng thái lock: ' + e.message });
+    res.status(e.status || 500).json({ message: 'Lỗi lấy trạng thái lock: ' + e.message, code: e.code });
   }
 }
 

@@ -13,9 +13,9 @@ const Organization = require('../../models/Organization');
 
 const API_ORG = '/api/organizations';
 
-function tokenFor(userId, role) {
+function tokenFor(userId, role, sv = 0) {
   return jwt.sign(
-    { userId: String(userId), role },
+    { userId: String(userId), role, sv },
     process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
@@ -36,7 +36,11 @@ describe('Phase 4.1d — Org inactive blocks tenant users', () => {
     orgAdmin = await User.findOne({ role: 'ORG_ADMIN', is_active: { $ne: false }, organization_id: { $ne: null } }).lean();
     if (!superUser || !orgAdmin) throw new Error('Thiếu SUPER_ADMIN hoặc ORG_ADMIN');
 
-    superToken = tokenFor(superUser._id, 'SUPER_ADMIN');
+    superToken = tokenFor(
+      superUser._id,
+      'SUPER_ADMIN',
+      Number(superUser.session_version) || 0
+    );
     orgId = String(orgAdmin.organization_id);
 
     const org = await Organization.findById(orgId).lean();
@@ -65,7 +69,7 @@ describe('Phase 4.1d — Org inactive blocks tenant users', () => {
       .set('Authorization', `Bearer ${superToken}`)
       .send({ is_active: false });
 
-    const token = tokenFor(admin._id, 'ORG_ADMIN');
+    const token = tokenFor(admin._id, 'ORG_ADMIN', Number(admin.session_version) || 0);
     const res = await request(app)
       .get('/api/users/me')
       .set('Authorization', `Bearer ${token}`);
@@ -101,7 +105,7 @@ describe('Phase 4.1d — Org inactive blocks tenant users', () => {
 
     // Nếu password đúng sẽ 403 org; nếu sai vẫn 400 — test với token path thay thế
     if (res.status === 400) {
-      const token = tokenFor(admin._id, 'ORG_ADMIN');
+      const token = tokenFor(admin._id, 'ORG_ADMIN', Number(admin.session_version) || 0);
       const apiRes = await request(app)
         .get('/api/buildings')
         .set('Authorization', `Bearer ${token}`);

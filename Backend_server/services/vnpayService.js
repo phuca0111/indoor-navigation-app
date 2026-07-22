@@ -101,5 +101,6 @@ module.exports = {
   createVnpayPaymentUrl,
   verifyVnpayParams,
   parseVnpayResponseCode,
-  buildSecureHash
+  buildSecureHash,
+  formatVnpayDate
 };

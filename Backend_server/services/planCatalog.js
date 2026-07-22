@@ -1,5 +1,5 @@
 // Phase 9.3 — Plan catalog service (cache + seed + CRUD helpers)
-const Plan = require('../models/Plan');
+const planRepository = require('../repositories/planRepository');
 
 const FALLBACK_LIMITS = {
   FREE: { maxBuildings: 2, maxUsers: 5 },
@@ -89,7 +89,7 @@ const DEFAULT_SEED = [
 ];
 
 async function refreshPlanCache() {
-  const rows = await Plan.find({}).lean();
+  const rows = await planRepository.listCatalog();
   const map = {};
   rows.forEach((p) => {
     map[String(p.code).toUpperCase()] = p;
@@ -99,12 +99,12 @@ async function refreshPlanCache() {
 }
 
 async function ensureDefaultPlans() {
-  const existing = await Plan.find({}).select('code is_personal is_organization show_on_landing').lean();
+  const existing = await planRepository.listAudienceFields();
   const existingCodes = new Set(existing.map((p) => String(p.code).toUpperCase()));
   // Chỉ chèn các gói mặc định còn THIẾU — không ghi đè gói đã có/đã chỉnh.
   const missing = DEFAULT_SEED.filter((p) => !existingCodes.has(String(p.code).toUpperCase()));
   if (missing.length) {
-    await Plan.insertMany(missing);
+    await planRepository.insertMissingDefaults(missing);
   }
 
   // Backfill trường audience + Personal Workspace cho các gói seed đã tồn tại
@@ -128,23 +128,12 @@ async function ensureDefaultPlans() {
     }
     if (seed.show_on_landing != null) $set.show_on_landing = !!seed.show_on_landing;
     if (Object.keys($set).length) {
-      await Plan.updateOne({ code: seed.code }, { $set });
+      await planRepository.updatePlanByCode(seed.code, $set);
     }
   }
 
   // Gói tùy chỉnh chưa có flag: mặc định show_on_landing=true; is_organization nếu không phải personal
-  await Plan.updateMany(
-    { show_on_landing: { $exists: false } },
-    { $set: { show_on_landing: true } }
-  );
-  await Plan.updateMany(
-    { is_organization: { $exists: false }, is_personal: { $ne: true } },
-    { $set: { is_organization: true } }
-  );
-  await Plan.updateMany(
-    { is_organization: { $exists: false }, is_personal: true },
-    { $set: { is_organization: false } }
-  );
+  await planRepository.backfillAudienceFlags();
 
   await refreshPlanCache();
   return { seeded: missing.length > 0, inserted: missing.length, count: existing.length + missing.length };
@@ -299,8 +288,7 @@ async function assertPlanCode(plan, opts = {}) {
 
 async function listPlans({ activeOnly = false } = {}) {
   await ensureDefaultPlans();
-  const filter = activeOnly ? { is_active: true } : {};
-  return Plan.find(filter).sort({ sort_order: 1, code: 1 }).lean();
+  return planRepository.listCatalog({ activeOnly });
 }
 
 module.exports = {

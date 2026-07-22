@@ -1,5 +1,95 @@
 /* WL0 — shared landing layout (header, auth, mobile) */
 
+:root {
+    --landing-primary: #2563eb;
+    --landing-secondary: #0f172a;
+    --landing-radius: 12px;
+}
+
+.header,
+.footer {
+    background-color: var(--landing-secondary) !important;
+}
+
+.btn-primary,
+.register-btn {
+    background-color: var(--landing-primary) !important;
+    border-color: var(--landing-primary) !important;
+}
+
+.btn-secondary {
+    color: var(--landing-primary) !important;
+    border-color: var(--landing-primary) !important;
+}
+
+.landing-card,
+.btn,
+input,
+select,
+textarea,
+.cms-public-grid article,
+.cms-public-article-card,
+.cms-public-grid details {
+    border-radius: var(--landing-radius) !important;
+}
+
+.cms-site-logo {
+    width: 30px;
+    height: 30px;
+    object-fit: contain;
+    border-radius: min(var(--landing-radius), 8px);
+}
+
+.cms-site-contact {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+    margin-top: 18px;
+}
+
+.cms-site-contact a {
+    color: inherit;
+    text-decoration: none;
+    opacity: 0.88;
+}
+
+.cms-site-contact a:hover {
+    color: var(--landing-primary);
+    opacity: 1;
+}
+
+.cms-site-map {
+    flex-basis: 100%;
+    width: 100%;
+    max-width: 720px;
+    height: 240px;
+    margin: 12px auto 0;
+    border: 0;
+    border-radius: var(--landing-radius);
+}
+
+body[data-landing-theme="dark"] {
+    color: #e5e7eb;
+    background: #0b1120;
+}
+
+body[data-landing-theme="dark"] .landing-card,
+body[data-landing-theme="dark"] .cms-public-section,
+body[data-landing-theme="dark"] .cms-public-grid article,
+body[data-landing-theme="dark"] .cms-public-article-card,
+body[data-landing-theme="dark"] .cms-public-grid details {
+    color: #e5e7eb;
+    background: #111827;
+    border-color: #334155;
+}
+
+body[data-landing-theme="dark"] .landing-muted,
+body[data-landing-theme="dark"] .section-lead {
+    color: #aeb9c9;
+}
+
 /* Sticky footer: tránh khoảng trắng / “lệch” dưới chân trang khi nội dung ngắn */
 html {
     height: 100%;
@@ -105,6 +195,84 @@ body > .footer {
     color: #6b7280;
 }
 
+.cms-scheduled-banner {
+    padding: 18px 0;
+    color: #fff;
+    background: linear-gradient(120deg, #075985, #0f766e);
+}
+
+.cms-scheduled-banner-inner {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    color: inherit;
+    text-decoration: none;
+}
+
+.cms-scheduled-banner img {
+    width: min(260px, 35vw);
+    max-height: 130px;
+    object-fit: cover;
+    border-radius: 12px;
+}
+
+.cms-scheduled-banner h2,
+.cms-scheduled-banner p {
+    margin: 0;
+}
+
+.cms-scheduled-banner p {
+    margin-top: 8px;
+    opacity: 0.9;
+    white-space: pre-line;
+}
+
+.cms-public-section {
+    padding: 72px 0;
+    background: #f8fafc;
+}
+
+.cms-public-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 18px;
+    margin-top: 28px;
+}
+
+.cms-public-grid article,
+.cms-public-article-card,
+.cms-public-grid details {
+    padding: 22px;
+    border: 1px solid #dbe4ee;
+    border-radius: 14px;
+    background: #fff;
+}
+
+.cms-public-article-card {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.cms-public-article-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
+}
+
+.cms-public-grid summary {
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.cms-public-article-image {
+    width: 100%;
+    height: 150px;
+    margin-bottom: 16px;
+    object-fit: cover;
+    border-radius: 10px;
+}
+
 @media (max-width: 768px) {
     .auth-actions {
         display: none;
@@ -119,5 +287,14 @@ body > .footer {
         display: flex;
         flex-direction: column;
         gap: 10px;
+    }
+
+    .cms-scheduled-banner-inner {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .cms-scheduled-banner img {
+        width: 100%;
     }
 }

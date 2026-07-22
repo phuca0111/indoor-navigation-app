@@ -1,15 +1,16 @@
-const { buildOverviewDashboard } = require('../services/overviewDashboardService');
+const { getOverviewDashboard } = require('../application/read/dashboardQueryService');
 
-const getOverviewDashboard = async (req, res) => {
+const getOverviewDashboardHttp = async (req, res) => {
   try {
-    const data = await buildOverviewDashboard({
+    const data = await getOverviewDashboard({
       user: req.user,
-      range: req.query.range || '30d',
+      range: req.query.range || '1m',
       from: req.query.from,
       to: req.query.to,
       subscription_range: req.query.subscription_range || req.query.sub_range,
       subscription_from: req.query.subscription_from || req.query.sub_from,
-      subscription_to: req.query.subscription_to || req.query.sub_to
+      subscription_to: req.query.subscription_to || req.query.sub_to,
+      org_growth_mode: req.query.org_growth_mode
     });
     return res.status(200).json(data);
   } catch (error) {
@@ -20,4 +21,4 @@ const getOverviewDashboard = async (req, res) => {
   }
 };
 
-module.exports = { getOverviewDashboard };
+module.exports = { getOverviewDashboard: getOverviewDashboardHttp };

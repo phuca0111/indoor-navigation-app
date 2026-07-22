@@ -8,7 +8,9 @@ const OrganizationRegistration = require('../models/OrganizationRegistration');
 const Organization = require('../models/Organization');
 const User = require('../models/User');
 const ActivityLog = require('../models/ActivityLog');
-const { createOrganizationWithAdmin } = require('../services/organizationOnboarding');
+const {
+  createOrganizationWithAdmin
+} = require('../application/coreTenant/createOrganizationWithAdmin');
 const { validatePasswordStrength } = require('../utils/passwordPolicy');
 
 function slugify(name) {

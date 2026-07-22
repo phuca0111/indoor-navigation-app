@@ -1,31 +1,121 @@
 /**
  * AD15/AD16 — Bundle Overview Dashboard
  * (range year/custom, health, QR nav, KPI delta/sparkline)
+ * Phase 7 — persistence via dashboardReadRepository; no Service→Controller.
  */
-const Organization = require('../models/Organization');
-const OrganizationPlanHistory = require('../models/OrganizationPlanHistory');
-const User = require('../models/User');
-const OrganizationRegistration = require('../models/OrganizationRegistration');
-const ActivityLog = require('../models/ActivityLog');
-const QrScanLog = require('../models/QrScanLog');
+const dashboardRead = require('../repositories/dashboardReadRepository');
 const {
   getBuildingStats,
   getUserStats,
   getFloorStats,
   countActiveUsersToday
-} = require('../controllers/platformStatsController');
+} = require('../application/read/platformStatsQueryService');
 const { getOrgQuotaSnapshot } = require('../utils/overQuotaLock');
-const { buildAlerts } = require('./analyticsService');
+const { buildAlerts } = require('../application/read/analyticsQueryService');
 const { buildReportSummary, buildRevenueExpenseProjectStats } = require('./financeReports');
 const { listOrgsForBilling } = require('./financeService');
 const { buildSystemHealth } = require('./systemHealthService');
+const REPORT_TZ = process.env.REPORT_TIMEZONE || 'Asia/Ho_Chi_Minh';
+
+// Compatibility shims — repository methods, never Mongoose Query objects.
+const Organization = {
+  countDocuments: (f) => dashboardRead.countOrganizations(f),
+  findById: (id) => {
+    let selectFields = null;
+    const api = {
+      select(v) { selectFields = v; return api; },
+      lean: async () => dashboardRead.findOrganizationById(id),
+      then: (resolve, reject) => dashboardRead.findOrganizationById(id).then(resolve, reject)
+    };
+    // Note: select is accepted for API parity; findOrganizationById returns full lean DTO.
+    void selectFields;
+    return api;
+  },
+  aggregate: (p) => dashboardRead.aggregateOrganizations(p),
+  find: (filter) => {
+    const state = { filter, select: null, sort: null, limit: null };
+    const api = {
+      select(v) { state.select = v; return api; },
+      sort(v) { state.sort = v; return api; },
+      limit(v) { state.limit = v; return api; },
+      lean: () => dashboardRead.findOrganizations(state.filter, state),
+      then: (resolve, reject) => dashboardRead.findOrganizations(state.filter, state).then(resolve, reject)
+    };
+    return api;
+  }
+};
+const OrganizationPlanHistory = {
+  aggregate: (p) => dashboardRead.aggregatePlanHistory(p),
+  find: (filter) => {
+    const state = { filter, select: null, sort: null, limit: null };
+    const api = {
+      select(v) { state.select = v; return api; },
+      sort(v) { state.sort = v; return api; },
+      limit(v) { state.limit = v; return api; },
+      lean: () => dashboardRead.findPlanHistory(state.filter, state)
+    };
+    return api;
+  }
+};
+const User = {
+  countDocuments: (f) => dashboardRead.countUsers(f),
+  aggregate: (p) => dashboardRead.aggregateUsers(p),
+  find: (filter) => {
+    const state = { filter, select: null, sort: null, limit: null };
+    const api = {
+      select(v) { state.select = v; return api; },
+      sort(v) { state.sort = v; return api; },
+      limit(v) { state.limit = v; return api; },
+      lean: () => dashboardRead.findUsers(state.filter, state)
+    };
+    return api;
+  },
+  findById: (id) => {
+    let selectFields = null;
+    const api = {
+      select(v) { selectFields = v; return api; },
+      lean: async () => {
+        const rows = await dashboardRead.findUsers({ _id: id }, {
+          select: selectFields,
+          limit: 1
+        });
+        return rows[0] || null;
+      },
+      then: (resolve, reject) => api.lean().then(resolve, reject)
+    };
+    return api;
+  }
+};
+const OrganizationRegistration = {
+  countDocuments: (f) => dashboardRead.countRegistrations(f)
+};
+const ActivityLog = {
+  find: (filter) => {
+    const state = { filter, select: null, sort: null, limit: null, populate: null };
+    const api = {
+      select(v) { state.select = v; return api; },
+      sort(v) { state.sort = v; return api; },
+      limit(v) { state.limit = v; return api; },
+      populate(path, select) {
+        state.populate = typeof path === 'string' ? { path, select } : path;
+        return api;
+      },
+      lean: () => dashboardRead.findActivity(state.filter, state)
+    };
+    return api;
+  },
+  aggregate: (p) => dashboardRead.aggregateActivity(p)
+};
+const QrScanLog = {
+  countDocuments: (f) => dashboardRead.countQrScans(f),
+  aggregate: (p) => dashboardRead.aggregateQrScans(p),
+  distinct: (field, filter) => dashboardRead.distinctQrScans(field, filter)
+};
+
+const { dateKey: reportDateKey } = require('../application/read/readDateRange');
 
 function dateKey(d) {
-  const x = new Date(d);
-  const y = x.getFullYear();
-  const m = String(x.getMonth() + 1).padStart(2, '0');
-  const day = String(x.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return reportDateKey(d);
 }
 
 function parseDay(raw, endOf) {
@@ -43,11 +133,17 @@ function parseDay(raw, endOf) {
   );
 }
 
+function inclusiveCalendarDays(start, end) {
+  const startDay = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+  const endDay = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+  return Math.max(1, Math.round((endDay - startDay) / 86400000) + 1);
+}
+
 function parseOverviewRange(range, from, to) {
   const customStart = parseDay(from, false);
   const customEnd = parseDay(to, true);
   if (customStart && customEnd && customStart <= customEnd) {
-    const days = Math.max(1, Math.round((customEnd - customStart) / 86400000) + 1);
+    const days = inclusiveCalendarDays(customStart, customEnd);
     return {
       key: 'custom',
       days,
@@ -58,7 +154,7 @@ function parseOverviewRange(range, from, to) {
     };
   }
 
-  const r = String(range || '30d').toLowerCase();
+  const r = String(range || '1m').toLowerCase();
   const end = new Date();
   end.setHours(23, 59, 59, 999);
   const start = new Date(end);
@@ -70,15 +166,41 @@ function parseOverviewRange(range, from, to) {
   if (r === 'month' || r === 'mtd') {
     start.setDate(1);
     start.setHours(0, 0, 0, 0);
-    const days = Math.max(1, Math.round((end - start) / 86400000) + 1);
+    const days = inclusiveCalendarDays(start, end);
     return { key: 'month', days, start, end, from: dateKey(start), to: dateKey(end) };
   }
   if (r === 'year' || r === 'ytd') {
     start.setMonth(0, 1);
     start.setHours(0, 0, 0, 0);
-    const days = Math.max(1, Math.round((end - start) / 86400000) + 1);
+    const days = inclusiveCalendarDays(start, end);
     return { key: 'year', days, start, end, from: dateKey(start), to: dateKey(end) };
   }
+
+  // Khoảng lùi theo tháng lịch, tính đến hết hôm nay.
+  // Ví dụ 1m tại 21/07 → 22/06–21/07 (đúng một tháng, tính cả hai đầu).
+  const rollingMonths = {
+    '1m': 1,
+    '2m': 2,
+    '3m': 3,
+    '6m': 6,
+    '1y': 12
+  }[r];
+  if (rollingMonths) {
+    const originalDay = end.getDate();
+    start.setDate(1);
+    start.setMonth(start.getMonth() - rollingMonths);
+    const lastDayOfTargetMonth = new Date(
+      start.getFullYear(),
+      start.getMonth() + 1,
+      0
+    ).getDate();
+    start.setDate(Math.min(originalDay, lastDayOfTargetMonth));
+    start.setDate(start.getDate() + 1);
+    start.setHours(0, 0, 0, 0);
+    const days = inclusiveCalendarDays(start, end);
+    return { key: r, days, start, end, from: dateKey(start), to: dateKey(end) };
+  }
+
   const days = { '7d': 7, '30d': 30, '90d': 90 }[r] || 30;
   start.setDate(start.getDate() - (days - 1));
   start.setHours(0, 0, 0, 0);
@@ -101,14 +223,13 @@ function pctDelta(current, previous) {
   return Math.round(((c - p) / Math.abs(p)) * 1000) / 10;
 }
 
-function emptySeries(start, end) {
+function emptySeries(start, end, maxPoints = 120) {
   const out = [];
   const cur = new Date(start);
   cur.setHours(0, 0, 0, 0);
   const last = new Date(end);
   last.setHours(0, 0, 0, 0);
   // Cap daily series length for year/custom dài
-  const maxPoints = 120;
   const totalDays = Math.max(1, Math.round((last - cur) / 86400000) + 1);
   const step = totalDays > maxPoints ? Math.ceil(totalDays / maxPoints) : 1;
   while (cur <= last) {
@@ -377,8 +498,7 @@ async function buildPlanDistribution(orgId, start, end) {
   // Nâng cấp cá nhân trong kỳ (PersonalPayment PAID) — hiện ở cột «Mới trong kỳ»
   if (!orgId) {
     try {
-      const PersonalPayment = require('../models/PersonalPayment');
-      const personalPaid = await PersonalPayment.aggregate([
+      const personalPaid = await dashboardRead.aggregatePersonalPayments([
         {
           $match: {
             status: 'PAID',
@@ -487,40 +607,77 @@ async function buildBillingCare() {
 // AD25 — Doanh thu theo gói + KPI MRR/ARR/Renew/Churn cho widget Gói đăng ký
 async function buildSubscriptionInsights(start, end) {
   const { getPlanPrice, ensureDefaultPlans, isPaidPlan } = require('./planCatalog');
-  const Invoice = require('../models/Invoice');
-  const OrganizationBillingEvent = require('../models/OrganizationBillingEvent');
+  // finance models via dashboardRead
+  const Invoice = {
+    aggregate: (p) => dashboardRead.aggregateInvoices(p)
+  };
+  const Expense = {
+    aggregate: (p) => dashboardRead.aggregateExpenses(p)
+  };
+  const OrganizationBillingEvent = {
+    countDocuments: (f) => dashboardRead.countBillingEvents(f),
+    find: (filter) => {
+      const state = { filter, sort: null, limit: null };
+      const api = {
+        sort(v) { state.sort = v; return api; },
+        limit(v) { state.limit = v; return api; },
+        lean: () => dashboardRead.findBillingEvents(state.filter, state)
+      };
+      return api;
+    }
+  };
   await ensureDefaultPlans();
 
   const revenue = emptyPlanCounter();
   let revenueTotal = 0;
+  let paidInvoiceCount = 0;
+  let expenseTotal = 0;
+  let expenseCount = 0;
+
   if (start instanceof Date && end instanceof Date) {
-    const revenueRows = await Invoice.aggregate([
-      {
-        $match: {
-          status: 'PAID',
-          $or: [
-            { paid_at: { $gte: start, $lte: end } },
-            { paid_at: null, createdAt: { $gte: start, $lte: end } }
-          ]
+    const [revenueRows, expenseRows] = await Promise.all([
+      Invoice.aggregate([
+        {
+          $match: {
+            status: 'PAID',
+            $or: [
+              { paid_at: { $gte: start, $lte: end } },
+              { paid_at: null, createdAt: { $gte: start, $lte: end } }
+            ]
+          }
+        },
+        {
+          $group: {
+            _id: { $ifNull: ['$plan', 'UNKNOWN'] },
+            amount: { $sum: '$amount' },
+            count: { $sum: 1 }
+          }
         }
-      },
-      {
-        $group: {
-          _id: { $ifNull: ['$plan', 'UNKNOWN'] },
-          amount: { $sum: '$amount' },
-          count: { $sum: 1 }
+      ]),
+      Expense.aggregate([
+        { $match: { expense_date: { $gte: start, $lte: end } } },
+        {
+          $group: {
+            _id: null,
+            amount: { $sum: '$amount' },
+            count: { $sum: 1 }
+          }
         }
-      }
+      ])
     ]);
     revenueRows.forEach((row) => {
       const plan = ensurePlanKey(revenue, row._id);
       const amount = Number(row.amount) || 0;
+      const count = Number(row.count) || 0;
       revenueTotal += amount;
+      paidInvoiceCount += count;
       revenue[plan] += amount;
     });
+    expenseTotal = Number(expenseRows[0]?.amount) || 0;
+    expenseCount = Number(expenseRows[0]?.count) || 0;
   }
 
-  // MRR: tổng giá gói của org trả phí đang hiệu lực
+  // MRR/ARR: ước tính định kỳ (snapshot hiện tại) — không gắn với kỳ lọc
   const activeOrgs = await Organization.find({
     is_active: { $ne: false },
     billing_status: { $in: ['ACTIVE', 'GRACE_PERIOD'] },
@@ -534,7 +691,6 @@ async function buildSubscriptionInsights(start, end) {
     mrr += getPlanPrice(org.plan) || 0;
   });
 
-  // Cộng thêm gói CÁ NHÂN (REGISTERED_USER) trả phí còn hiệu lực để MRR khớp doanh thu.
   const now = new Date();
   const paidPersonalUsers = await User.find({
     role: 'REGISTERED_USER',
@@ -571,16 +727,33 @@ async function buildSubscriptionInsights(start, end) {
   const renewRate = renewBase > 0 ? Math.round((renewals / renewBase) * 100) : null;
   const churnBase = paidNow + churned;
   const churnRate = churnBase > 0 ? Math.round((churned / churnBase) * 1000) / 10 : 0;
+  const profit = revenueTotal - expenseTotal;
 
   return {
     revenue,
     revenueTotal,
-    kpi: { mrr, arr, paid: paidNow, renewals, churned, renewRate, churnRate }
+    expenseTotal,
+    profit,
+    kpi: {
+      mrr,
+      arr,
+      paid: paidNow,
+      renewals,
+      churned,
+      renewRate,
+      churnRate,
+      // Số liệu thực trong kỳ lọc
+      revenue_in_period: revenueTotal,
+      expense_in_period: expenseTotal,
+      profit_in_period: profit,
+      paid_invoices_in_period: paidInvoiceCount,
+      expense_rows_in_period: expenseCount
+    }
   };
 }
 
-async function buildOrgGrowthSeries(start, end) {
-  const empty = emptySeries(start, end);
+async function buildOrgGrowthSeries(start, end, opts = {}) {
+  const empty = emptySeries(start, end, opts.maxPoints || 120);
   const rows = await Organization.aggregate([
     { $match: { createdAt: { $gte: start, $lte: end } } },
     {
@@ -591,6 +764,102 @@ async function buildOrgGrowthSeries(start, end) {
     }
   ]);
   return fillSeries(empty, rows);
+}
+
+/**
+ * Dữ liệu riêng cho biểu đồ Tăng trưởng tổ chức:
+ * - month: toàn bộ ngày của tháng hiện tại, chia thành trang 7 ngày
+ * - year: đủ 12 tháng của năm hiện tại
+ */
+async function buildOrgGrowthCalendarView(mode = 'month') {
+  const now = new Date();
+  const selectedMode = mode === 'year' ? 'year' : 'month';
+
+  if (selectedMode === 'year') {
+    const start = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+    const rows = await Organization.aggregate([
+      { $match: { createdAt: { $gte: start, $lte: end } } },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: '%Y-%m',
+              date: '$createdAt',
+              timezone: REPORT_TZ
+            }
+          },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+    const map = Object.fromEntries(rows.map((row) => [row._id, row.count || 0]));
+    return {
+      mode: 'year',
+      title: `Năm ${now.getFullYear()}`,
+      page_size: 12,
+      page_start: 0,
+      max_page_start: 0,
+      series: Array.from({ length: 12 }, (_, index) => {
+        const month = index + 1;
+        const key = `${now.getFullYear()}-${String(month).padStart(2, '0')}`;
+        return {
+          date: `${key}-01`,
+          label: `Tháng ${month}`,
+          count: map[key] || 0,
+          future: index > now.getMonth()
+        };
+      })
+    };
+  }
+
+  const year = now.getFullYear();
+  const monthIndex = now.getMonth();
+  const start = new Date(year, monthIndex, 1, 0, 0, 0, 0);
+  const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
+  const rows = await Organization.aggregate([
+    { $match: { createdAt: { $gte: start, $lte: end } } },
+    {
+      $group: {
+        _id: {
+          $dateToString: {
+            format: '%Y-%m-%d',
+            date: '$createdAt',
+            timezone: REPORT_TZ
+          }
+        },
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+  const map = Object.fromEntries(rows.map((row) => [row._id, row.count || 0]));
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const slotCount = Math.ceil(daysInMonth / 7) * 7;
+  const currentWeekStart = Math.floor((now.getDate() - 1) / 7) * 7;
+
+  return {
+    mode: 'month',
+    title: `Tháng ${monthIndex + 1}/${year}`,
+    page_size: 7,
+    page_start: currentWeekStart,
+    max_page_start: currentWeekStart,
+    series: Array.from({ length: slotCount }, (_, index) => {
+      const day = index + 1;
+      const outside = day > daysInMonth;
+      const key = outside
+        ? `${year}-${String(monthIndex + 1).padStart(2, '0')}-slot-${day}`
+        : dateKey(new Date(year, monthIndex, day));
+      return {
+        date: key,
+        label: outside ? '—' : `${day}/${monthIndex + 1}`,
+        count: outside ? 0 : (map[key] || 0),
+        future: outside || day > now.getDate(),
+        outside_month: outside
+      };
+    })
+  };
 }
 
 async function sumOrgCreated(start, end) {
@@ -649,7 +918,8 @@ async function buildNavigationActivity(start, end, buildingIds) {
   if (buildingIds?.length) match.building_id = { $in: buildingIds };
 
   const empty = emptySeries(start, end);
-  const [total, rows, distinctQr] = await Promise.all([
+  const analyticsRead = require('../repositories/analyticsReadRepository');
+  const [total, rows, distinctQr, sessionStarts, navComplete, navRows] = await Promise.all([
     QrScanLog.countDocuments(match),
     QrScanLog.aggregate([
       { $match: match },
@@ -660,16 +930,26 @@ async function buildNavigationActivity(start, end, buildingIds) {
         }
       }
     ]),
-    QrScanLog.distinct('qr_code', match)
+    QrScanLog.distinct('qr_code', match),
+    analyticsRead.countTelemetry({ eventType: 'session_start', start, end, buildingIds }),
+    analyticsRead.countTelemetry({ eventType: 'nav_complete', start, end, buildingIds }),
+    analyticsRead.telemetryByDay({ eventType: 'nav_complete', start, end, buildingIds })
   ]);
 
+  const sessions = sessionStarts > 0 ? sessionStarts : total;
+  const series =
+    navComplete > 0 ? fillSeries(empty, navRows) : fillSeries(empty, rows);
+
   return {
-    sessions: total,
+    sessions,
     qr_scans: total,
-    completed_routes: 0,
+    completed_routes: navComplete,
     unique_qr: (distinctQr || []).length,
-    series: fillSeries(empty, rows),
-    note: 'Sessions ≈ lượt quét QR (GET /api/qr). Completed routes chưa có từ app.'
+    series,
+    note:
+      navComplete > 0
+        ? 'Sessions / routes từ TelemetryEvent (+ QR scan).'
+        : 'Sessions ≈ lượt quét QR. Gửi POST /api/analytics/telemetry (nav_complete) để có completed_routes.'
   };
 }
 
@@ -866,7 +1146,8 @@ async function attachKpiInsights(kpiWidget, { start, end, orgFilter }) {
 
 /**
  * @param {{ user: object, range?: string, from?: string, to?: string,
- *   subscription_range?: string, subscription_from?: string, subscription_to?: string }} opts
+ *   subscription_range?: string, subscription_from?: string, subscription_to?: string,
+ *   org_growth_mode?: string }} opts
  */
 async function buildOverviewDashboard(opts = {}) {
   const user = opts.user || {};
@@ -874,6 +1155,7 @@ async function buildOverviewDashboard(opts = {}) {
   const { key, days, start, end, from, to } = parseOverviewRange(opts.range, opts.from, opts.to);
   const fromStr = from;
   const toStr = to;
+  const orgGrowthMode = opts.org_growth_mode === 'year' ? 'year' : 'month';
 
   // Bộ lọc riêng cho widget «Tổng quan gói đăng ký» — không ảnh hưởng Tăng trưởng tổ chức
   const hasSubRange = opts.subscription_range != null && String(opts.subscription_range).trim() !== '';
@@ -912,7 +1194,7 @@ async function buildOverviewDashboard(opts = {}) {
       billing_care
     ] = await Promise.all([
       settle(buildPlatformKpi),
-      settle(async () => ({ series: await buildOrgGrowthSeries(start, end) })),
+      settle(() => buildOrgGrowthCalendarView(orgGrowthMode)),
       settle(async () => {
         const [summary, chart] = await Promise.all([
           buildReportSummary({ from: fromStr, to: toStr }),
@@ -984,8 +1266,10 @@ async function buildOverviewDashboard(opts = {}) {
       throw err;
     }
 
-    const Building = require('../models/Building');
-    const buildingIds = (await Building.find({ organization_id: orgId }).select('_id').lean()).map((b) => b._id);
+    const buildingIds = (await dashboardRead.findBuildings(
+      { organization_id: orgId },
+      { select: '_id' }
+    )).map((b) => b._id);
 
     const [
       kpi,

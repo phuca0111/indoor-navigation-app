@@ -31,12 +31,17 @@ const floorEditLockSchema = new mongoose.Schema({
     expires_at: {
         type: Date,
         required: true
+    },
+    fencing_token: {
+        type: Number,
+        required: true,
+        default: 1
     }
 }, {
     timestamps: true
 });
 
 floorEditLockSchema.index({ building_id: 1, floor_number: 1 }, { unique: true });
-floorEditLockSchema.index({ expires_at: 1 });
+floorEditLockSchema.index({ expires_at: 1 }, { expireAfterSeconds: 0 });
 
 module.exports = mongoose.model('FloorEditLock', floorEditLockSchema);

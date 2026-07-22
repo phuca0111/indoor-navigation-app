@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["types/**/*.d.ts"],
+  "exclude": ["node_modules", "coverage", "uploads"]
+}
