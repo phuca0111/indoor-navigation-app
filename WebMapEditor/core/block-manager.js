@@ -18,6 +18,40 @@
         return JSON.parse(JSON.stringify(obj));
     }
 
+    function normalizeDynamicParameter(param) {
+        if (!param || !param.name ||
+            ['stretchX', 'stretchY', 'visibility', 'flipX', 'flipY', 'lookup'].indexOf(param.type) < 0) {
+            return null;
+        }
+        var out = {
+            name: String(param.name),
+            type: param.type,
+            defaultValue: param.defaultValue != null
+                ? param.defaultValue
+                : (param.type === 'visibility' || param.type === 'lookup' ? 'default'
+                    : (param.type === 'flipX' || param.type === 'flipY' ? false : 1))
+        };
+        if (param.type === 'stretchX' || param.type === 'stretchY') {
+            out.min = Number.isFinite(Number(param.min)) ? Number(param.min) : 0.1;
+            out.max = Number.isFinite(Number(param.max)) ? Number(param.max) : 10;
+        } else if (param.type === 'visibility') {
+            out.states = Array.isArray(param.states) ? param.states.map(String) : ['default'];
+            if (out.states.indexOf(String(out.defaultValue)) < 0) out.defaultValue = out.states[0];
+        } else if (param.type === 'lookup') {
+            out.table = param.table && typeof param.table === 'object' ? cloneJson(param.table) : {};
+            out.states = Object.keys(out.table);
+            if (!out.states.length) out.states = ['default'];
+            if (out.states.indexOf(String(out.defaultValue)) < 0) out.defaultValue = out.states[0];
+        } else {
+            out.defaultValue = !!out.defaultValue;
+        }
+        return out;
+    }
+
+    function normalizeDynamicParameters(params) {
+        return (params || []).map(normalizeDynamicParameter).filter(Boolean);
+    }
+
     // Lọc danh sách {type,data} chỉ giữ loại đối tượng có thể đưa vào block.
     function filterInsertableItems(items) {
         return (items || []).filter(function (it) {
@@ -171,13 +205,116 @@
             entities: items.map(function (it) {
                 return toRelativeEntity(it.type, it.data, baseX, baseY);
             }),
+            attributes: Array.isArray(opts.attributes)
+                ? opts.attributes.map(normalizeAttributeDef).filter(Boolean)
+                : [],
+            dynamicParameters: normalizeDynamicParameters(opts.dynamicParameters),
+            dynamicActions: Array.isArray(opts.dynamicActions) ? cloneJson(opts.dynamicActions) : [],
             createdAt: Date.now()
         };
     }
 
+    /** Chuẩn hoá tag thuộc tính (AutoCAD-style: NAME, CODE…). */
+    function normalizeAttrTag(tag) {
+        return String(tag || '').trim().toUpperCase().replace(/\s+/g, '_');
+    }
+
+    function normalizeAttributeDef(attr) {
+        if (!attr) return null;
+        var tag = normalizeAttrTag(attr.tag);
+        if (!tag) return null;
+        return {
+            tag: tag,
+            prompt: String(attr.prompt != null && attr.prompt !== '' ? attr.prompt : tag),
+            defaultValue: String(attr.defaultValue != null ? attr.defaultValue : ''),
+            x: attr.x != null && isFinite(attr.x) ? Number(attr.x) : 0,
+            y: attr.y != null && isFinite(attr.y) ? Number(attr.y) : -14,
+            visible: attr.visible === false ? false : true
+        };
+    }
+
+    /**
+     * Thêm / ghi đè attribute trên định nghĩa block (ATTDef).
+     * @returns {object|null} attribute đã chuẩn hoá
+     */
+    function addAttributeDef(def, attr) {
+        if (!def) return null;
+        var a = normalizeAttributeDef(attr);
+        if (!a) return null;
+        if (!Array.isArray(def.attributes)) def.attributes = [];
+        var idx = -1;
+        for (var i = 0; i < def.attributes.length; i++) {
+            if (def.attributes[i].tag === a.tag) { idx = i; break; }
+        }
+        if (idx >= 0) def.attributes[idx] = a;
+        else def.attributes.push(a);
+        return a;
+    }
+
+    function removeAttributeDef(def, tag) {
+        tag = normalizeAttrTag(tag);
+        if (!def || !tag || !Array.isArray(def.attributes)) return false;
+        var before = def.attributes.length;
+        def.attributes = def.attributes.filter(function (a) { return a.tag !== tag; });
+        return def.attributes.length < before;
+    }
+
+    /** Gán giá trị thuộc tính trên Insert (ATTEdit). */
+    function setInsertAttrValue(insert, tag, value) {
+        tag = normalizeAttrTag(tag);
+        if (!insert || !tag) return false;
+        if (!insert.attrValues || typeof insert.attrValues !== 'object') insert.attrValues = {};
+        insert.attrValues[tag] = String(value != null ? value : '');
+        return true;
+    }
+
+    function getInsertAttrValue(def, insert, tag) {
+        tag = normalizeAttrTag(tag);
+        if (!tag) return '';
+        if (insert && insert.attrValues && insert.attrValues[tag] != null) {
+            return String(insert.attrValues[tag]);
+        }
+        var attrs = (def && def.attributes) || [];
+        for (var i = 0; i < attrs.length; i++) {
+            if (attrs[i].tag === tag) return String(attrs[i].defaultValue || '');
+        }
+        return '';
+    }
+
+    /**
+     * Danh sách thuộc tính đã resolve (tag/prompt/value/vị trí) cho 1 Insert.
+     */
+    function resolveInsertAttributes(def, insert) {
+        var attrs = (def && Array.isArray(def.attributes)) ? def.attributes : [];
+        return attrs.map(function (a) {
+            return {
+                tag: a.tag,
+                prompt: a.prompt || a.tag,
+                value: getInsertAttrValue(def, insert, a.tag),
+                x: a.x != null ? a.x : 0,
+                y: a.y != null ? a.y : -14,
+                visible: a.visible !== false
+            };
+        });
+    }
+
+    /** Điền attrValues mặc định từ definition (khi chèn mới). */
+    function initInsertAttrValues(def, insert) {
+        if (!insert) return insert;
+        if (!insert.attrValues || typeof insert.attrValues !== 'object') insert.attrValues = {};
+        var attrs = (def && def.attributes) || [];
+        for (var i = 0; i < attrs.length; i++) {
+            var t = attrs[i].tag;
+            if (insert.attrValues[t] == null) {
+                insert.attrValues[t] = String(attrs[i].defaultValue || '');
+            }
+        }
+        return insert;
+    }
+
     function createInsert(blockId, x, y, opts) {
         opts = opts || {};
-        return {
+        var insert = {
             id: opts.id != null ? opts.id : Date.now(),
             blockId: blockId,
             name: opts.name || 'Insert',
@@ -185,8 +322,111 @@
             y: y,
             rotation: opts.rotation || 0,
             scale: opts.scale != null ? opts.scale : 1,
-            layerId: opts.layerId || 'default'
+            layerId: opts.layerId || 'default',
+            attrValues: (opts.attrValues && typeof opts.attrValues === 'object')
+                ? cloneJson(opts.attrValues)
+                : {},
+            dynamicValues: (opts.dynamicValues && typeof opts.dynamicValues === 'object')
+                ? cloneJson(opts.dynamicValues)
+                : {}
         };
+        if (opts.def) initInsertAttrValues(opts.def, insert);
+        if (opts.def) initDynamicValues(opts.def, insert);
+        return insert;
+    }
+
+    function initDynamicValues(def, insert) {
+        if (!insert.dynamicValues || typeof insert.dynamicValues !== 'object') insert.dynamicValues = {};
+        normalizeDynamicParameters(def && def.dynamicParameters).forEach(function (param) {
+            if (insert.dynamicValues[param.name] == null) insert.dynamicValues[param.name] = param.defaultValue;
+        });
+        return insert;
+    }
+
+    function coerceDynamicValue(param, value) {
+        if (param.type === 'visibility' || param.type === 'lookup') {
+            value = String(value);
+            if (param.states.indexOf(value) < 0) return { ok: false };
+        } else if (param.type === 'flipX' || param.type === 'flipY') {
+            value = value === true || value === 1 || String(value).toLowerCase() === 'true';
+        } else {
+            value = Number(value);
+            if (!Number.isFinite(value)) return { ok: false };
+            value = Math.max(param.min, Math.min(param.max, value));
+        }
+        return { ok: true, value: value };
+    }
+
+    function setDynamicValue(def, insert, name, value) {
+        var params = normalizeDynamicParameters(def && def.dynamicParameters);
+        var param = params.find(function (p) { return p.name === name; });
+        if (!param || !insert) return false;
+        initDynamicValues(def, insert);
+        var coerced = coerceDynamicValue(param, value);
+        if (!coerced.ok) return false;
+        value = coerced.value;
+        insert.dynamicValues[name] = value;
+        if (param.type === 'lookup' && param.table[value]) {
+            Object.keys(param.table[value]).forEach(function (targetName) {
+                if (targetName !== name) {
+                    var targetParam = params.find(function (candidate) {
+                        return candidate.name === targetName;
+                    });
+                    if (!targetParam) return;
+                    var targetValue = coerceDynamicValue(targetParam, param.table[value][targetName]);
+                    if (targetValue.ok) insert.dynamicValues[targetName] = targetValue.value;
+                }
+            });
+        }
+        evaluateDynamicActions(def, insert);
+        return true;
+    }
+
+    function evaluateDynamicActions(def, insert, maxIterations) {
+        var actions = def && Array.isArray(def.dynamicActions) ? def.dynamicActions : [];
+        var params = normalizeDynamicParameters(def && def.dynamicParameters);
+        if (!insert || !actions.length) return { changed: false, cyclic: false, iterations: 0 };
+        initDynamicValues(def, insert);
+        maxIterations = Math.max(1, Math.min(20, Math.round(maxIterations || 10)));
+        var changedAny = false;
+        var changed = false;
+        var iteration = 0;
+        do {
+            changed = false;
+            iteration++;
+            actions.forEach(function (action) {
+                if (!action || !action.when || !action.set) return;
+                var actual = insert.dynamicValues[action.when.parameter];
+                if (actual !== action.when.equals) return;
+                Object.keys(action.set).forEach(function (key) {
+                    var targetParam = params.find(function (param) { return param.name === key; });
+                    if (!targetParam) return;
+                    var coerced = coerceDynamicValue(targetParam, action.set[key]);
+                    if (!coerced.ok) return;
+                    var next = coerced.value;
+                    if (insert.dynamicValues[key] !== next) {
+                        insert.dynamicValues[key] = next;
+                        changed = true;
+                        changedAny = true;
+                    }
+                });
+            });
+        } while (changed && iteration < maxIterations);
+        return { changed: changedAny, cyclic: changed && iteration >= maxIterations, iterations: iteration };
+    }
+
+    function dynamicFactors(def, insert) {
+        var result = { x: 1, y: 1, visibility: null };
+        normalizeDynamicParameters(def && def.dynamicParameters).forEach(function (param) {
+            var value = insert && insert.dynamicValues && insert.dynamicValues[param.name] != null
+                ? insert.dynamicValues[param.name] : param.defaultValue;
+            if (param.type === 'stretchX') result.x *= Number(value) || 1;
+            else if (param.type === 'stretchY') result.y *= Number(value) || 1;
+            else if (param.type === 'flipX' && value) result.x *= -1;
+            else if (param.type === 'flipY' && value) result.y *= -1;
+            else if (param.type === 'visibility') result.visibility = String(value);
+        });
+        return result;
     }
 
     function localToWorld(lx, ly, insert) {
@@ -202,16 +442,17 @@
         };
     }
 
-    function worldEntityFromLocal(type, localData, insert) {
+    function worldEntityFromLocal(type, localData, insert, def) {
         var data = cloneJson(localData);
         var s = insert.scale != null ? insert.scale : 1;
+        var dynamic = dynamicFactors(def, insert);
         var rad = (insert.rotation || 0) * Math.PI / 180;
         var cos = Math.cos(rad);
         var sin = Math.sin(rad);
 
         function mapPoint(p) {
-            var x = p.x * s;
-            var y = p.y * s;
+            var x = p.x * s * dynamic.x;
+            var y = p.y * s * dynamic.y;
             return {
                 x: insert.x + x * cos - y * sin,
                 y: insert.y + x * sin + y * cos
@@ -221,7 +462,7 @@
         if (type === 'room') {
             if (data.shape === 'circle') {
                 var c = mapPoint({ x: data.cx, y: data.cy });
-                data.radius = data.radius * s;
+                data.radius = data.radius * s * (Math.abs(dynamic.x) + Math.abs(dynamic.y)) / 2;
                 data.cx = c.x;
                 data.cy = c.y;
                 data.x = data.cx - data.radius;
@@ -282,7 +523,7 @@
         if (!def || !insert || !def.entities) return null;
         var box = null;
         def.entities.forEach(function (ent) {
-            var world = worldEntityFromLocal(ent.type, ent.data, insert);
+            var world = worldEntityFromLocal(ent.type, ent.data, insert, def);
             box = unionBBox(box, entityBBox(ent.type, world));
         });
         return box;
@@ -295,10 +536,13 @@
      */
     function explodeInsert(def, insert) {
         if (!def || !def.entities || !insert) return [];
-        return def.entities.map(function (ent) {
+        var dynamic = dynamicFactors(def, insert);
+        return def.entities.filter(function (ent) {
+            return !ent.visibilityState || dynamic.visibility == null || ent.visibilityState === dynamic.visibility;
+        }).map(function (ent) {
             return {
                 type: ent.type,
-                data: worldEntityFromLocal(ent.type, ent.data, insert)
+                data: worldEntityFromLocal(ent.type, ent.data, insert, def)
             };
         });
     }
@@ -323,6 +567,20 @@
         selectionBBox: selectionBBox,
         createDefinition: createDefinition,
         createInsert: createInsert,
+        normalizeAttrTag: normalizeAttrTag,
+        normalizeAttributeDef: normalizeAttributeDef,
+        normalizeDynamicParameter: normalizeDynamicParameter,
+        normalizeDynamicParameters: normalizeDynamicParameters,
+        addAttributeDef: addAttributeDef,
+        removeAttributeDef: removeAttributeDef,
+        setInsertAttrValue: setInsertAttrValue,
+        getInsertAttrValue: getInsertAttrValue,
+        resolveInsertAttributes: resolveInsertAttributes,
+        initInsertAttrValues: initInsertAttrValues,
+        initDynamicValues: initDynamicValues,
+        setDynamicValue: setDynamicValue,
+        evaluateDynamicActions: evaluateDynamicActions,
+        dynamicFactors: dynamicFactors,
         localToWorld: localToWorld,
         worldEntityFromLocal: worldEntityFromLocal,
         findDefinition: findDefinition,

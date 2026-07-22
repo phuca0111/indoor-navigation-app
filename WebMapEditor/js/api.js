@@ -565,6 +565,7 @@ async function tryRefreshToken() {
 
         token = j.token; // Cập nhật biến local
         localStorage.setItem('token', j.token);
+        if (j.refreshToken) localStorage.setItem('refreshToken', j.refreshToken);
         return true;
     } catch (_) {
         return false;
@@ -971,6 +972,10 @@ async function syncDraftToServerQuiet() {
                 DraftApi.isPersistedBackgroundUrl(mapData.background_image)) {
                 window.bgLastPersistedUrl = mapData.background_image;
             }
+        } else if (result.conflict) {
+            if (typeof pauseAutoSave === 'function') pauseAutoSave('draft-conflict');
+            showToast('Nháp trên máy chủ đã thay đổi ở phiên khác. Bản local vẫn được giữ; hãy tải lại trước khi ghi đè.', 'error');
+            console.warn('[Draft] conflict:', result.current || result.data);
         } else if (result.unauthorized) {
             console.warn('[Draft] Autosync — phiên hết hạn');
         } else {
@@ -1047,6 +1052,11 @@ async function saveDraftToServer() {
             }
             if (result.unauthorized) {
                 showToast('Phiên đăng nhập hết hạn! Vui lòng đăng nhập lại.', 'error');
+                return;
+            }
+            if (result.conflict) {
+                showToast('Xung đột nháp: phiên khác đã lưu trước. Bản local vẫn an toàn; hãy tải lại tầng để hợp nhất.', 'error');
+                if (typeof pauseAutoSave === 'function') pauseAutoSave('draft-conflict');
                 return;
             }
             const errMsg = (result.data && result.data.message) ||
@@ -1405,9 +1415,18 @@ function clearCanvasData(opts) {
     qrs = [];
     bgImage = null;
     bgImageBase64 = '';
-    if (typeof window !== 'undefined') window.bgStorageKey = '';
+    if (typeof window !== 'undefined') {
+        window.bgStorageKey = '';
+        window.bgX = 0;
+        window.bgY = 0;
+        window.bgScale = 1;
+        window.bgScaleX = 1;
+        window.bgScaleY = 1;
+        window.bgRotation = 0;
+    }
     blocks = [];
     blockInserts = [];
+    window.editorAdvanced = { constraints: [], xrefs: [], pluginInstalls: [], twinBindings: [] };
     dimensions = [];
 
     // Reset các ID tự tăng
@@ -1564,11 +1583,25 @@ function applyMapData(data) {
     metersPerGrid = (Number.isFinite(parsedScale) && parsedScale > 0) ? parsedScale : 0.5;
     document.getElementById('scaleInput').value = metersPerGrid.toFixed(2);
 
+    if (data.ltScale != null && typeof setLtScale === 'function') {
+        setLtScale(data.ltScale, { skipDraw: true, skipDirty: true });
+    } else if (typeof window !== 'undefined') {
+        if (typeof setLtScale === 'function') setLtScale(1, { skipDraw: true, skipDirty: true });
+        else window.ltScale = 1;
+    }
+
     window.mapBearingOffset = Number(data.map_bearing_offset) || 0;
     var bearingInp = document.getElementById('mapBearingInput');
     if (bearingInp) bearingInp.value = window.mapBearingOffset;
 
     // 2. Khôi phục Ảnh nền
+    window.bgX = Number.isFinite(Number(data.bgX)) ? Number(data.bgX) : 0;
+    window.bgY = Number.isFinite(Number(data.bgY)) ? Number(data.bgY) : 0;
+    window.bgScale = Number(data.bgScale) > 0 ? Number(data.bgScale) : 1;
+    window.bgScaleX = Number(data.bgScaleX) > 0 ? Number(data.bgScaleX) : window.bgScale;
+    window.bgScaleY = Number(data.bgScaleY) > 0 ? Number(data.bgScaleY) : window.bgScale;
+    window.bgRotation = Number.isFinite(Number(data.bgRotation)) ? Number(data.bgRotation) : 0;
+    window.bgOpacity = Number.isFinite(Number(data.bgOpacity)) ? Number(data.bgOpacity) : 0.5;
     if (data.background_image) {
         bgImageBase64 = data.background_image;
         if (typeof window !== 'undefined') {
@@ -1690,6 +1723,7 @@ function applyMapData(data) {
         thickness: w.thickness || 4,
         is_outer: !!w.is_outer,
         lineStyle: w.lineStyle || 'solid',
+        closed: !!w.closed,
         points: Array.isArray(w.points) ? w.points.map(p => ({ x: p.x, y: p.y })) : []
     }));
     let maxWallId = 0;
@@ -1731,6 +1765,9 @@ function applyMapData(data) {
     // 6c. Block library + inserts (editor local — autosave/export)
     blocks = Array.isArray(data.blocks) ? data.blocks : [];
     blockInserts = Array.isArray(data.blockInserts) ? data.blockInserts : [];
+    window.editorAdvanced = data.advancedFeatures && typeof data.advancedFeatures === 'object'
+        ? JSON.parse(JSON.stringify(data.advancedFeatures))
+        : { constraints: [], xrefs: [], pluginInstalls: [], twinBindings: [] };
     nextBlockDefId = 1;
     blocks.forEach(function (b) {
         var m = String(b && b.id || '').match(/blk_(\d+)/);
@@ -1792,7 +1829,9 @@ function isEditorCorePublishReady() {
 /** Inline publish — không phụ thuộc EditorCore (Phần 17.5) */
 function buildPublishPayloadInline() {
     var payload = {
+        schema_version: 1,
         scale_ratio: (Number.isFinite(metersPerGrid) && metersPerGrid > 0) ? metersPerGrid : 0.5,
+        ltScale: (typeof getLtScale === 'function') ? getLtScale() : 1,
         map_bearing_offset: Number.isFinite(window.mapBearingOffset) ? window.mapBearingOffset : 0,
         background_image: bgImageBase64 || '',
 
@@ -1831,7 +1870,9 @@ function buildPublishPayloadInline() {
             x: Math.round(p.x || 0),
             y: Math.round(p.y || 0),
             type: p.type || 'Điểm mốc',
-            typeIndex: p.typeIndex || 0
+            poiType: p.poiType || null,
+            typeIndex: Number.isFinite(Number(p.typeIndex)) ? Number(p.typeIndex) : 0,
+            size: (typeof normalizePoiSize === 'function') ? normalizePoiSize(p.size) : (p.size || 24)
         })),
 
         nodes: pathNodes.filter(n => typeof n === 'object').map(n => ({
@@ -1855,6 +1896,7 @@ function buildPublishPayloadInline() {
             thickness: w.thickness || 4,
             is_outer: !!w.is_outer,
             lineStyle: w.lineStyle || 'solid',
+            closed: !!w.closed,
             points: Array.isArray(w.points)
                 ? w.points.map(p => ({ x: Math.round(p.x || 0), y: Math.round(p.y || 0) }))
                 : []
@@ -1880,7 +1922,7 @@ function attachEditorCadExtras(mapData) {
     mapData.blockInserts = (blockInserts || []).filter(function (bi) {
         return bi && typeof bi === 'object';
     }).map(function (bi) {
-        return {
+        var out = {
             id: bi.id,
             blockId: bi.blockId,
             name: bi.name || 'Insert',
@@ -1890,6 +1932,14 @@ function attachEditorCadExtras(mapData) {
             scale: bi.scale != null ? bi.scale : 1,
             layerId: bi.layerId || 'default'
         };
+        if (bi.attrValues && typeof bi.attrValues === 'object') {
+            out.attrValues = JSON.parse(JSON.stringify(bi.attrValues));
+        }
+        if (bi.dynamicValues && typeof bi.dynamicValues === 'object') {
+            out.dynamicValues = JSON.parse(JSON.stringify(bi.dynamicValues));
+        }
+        if (bi.groupId != null) out.groupId = bi.groupId;
+        return out;
     });
     mapData.lines = (lines || []).filter(function (ln) {
         return ln && typeof ln === 'object';
@@ -1900,6 +1950,7 @@ function attachEditorCadExtras(mapData) {
             color: ln.color || '#3b82f6',
             lineWeight: ln.lineWeight || 2,
             lineStyle: ln.lineStyle || 'solid',
+            closed: !!ln.closed,
             layerId: ln.layerId || 'default',
             points: Array.isArray(ln.points)
                 ? ln.points.map(function (p) {
@@ -1958,6 +2009,16 @@ function attachEditorCadExtras(mapData) {
             layerId: d.layerId || 'default'
         };
     });
+    mapData.advancedFeatures = JSON.parse(JSON.stringify(window.editorAdvanced || {
+        constraints: [], xrefs: [], pluginInstalls: [], twinBindings: []
+    }));
+    mapData.bgX = Number(window.bgX) || 0;
+    mapData.bgY = Number(window.bgY) || 0;
+    mapData.bgScale = Number(window.bgScale) > 0 ? Number(window.bgScale) : 1;
+    mapData.bgScaleX = Number(window.bgScaleX) > 0 ? Number(window.bgScaleX) : mapData.bgScale;
+    mapData.bgScaleY = Number(window.bgScaleY) > 0 ? Number(window.bgScaleY) : mapData.bgScale;
+    mapData.bgRotation = Number(window.bgRotation) || 0;
+    mapData.bgOpacity = Number.isFinite(Number(window.bgOpacity)) ? Number(window.bgOpacity) : 0.5;
     return mapData;
 }
 window.attachEditorCadExtras = attachEditorCadExtras;

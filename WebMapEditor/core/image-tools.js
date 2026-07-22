@@ -122,16 +122,20 @@
     function getBackgroundTransform(bg) {
         bg = bg || {};
         var scale = bg.bgScale != null ? bg.bgScale : 1;
+        var scaleX = bg.bgScaleX > 0 ? bg.bgScaleX : scale;
+        var scaleY = bg.bgScaleY > 0 ? bg.bgScaleY : scale;
         var imgW = bg.width || 0;
         var imgH = bg.height || 0;
-        var bw = imgW * scale;
-        var bh = imgH * scale;
+        var bw = imgW * scaleX;
+        var bh = imgH * scaleY;
         return {
             cx: (bg.bgX || 0) + bw / 2,
             cy: (bg.bgY || 0) + bh / 2,
             bw: bw,
             bh: bh,
             scale: scale,
+            scaleX: scaleX,
+            scaleY: scaleY,
             rotationDeg: bg.bgRotation || 0,
             imgW: imgW,
             imgH: imgH
@@ -149,8 +153,8 @@
         var sin = Math.sin(rad);
         var lx = dx * cos - dy * sin;
         var ly = dx * sin + dy * cos;
-        var px = (lx + t.bw / 2) / t.scale;
-        var py = (ly + t.bh / 2) / t.scale;
+        var px = (lx + t.bw / 2) / t.scaleX;
+        var py = (ly + t.bh / 2) / t.scaleY;
         return { x: px, y: py };
     }
 

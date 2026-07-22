@@ -250,6 +250,15 @@ function updatePropertiesPanel() {
                 '<button class="btn btn-sm btn-outline" type="button" onclick="clearHatchFromSelectedRoom()">Xóa hatch phòng đang chọn</button>' +
                 '<p class="hint-text">Bật «Theo loại phòng» = pattern mặc định theo Loại (WC / thang / VP…).</p>' +
                 '</div>';
+        } else if (currentTool === 'hatchedit') {
+            propertiesDiv.innerHTML =
+                '<div class="tool-guide">' +
+                '<p>✎ <b>Hatchedit (HE):</b></p>' +
+                '<p>Click phòng để chọn và sửa hatch (pattern / màu / khoảng / góc).</p>' +
+                '<p>Nếu phòng chưa có hatch, sẽ tạo mặc định theo loại phòng.</p>' +
+                '<p>Hoặc chọn phòng rồi sửa ngay trong panel thuộc tính.</p>' +
+                '<p>Phím tắt: <b>HE</b></p>' +
+                '</div>';
         } else if (currentTool === 'calibrate') {
             propertiesDiv.innerHTML =
                 '<div class="tool-guide">' +
@@ -315,8 +324,16 @@ function updatePropertiesPanel() {
                         <input type="number" value="${Math.round(window.bgY)}" oninput="updateBgProp('bgY', Number(this.value))">
                     </div>
                     <div class="prop-row">
-                        <label>Tỉ lệ:</label>
-                        <input type="number" step="0.01" value="${window.bgScale.toFixed(2)}" oninput="updateBgProp('bgScale', Number(this.value))">
+                        <label>Tỉ lệ ngang:</label>
+                        <input type="number" min="0.01" step="0.01"
+                               value="${Number(window.bgScaleX || window.bgScale || 1).toFixed(2)}"
+                               oninput="updateBgProp('bgScaleX', Number(this.value))">
+                    </div>
+                    <div class="prop-row">
+                        <label>Tỉ lệ dọc:</label>
+                        <input type="number" min="0.01" step="0.01"
+                               value="${Number(window.bgScaleY || window.bgScale || 1).toFixed(2)}"
+                               oninput="updateBgProp('bgScaleY', Number(this.value))">
                     </div>
                     <div class="prop-row">
                         <label>Xoay:</label>
@@ -753,9 +770,73 @@ function showRoomProps(r) {
         '</div>' +
         schemaHtml +
         sizeHtml +
+        renderRoomHatchEditHtml(r) +
         renderQuickTransformHtml('room') +
         '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
 }
+
+/** Hatchedit — panel sửa hatch của phòng đang chọn. */
+function renderRoomHatchEditHtml(r) {
+    if (!r) return '';
+    var api = (typeof EditorCore !== 'undefined' && EditorCore.Hatch) ? EditorCore.Hatch : null;
+    var has = api && api.hasHatch(r);
+    var h = has ? api.normalize(r.hatch) : { pattern: 'none', color: '#64748b', spacing: 12, angle: 45 };
+    var patterns = (api && api.PATTERNS) ? api.PATTERNS : ['none', 'solid', 'lines', 'cross', 'dots'];
+    var opts = patterns.map(function (p) {
+        return '<option value="' + p + '"' + (h.pattern === p ? ' selected' : '') + '>' + p + '</option>';
+    }).join('');
+    return '<div class="prop-group">' +
+        '<div class="prop-group-title">Hatch (Hatchedit)</div>' +
+        '<div class="prop-row"><label>Pattern:</label>' +
+        '<select onchange="updateRoomHatchProp(\'pattern\', this.value)">' + opts + '</select></div>' +
+        '<div class="prop-row"><label>Màu:</label>' +
+        '<input type="color" value="' + (h.color || '#64748b') + '" ' +
+        'onchange="updateRoomHatchProp(\'color\', this.value)"></div>' +
+        '<div class="prop-row"><label>Khoảng:</label>' +
+        '<input type="number" min="4" max="48" value="' + (h.spacing || 12) + '" ' +
+        'onchange="updateRoomHatchProp(\'spacing\', Number(this.value))"><span class="unit">px</span></div>' +
+        '<div class="prop-row"><label>Góc:</label>' +
+        '<input type="number" min="0" max="179" value="' + (h.angle != null ? h.angle : 45) + '" ' +
+        'onchange="updateRoomHatchProp(\'angle\', Number(this.value))"><span class="unit">°</span></div>' +
+        '<div class="prop-row" style="gap:6px;flex-wrap:wrap;">' +
+        '<button type="button" class="btn btn-sm btn-outline" onclick="applyDefaultHatchToSelectedRoom()">Theo loại phòng</button>' +
+        '<button type="button" class="btn btn-sm btn-outline" onclick="clearHatchFromSelectedRoom()">Xóa hatch</button>' +
+        '</div>' +
+        '<p class="hint-text">' + (has ? 'Đang có hatch — chỉnh trực tiếp (HE).' : 'Chưa có hatch — chọn pattern hoặc «Theo loại phòng».') + '</p>' +
+        '</div>';
+}
+window.renderRoomHatchEditHtml = renderRoomHatchEditHtml;
+
+function updateRoomHatchProp(key, value) {
+    var room = null;
+    if (selectedObject && selectedObject.type === 'room') room = selectedObject.data;
+    else if (typeof selectedRoom !== 'undefined') room = selectedRoom;
+    if (!room) return;
+    var api = (typeof EditorCore !== 'undefined' && EditorCore.Hatch) ? EditorCore.Hatch : null;
+    if (!api || !api.updateHatchProp) return;
+    if (typeof saveState === 'function') saveState();
+    api.updateHatchProp(room, key, value);
+    if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
+    if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+    if (typeof draw === 'function') draw();
+}
+window.updateRoomHatchProp = updateRoomHatchProp;
+
+function applyDefaultHatchToSelectedRoom() {
+    var room = null;
+    if (selectedObject && selectedObject.type === 'room') room = selectedObject.data;
+    else if (typeof selectedRoom !== 'undefined') room = selectedRoom;
+    if (!room) return;
+    var api = (typeof EditorCore !== 'undefined' && EditorCore.Hatch) ? EditorCore.Hatch : null;
+    if (!api) return;
+    if (typeof saveState === 'function') saveState();
+    api.applyToRoom(room, api.defaultForRoomType(room.type || 'Khác'));
+    if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
+    if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+    if (typeof draw === 'function') draw();
+    if (typeof showToast === 'function') showToast('Đã áp hatch theo loại «' + (room.type || 'Khác') + '»', 'success');
+}
+window.applyDefaultHatchToSelectedRoom = applyDefaultHatchToSelectedRoom;
 
 /** Cắt đuôi thừa về giao tường/đoạn gần nhất */
 function renderEndpointTrimHtml() {
@@ -1096,14 +1177,15 @@ function showDoorProps(d) {
 // --- POI ---
 function showPoiProps(p) {
     var desc = getInspectorDescriptor();
+    var currentType = (typeof getPoiTypeInfo === 'function') ? getPoiTypeInfo(p) : poiTypes[p.typeIndex];
     var typeOptions = '';
     for (var i = 0; i < poiTypes.length; i++) {
-        var sel = (p.typeIndex === i) ? ' selected' : '';
+        var sel = (currentType === poiTypes[i]) ? ' selected' : '';
         typeOptions += '<option value="' + i + '"' + sel + '>' + poiTypes[i].icon + ' ' + poiTypes[i].name + '</option>';
     }
 
     propertiesDiv.innerHTML =
-        renderSchemaPropGroup(desc, { title: '📍 Điểm POI #' + p.id, skipKeys: ['category'] }) +
+        renderSchemaPropGroup(desc, { title: '📍 Điểm POI #' + p.id, skipKeys: ['category', 'size'] }) +
         '<div class="prop-group">' +
         '<div class="prop-row"><label>Loại:</label>' +
         '<select onchange="changePoiType(Number(this.value))">' + typeOptions + '</select></div>' +
@@ -1111,6 +1193,9 @@ function showPoiProps(p) {
         '<input type="number" value="' + Math.round(p.x) + '" onchange="updateObjProp(\'x\', Number(this.value))"><span class="unit">px</span></div>' +
         '<div class="prop-row"><label>Tọa độ Y:</label>' +
         '<input type="number" value="' + Math.round(p.y) + '" onchange="updateObjProp(\'y\', Number(this.value))"><span class="unit">px</span></div>' +
+        '<div class="prop-row"><label>Kích thước:</label>' +
+        '<input type="range" min="12" max="96" step="2" value="' + (typeof normalizePoiSize === 'function' ? normalizePoiSize(p.size) : (p.size || 24)) + '" onchange="updatePoiSize(Number(this.value), this.nextElementSibling)">' +
+        '<span class="unit">' + (typeof normalizePoiSize === 'function' ? normalizePoiSize(p.size) : (p.size || 24)) + ' px</span></div>' +
         '</div>' +
         '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
 }
@@ -1352,11 +1437,28 @@ function updateObjProp(prop, value) {
 
 function changePoiType(index) {
     if (!selectedObject || selectedObject.type !== 'poi') return;
+    if (!poiTypes[index]) return;
     saveState();
     selectedObject.data.typeIndex = index;
     selectedObject.data.type = poiTypes[index].name;
+    selectedObject.data.poiType = poiTypes[index].key;
     updateObjectList();
     draw();
+    if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
+    if (typeof scheduleDraftServerSync === 'function') scheduleDraftServerSync();
+}
+
+function updatePoiSize(value, valueLabel) {
+    if (!selectedObject || selectedObject.type !== 'poi') return;
+    var size = (typeof normalizePoiSize === 'function')
+        ? normalizePoiSize(value)
+        : Math.max(12, Math.min(96, Number(value) || 24));
+    if (selectedObject.data.size !== size) saveState();
+    selectedObject.data.size = size;
+    if (valueLabel) valueLabel.textContent = size + ' px';
+    draw();
+    if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
+    if (typeof scheduleDraftServerSync === 'function') scheduleDraftServerSync();
 }
 
 // === XÓA ĐỐI TƯỢNG ĐANG CHỌN ===
@@ -1471,7 +1573,7 @@ function updateObjectList() {
 
     pois.forEach(function (poi) {
         // Dữ liệu POI cũ có thể thiếu/sai typeIndex, nên fallback để không crash UI.
-        var typeInfo = poiTypes[poi.typeIndex] || poiTypes[0];
+        var typeInfo = (typeof getPoiTypeInfo === 'function') ? getPoiTypeInfo(poi) : (poiTypes[poi.typeIndex] || poiTypes[0]);
         var isActive = (selectedObject && selectedObject.type === 'poi' && selectedObject.data === poi);
         addListItem(typeInfo.icon, poi.name, typeInfo.name, typeInfo.color, isActive, function () {
             setEditorSelection('poi', poi);
@@ -1546,7 +1648,19 @@ window.updateBgProp = function(prop, value) {
     if (prop === 'bgX') window.bgX = value;
     else if (prop === 'bgY') window.bgY = value;
     else if (prop === 'bgScale') {
-        if (value > 0) window.bgScale = value;
+        if (Number.isFinite(value) && value > 0) {
+            window.bgScale = value;
+            window.bgScaleX = value;
+            window.bgScaleY = value;
+        }
+    }
+    else if (prop === 'bgScaleX' || prop === 'bgScaleY') {
+        if (Number.isFinite(value) && value > 0) {
+            window[prop] = value;
+            if (Math.abs(window.bgScaleX - window.bgScaleY) < 1e-9) {
+                window.bgScale = value;
+            }
+        }
     }
     else if (prop === 'bgRotation') {
         window.bgRotation = value;
@@ -1557,4 +1671,6 @@ window.updateBgProp = function(prop, value) {
     }
     
     draw(); // Vẽ lại canvas để cập nhật thay đổi
+    if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
+    if (typeof scheduleDraftServerSync === 'function') scheduleDraftServerSync();
 }

@@ -91,8 +91,12 @@ async function enqueuePublish(buildingId, floor, mapData, apiFetchFn, options) {
     var sessionId = options.editSessionId || '';
     var headers = { 'Content-Type': 'application/json' };
     if (sessionId) headers['X-Edit-Session'] = sessionId;
+    var idempotencyKey = options.idempotencyKey ||
+        ('publish-' + String(buildingId) + '-' + String(floor) + '-' + Date.now() + '-' +
+            Math.random().toString(36).slice(2, 10));
+    headers['Idempotency-Key'] = idempotencyKey;
 
-    var payload = { map_data: bodyMap };
+    var payload = { map_data: bodyMap, idempotency_key: idempotencyKey };
     if (sessionId) {
         payload.edit_session_id = sessionId;
         payload.session_id = sessionId;

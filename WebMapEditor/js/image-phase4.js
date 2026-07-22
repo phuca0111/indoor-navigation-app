@@ -173,6 +173,8 @@ function replaceBackgroundFromDataUrl(dataUrl, opts) {
                 window.bgX = 0;
                 window.bgY = 0;
                 window.bgScale = 1;
+                window.bgScaleX = 1;
+                window.bgScaleY = 1;
                 window.bgRotation = 0;
             }
             if (opts.resetFilters) {
@@ -249,6 +251,8 @@ function applyCropBackground() {
         bgX: window.bgX || 0,
         bgY: window.bgY || 0,
         bgScale: window.bgScale || 1,
+        bgScaleX: window.bgScaleX > 0 ? window.bgScaleX : (window.bgScale || 1),
+        bgScaleY: window.bgScaleY > 0 ? window.bgScaleY : (window.bgScale || 1),
         bgRotation: window.bgRotation || 0
     };
     var a = api.worldToImagePixel(cropStart.x, cropStart.y, bg);
@@ -315,6 +319,8 @@ function applyPerspectiveDeskew() {
         bgX: window.bgX || 0,
         bgY: window.bgY || 0,
         bgScale: window.bgScale || 1,
+        bgScaleX: window.bgScaleX > 0 ? window.bgScaleX : (window.bgScale || 1),
+        bgScaleY: window.bgScaleY > 0 ? window.bgScaleY : (window.bgScale || 1),
         bgRotation: window.bgRotation || 0
     };
     var quad = [];

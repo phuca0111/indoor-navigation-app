@@ -17,6 +17,7 @@ function getMapSnapshot() {
     return {
         mapName: mapName,
         metersPerGrid: metersPerGrid,
+        ltScale: (typeof getLtScale === 'function') ? getLtScale() : 1,
         layers: (typeof getLayersSnapshot === 'function') ? getLayersSnapshot() : [],
         activeLayerId: activeLayerId,
         rooms: rooms.map(function (r) {
@@ -48,7 +49,16 @@ function getMapSnapshot() {
             return item;
         }),
         doors: doors.map(d => withLayer(d, { id: d.id, name: d.name, x: Math.round(d.x), y: Math.round(d.y), width: d.width, type: d.type, rotation: d.rotation })),
-        pois: pois.map(p => withLayer(p, { id: p.id, name: p.name, x: Math.round(p.x), y: Math.round(p.y), type: p.type, typeIndex: p.typeIndex })),
+        pois: pois.map(p => withLayer(p, {
+            id: p.id,
+            name: p.name,
+            x: Math.round(p.x),
+            y: Math.round(p.y),
+            type: p.type,
+            poiType: p.poiType,
+            typeIndex: p.typeIndex,
+            size: (typeof normalizePoiSize === 'function') ? normalizePoiSize(p.size) : (p.size || 24)
+        })),
         cadPoints: (typeof cadPoints !== 'undefined' ? cadPoints : []).map(function (cp) {
             return withLayer(cp, {
                 id: cp.id,
@@ -68,6 +78,7 @@ function getMapSnapshot() {
             thickness: w.thickness || 4,
             is_outer: !!w.is_outer,
             lineStyle: w.lineStyle || 'solid',
+            closed: !!w.closed,
             points: Array.isArray(w.points) ? w.points.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })) : []
         })),
         lines: (lines || []).map(function (ln) {
@@ -77,6 +88,7 @@ function getMapSnapshot() {
                 color: ln.color || '#3b82f6',
                 lineWeight: ln.lineWeight || 2,
                 lineStyle: ln.lineStyle || 'solid',
+                closed: !!ln.closed,
                 points: Array.isArray(ln.points) ? ln.points.map(function (p) {
                     return { x: Math.round(p.x), y: Math.round(p.y) };
                 }) : []
@@ -98,7 +110,7 @@ function getMapSnapshot() {
             return JSON.parse(JSON.stringify(b));
         }),
         blockInserts: (blockInserts || []).map(function (bi) {
-            return withLayer(bi, {
+            var out = withLayer(bi, {
                 id: bi.id,
                 blockId: bi.blockId,
                 name: bi.name,
@@ -107,6 +119,13 @@ function getMapSnapshot() {
                 rotation: bi.rotation || 0,
                 scale: bi.scale != null ? bi.scale : 1
             });
+            if (bi.attrValues && typeof bi.attrValues === 'object') {
+                out.attrValues = JSON.parse(JSON.stringify(bi.attrValues));
+            }
+            if (bi.dynamicValues && typeof bi.dynamicValues === 'object') {
+                out.dynamicValues = JSON.parse(JSON.stringify(bi.dynamicValues));
+            }
+            return out;
         }),
         dimensions: (dimensions || []).map(function (d) {
             return withLayer(d, {
@@ -125,13 +144,18 @@ function getMapSnapshot() {
         bgX: window.bgX || 0,
         bgY: window.bgY || 0,
         bgScale: window.bgScale || 1.0,
+        bgScaleX: window.bgScaleX > 0 ? window.bgScaleX : (window.bgScale || 1.0),
+        bgScaleY: window.bgScaleY > 0 ? window.bgScaleY : (window.bgScale || 1.0),
         bgRotation: window.bgRotation || 0,
         bgOpacity: window.bgOpacity || 0.5,
         bgContrast: window.bgContrast != null ? window.bgContrast : 1,
         bgBrightness: window.bgBrightness != null ? window.bgBrightness : 0,
         bgImageBase64: window.bgImageBase64 || '',
         bgStorageKey: window.bgStorageKey || '',
-        bgLastPersistedUrl: window.bgLastPersistedUrl || ''
+        bgLastPersistedUrl: window.bgLastPersistedUrl || '',
+        advancedFeatures: JSON.parse(JSON.stringify(window.editorAdvanced || {
+            constraints: [], xrefs: [], pluginInstalls: [], twinBindings: []
+        }))
     };
 }
 
@@ -142,6 +166,11 @@ function applyMapSnapshot(data) {
     if (data.metersPerGrid) {
         metersPerGrid = data.metersPerGrid;
         document.getElementById('scaleInput').value = metersPerGrid;
+    }
+    if (data.ltScale != null && typeof setLtScale === 'function') {
+        setLtScale(data.ltScale, { skipDraw: true, skipDirty: true });
+    } else if (typeof window !== 'undefined' && window.ltScale == null) {
+        window.ltScale = 1;
     }
 
     rooms = data.rooms || [];
@@ -192,6 +221,9 @@ function applyMapSnapshot(data) {
     blockInserts.forEach(function (bi) {
         if (bi.id && bi.id >= nextBlockInsertId) nextBlockInsertId = bi.id + 1;
     });
+    window.editorAdvanced = data.advancedFeatures && typeof data.advancedFeatures === 'object'
+        ? JSON.parse(JSON.stringify(data.advancedFeatures))
+        : { constraints: [], xrefs: [], pluginInstalls: [], twinBindings: [] };
 
     dimensions = Array.isArray(data.dimensions) ? data.dimensions : [];
     nextDimId = 1;
@@ -206,7 +238,9 @@ function applyMapSnapshot(data) {
     // Load ảnh nền
     window.bgX = data.bgX || 0;
     window.bgY = data.bgY || 0;
-    window.bgScale = data.bgScale || 1.0;
+    window.bgScale = Number(data.bgScale) > 0 ? Number(data.bgScale) : 1.0;
+    window.bgScaleX = Number(data.bgScaleX) > 0 ? Number(data.bgScaleX) : window.bgScale;
+    window.bgScaleY = Number(data.bgScaleY) > 0 ? Number(data.bgScaleY) : window.bgScale;
     window.bgRotation = data.bgRotation || 0;
     window.bgOpacity = data.bgOpacity || 0.5;
     window.bgContrast = data.bgContrast != null ? data.bgContrast : 1;
@@ -248,6 +282,7 @@ function exportJSON() {
     var data = {
         mapName: mapName,
         metersPerGrid: metersPerGrid,
+        ltScale: (typeof getLtScale === 'function') ? getLtScale() : 1,
         rooms: rooms.map(function (r) {
             var exportItem = {
                 id: r.id,
@@ -308,7 +343,9 @@ function exportJSON() {
                 x: Math.round(p.x),
                 y: Math.round(p.y),
                 type: p.type,
-                typeIndex: p.typeIndex
+                poiType: p.poiType,
+                typeIndex: p.typeIndex,
+                size: (typeof normalizePoiSize === 'function') ? normalizePoiSize(p.size) : (p.size || 24)
             };
         }),
         cadPoints: (typeof cadPoints !== 'undefined' ? cadPoints : []).map(function (cp) {
@@ -340,6 +377,7 @@ function exportJSON() {
                 thickness: w.thickness || 4,
                 is_outer: !!w.is_outer,
                 lineStyle: w.lineStyle || 'solid',
+                closed: !!w.closed,
                 points: (w.points || []).map(function (p) { return { x: Math.round(p.x), y: Math.round(p.y) }; })
             };
         }),
@@ -350,6 +388,7 @@ function exportJSON() {
                 color: ln.color || '#3b82f6',
                 lineWeight: ln.lineWeight || 2,
                 lineStyle: ln.lineStyle || 'solid',
+                closed: !!ln.closed,
                 layerId: ln.layerId || 'default',
                 points: (ln.points || []).map(function (p) { return { x: Math.round(p.x), y: Math.round(p.y) }; })
             };
@@ -378,7 +417,7 @@ function exportJSON() {
             return JSON.parse(JSON.stringify(b));
         }),
         blockInserts: (typeof blockInserts !== 'undefined' ? blockInserts : []).map(function (bi) {
-            return {
+            var out = {
                 id: bi.id,
                 blockId: bi.blockId,
                 name: bi.name,
@@ -388,6 +427,10 @@ function exportJSON() {
                 scale: bi.scale != null ? bi.scale : 1,
                 layerId: bi.layerId || 'default'
             };
+            if (bi.attrValues && typeof bi.attrValues === 'object') {
+                out.attrValues = JSON.parse(JSON.stringify(bi.attrValues));
+            }
+            return out;
         }),
         dimensions: (typeof dimensions !== 'undefined' ? dimensions : []).map(function (d) {
             return {
@@ -406,6 +449,8 @@ function exportJSON() {
         bgX: window.bgX,
         bgY: window.bgY,
         bgScale: window.bgScale,
+        bgScaleX: window.bgScaleX > 0 ? window.bgScaleX : (window.bgScale || 1),
+        bgScaleY: window.bgScaleY > 0 ? window.bgScaleY : (window.bgScale || 1),
         bgRotation: window.bgRotation,
         bgOpacity: window.bgOpacity,
         bgContrast: window.bgContrast != null ? window.bgContrast : 1,
@@ -432,6 +477,13 @@ function importJSON(file) {
     reader.onload = function (e) {
         try {
             var data = JSON.parse(e.target.result);
+            if (typeof applyMapSnapshot === 'function') {
+                applyMapSnapshot(data);
+                undoStack = [];
+                redoStack = [];
+                console.log('📂 Đã import: ' + (data.mapName || 'file'));
+                return;
+            }
 
             // Load map name
             if (data.mapName) {
@@ -440,6 +492,9 @@ function importJSON(file) {
             if (data.metersPerGrid) {
                 metersPerGrid = data.metersPerGrid;
                 document.getElementById('scaleInput').value = metersPerGrid;
+            }
+            if (data.ltScale != null && typeof setLtScale === 'function') {
+                setLtScale(data.ltScale, { skipDraw: true, skipDirty: true });
             }
 
             // Load rooms
@@ -514,7 +569,9 @@ function importJSON(file) {
             // Load background properties
             window.bgX = data.bgX || 0;
             window.bgY = data.bgY || 0;
-            window.bgScale = data.bgScale || 1.0;
+            window.bgScale = Number(data.bgScale) > 0 ? Number(data.bgScale) : 1.0;
+            window.bgScaleX = Number(data.bgScaleX) > 0 ? Number(data.bgScaleX) : window.bgScale;
+            window.bgScaleY = Number(data.bgScaleY) > 0 ? Number(data.bgScaleY) : window.bgScale;
             window.bgRotation = data.bgRotation || 0;
             window.bgOpacity = data.bgOpacity || 0.5;
             window.bgContrast = data.bgContrast != null ? data.bgContrast : 1;

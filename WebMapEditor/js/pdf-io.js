@@ -91,8 +91,11 @@
             if (!d) return; if (d.p1) pt(d.p1.x, d.p1.y); if (d.p2) pt(d.p2.x, d.p2.y);
         });
         if (includeBg && window.bgImage) {
-            var bw = window.bgImage.width * (window.bgScale || 1);
-            var bh = window.bgImage.height * (window.bgScale || 1);
+            var fallbackScale = window.bgScale > 0 ? window.bgScale : 1;
+            var bw = window.bgImage.width *
+                (window.bgScaleX > 0 ? window.bgScaleX : fallbackScale);
+            var bh = window.bgImage.height *
+                (window.bgScaleY > 0 ? window.bgScaleY : fallbackScale);
             var bx = window.bgX || 0, by = window.bgY || 0;
             // Xấp xỉ theo 4 góc (bỏ qua xoay để đơn giản — vẫn bao trọn phần lớn)
             pt(bx, by); pt(bx + bw, by); pt(bx, by + bh); pt(bx + bw, by + bh);
@@ -346,20 +349,64 @@
             toast('Đang đọc PDF…', 'info');
             var buf = await file.arrayBuffer();
             var pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-            var page = await pdf.getPage(1);
-            var viewport = page.getViewport({ scale: 1 });
-            var opList = await page.getOperatorList();
-
-            var polylines = extractPolylines(opList, viewport, pdfjsLib.OPS, pdfjsLib.Util);
+            var firstPage = await pdf.getPage(1);
+            var polylines = [];
+            var pageOffsetY = 0;
+            var pageLimit = Math.min(Number(pdf.numPages) || 1, 20);
+            var vectorUtils = window.EditorCore && EditorCore.PdfVectorUtils;
+            var pdfDiagnostics = { invalidOperators: 0, restoreUnderflow: 0, unbalancedSave: 0, truncated: false };
+            for (var pageNo = 1; pageNo <= pageLimit; pageNo++) {
+                var page = pageNo === 1 ? firstPage : await pdf.getPage(pageNo);
+                var viewport = page.getViewport({ scale: 1 });
+                var opList = await page.getOperatorList();
+                if (pageNo === 1 && vectorUtils && vectorUtils.classifyPage) {
+                    var classification = vectorUtils.classifyPage(opList, pdfjsLib.OPS);
+                    var useBackground = classification.mode === 'raster';
+                    if (classification.mode === 'mixed') {
+                        useBackground = typeof confirm !== 'function' || confirm(
+                            'PDF có cả ảnh và nét vector. Chọn OK để giữ nguyên trang làm ảnh nền; ' +
+                            'chọn Cancel để chỉ trích các nét vector.'
+                        );
+                    }
+                    if (useBackground) {
+                        await attachPdfAsBackground(firstPage);
+                        return;
+                    }
+                }
+                var detailed = vectorUtils && vectorUtils.extractPolylinesDetailed
+                    ? vectorUtils.extractPolylinesDetailed(
+                        opList, viewport, pdfjsLib.OPS, pdfjsLib.Util,
+                        { curveSteps: 12, maxPolylines: 50000 }
+                    )
+                    : null;
+                var pageLines = detailed
+                    ? detailed.polylines
+                    : (vectorUtils
+                        ? vectorUtils.extractPolylines(opList, viewport, pdfjsLib.OPS, pdfjsLib.Util)
+                        : extractPolylines(opList, viewport, pdfjsLib.OPS, pdfjsLib.Util));
+                if (detailed) {
+                    pdfDiagnostics.invalidOperators += detailed.diagnostics.invalidOperators;
+                    pdfDiagnostics.restoreUnderflow += detailed.diagnostics.restoreUnderflow;
+                    pdfDiagnostics.unbalancedSave += detailed.diagnostics.unbalancedSave;
+                    pdfDiagnostics.truncated = pdfDiagnostics.truncated || detailed.diagnostics.truncated;
+                }
+                pageLines.forEach(function (line) {
+                    polylines.push(line.map(function (point) {
+                        return { x: point.x, y: point.y + pageOffsetY };
+                    }));
+                });
+                pageOffsetY += viewport.height + 24;
+            }
             // Bỏ polyline suy biến
             polylines = polylines.filter(function (pl) { return pl && pl.length >= 2; });
 
             if (!polylines.length) {
-                await attachPdfAsBackground(page);
+                await attachPdfAsBackground(firstPage);
                 return;
             }
 
-            var bbox = polyBBox(polylines);
+            var bbox = vectorUtils ? vectorUtils.polyBBox(polylines) : polyBBox(polylines);
+            if (!bbox) throw new Error('Không xác định được phạm vi hình học PDF');
             var targetMax = 1600;
             var sc = Math.min(targetMax / (bbox.w || 1), targetMax / (bbox.h || 1));
             if (!isFinite(sc) || sc <= 0) sc = 1;
@@ -392,8 +439,15 @@
             if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
 
             var capped = made >= CAP ? ' (đã giới hạn ' + CAP + ' đoạn)' : '';
+            var diagnosticCount = pdfDiagnostics.invalidOperators +
+                pdfDiagnostics.restoreUnderflow + pdfDiagnostics.unbalancedSave +
+                (pdfDiagnostics.truncated ? 1 : 0) +
+                ((Number(pdf.numPages) || 1) > pageLimit ? 1 : 0);
             toast('Đã nhập ' + made + ' đoạn vẽ từ PDF' + capped +
-                '. Dùng «Hiệu chỉnh» để chỉnh tỷ lệ nếu cần.', 'success');
+                (pageLimit > 1 ? ' từ ' + pageLimit + ' trang' : '') +
+                (diagnosticCount ? ' (' + diagnosticCount + ' cảnh báo tương thích).' : '.') +
+                ' Dùng «Hiệu chỉnh» để chỉnh tỷ lệ nếu cần.',
+                diagnosticCount ? 'warning' : 'success');
         } catch (err) {
             console.error('[PDF] import', err);
             toast('Lỗi nhập PDF: ' + (err && err.message || err), 'error');

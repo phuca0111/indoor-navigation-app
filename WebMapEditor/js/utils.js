@@ -157,21 +157,78 @@ function clampLineWeight(w) {
     return Math.max(0.5, Math.min(20, n));
 }
 
+/** LTScale — tỷ lệ nét đứt toàn cục (AutoCAD LTS). Phạm vi 0.1–10, mặc định 1. */
+function clampLtScale(s) {
+    var n = Number(s);
+    if (!Number.isFinite(n) || n <= 0) return 1;
+    return Math.max(0.1, Math.min(10, n));
+}
+
+function getLtScale() {
+    if (typeof window !== 'undefined' && window.ltScale != null) {
+        return clampLtScale(window.ltScale);
+    }
+    if (typeof ltScale !== 'undefined' && ltScale != null) {
+        return clampLtScale(ltScale);
+    }
+    return 1;
+}
+
 /**
- * Mảng dash cho ctx.setLineDash theo kiểu nét, đã chia zoom để giữ tỉ lệ khi phóng to.
+ * Gán LTScale, đồng bộ UI + vẽ lại.
+ * @returns {number} giá trị đã kẹp
+ */
+function setLtScale(value, opts) {
+    opts = opts || {};
+    var s = clampLtScale(value);
+    if (typeof window !== 'undefined') window.ltScale = s;
+    var el = (typeof document !== 'undefined') ? document.getElementById('ltScaleInput') : null;
+    if (el && String(el.value) !== String(s)) el.value = s;
+    if (!opts.skipDraw && typeof draw === 'function') draw();
+    if (!opts.skipDirty && typeof markAutosaveDirty === 'function') markAutosaveDirty();
+    return s;
+}
+
+/**
+ * Mảng dash cho ctx.setLineDash theo kiểu nét, đã chia zoom và nhân LTScale.
  * @param {string} style solid|dashed|dotted|dashdot
  * @param {number} zoom
+ * @param {number} [ltScaleArg] bỏ qua thì lấy getLtScale()
  * @returns {number[]} [] nếu nét liền
  */
-function getLineDashPattern(style, zoom) {
+function getLineDashPattern(style, zoom, ltScaleArg) {
     var z = (zoom && zoom > 0) ? zoom : 1;
+    var lt = clampLtScale(ltScaleArg != null ? ltScaleArg : getLtScale());
     switch (normalizeLineStyle(style)) {
-        case 'dashed': return [8 / z, 5 / z];
-        case 'dotted': return [1.5 / z, 4 / z];
-        case 'dashdot': return [10 / z, 4 / z, 1.5 / z, 4 / z];
+        case 'dashed': return [(8 * lt) / z, (5 * lt) / z];
+        case 'dotted': return [(1.5 * lt) / z, (4 * lt) / z];
+        case 'dashdot': return [(10 * lt) / z, (4 * lt) / z, (1.5 * lt) / z, (4 * lt) / z];
         case 'solid':
         default: return [];
     }
+}
+
+/** Prompt LTScale (LTS) — giống AutoCAD: nhập số rồi áp dụng. */
+function runLtscalePrompt() {
+    var cur = getLtScale();
+    var raw = null;
+    if (typeof window !== 'undefined' && typeof window.prompt === 'function') {
+        raw = window.prompt('LTScale — tỷ lệ nét đứt (0.1–10) [hiện tại ' + cur + ']:', String(cur));
+    }
+    if (raw == null) return cur;
+    var trimmed = String(raw).trim();
+    if (!trimmed) return cur;
+    var next = setLtScale(trimmed);
+    if (typeof showToast === 'function') {
+        showToast('LTScale = ' + next, 'success');
+    }
+    var hint = (typeof document !== 'undefined') ? document.getElementById('commandHint') : null;
+    if (hint) hint.textContent = 'LTScale = ' + next;
+    return next;
+}
+
+function beginLtscaleTool() {
+    return runLtscalePrompt();
 }
 
 if (typeof window !== 'undefined') {
@@ -179,7 +236,13 @@ if (typeof window !== 'undefined') {
     window.LINE_STYLE_LABELS = LINE_STYLE_LABELS;
     window.normalizeLineStyle = normalizeLineStyle;
     window.clampLineWeight = clampLineWeight;
+    window.clampLtScale = clampLtScale;
+    window.getLtScale = getLtScale;
+    window.setLtScale = setLtScale;
     window.getLineDashPattern = getLineDashPattern;
+    window.runLtscalePrompt = runLtscalePrompt;
+    window.beginLtscaleTool = beginLtscaleTool;
+    if (window.ltScale == null) window.ltScale = 1;
 }
 
 // Export cho môi trường test (Node). Trên trình duyệt các hàm là global như cũ.
@@ -195,6 +258,11 @@ if (typeof module === 'object' && module.exports) {
         LINE_STYLE_LABELS: LINE_STYLE_LABELS,
         normalizeLineStyle: normalizeLineStyle,
         clampLineWeight: clampLineWeight,
-        getLineDashPattern: getLineDashPattern
+        clampLtScale: clampLtScale,
+        getLtScale: getLtScale,
+        setLtScale: setLtScale,
+        getLineDashPattern: getLineDashPattern,
+        runLtscalePrompt: runLtscalePrompt,
+        beginLtscaleTool: beginLtscaleTool
     };
 }

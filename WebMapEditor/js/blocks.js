@@ -108,7 +108,8 @@ function createBlockFromSelection() {
     var inst = BM.createInsert(def.id, baseX, baseY, {
         id: nextBlockInsertId++,
         name: name,
-        layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default'
+        layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default',
+        def: def
     });
     blockInserts.push(inst);
     clearEditorSelection({ skipUi: true });
@@ -242,7 +243,8 @@ function placeBlockInsertAt(wx, wy) {
     var inst = BM.createInsert(blockId, wx, wy, {
         id: nextBlockInsertId++,
         name: def.name,
-        layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default'
+        layerId: (typeof legacyGetActiveLayerId === 'function') ? legacyGetActiveLayerId() : 'default',
+        def: def
     });
     blockInserts.push(inst);
     window.pendingInsertBlockId = null;
@@ -302,6 +304,20 @@ function drawBlockInserts() {
         ctx.arc(inst.x, inst.y, r, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
+        // Nhãn thuộc tính (ATT) — toạ độ local trên definition
+        if (BM.resolveInsertAttributes && BM.localToWorld) {
+            var resolved = BM.resolveInsertAttributes(def, inst);
+            var fontPx = 11 / zoom;
+            ctx.font = fontPx + 'px sans-serif';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = selected ? '#e11d48' : '#475569';
+            resolved.forEach(function (a) {
+                if (!a.visible || !a.value) return;
+                var wp = BM.localToWorld(a.x, a.y, inst);
+                var label = a.value;
+                ctx.fillText(label, wp.x + 4 / zoom, wp.y);
+            });
+        }
         ctx.restore();
         if (selected) {
             var box = BM.insertBBox(def, inst);
@@ -326,9 +342,10 @@ window.deleteBlockInsert = deleteBlockInsert;
 
 function renderBlockRefPropertiesHtml(inst) {
     if (!inst) return '';
+    var BM = getBlockManager();
     var def = findBlockDefinition(inst.blockId);
     var defName = def ? def.name : '(thiếu định nghĩa)';
-    return '<div class="prop-group">' +
+    var html = '<div class="prop-group">' +
         '<div class="prop-group-title">Block Insert</div>' +
         '<div class="prop-row"><label>Tên:</label>' +
         '<input type="text" value="' + escapeHtmlValue(inst.name || '') + '" ' +
@@ -350,5 +367,143 @@ function renderBlockRefPropertiesHtml(inst) {
         'onchange="updateObjProp(\'scale\', Number(this.value))"></div>' +
         '<p class="hint-text">Thư viện: ' + blocks.length + ' block · Insert: ' + blockInserts.length + '</p>' +
         '</div>';
+
+    // ATTEdit — giá trị thuộc tính trên Insert
+    var resolved = (BM && BM.resolveInsertAttributes)
+        ? BM.resolveInsertAttributes(def, inst)
+        : [];
+    html += '<div class="prop-group">' +
+        '<div class="prop-group-title">Thuộc tính (ATTEdit)</div>';
+    if (!resolved.length) {
+        html += '<p class="hint-text">Chưa có thuộc tính. Dùng <b>ATT</b> để định nghĩa trên block.</p>';
+    } else {
+        resolved.forEach(function (a) {
+            html += '<div class="prop-row"><label title="' + escapeHtmlValue(a.tag) + '">' +
+                escapeHtmlValue(a.prompt || a.tag) + ':</label>' +
+                '<input type="text" value="' + escapeHtmlValue(a.value) + '" ' +
+                'onchange="updateBlockInsertAttr(\'' + escapeHtmlValue(a.tag) + '\', this.value)"></div>';
+        });
+    }
+    html += '<div class="prop-row" style="gap:6px;flex-wrap:wrap;">' +
+        '<button type="button" class="btn btn-sm btn-outline" onclick="runAttdefOnSelected()">+ ATTDef</button>' +
+        '<button type="button" class="btn btn-sm btn-outline" onclick="runAtteditPrompt()">ATE sửa nhanh</button>' +
+        '</div></div>';
+    return html;
 }
 window.renderBlockRefPropertiesHtml = renderBlockRefPropertiesHtml;
+
+function updateBlockInsertAttr(tag, value) {
+    if (!selectedObject || selectedObject.type !== 'blockRef' || !selectedObject.data) return;
+    var BM = getBlockManager();
+    if (!BM) return;
+    if (typeof saveState === 'function') saveState();
+    BM.setInsertAttrValue(selectedObject.data, tag, value);
+    if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
+    if (typeof draw === 'function') draw();
+}
+window.updateBlockInsertAttr = updateBlockInsertAttr;
+
+/**
+ * ATTDef (ATT): thêm thuộc tính vào định nghĩa block của Insert đang chọn.
+ */
+function runAttdefOnSelected() {
+    var BM = getBlockManager();
+    if (!BM) {
+        if (typeof showToast === 'function') showToast('BlockManager chưa sẵn sàng', 'error');
+        return false;
+    }
+    if (!selectedObject || selectedObject.type !== 'blockRef' || !selectedObject.data) {
+        if (typeof showToast === 'function') showToast('ATTDef: chọn 1 Insert block trước', 'error');
+        return false;
+    }
+    var inst = selectedObject.data;
+    var def = findBlockDefinition(inst.blockId);
+    if (!def) {
+        if (typeof showToast === 'function') showToast('Không tìm thấy định nghĩa block', 'error');
+        return false;
+    }
+    var tag = prompt('ATTDef — Tag thuộc tính (vd NAME, CODE, QR):', 'NAME');
+    if (tag == null) return false;
+    tag = BM.normalizeAttrTag(tag);
+    if (!tag) {
+        if (typeof showToast === 'function') showToast('Tag không hợp lệ', 'error');
+        return false;
+    }
+    var promptText = prompt('Nhãn hiển thị (prompt):', tag);
+    if (promptText == null) return false;
+    var defVal = prompt('Giá trị mặc định:', '');
+    if (defVal == null) return false;
+
+    if (typeof saveState === 'function') saveState();
+    var added = BM.addAttributeDef(def, {
+        tag: tag,
+        prompt: String(promptText).trim() || tag,
+        defaultValue: String(defVal),
+        x: 0,
+        y: -14 - ((def.attributes && def.attributes.length) || 0) * 12
+    });
+    if (!added) {
+        if (typeof showToast === 'function') showToast('Không thêm được thuộc tính', 'error');
+        return false;
+    }
+    // Đồng bộ mọi Insert cùng block: gắn default nếu chưa có giá trị
+    (blockInserts || []).forEach(function (bi) {
+        if (String(bi.blockId) !== String(def.id)) return;
+        BM.initInsertAttrValues(def, bi);
+        if (bi === inst) BM.setInsertAttrValue(bi, tag, defVal);
+    });
+    if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+    if (typeof draw === 'function') draw();
+    if (typeof flushAutosaveNow === 'function') flushAutosaveNow();
+    if (typeof showToast === 'function') {
+        showToast('Đã thêm thuộc tính «' + tag + '» vào block «' + def.name + '»', 'success');
+    }
+    return true;
+}
+window.runAttdefOnSelected = runAttdefOnSelected;
+
+/**
+ * ATTEdit (ATE): sửa nhanh từng thuộc tính qua prompt (hoặc dùng panel).
+ */
+function runAtteditPrompt() {
+    var BM = getBlockManager();
+    if (!BM) return false;
+    if (!selectedObject || selectedObject.type !== 'blockRef' || !selectedObject.data) {
+        if (typeof showToast === 'function') showToast('ATTEdit: chọn 1 Insert block trước', 'error');
+        return false;
+    }
+    var inst = selectedObject.data;
+    var def = findBlockDefinition(inst.blockId);
+    var resolved = BM.resolveInsertAttributes(def, inst);
+    if (!resolved.length) {
+        if (typeof showToast === 'function') showToast('Block chưa có thuộc tính — dùng ATT trước', 'error');
+        return false;
+    }
+    if (typeof saveState === 'function') saveState();
+    var changed = 0;
+    for (var i = 0; i < resolved.length; i++) {
+        var a = resolved[i];
+        var nv = prompt(a.prompt + ' [' + a.tag + ']:', a.value);
+        if (nv == null) continue;
+        BM.setInsertAttrValue(inst, a.tag, nv);
+        changed++;
+    }
+    if (changed) {
+        if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+        if (typeof draw === 'function') draw();
+        if (typeof flushAutosaveNow === 'function') flushAutosaveNow();
+        if (typeof showToast === 'function') showToast('Đã cập nhật ' + changed + ' thuộc tính', 'success');
+    }
+    return changed > 0;
+}
+window.runAtteditPrompt = runAtteditPrompt;
+
+function beginAttdefTool() {
+    if (typeof runAttdefOnSelected === 'function') runAttdefOnSelected();
+}
+window.beginAttdefTool = beginAttdefTool;
+
+function beginAtteditTool() {
+    if (typeof runAtteditPrompt === 'function') runAtteditPrompt();
+}
+window.beginAtteditTool = beginAtteditTool;

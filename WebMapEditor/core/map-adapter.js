@@ -69,7 +69,9 @@
                 x: roundCoord(p.x),
                 y: roundCoord(p.y),
                 type: p.type || 'Điểm mốc',
-                typeIndex: p.typeIndex || 0
+                poiType: p.poiType || null,
+                typeIndex: Number.isFinite(Number(p.typeIndex)) ? Number(p.typeIndex) : 0,
+                size: Math.max(12, Math.min(96, Number(p.size) || 24))
             };
         });
     }
@@ -144,6 +146,14 @@
             scale_ratio: scaleRatio,
             map_bearing_offset: bearing,
             background_image: bg || '',
+            bgX: Number(meta.bgX) || 0,
+            bgY: Number(meta.bgY) || 0,
+            bgScale: Number(meta.bgScale) > 0 ? Number(meta.bgScale) : 1,
+            bgScaleX: Number(meta.bgScaleX) > 0 ? Number(meta.bgScaleX) :
+                (Number(meta.bgScale) > 0 ? Number(meta.bgScale) : 1),
+            bgScaleY: Number(meta.bgScaleY) > 0 ? Number(meta.bgScaleY) :
+                (Number(meta.bgScale) > 0 ? Number(meta.bgScale) : 1),
+            bgRotation: Number(meta.bgRotation) || 0,
             rooms: mapRooms(collections.rooms),
             doors: mapDoors(collections.doors),
             pois: mapPois(collections.pois),
@@ -155,7 +165,10 @@
             blocks: Array.isArray(collections.blocks) ? collections.blocks : [],
             blockInserts: Array.isArray(collections.blockInserts) ? collections.blockInserts : [],
             lines: Array.isArray(collections.lines) ? collections.lines : [],
-            dimensions: Array.isArray(collections.dimensions) ? collections.dimensions : []
+            dimensions: Array.isArray(collections.dimensions) ? collections.dimensions : [],
+            cadPoints: Array.isArray(collections.cadPoints) ? collections.cadPoints : [],
+            advancedFeatures: collections.advancedFeatures && typeof collections.advancedFeatures === 'object'
+                ? collections.advancedFeatures : {}
         };
     }
 
@@ -182,7 +195,9 @@
     ];
 
     /** Field chỉ editor — Android bỏ qua (round-trip Web) */
-    var EDITOR_ONLY_KEYS = ['blocks', 'blockInserts', 'lines', 'dimensions'];
+    var EDITOR_ONLY_KEYS = [
+        'blocks', 'blockInserts', 'lines', 'dimensions', 'cadPoints', 'advancedFeatures'
+    ];
 
     function assertPublishSchema(mapData) {
         var missing = PUBLISH_SCHEMA_KEYS.filter(function (k) { return !(k in mapData); });
@@ -210,6 +225,14 @@
             scale_ratio: mapData.scale_ratio,
             map_bearing_offset: mapData.map_bearing_offset,
             background_image: mapData.background_image || '',
+            bgX: Number(mapData.bgX) || 0,
+            bgY: Number(mapData.bgY) || 0,
+            bgScale: Number(mapData.bgScale) > 0 ? Number(mapData.bgScale) : 1,
+            bgScaleX: Number(mapData.bgScaleX) > 0 ? Number(mapData.bgScaleX) :
+                (Number(mapData.bgScale) > 0 ? Number(mapData.bgScale) : 1),
+            bgScaleY: Number(mapData.bgScaleY) > 0 ? Number(mapData.bgScaleY) :
+                (Number(mapData.bgScale) > 0 ? Number(mapData.bgScale) : 1),
+            bgRotation: Number(mapData.bgRotation) || 0,
             rooms: rooms,
             doors: mapData.doors || [],
             pois: mapData.pois || [],
@@ -232,7 +255,10 @@
             blocks: Array.isArray(mapData.blocks) ? mapData.blocks : [],
             blockInserts: Array.isArray(mapData.blockInserts) ? mapData.blockInserts : [],
             lines: Array.isArray(mapData.lines) ? mapData.lines : [],
-            dimensions: Array.isArray(mapData.dimensions) ? mapData.dimensions : []
+            dimensions: Array.isArray(mapData.dimensions) ? mapData.dimensions : [],
+            cadPoints: Array.isArray(mapData.cadPoints) ? mapData.cadPoints : [],
+            advancedFeatures: mapData.advancedFeatures && typeof mapData.advancedFeatures === 'object'
+                ? mapData.advancedFeatures : {}
         };
     }
 

@@ -12,6 +12,10 @@
             x: root.bgX || 0,
             y: root.bgY || 0,
             scale: root.bgScale != null ? root.bgScale : 1,
+            scaleX: root.bgScaleX != null ? root.bgScaleX :
+                (root.bgScale != null ? root.bgScale : 1),
+            scaleY: root.bgScaleY != null ? root.bgScaleY :
+                (root.bgScale != null ? root.bgScale : 1),
             rotation: root.bgRotation || 0,
             contrast: root.bgContrast != null ? root.bgContrast : 1,
             brightness: root.bgBrightness != null ? root.bgBrightness : 0

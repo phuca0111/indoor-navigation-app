@@ -80,5 +80,11 @@ describe('Tool Command Manager', function () {
         expect(tcm.resolve('MA')).toBe('matchprop');
         expect(tcm.resolve('B')).toBe('block');
         expect(tcm.resolve('I')).toBe('insert');
+        expect(tcm.resolve('LTS')).toBe('ltscale');
+        expect(tcm.resolve('HE')).toBe('hatchedit');
+        expect(tcm.resolve('REG')).toBe('region');
+        expect(tcm.resolve('RE')).toBe('redraw');
+        expect(tcm.resolve('R')).toBe('redraw');
+        expect(tcm.resolve('RM')).toBe('room');
     });
 });

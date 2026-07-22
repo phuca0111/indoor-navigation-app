@@ -28,6 +28,8 @@ let panStartX, panStartY;
 // Grid & Scale
 const GRID_SIZE = 40;       // Kích thước ô lưới (pixels)
 let metersPerGrid = 0.5;     // 1 ô = bao nhiêu mét (mặc định 1m = 80px)
+/** LTScale — tỷ lệ nét đứt toàn cục (đồng bộ window.ltScale) */
+if (typeof window !== 'undefined' && window.ltScale == null) window.ltScale = 1;
 
 // Room data
 let rooms = [];
@@ -117,6 +119,14 @@ let blockInserts = [];
 let nextBlockDefId = 1;
 let nextBlockInsertId = 1;
 
+// Dữ liệu MVP nâng cao, tách khỏi graph điều hướng để Android cũ vẫn tương thích.
+window.editorAdvanced = window.editorAdvanced || {
+    constraints: [],
+    xrefs: [],
+    pluginInstalls: [],
+    twinBindings: []
+};
+
 // Dimensions (Phase 3 Annotation) — editor only, không publish nav Android
 let dimensions = [];
 let nextDimId = 1;
@@ -157,6 +167,8 @@ window.bgOpacity = 0.5;      // Độ trong suốt
 window.bgX = 0;              // Vị trí X của ảnh
 window.bgY = 0;              // Vị trí Y của ảnh
 window.bgScale = 1.0;        // Tỉ lệ phóng to/thu nhỏ
+window.bgScaleX = 1.0;       // Tỉ lệ riêng theo chiều ngang
+window.bgScaleY = 1.0;       // Tỉ lệ riêng theo chiều dọc
 window.bgRotation = 0;       // Góc xoay của ảnh (độ)
 window.bgContrast = 1;       // Phase 4 — contrast live
 window.bgBrightness = 0;     // Phase 4 — brightness live (-100…100)
