@@ -17,9 +17,11 @@
         line: 'lines',
         door: 'doors',
         poi: 'pois',
+        point: 'cadPoints',
         qr: 'qrs',
         node: 'pathNodes',
-        blockRef: 'blockInserts'
+        blockRef: 'blockInserts',
+        dimension: 'dimensions'
     };
 
     var _syncingToManager = false;
@@ -33,9 +35,11 @@
             lines: g.lines || [],
             doors: g.doors || [],
             pois: g.pois || [],
+            cadPoints: g.cadPoints || [],
             qrs: g.qrs || [],
             pathNodes: g.pathNodes || [],
-            blockInserts: g.blockInserts || []
+            blockInserts: g.blockInserts || [],
+            dimensions: g.dimensions || []
         };
     }
 

@@ -5,41 +5,90 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Soạn bản đồ trong nhà | WebMapEditor</title>
-    <link rel="stylesheet" href="styles.css?v=20260710k">
+    <link rel="stylesheet" href="styles.css?v=20260716we6">
+    <link rel="stylesheet" href="css/phase-ui-shell.css?v=20260719lyr">
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 
-<body>
+<body class="phase-ui">
     <div id="loadingOverlay">
         <div class="spinner"></div>
         <p id="loadingText">Đang xử lý...</p>
     </div>
 
     <div class="app-container">
-        <!-- HEADER -->
-        <header class="header">
+        <!-- HEADER (1 hàng: logo + breadcrumb | trạng thái + hành động) -->
+        <header class="header shell-header" id="editorBuildingBar">
             <div class="header-left">
-                <i data-lucide="map" style="color: var(--primary)"></i>
-                <h1>Soạn bản đồ V4</h1>
-                <span id="editorCurrentUser" style="margin-left:12px; color:#666; font-size:14px; align-self:center;">Đang chỉnh sửa bởi: <strong>...</strong></span>
-                <button onclick="if(confirm('Bạn có muốn xóa sạch bản đồ hiện tại?')) clearCanvasData({ clearAutosave: true })"
-                    class="btn-new-map">Bản đồ mới</button>
+                <span class="brand">
+                    <i data-lucide="map" style="color: var(--primary)"></i>
+                    <span class="brand-name">Indoor Map Editor</span>
+                </span>
                 <input type="hidden" id="mapName" value="Bản đồ mới">
             </div>
+
             <div class="header-right">
-                <button id="btnLockEditor" class="btn-lock" title="Khóa trình soạn (Ctrl+L)">
-                    <i data-lucide="lock"></i> Khóa
-                </button>
-                <button onclick="exportJSON()"><i data-lucide="download"></i> Lưu File</button>
-                <button onclick="document.getElementById('importFile').click()"><i data-lucide="upload"></i> Mở
-                    File</button>
+                <span id="autosaveStatus" class="header-autosave"></span>
+
+                <details class="hdr-menu">
+                    <summary class="hdr-menu-btn" title="Tệp / Xuất nhập"><i data-lucide="folder"></i> Tệp</summary>
+                    <div class="hdr-menu-pop">
+                        <button type="button" onclick="this.closest('details').open=false; if(confirm('Xóa sạch bản đồ hiện tại?')) clearCanvasData({ clearAutosave: true })"><i data-lucide="file-plus-2"></i> Bản đồ mới</button>
+                        <button type="button" onclick="this.closest('details').open=false; exportJSON()"><i data-lucide="download"></i> Lưu file (JSON)</button>
+                        <button type="button" onclick="this.closest('details').open=false; document.getElementById('importFile').click()"><i data-lucide="upload"></i> Mở file (JSON)</button>
+                        <div class="hdr-menu-sep"></div>
+                        <button type="button" onclick="this.closest('details').open=false; exportMapToPdf()"><i data-lucide="file-down"></i> Xuất PDF</button>
+                        <button type="button" onclick="this.closest('details').open=false; document.getElementById('importPdf').click()"><i data-lucide="file-up"></i> Nhập PDF</button>
+                        <div class="hdr-menu-sep"></div>
+                        <button type="button" onclick="this.closest('details').open=false; exportMapToDxf()"><i data-lucide="file-down"></i> Xuất DXF (CAD)</button>
+                        <button type="button" onclick="this.closest('details').open=false; document.getElementById('importDxf').click()"><i data-lucide="file-up"></i> Nhập DXF (CAD)</button>
+                    </div>
+                </details>
                 <input type="file" id="importFile" hidden onchange="importJSON(this.files[0])">
+                <input type="file" id="importPdf" accept="application/pdf,.pdf" hidden onchange="importPdfDrawing(this.files[0]); this.value='';">
+                <input type="file" id="importDxf" accept=".dxf,application/dxf" hidden onchange="importDxfDrawing(this.files[0]); this.value='';">
 
-                <div style="width: 1px; height: 24px; background: var(--border); margin: 0 8px;"></div>
+                <span class="hdr-divider"></span>
 
-                <button class="btn-primary" onclick="saveMapToServer()" title="Lưu và xuất bản — tòa nhà chuyển trạng thái Đã xuất bản"><i data-lucide="cloud-upload"></i> Xuất bản
-                    máy chủ</button>
+                <div class="project-actions">
+                    <span id="editorVersionLifecycle" class="editor-status-badge editor-status-draft" title="Nháp / Đã xuất bản">Nháp</span>
+                    <button type="button" id="btnVersionHistory" class="btn-project" title="Lịch sử / Rollback"><i data-lucide="history"></i> Lịch sử</button>
+                    <button type="button" id="btnProjectValidate" class="btn-project" title="Kiểm tra lỗi trước khi xuất bản"><i data-lucide="shield-check"></i> Kiểm tra</button>
+                    <button type="button" id="btnProjectDraft" class="btn-project" title="Lưu nháp lên server"><i data-lucide="cloud"></i> Lưu nháp</button>
+                    <button type="button" class="btn-project btn-slot" disabled title="Sắp có — sau sprint"><i data-lucide="eye"></i> Xem trước</button>
+                    <button type="button" id="btnProjectPublish" class="btn-project btn-primary" title="Xuất bản Android"><i data-lucide="rocket"></i> Xuất bản</button>
+                </div>
+
+                <span class="hdr-divider"></span>
+
+                <div class="header-user-group">
+                    <div class="presence" id="presenceIndicator" tabindex="0" aria-label="Người đang chỉnh sửa">
+                        <span class="presence-avatar" id="presenceAvatar">?</span>
+                        <span class="presence-dot presence-dot--online" id="presenceDot"></span>
+                        <div class="presence-pop" role="tooltip">
+                            <div class="presence-pop-head">
+                                <span class="presence-avatar presence-avatar--lg" id="presencePopAvatar">?</span>
+                                <div class="presence-pop-id">
+                                    <strong id="presenceName">Người dùng</strong>
+                                    <span class="presence-sub" id="presenceEmail">—</span>
+                                </div>
+                            </div>
+                            <div class="presence-row">
+                                <span class="presence-dot presence-dot--online" id="presencePopDot"></span>
+                                <span id="presenceState">Đang chỉnh sửa</span>
+                            </div>
+                            <div class="presence-row presence-meta">
+                                <span id="presenceRole">—</span>
+                                <span class="presence-sep">·</span>
+                                <span id="presenceSince">vừa mở</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button id="btnLockEditor" class="btn-lock btn-icon" title="Khóa trình soạn (Ctrl+L)">
+                        <i data-lucide="lock"></i>
+                    </button>
+                </div>
             </div>
         </header>
 
@@ -51,233 +100,339 @@
             <button type="button" class="editor-access-banner__btn" onclick="window.location.href='/admin/dashboard.html'">Về bảng điều khiển</button>
         </div>
 
-        <div id="editorBuildingBar" class="editor-building-bar">
-            <div class="editor-building-bar__main">
-                <span id="editorBuildingName" class="editor-building-bar__name">—</span>
-                <span id="editorBuildingStatus" class="editor-status-badge editor-status-draft">—</span>
+        <div id="editorFloorLockBanner" class="editor-access-banner editor-floor-lock-banner" style="display:none;" role="status">
+            <div class="editor-access-banner__text">
+                <strong id="editorFloorLockTitle">Tầng đang bị khóa</strong>
+                <span id="editorFloorLockMsg"></span>
             </div>
-            <div class="editor-building-bar__meta">
-                <span>Tầng <strong id="editorFloorLabel">1</strong></span>
-                <span class="editor-meta-sep">·</span>
-                <span>Phiên bản map: <strong id="editorMapVersion">—</strong></span>
-                <span class="editor-meta-sep">·</span>
-                <span id="editorPublishHint" class="editor-publish-hint">Lưu lên máy chủ = xuất bản bản đồ</span>
-            </div>
+            <button type="button" id="editorFloorLockForceBtn" class="editor-access-banner__btn" style="display:none;" onclick="forceAcquireFloorLock()">Cướp quyền sửa</button>
         </div>
 
-        <!-- MAIN -->
-        <div class="main-content">
-            <!-- TOOLBAR LEFT -->
-            <aside class="toolbar">
-                <div class="tool-section">
-                    <h3>Cấu trúc</h3>
-                    <button class="tool-btn active" id="btn-select" onclick="selectTool('select')">
-                        <i data-lucide="mouse-pointer-2"></i> Chọn đối tượng
-                    </button>
-                    <button class="tool-btn" id="btn-room" onclick="selectTool('room')">
-                        <i data-lucide="square"></i> Vẽ Phòng
-                    </button>
-                    <button class="tool-btn" id="btn-circle" onclick="selectTool('circle')">
-                        <i data-lucide="circle"></i> Vẽ Hình tròn
-                    </button>
-                    <button class="tool-btn" id="btn-door" onclick="selectTool('door')">
-                        <i data-lucide="door-open"></i> Thêm Cửa
-                    </button>
+        <!-- Version history panel (Phase 5) -->
+        <div id="versionHistoryPanel" class="version-history-panel" style="display:none;">
+            <div class="version-history-panel__head">
+                <strong>Lịch sử phiên bản</strong>
+                <div>
+                    <button type="button" id="btnRefreshVersions" class="btn btn-sm btn-outline">Làm mới</button>
+                    <button type="button" id="btnCloseVersionPanel" class="btn btn-sm btn-outline">Đóng</button>
+                </div>
+            </div>
+            <p id="versionHistoryMeta" class="hint-text" style="margin:6px 0;"></p>
+            <div id="versionHistoryList"></div>
+            <p class="hint-text">Rollback tạo bản mới từ snapshot cũ — không ghi đè lịch sử.</p>
+        </div>
+
+        <!-- Phase UI ribbon -->
+        <nav class="shell-ribbon" id="shellRibbon" aria-label="Ribbon công cụ">
+            <div class="ribbon-tabs" role="tablist" aria-label="Nhóm công cụ ribbon">
+                <button type="button" class="ribbon-tab" data-tab="home">Chọn</button>
+                <button type="button" class="ribbon-tab active" data-tab="draw">Vẽ</button>
+                <button type="button" class="ribbon-tab" data-tab="edit">Sửa</button>
+                <button type="button" class="ribbon-tab" data-tab="annotate">Ghi chú</button>
+                <button type="button" class="ribbon-tab" data-tab="insert">Chèn</button>
+                <button type="button" class="ribbon-tab" data-tab="navigation">Điều hướng</button>
+                <button type="button" class="ribbon-tab" data-tab="view">Xem</button>
+            </div>
+
+            <div class="ribbon-body">
+                <div class="ribbon-panel" data-panel="home">
+                    <button class="tool-btn active" id="btn-select" onclick="selectTool('select')"><i data-lucide="mouse-pointer-2"></i> Chọn</button>
+                    <span class="ribbon-hint">Lưu nháp / Xuất bản ở thanh dự án phía trên</span>
                 </div>
 
-                <div class="tool-section">
-                    <h3>Vẽ hình học</h3>
-                    <button class="tool-btn" id="btn-polygon" onclick="selectTool('polygon')" title="Phím G">
-                        <i data-lucide="triangle"></i> Đa giác <span class="tool-kbd">G</span>
-                    </button>
-                    <button class="tool-btn" id="btn-wall" onclick="selectTool('wall')" title="Phím W">
-                        <i data-lucide="panel-top"></i> Tường <span class="tool-kbd">W</span>
-                    </button>
-                    <button class="tool-btn" id="btn-line" onclick="selectTool('line')" title="Phím L">
-                        <i data-lucide="slash"></i> Đoạn thẳng <span class="tool-kbd">L</span>
-                    </button>
-                    <button class="tool-btn" id="btn-mline" onclick="selectTool('mline')" title="Lệnh ML — hoặc dùng W + Độ dày">
-                        <i data-lucide="columns-2"></i> Tường dày <span class="tool-kbd">ML</span>
-                    </button>
+                <div class="ribbon-panel active" data-panel="draw">
+                    <button class="tool-btn" id="btn-room" onclick="selectTool('room')"><i data-lucide="square"></i> Phòng</button>
+                    <button class="tool-btn" id="btn-circle" onclick="selectTool('circle')"><i data-lucide="circle"></i> Tròn</button>
+                    <button class="tool-btn" id="btn-door" onclick="selectTool('door')"><i data-lucide="door-open"></i> Cửa</button>
+                    <button class="tool-btn" id="btn-polygon" onclick="selectTool('polygon')" title="Phím G"><i data-lucide="triangle"></i> Đa giác <span class="tool-kbd">G</span></button>
+                    <button class="tool-btn" id="btn-wall" onclick="selectTool('wall')" title="Phím W"><i data-lucide="panel-top"></i> Tường <span class="tool-kbd">W</span></button>
+                    <button class="tool-btn" id="btn-line" onclick="selectTool('line')" title="Phím L"><i data-lucide="slash"></i> Đoạn <span class="tool-kbd">L</span></button>
+                    <button class="tool-btn" id="btn-arc" onclick="selectTool('arc')" title="Cung tròn 3 điểm (A)"><i data-lucide="spline"></i> Cung <span class="tool-kbd">A</span></button>
+                    <button class="tool-btn" id="btn-ellipse" onclick="selectTool('ellipse')" title="Elip: tâm → trục lớn → trục nhỏ (EL)"><i data-lucide="circle"></i> Elip <span class="tool-kbd">EL</span></button>
+                    <button class="tool-btn" id="btn-point" onclick="selectTool('point')" title="Điểm mốc (PO): marker + snap NODE"><i data-lucide="crosshair"></i> Điểm <span class="tool-kbd">PO</span></button>
+                    <button class="tool-btn" id="btn-mline" onclick="selectTool('mline')" title="Tường dày (ML)"><i data-lucide="columns-2"></i> Tường dày <span class="tool-kbd">ML</span></button>
                 </div>
 
-                <div class="tool-section">
-                    <h3>Khối</h3>
-                    <button class="tool-btn" id="btn-block" onclick="selectTool('block')" title="Tạo block từ đối tượng đang chọn">
-                        <i data-lucide="box"></i> Block <span class="tool-kbd">B</span>
-                    </button>
-                    <button class="tool-btn" id="btn-insert" onclick="selectTool('insert')" title="Chèn block từ thư viện">
-                        <i data-lucide="package-plus"></i> Insert <span class="tool-kbd">I</span>
-                    </button>
+                <div class="ribbon-panel" data-panel="edit">
+                    <button class="tool-btn" id="btn-copy" onclick="selectTool('copy')" title="Copy (CO)"><i data-lucide="copy"></i> Sao chép <span class="tool-kbd">CO</span></button>
+                    <button class="tool-btn" id="btn-array" onclick="selectTool('array')" title="Array (AR)"><i data-lucide="grid-3x3"></i> Mảng <span class="tool-kbd">AR</span></button>
+                    <button class="tool-btn" id="btn-trim" onclick="selectTool('trim')" title="Trim (TR)"><i data-lucide="scissors"></i> Cắt <span class="tool-kbd">TR</span></button>
+                    <button class="tool-btn" id="btn-extend" onclick="selectTool('extend')" title="Extend (EX)"><i data-lucide="move-horizontal"></i> Kéo dài <span class="tool-kbd">EX</span></button>
+                    <button class="tool-btn" id="btn-fillet" onclick="selectTool('fillet')" title="Fillet - Bo góc 2 cạnh (F)"><i data-lucide="git-merge"></i> Bo góc <span class="tool-kbd">F</span></button>
+                    <button class="tool-btn" id="btn-chamfer" onclick="selectTool('chamfer')" title="Chamfer - Vát góc 2 cạnh (CHA)"><i data-lucide="triangle"></i> Vát góc <span class="tool-kbd">CHA</span></button>
+                    <button class="tool-btn" id="btn-break" onclick="selectTool('break')" title="Break - Cắt đôi tại điểm (BR)"><i data-lucide="unlink"></i> Cắt điểm <span class="tool-kbd">BR</span></button>
+                    <button class="tool-btn" id="btn-divide" onclick="selectTool('divide')" title="Divide - Chia đều đặt điểm mốc (DIV)"><i data-lucide="ellipsis"></i> Chia đều <span class="tool-kbd">DIV</span></button>
+                    <button class="tool-btn" id="btn-pedit" onclick="selectTool('pedit')" title="PEdit (PE)"><i data-lucide="spline"></i> Sửa đa giác <span class="tool-kbd">PE</span></button>
+                    <button class="tool-btn" id="btn-matchprop" onclick="selectTool('matchprop')" title="Match (MA)"><i data-lucide="paintbrush"></i> Sao thuộc tính <span class="tool-kbd">MA</span></button>
+                    <button class="tool-btn" id="btn-explode" onclick="selectTool('explode')" title="Explode (X): phá block/polyline thành nguyên thủy"><i data-lucide="scan"></i> Phá khối <span class="tool-kbd">X</span></button>
+                    <button class="tool-btn" id="btn-offset" onclick="selectTool('offset')" title="Offset (O): tạo đoạn/tường song song cách đều"><i data-lucide="copy-plus"></i> Song song <span class="tool-kbd">O</span></button>
+                    <button class="tool-btn" id="btn-join" onclick="selectTool('join')" title="Join (J): nối 2 đoạn/tường thành 1"><i data-lucide="link"></i> Nối <span class="tool-kbd">J</span></button>
+                    <button class="tool-btn" id="btn-move" onclick="selectTool('move')" title="Move (M)"><i data-lucide="move"></i> Di chuyển <span class="tool-kbd">M</span></button>
+                    <button class="tool-btn" id="btn-rotate" onclick="selectTool('rotate')" title="Rotate (RO)"><i data-lucide="rotate-cw"></i> Xoay <span class="tool-kbd">RO</span></button>
+                    <button class="tool-btn" id="btn-scale" onclick="selectTool('scale')" title="Scale (SC)"><i data-lucide="scaling"></i> Tỷ lệ <span class="tool-kbd">SC</span></button>
+                    <button class="tool-btn" id="btn-mirror" onclick="selectTool('mirror')" title="Mirror (MI)"><i data-lucide="flip-horizontal-2"></i> Đối xứng <span class="tool-kbd">MI</span></button>
+                    <button class="tool-btn" id="btn-align" onclick="selectTool('align')" title="Align: căn chỉnh + xoay + scale theo 2 cặp điểm (AL)"><i data-lucide="move-3d"></i> Căn chỉnh <span class="tool-kbd">AL</span></button>
+                    <button class="tool-btn" id="btn-group" onclick="if(typeof msGroup==='function')msGroup()" title="Nhóm các đối tượng đang chọn (Ctrl+G)"><i data-lucide="group"></i> Nhóm <span class="tool-kbd">Ctrl+G</span></button>
+                    <button class="tool-btn" id="btn-ungroup" onclick="if(typeof msUngroup==='function')msUngroup()" title="Rã nhóm (Ctrl+Shift+G)"><i data-lucide="ungroup"></i> Rã nhóm <span class="tool-kbd">⇧Ctrl+G</span></button>
                 </div>
 
-                <div class="tool-section">
-                    <h3>Hiệu chỉnh</h3>
-                    <button class="tool-btn" id="btn-copy" onclick="selectTool('copy')" title="Lệnh CO">
-                        <i data-lucide="copy"></i> Sao chép <span class="tool-kbd">CO</span>
-                    </button>
-                    <button class="tool-btn" id="btn-array" onclick="selectTool('array')" title="Lệnh AR — copy lặp nhiều bản">
-                        <i data-lucide="grid-3x3"></i> Hàng loạt <span class="tool-kbd">AR</span>
-                    </button>
-                    <button class="tool-btn" id="btn-trim" onclick="selectTool('trim')" title="Chỉ tường/đoạn giao nhau">
-                        <i data-lucide="scissors"></i> Cắt xén <span class="tool-kbd">TR</span>
-                    </button>
-                    <button class="tool-btn" id="btn-extend" onclick="selectTool('extend')" title="Kéo đoạn tới biên">
-                        <i data-lucide="move-horizontal"></i> Kéo dài <span class="tool-kbd">EX</span>
-                    </button>
-                    <button class="tool-btn" id="btn-pedit" onclick="selectTool('pedit')" title="Lệnh PE">
-                        <i data-lucide="spline"></i> Sửa đỉnh <span class="tool-kbd">PE</span>
-                    </button>
-                    <button class="tool-btn" id="btn-matchprop" onclick="selectTool('matchprop')" title="Lệnh MA">
-                        <i data-lucide="paintbrush"></i> Matchprop <span class="tool-kbd">MA</span>
-                    </button>
-                    <button class="tool-btn" id="btn-move" onclick="selectTool('move')" title="Di chuyển chính xác (kéo thả dùng V)">
-                        <i data-lucide="move"></i> Move chính xác <span class="tool-kbd">M</span>
-                    </button>
-                    <button class="tool-btn" id="btn-rotate" onclick="selectTool('rotate')" title="Hoặc kéo icon xoay / nhập độ ở panel">
-                        <i data-lucide="rotate-cw"></i> Xoay CAD <span class="tool-kbd">RO</span>
-                    </button>
-                    <button class="tool-btn" id="btn-scale" onclick="selectTool('scale')" title="Hoặc nhập tỷ lệ ở panel">
-                        <i data-lucide="scaling"></i> Tỷ lệ CAD <span class="tool-kbd">SC</span>
-                    </button>
-                    <button class="tool-btn" id="btn-mirror" onclick="selectTool('mirror')" title="Hoặc Lật ngang/dọc ở panel">
-                        <i data-lucide="flip-horizontal-2"></i> Lật trục <span class="tool-kbd">MI</span>
-                    </button>
+                <div class="ribbon-panel" data-panel="annotate">
+                    <button class="tool-btn" id="btn-dimlinear" onclick="selectTool('dimlinear')" title="Kích thước ngang/dọc (DLI)"><i data-lucide="ruler"></i> KT thẳng</button>
+                    <button class="tool-btn" id="btn-dimaligned" onclick="selectTool('dimaligned')" title="Kích thước theo cạnh (DAL)"><i data-lucide="move-diagonal"></i> KT nghiêng</button>
+                    <button class="tool-btn" id="btn-dimedit" onclick="selectTool('dimedit')" title="Sửa kích thước (DED)"><i data-lucide="pencil"></i> Sửa KT</button>
+                    <button class="tool-btn" id="btn-dimcontinue" onclick="selectTool('dimcontinue')" title="Đo nối tiếp (DCO)"><i data-lucide="ruler"></i> Đo nối <span class="tool-kbd">DCO</span></button>
+                    <button class="tool-btn" id="btn-dimbaseline" onclick="selectTool('dimbaseline')" title="Đo song song chung gốc (DBA)"><i data-lucide="rows-3"></i> Song song <span class="tool-kbd">DBA</span></button>
+                    <button class="tool-btn" id="btn-dimangular" onclick="selectTool('dimangular')" title="Đo góc (DAN)"><i data-lucide="triangle"></i> Đo góc <span class="tool-kbd">DAN</span></button>
+                    <button class="tool-btn" id="btn-dimradius" onclick="selectTool('dimradius')" title="Đo bán kính phòng tròn (DRA)"><i data-lucide="circle-dashed"></i> Bán kính <span class="tool-kbd">DRA</span></button>
+                    <button class="tool-btn" id="btn-dimdiameter" onclick="selectTool('dimdiameter')" title="Đo đường kính phòng tròn (DDI)"><i data-lucide="circle"></i> Đ.kính <span class="tool-kbd">DDI</span></button>
+                    <button class="tool-btn" id="btn-dist" onclick="selectTool('ruler')" title="Đo khoảng cách (DI)"><i data-lucide="arrow-left-right"></i> Đo xa <span class="tool-kbd">DI</span></button>
+                    <button class="tool-btn" id="btn-area" onclick="selectTool('area')" title="Đo diện tích (AA)"><i data-lucide="square"></i> Diện tích <span class="tool-kbd">AA</span></button>
+                    <button class="tool-btn" id="btn-boundary" onclick="selectTool('boundary')" title="Boundary - Tạo phòng từ vùng kín bao quanh (BO)"><i data-lucide="square-dashed-bottom"></i> Vùng kín <span class="tool-kbd">BO</span></button>
+                    <button class="tool-btn" id="btn-hatch" onclick="selectTool('hatch')" title="Hatch (H)"><i data-lucide="grid-2x2"></i> Họa tiết <span class="tool-kbd">H</span></button>
                 </div>
 
-                <div class="tool-section">
-                    <h3>Lớp vẽ</h3>
-                    <div id="layersPanel" class="layers-panel"></div>
-                    <button class="btn-layer-add tool-btn" type="button" onclick="addLayerUI()">
-                        <i data-lucide="plus"></i> Thêm lớp
-                    </button>
+                <div class="ribbon-panel" data-panel="insert">
+                    <button class="tool-btn" id="btn-block" onclick="selectTool('block')" title="Tạo Block (B)"><i data-lucide="box"></i> Khối <span class="tool-kbd">B</span></button>
+                    <button class="tool-btn" id="btn-insert" onclick="selectTool('insert')" title="Chèn Block (I)"><i data-lucide="package-plus"></i> Chèn khối <span class="tool-kbd">I</span></button>
+                    <button class="tool-btn" id="btn-calibrate" onclick="selectTool('calibrate')" title="Hiệu chỉnh tỷ lệ bản đồ"><i data-lucide="ruler"></i> Hiệu chỉnh</button>
+                    <button class="tool-btn" id="btn-bg-crop" onclick="selectTool('bg-crop')" title="Cắt ảnh nền"><i data-lucide="crop"></i> Cắt nền</button>
+                    <button class="tool-btn" id="btn-deskew" type="button" onclick="autoDeskewBackground()" title="Xoay thẳng ảnh nền"><i data-lucide="rotate-ccw"></i> Thẳng nền</button>
+                    <button class="tool-btn" id="btn-detect" type="button" onclick="runAutoDetectV2()" title="Quét phòng từ ảnh nền — chỉ chạy khi bấm"><i data-lucide="scan"></i> Quét phòng</button>
                 </div>
 
-                <div class="tool-section">
-                    <h3>Điều hướng</h3>
-                    <button class="tool-btn" id="btn-qr" onclick="selectTool('qr')">
-                        <i data-lucide="qr-code"></i> Điểm mốc QR
-                    </button>
-                    <button class="tool-btn" id="btn-path" onclick="selectTool('path')">
-                        <i data-lucide="route"></i> Đường đi
-                    </button>
-                    <button class="tool-btn" id="btn-poi" onclick="selectTool('poi')">
-                        <i data-lucide="map-pin"></i> Điểm POI
-                    </button>
+                <div class="ribbon-panel" data-panel="navigation">
+                    <button class="tool-btn" id="btn-qr" onclick="selectTool('qr')"><i data-lucide="qr-code"></i> QR</button>
+                    <button class="tool-btn" id="btn-path" onclick="selectTool('path')"><i data-lucide="route"></i> Đường đi</button>
+                    <button class="tool-btn" id="btn-poi" onclick="selectTool('poi')"><i data-lucide="map-pin"></i> Điểm POI</button>
                 </div>
 
-                <div class="tool-section">
-                    <h3>Cấu hình</h3>
-                    <div class="prop-group" style="margin-top: 10px;">
-                        <div class="prop-row">
-                            <label>Tầng:</label>
-                            <select id="floorSelect" style="width: 80px;">
-                                <option value="0">Tầng trệt</option>
-                                <option value="1">Tầng 1</option>
-                                <option value="2">Tầng 2</option>
-                                <option value="3">Tầng 3</option>
-                                <option value="4">Tầng 4</option>
-                                <option value="5">Tầng 5</option>
-                            </select>
-                        </div>
-                        <div class="prop-row">
-                            <label>Tỷ lệ (m/ô):</label>
-                            <input type="number" id="scaleInput" value="1.0" step="0.1" style="width: 60px;">
-                        </div>
-                        <div class="prop-row">
-                            <label>Căn Bắc (°):</label>
-                            <input type="number" id="mapBearingInput" value="0" step="1" style="width: 60px;" title="Góc lệch Bắc địa lý so với trục bản đồ (Android la bàn)">
-                        </div>
-                        <div class="prop-row">
-                            <label><input type="checkbox" id="gridCheck" checked> Hiện lưới</label>
-                        </div>
-                        <div class="prop-row">
-                            <label><input type="checkbox" id="snapCheck" checked> Hút vào lưới</label>
-                        </div>
-                        <div class="prop-row">
-                            <label><input type="checkbox" id="polarAngleLabelCheck" checked> Hiện nhãn góc bám tia</label>
-                        </div>
-                        <div class="prop-row">
-                            <label><input type="checkbox" id="dimCheck" checked> Hiện kích thước</label>
-                        </div>
-                        <div class="prop-row" style="flex-direction: column; align-items: flex-start; gap: 4px;">
-                            <label>Độ mờ ảnh nền: <span id="bgOpacityVal">50%</span></label>
-                            <input type="range" id="bgOpacitySlider" min="0" max="100" value="50" style="width: 100%;">
+                <div class="ribbon-panel" data-panel="view">
+                    <span class="ribbon-hint">Lưới · Hút lưới · Tầng · Ảnh nền → tab <b>Cấu hình</b> bên trái</span>
+                    <span class="ribbon-hint">Toàn màn hình bản vẽ: nút trên thanh canvas</span>
+                </div>
+            </div>
+        </nav>
+
+        <!-- MAIN: shell workspace -->
+        <div class="shell-workspace">
+            <aside class="shell-left" id="shellLeft">
+                <div class="sidebar-tabs">
+                    <button type="button" class="sidebar-tab" data-stab="explorer">Dự án</button>
+                    <button type="button" class="sidebar-tab active" data-stab="layers">Lớp</button>
+                    <button type="button" class="sidebar-tab" data-stab="config">Cấu hình</button>
+                </div>
+                <div class="sidebar-body">
+                    <div class="sidebar-panel" data-stab="explorer">
+                        <div id="explorerRoot" class="explorer-root">
+                            <p class="hint-text">Đang tải thông tin tòa nhà…</p>
                         </div>
                     </div>
-                    <div style="display: flex; gap: 4px;">
-                        <button class="tool-btn" style="flex:1" id="btnImportBg" title="Thay ảnh nền">
-                            <i data-lucide="image"></i> Nền
-                        </button>
-                        <button class="tool-btn" style="flex:0.3" id="btnRemoveBg" title="Xóa ảnh nền">
-                            <i data-lucide="trash-2"></i>
+                    <div class="sidebar-panel active" data-stab="layers">
+                        <div id="layersPanel" class="layers-panel"></div>
+                        <button class="btn-layer-add tool-btn" type="button" onclick="addLayerUI()" style="margin-top:8px;">
+                            <i data-lucide="plus"></i> Thêm lớp
                         </button>
                     </div>
-                    <input type="file" id="bgInput" hidden>
+                    <div class="sidebar-panel config-panel" data-stab="config">
+                        <div class="config-section-title">Bản đồ</div>
+                        <div class="prop-group">
+                            <div class="prop-row">
+                                <label>Tầng:</label>
+                                <select id="floorSelect" style="width: 100px;">
+                                    <option value="0">Tầng trệt</option>
+                                    <option value="1">Tầng 1</option>
+                                    <option value="2">Tầng 2</option>
+                                    <option value="3">Tầng 3</option>
+                                    <option value="4">Tầng 4</option>
+                                    <option value="5">Tầng 5</option>
+                                </select>
+                            </div>
+                            <div class="prop-row">
+                                <label>Tỷ lệ (m/ô):</label>
+                                <input type="number" id="scaleInput" value="1.0" step="0.1" style="width: 80px;">
+                            </div>
+                            <div class="prop-row">
+                                <label>Căn Bắc (°):</label>
+                                <input type="number" id="mapBearingInput" value="0" step="1" style="width: 80px;">
+                            </div>
+                            <div class="config-section-title">Hiển thị</div>
+                            <div class="prop-row prop-row-check">
+                                <label><input type="checkbox" id="gridCheck" checked> Hiện lưới</label>
+                            </div>
+                            <div class="prop-row prop-row-check">
+                                <label><input type="checkbox" id="snapCheck" checked> Hút lưới</label>
+                            </div>
+                            <div class="prop-row prop-row-check">
+                                <label><input type="checkbox" id="polarAngleLabelCheck" checked> Nhãn góc tia</label>
+                            </div>
+                            <div class="prop-row prop-row-check">
+                                <label><input type="checkbox" id="dimCheck" checked> Hiện kích thước</label>
+                            </div>
+                            <div class="config-section-title">Bắt điểm nâng cao (OSNAP)</div>
+                            <div class="prop-row prop-row-check">
+                                <label title="Bắt tâm phòng tròn / chữ nhật"><input type="checkbox" id="snapCenterCheck" checked onchange="if(window.EditorCore&&EditorCore.SnapEngine)EditorCore.SnapEngine.setMode('center', this.checked)"> Bắt tâm (Center)</label>
+                            </div>
+                            <div class="prop-row prop-row-check">
+                                <label title="Bắt điểm gần nhất trên cạnh bất kỳ"><input type="checkbox" id="snapNearestCheck" onchange="if(window.EditorCore&&EditorCore.SnapEngine)EditorCore.SnapEngine.setMode('nearest', this.checked)"> Bắt điểm gần (Nearest)</label>
+                            </div>
+                            <div class="prop-row prop-row-check">
+                                <label title="Bắt điểm mốc CAD (Point)"><input type="checkbox" id="snapNodeCheck" checked onchange="if(window.EditorCore&&EditorCore.SnapEngine)EditorCore.SnapEngine.setMode('node', this.checked)"> Bắt điểm mốc (NODE)</label>
+                            </div>
+                            <div class="config-section-title">Kiểu kích thước (Dim Style)</div>
+                            <div class="prop-row" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+                                <label>Cỡ chữ: <span id="dimTextVal">12</span> px</label>
+                                <input type="range" id="dimTextSize" min="8" max="24" step="1" value="12" style="width: 100%;"
+                                       oninput="document.getElementById('dimTextVal').textContent=this.value; if(window.EditorCore&&EditorCore.DimensionManager){EditorCore.DimensionManager.setStyle({textPx:+this.value}); if(typeof draw==='function')draw();}">
+                            </div>
+                            <div class="prop-row" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+                                <label>Mũi tên: <span id="dimArrowVal">8</span> px</label>
+                                <input type="range" id="dimArrowSize" min="4" max="16" step="1" value="8" style="width: 100%;"
+                                       oninput="document.getElementById('dimArrowVal').textContent=this.value; if(window.EditorCore&&EditorCore.DimensionManager){EditorCore.DimensionManager.setStyle({arrowPx:+this.value}); if(typeof draw==='function')draw();}">
+                            </div>
+                            <div class="prop-row" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+                                <label>Số lẻ (m): <span id="dimDecVal">2</span></label>
+                                <input type="range" id="dimDecimals" min="0" max="3" step="1" value="2" style="width: 100%;"
+                                       oninput="document.getElementById('dimDecVal').textContent=this.value; if(window.EditorCore&&EditorCore.DimensionManager){EditorCore.DimensionManager.setStyle({decimals:+this.value}); if(typeof draw==='function')draw();}">
+                            </div>
+                            <div class="config-section-title">Ảnh nền</div>
+                            <div class="prop-row" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+                                <label>Độ mờ: <span id="bgOpacityVal">50%</span></label>
+                                <input type="range" id="bgOpacitySlider" min="0" max="100" value="50" style="width: 100%;">
+                            </div>
+                            <div class="prop-row" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+                                <label>Tương phản: <span id="bgContrastVal">1.00</span></label>
+                                <input type="range" id="bgContrastSlider" min="0.2" max="3" step="0.05" value="1" style="width: 100%;"
+                                       oninput="setBgContrast(this.value)">
+                            </div>
+                            <div class="prop-row" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+                                <label>Độ sáng: <span id="bgBrightnessVal">0</span></label>
+                                <input type="range" id="bgBrightnessSlider" min="-100" max="100" step="1" value="0" style="width: 100%;"
+                                       oninput="setBgBrightness(this.value)">
+                            </div>
+                            <button class="tool-btn" type="button" style="width:100%;margin-top:4px;" onclick="applyBgFiltersPermanent()">Áp bộ lọc vào ảnh</button>
+                        </div>
+                        <div class="config-bg-actions">
+                            <button class="tool-btn" style="flex:1" id="btnImportBg" title="Thay ảnh nền">
+                                <i data-lucide="image"></i> Nền
+                            </button>
+                            <button class="tool-btn" style="flex:1" type="button" id="btnScanRooms" title="Quét phòng từ ảnh nền"
+                                    onclick="runAutoDetectV2()">
+                                <i data-lucide="scan"></i> Quét phòng
+                            </button>
+                            <button class="tool-btn config-bg-trash" id="btnRemoveBg" title="Xóa ảnh nền">
+                                <i data-lucide="trash-2"></i>
+                            </button>
+                        </div>
+                        <input type="file" id="bgInput" hidden>
+                    </div>
                 </div>
             </aside>
 
-            <!-- CANVAS AREA -->
             <section class="canvas-container">
-                <div class="canvas-wrapper">
-                    <canvas id="mapCanvas"></canvas>
+                <div class="canvas-chrome">
+                    <button type="button" id="btnFocusCanvas" title="Ẩn panel hai bên — bản vẽ rộng hết">Toàn màn hình bản vẽ</button>
+                    <button type="button" id="btnCollapseRibbon" title="Thu gọn dải lệnh">Thu dải lệnh</button>
+                    <button type="button" id="btnCollapseLeft" title="Ẩn panel trái">‹</button>
+                    <button type="button" id="btnCollapseRight" title="Ẩn panel phải">›</button>
+                    <span class="spacer"></span>
+                    <span class="ribbon-hint" id="currentToolStatus">Sẵn sàng</span>
                 </div>
-                <div class="status-bar">
-                    <div id="commandBarWrap" class="command-bar-wrap">
-                        <label for="commandInput" class="command-bar-label">Lệnh</label>
-                        <input id="commandInput" type="text" class="command-bar-field"
-                            placeholder="W tường · L đoạn · G đa giác · V chọn" autocomplete="off" spellcheck="false" />
-                        <span id="commandHint" class="command-bar-hint"></span>
-                    </div>
-                    <div id="dynamicInputWrap" class="dynamic-input-wrap" style="display:none;">
-                        <label for="dynamicInput" class="dynamic-input-label">Nhập</label>
-                        <input id="dynamicInput" type="text" class="dynamic-input-field"
-                            placeholder="100 | @100&lt;45 | @50,30" autocomplete="off" spellcheck="false" />
-                        <span id="dynamicInputHint" class="dynamic-input-hint"></span>
-                    </div>
-                    <span id="zoomLevel"><i data-lucide="zoom-in" style="width:12px"></i> 100%</span>
-                    <span id="mousePos">X: 0, Y: 0</span>
-                    <span id="worldPos">0.0m, 0.0m</span>
-                    <span id="currentToolStatus">Sẵn sàng</span>
-                    <span id="roomCount">0 Phòng</span>
-                    <span id="autosaveStatus"></span>
+                <div class="canvas-wrapper">
+                    <canvas id="mapCanvas" aria-label="Bản vẽ tầng"></canvas>
                 </div>
             </section>
 
-            <!-- PROPERTIES RIGHT -->
-            <aside class="properties-panel">
-                <div class="panel-section">
-                    <h3><i data-lucide="settings-2"></i> Thuộc tính</h3>
-                    <div id="properties">
-                        <p class="hint-text">Chọn một đối tượng để chỉnh sửa</p>
-                    </div>
+            <aside class="shell-right properties-panel" id="shellRight">
+                <div class="right-tabs">
+                    <button type="button" class="right-tab active" data-rtab="properties">Thuộc tính</button>
+                    <button type="button" class="right-tab" data-rtab="objects">Đối tượng</button>
+                    <button type="button" class="right-tab" data-rtab="validate">
+                        Kiểm tra
+                        <span id="validationBadge" class="validation-badge" style="display:none;">0</span>
+                    </button>
                 </div>
-
-                <div class="panel-section" style="margin-top: 24px; flex: 1; display:flex; flex-direction:column;">
-                    <h3><i data-lucide="list"></i> Đối tượng</h3>
-                    <div id="object-list" class="object-list" style="overflow-y: auto;">
-                        <!-- JS renders items here -->
+                <div class="right-body">
+                    <div class="right-panel active" data-rtab="properties">
+                        <div class="panel-section">
+                            <h3><i data-lucide="settings-2"></i> Thuộc tính</h3>
+                            <div id="properties">
+                                <p class="hint-text">Chọn một đối tượng để chỉnh sửa</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="right-panel" data-rtab="objects">
+                        <div class="panel-section" style="margin-top: 16px;">
+                            <h3><i data-lucide="list"></i> Đối tượng</h3>
+                            <div id="object-list" class="object-list" style="overflow-y: auto;"></div>
+                        </div>
+                    </div>
+                    <div class="right-panel" data-rtab="validate">
+                        <div class="panel-section validation-panel">
+                            <h3 id="validationPanelTitle"><i data-lucide="shield-check"></i> Kiểm tra bản đồ</h3>
+                            <p class="hint-text">Nguồn: <strong id="validationSource">—</strong></p>
+                            <p id="validationSummary" class="validation-summary">Chưa chạy kiểm tra.</p>
+                            <div class="validation-actions">
+                                <button type="button" id="btnValidationRerun" class="btn-project">Chạy lại</button>
+                                <button type="button" id="btnValidationClear" class="btn-project">Xóa kết quả</button>
+                            </div>
+                            <h4 class="validation-heading">Lỗi (chặn xuất bản)</h4>
+                            <ul id="validationErrorList" class="validation-list"></ul>
+                            <h4 class="validation-heading">Cảnh báo</h4>
+                            <ul id="validationWarningList" class="validation-list"></ul>
+                        </div>
                     </div>
                 </div>
             </aside>
         </div>
-    </div>
 
-    <div id="secureLockOverlay" class="secure-lock-overlay" aria-hidden="true">
-        <div class="secure-lock-modal" role="dialog" aria-modal="true" aria-labelledby="secureLockTitle">
-            <div class="secure-lock-avatar">
-                <i data-lucide="shield-check"></i>
+        <!-- Command + status -->
+        <div class="shell-command-row">
+            <div id="commandBarWrap" class="command-bar-wrap">
+                <label for="commandInput" class="command-bar-label">Lệnh</label>
+                <input id="commandInput" type="text" class="command-bar-field"
+                    placeholder="W tường · L đoạn · G đa giác · V chọn" autocomplete="off" spellcheck="false" />
+                <span id="commandHint" class="command-bar-hint"></span>
             </div>
-            <h2 id="secureLockTitle">Phiên đã khóa</h2>
-            <p id="secureLockSubtitle" class="secure-lock-subtitle">Nhập mật khẩu để tiếp tục chỉnh sửa bản đồ.</p>
+            <div id="dynamicInputWrap" class="dynamic-input-wrap" style="display:none;">
+                <label for="dynamicInput" class="dynamic-input-label">Chiều dài</label>
+                <input id="dynamicInput" type="text" class="dynamic-input-field"
+                    placeholder="vd 3.5m · Enter" autocomplete="off" spellcheck="false"
+                    title="Nhập chiều dài mong muốn (mét kèm m, hoặc px). Ví dụ: 3.5m" />
+                <span id="dynamicInputHint" class="dynamic-input-hint"></span>
+            </div>
+        </div>
 
-            <label class="secure-lock-label" for="unlockPassword">Mật khẩu</label>
-            <input id="unlockPassword" class="secure-lock-input" type="password" autocomplete="current-password" placeholder="••••••••">
-            <div id="unlockError" class="secure-lock-error"></div>
+        <div class="shell-status-bar">
+            <span id="statusSnapPill" class="status-pill on">Hút lưới: Bật</span>
+            <span id="statusGridPill" class="status-pill on">Lưới: Bật</span>
+            <span id="zoomLevel"><i data-lucide="zoom-in" style="width:12px"></i> 100%</span>
+            <span id="mousePos">X: 0, Y: 0</span>
+            <span id="worldPos">0.0m, 0.0m</span>
+            <span id="currentToolStatus">Sẵn sàng</span>
+            <span id="roomCount">0 Phòng</span>
+            <span id="statusPublishPill" class="status-pill">Nháp</span>
+            <span id="statusLastPublish" class="status-user" title="Lần xuất bản gần nhất"></span>
+            <span class="status-grow"></span>
+            <span id="editorFloorLockStatus" class="editor-floor-lock-status editor-floor-lock-status--write" title="Quyền sửa tầng">Đang sửa</span>
+            <span id="editorCurrentUser" class="status-user">Đang chỉnh sửa bởi: <strong>...</strong></span>
+        </div>
 
-            <div class="secure-lock-actions">
-                <button id="btnUnlockEditor" class="btn-primary">Mở khóa</button>
-                <button id="btnForceLogout" class="btn-ghost-danger">Đăng xuất</button>
+        <div id="secureLockOverlay" class="secure-lock-overlay" aria-hidden="true">
+            <div class="secure-lock-modal" role="dialog" aria-modal="true" aria-labelledby="secureLockTitle">
+                <div class="secure-lock-avatar">
+                    <i data-lucide="shield-check"></i>
+                </div>
+                <h2 id="secureLockTitle">Phiên đã khóa</h2>
+                <p id="secureLockSubtitle" class="secure-lock-subtitle">Nhập mật khẩu để tiếp tục chỉnh sửa bản đồ.</p>
+
+                <label class="secure-lock-label" for="unlockPassword">Mật khẩu</label>
+                <input id="unlockPassword" class="secure-lock-input" type="password" autocomplete="current-password" placeholder="••••••••">
+                <div id="unlockError" class="secure-lock-error"></div>
+
+                <div class="secure-lock-actions">
+                    <button id="btnUnlockEditor" class="btn-primary">Mở khóa</button>
+                    <button id="btnForceLogout" class="btn-ghost-danger">Đăng xuất</button>
+                </div>
             </div>
         </div>
     </div>
@@ -287,37 +442,45 @@
     <script src="core/document.js?v=20260709f"></script>
     <script src="core/models.js?v=20260709f"></script>
     <script src="core/config.js?v=20260709f"></script>
-    <script src="core/geometry/geometry-engine.js?v=20260712b"></script>
+    <script src="core/geometry/geometry-engine.js?v=20260720el1"></script>
+    <script src="core/geometry/boundary-trace.js?v=20260719bo"></script>
     <script src="core/selection-manager.js?v=20260709f"></script>
-    <script src="core/selection-bridge.js?v=20260710d"></script>
-    <script src="core/property-schemas.js?v=20260710e"></script>
+    <script src="core/selection-bridge.js?v=20260721po1"></script>
+    <script src="core/property-schemas.js?v=20260714d"></script>
     <script src="core/property-inspector.js?v=20260710d"></script>
-    <script src="core/crash-recovery.js?v=20260710g"></script>
+    <script src="core/crash-recovery.js?v=20260713p7f"></script>
     <script src="core/perf-monitor.js?v=20260709f"></script>
     <script src="core/project-manager.js?v=20260710n"></script>
-    <script src="core/version-manager.js?v=20260709f"></script>
-    <script src="core/asset-manager.js?v=20260712b"></script>
-    <script src="core/plugin-api.js?v=20260709f"></script>
-    <script src="core/map-adapter.js?v=20260713g"></script>
-    <script src="core/validation-engine.js?v=20260709f"></script>
+    <script src="core/version-manager.js?v=20260716p5"></script>
+    <script src="core/asset-manager.js?v=20260716we6"></script>
+    <script src="core/plugin-api.js?v=20260719val"></script>
+    <script src="core/map-adapter.js?v=20260716p5"></script>
+    <script src="core/validation-config.js?v=20260719val"></script>
+    <script src="core/validation-engine.js?v=20260719val"></script>
     <script src="core/legacy-bridge.js?v=20260712b"></script>
     <script src="core/spatial-index.js?v=20260709f"></script>
-    <script src="core/snap-engine.js?v=20260709f"></script>
+    <script src="core/snap-engine.js?v=20260721po1"></script>
     <script src="core/snap-bridge.js?v=20260709f"></script>
-    <script src="core/snap-overlay.js?v=20260710b"></script>
+    <script src="core/snap-overlay.js?v=20260721po1"></script>
     <script src="core/polar-tracking.js?v=20260709f"></script>
     <script src="core/dynamic-input.js?v=20260709f"></script>
-    <script src="core/layer-manager.js?v=20260710b"></script>
+    <script src="core/layer-manager.js?v=20260719lyr"></script>
     <script src="core/command-manager.js?v=20260709f"></script>
-    <script src="core/tool-command-manager.js?v=20260713d"></script>
+    <script src="core/tool-command-manager.js?v=20260721po1"></script>
     <script src="core/tool-registry.js?v=20260709f"></script>
     <script src="core/object-transform.js?v=20260713c"></script>
-    <script src="core/block-manager.js?v=20260713d"></script>
-    <script src="core/modify-session.js?v=20260712b"></script>
+    <script src="core/block-manager.js?v=20260719x1"></script>
+    <script src="core/dxf-io.js?v=20260719dxf1"></script>
+    <script src="core/dimension-manager.js?v=20260718dim"></script>
+    <script src="core/dist-measure.js?v=20260714e"></script>
+    <script src="core/area-calc.js?v=20260714k"></script>
+    <script src="core/hatch.js?v=20260714p"></script>
+    <script src="core/image-tools.js?v=20260716a"></script>
+    <script src="core/modify-session.js?v=20260721po1"></script>
     <script src="core/tools/polyline-tool.js?v=20260709f"></script>
     <script src="core/tools/line-tool.js?v=20260709f"></script>
-    <script src="core/tools-bootstrap.js?v=20260713d"></script>
-    <script src="core/rendering/background-renderer.js?v=20260710e"></script>
+    <script src="core/tools-bootstrap.js?v=20260716a"></script>
+    <script src="core/rendering/background-renderer.js?v=20260716a"></script>
     <script src="core/rendering/grid-renderer.js?v=20260710e"></script>
     <script src="core/rendering/room-renderer.js?v=20260710e"></script>
     <script src="core/rendering/wall-renderer.js?v=20260710e"></script>
@@ -325,43 +488,69 @@
     <script src="core/rendering/path-renderer.js?v=20260710e"></script>
     <script src="core/rendering/poi-renderer.js?v=20260710e"></script>
     <script src="core/rendering/qr-renderer.js?v=20260710e"></script>
-    <script src="core/rendering/rendering-engine.js?v=20260710e"></script>
+    <script src="core/rendering/rendering-engine.js?v=20260716a"></script>
     <script src="core/index.js?v=20260709f"></script>
 
     <!-- Script Scripts -->
-    <script src="js/state.js?v=20260713f"></script>
-    <script src="js/selection-bridge-ui.js?v=20260710d"></script>
-    <script src="js/history.js?v=20260713f"></script>
-    <script src="js/utils.js?v=20260709d"></script>
-    <script src="js/layers.js?v=20260710e"></script>
-    <script src="js/autodetect.js?v=2"></script>
-    <script src="js/rooms.js?v=20260713c"></script>
+    <script src="js/state.js?v=20260721po1"></script>
+    <script src="js/selection-bridge-ui.js?v=20260718ms"></script>
+    <script src="js/multi-select.js?v=20260721po1"></script>
+    <script src="js/history.js?v=20260721po1"></script>
+    <script src="js/utils.js?v=20260719n1"></script>
+    <script src="js/layers.js?v=20260721po1"></script>
+    <script src="js/autodetect.js?v=20260716a"></script>
+    <script src="js/image-phase4.js?v=20260716we6b"></script>
+    <script src="js/rooms.js?v=20260719bo"></script>
     <script src="js/doors.js?v=20260713c"></script>
     <script src="js/walls.js?v=20260713c"></script>
-    <script src="js/lines.js?v=20260713c"></script>
+    <script src="js/lines.js?v=20260720el1"></script>
+    <script src="js/align-tool.js?v=20260719n1"></script>
+    <script src="js/explode-tool.js?v=20260719x1"></script>
+    <script src="js/offset-tool.js?v=20260719o1"></script>
+    <script src="js/join-tool.js?v=20260719j1"></script>
+    <script src="js/dxf-ui.js?v=20260719dxf1"></script>
     <script src="js/pois.js?v=20260713c"></script>
-    <script src="js/blocks.js?v=20260713f"></script>
+    <script src="js/point-tool.js?v=20260721po1"></script>
+    <script src="js/blocks.js?v=20260719x1"></script>
+    <script src="js/dimensions.js?v=20260719n1"></script>
     <script src="js/paths.js?v=2"></script>
-    <script src="js/tools.js?v=20260713d"></script>
-    <script src="js/canvas.js?v=20260713d"></script>
-    <script src="js/io.js?v=20260713f"></script>
-    <script src="js/api.js?v=20260713g"></script>
-    <script src="core/export-pipeline.js?v=20260713g"></script>
+    <script src="js/tools.js?v=20260721po1"></script>
+    <script src="js/canvas.js?v=20260721po1"></script>
+    <script src="js/io.js?v=20260721po1"></script>
+
+    <!-- WE2 Draft + WE3 Lock + WE4 Publish -->
+    <script src="js/lock-api.js?v=20260716we3"></script>
+    <script src="js/draft-api.js?v=20260716we6b"></script>
+    <script src="js/publish-api.js?v=20260716we4"></script>
+    <script src="js/storage-api.js?v=20260716we6"></script>
+    <script src="js/validation-ui.js?v=20260716we5"></script>
+    <script src="js/api.js?v=20260721po1"></script>
+    <script src="core/export-pipeline.js?v=20260719val"></script>
+
     <script src="js/secure-lock.js?v=20260710b"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
-    <script src="js/property-inspector-ui.js?v=20260710e"></script>
-    <script src="js/properties.js?v=20260713d"></script>
+    <script src="js/property-inspector-ui.js?v=20260714d"></script>
+    <script src="js/properties.js?v=20260721po1"></script>
     <script src="js/qrs.js?v=2"></script>
-    <script src="js/autosave.js?v=20260713f"></script>
-    <script src="js/events.js?v=20260713d"></script>
-    <script src="js/dynamic-input-ui.js?v=20260709e"></script>
-    <script src="js/command-bar-ui.js?v=20260710b"></script>
-    <script src="js/layers-ui.js?v=20260710e"></script>
-    <script src="editor.js?v=20260710o"></script>
+    <script src="js/autosave.js?v=20260716we6b"></script>
+    <script src="js/version-ui.js?v=20260716p5"></script>
+    <script src="js/explorer-ui.js?v=20260719info"></script>
+    <script src="js/events.js?v=20260721po1"></script>
+    <script src="js/dynamic-input-ui.js?v=20260714f"></script>
+    <script src="js/command-bar-ui.js?v=20260721po1"></script>
+    <script src="js/layers-ui.js?v=20260721po1"></script>
+
+    <!-- Phase UI shell -->
+    <script src="js/ui-shell.js?v=20260719hdr"></script>
+
+    <!-- Xuất/Nhập PDF (kiểu AutoCAD) -->
+    <script src="js/pdf-io.js?v=20260718pdf"></script>
+
+    <script src="editor.js?v=20260716we6b"></script>
     <script>
-        // Khởi tạo Lucide Icons
         lucide.createIcons();
     </script>
 </body>
 
 </html>
+

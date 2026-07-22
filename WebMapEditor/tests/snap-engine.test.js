@@ -9,9 +9,15 @@ describe('SnapEngine — Phase 1 OSNAP skeleton', function () {
         Snap.configure({
             gridEnabled: true,
             objectSnapEnabled: true,
-            modes: { grid: true, endpoint: true, midpoint: true, intersection: true, perpendicular: true }
+            modes: {
+                grid: true, endpoint: true, midpoint: true, intersection: true,
+                perpendicular: true, center: true, quadrant: true,
+                extension: false, from: false, nearest: false, node: true
+            }
         });
         globalThis.walls = [];
+        globalThis.lines = [];
+        globalThis.cadPoints = [];
         globalThis.pathNodes = [];
         globalThis.rooms = [];
         globalThis.doors = [];
@@ -179,5 +185,93 @@ describe('SnapEngine — Phase 1 OSNAP skeleton', function () {
             { anchor: { x: 50, y: 50 } }
         );
         expect(r.kind).not.toBe('perpendicular');
+    });
+
+    it('snap quadrant tại bốn điểm phần tư của phòng tròn', function () {
+        globalThis.rooms = [{ id: 9, shape: 'circle', cx: 100, cy: 80, radius: 30 }];
+        var right = Snap.snapPoint({ x: 128, y: 81 }, { gridSnap: false });
+        expect(right.kind).toBe('quadrant');
+        expect(right.x).toBe(130);
+        expect(right.y).toBe(80);
+        var top = Snap.snapPoint({ x: 101, y: 51 }, { gridSnap: false });
+        expect(top.kind).toBe('quadrant');
+        expect(top.x).toBe(100);
+        expect(top.y).toBe(50);
+    });
+
+    it('quadrant hỗ trợ ellipse xoay và chỉ lấy quadrant nằm trên cung', function () {
+        globalThis.lines = [
+            {
+                id: 20, type: 'ellipse',
+                ellipse: { cx: 100, cy: 100, rx: 40, ry: 20, rotation: Math.PI / 2 },
+                points: [{ x: 100, y: 140 }, { x: 80, y: 100 }, { x: 100, y: 60 }]
+            },
+            {
+                id: 21, type: 'arc',
+                arc: { cx: 200, cy: 100, radius: 30 },
+                points: [{ x: 230, y: 100 }, { x: 200, y: 130 }, { x: 170, y: 100 }]
+            }
+        ];
+        var candidates = Snap.collectSnapPointsFromLegacy();
+        var ellipseQuadrants = candidates.filter(function (point) {
+            return point.kind === 'quadrant' && point.source === 'line:20';
+        });
+        expect(ellipseQuadrants).toHaveLength(4);
+        expect(ellipseQuadrants.some(function (point) {
+            return Math.abs(point.x - 100) < 1e-6 && Math.abs(point.y - 140) < 1e-6;
+        })).toBe(true);
+        var arcQuadrants = candidates.filter(function (point) {
+            return point.kind === 'quadrant' && point.source === 'line:21';
+        });
+        expect(arcQuadrants).toHaveLength(3);
+        expect(arcQuadrants.some(function (point) { return point.y === 70; })).toBe(false);
+    });
+
+    it('extension chỉ bắt trên phần kéo dài ngoài đoạn', function () {
+        globalThis.lines = [{ id: 1, points: [{ x: 20, y: 40 }, { x: 80, y: 40 }] }];
+        Snap.setMode('extension', true);
+        var extended = Snap.snapPoint({ x: 102, y: 43 }, { gridSnap: false });
+        expect(extended.kind).toBe('extension');
+        expect(extended.x).toBeCloseTo(102, 6);
+        expect(extended.y).toBeCloseTo(40, 6);
+        var onSegment = Snap.collectExtensionPoints({ x: 50, y: 42 });
+        expect(onSegment).toHaveLength(0);
+    });
+
+    it('extension chỉ dùng đoạn đầu/cuối và bỏ arc, ellipse, polyline kín', function () {
+        globalThis.lines = [
+            {
+                id: 1, type: 'segment',
+                points: [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 40, y: 20 }]
+            },
+            { id: 2, type: 'arc', points: [{ x: 0, y: 10 }, { x: 20, y: 10 }] },
+            { id: 3, type: 'ellipse', points: [{ x: 0, y: 30 }, { x: 20, y: 30 }] },
+            { id: 4, type: 'segment', closed: true, points: [{ x: 0, y: 40 }, { x: 20, y: 40 }] }
+        ];
+        var segments = Snap.collectExtensionSegments();
+        expect(segments).toHaveLength(2);
+        expect(segments.map(function (segment) { return segment.source; })).toEqual([
+            'line:1:start', 'line:1:end'
+        ]);
+    });
+
+    it('from tạo điểm tương đối từ điểm tham chiếu và offset', function () {
+        Snap.setMode('from', true);
+        var r = Snap.snapPoint(
+            { x: 125, y: 85 },
+            {
+                from: { x: 100, y: 100 },
+                fromOffset: { x: 25, y: -15 },
+                gridSnap: false
+            }
+        );
+        expect(r.kind).toBe('from');
+        expect(r.x).toBe(125);
+        expect(r.y).toBe(85);
+    });
+
+    it('from dữ liệu không hợp lệ không tạo snap', function () {
+        Snap.setMode('from', true);
+        expect(Snap.collectFromPoint({ x: 1, y: 2 }, { x: 'bad', y: 4 })).toBeNull();
     });
 });

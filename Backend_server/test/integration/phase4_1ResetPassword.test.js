@@ -12,9 +12,9 @@ const app = require('../../server');
 const User = require('../../models/User');
 const Organization = require('../../models/Organization');
 
-function tokenFor(userId, role) {
+function tokenFor(userId, role, sv = 0) {
   return jwt.sign(
-    { userId: String(userId), role },
+    { userId: String(userId), role, sv },
     process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
@@ -32,7 +32,11 @@ describe('Phase 4.1 — Admin reset password', () => {
 
     const superUser = await User.findOne({ role: 'SUPER_ADMIN', is_active: { $ne: false } }).lean();
     if (!superUser) throw new Error('Thiếu SUPER_ADMIN');
-    superToken = tokenFor(superUser._id, 'SUPER_ADMIN');
+    superToken = tokenFor(
+      superUser._id,
+      'SUPER_ADMIN',
+      Number(superUser.session_version) || 0
+    );
 
     orgAdminUser = await User.findOne({ role: 'ORG_ADMIN', is_active: { $ne: false } }).lean();
     if (!orgAdminUser) throw new Error('Thiếu ORG_ADMIN');

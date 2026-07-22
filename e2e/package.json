@@ -1,0 +1,14 @@
+{
+  "name": "indoornav-web-quality-e2e",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:list": "playwright test --list",
+    "test:update-snapshots": "playwright test --update-snapshots",
+    "install:chromium": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.61.1"
+  }
+}

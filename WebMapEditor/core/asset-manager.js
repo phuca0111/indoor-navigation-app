@@ -74,6 +74,31 @@
             register('background', { type: 'image', data: dataUrl, url: dataUrl });
         } else {
             unregister('background');
+            if (typeof globalThis !== 'undefined') globalThis.bgStorageKey = '';
+            if (typeof window !== 'undefined') window.bgStorageKey = '';
+        }
+        return true;
+    }
+
+    /** WE6: URL Object Storage (/uploads/...) — không Base64 */
+    function setBackgroundFromUrl(url, storageKey) {
+        if (typeof globalThis !== 'undefined') {
+            globalThis.bgImageBase64 = url || '';
+            globalThis.bgStorageKey = storageKey || '';
+        }
+        if (typeof window !== 'undefined') {
+            window.bgImageBase64 = url || '';
+            window.bgStorageKey = storageKey || '';
+        }
+        if (url) {
+            register('background', {
+                type: 'image',
+                url: url,
+                data: url,
+                storageKey: storageKey || null
+            });
+        } else {
+            unregister('background');
         }
         return true;
     }
@@ -91,6 +116,7 @@
         clear: clear,
         getBackgroundDataUrl: getBackgroundDataUrl,
         setBackgroundFromDataUrl: setBackgroundFromDataUrl,
+        setBackgroundFromUrl: setBackgroundFromUrl,
         clearBackground: clearBackground
     };
 });

@@ -1,234 +1,230 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Indoor Navigation System - Hệ thống dẫn đường trong nhà</title>
-<link rel="stylesheet" href="styles.css">
-<style>
-/* Add minimal inline styles for auth buttons to ensure visibility */
-.auth-actions {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-}
-
-.auth-btn {
-    padding: 8px 16px;
-    border-radius: 6px;
-    text-decoration: none;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    font-size: 14px;
-}
-
-.login-btn {
-    background-color: #f0f0f0;
-    color: #333;
-    border: 1px solid #ddd;
-}
-
-.login-btn:hover {
-    background-color: #e0e0e0;
-}
-
-.register-btn {
-    background-color: #007AFF;
-    color: white;
-    border: 1px solid #0062cc;
-}
-
-.register-btn:hover {
-    background-color: #0062cc;
-}
-
-/* Make sure header-inner can accommodate new buttons */
-.header-inner {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    flex-wrap: wrap;
-}
-
-/* Hide buttons on mobile initially, show in mobile menu */
-@media (max-width: 768px) {
-    .auth-actions {
-        display: none;
-        width: 100%;
-        background: #f8f9fa;
-        padding: 15px;
-        border-radius: 8px;
-        margin-top: 10px;
-    }
-
-    .auth-actions.show-mobile {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-}
-</style>
+<title>IndoorNav — Bản đồ &amp; dẫn đường trong nhà</title>
+<meta name="description" content="Hệ thống indoor navigation SaaS: Dashboard quản trị, Web Map Editor, ứng dụng Android với QR, PDR/TPF và A*.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css?v=20260721c6">
+<link rel="stylesheet" href="/css/landing-layout.css?v=20260721article1">
+<link rel="stylesheet" href="/css/landing-home-v2.css?v=20260721video1">
 </head>
-<body>
-<!-- Header -->
+<body class="landing-home">
 <header class="header">
 <div class="container header-inner">
 <div class="logo">
-<span class="logo-icon">📍</span>
+<a href="/" aria-label="IndoorNav — Trang chủ">
+<span class="logo-mark" aria-hidden="true"></span>
 <span class="logo-text">IndoorNav</span>
+</a>
 </div>
 <nav class="nav" id="mainNav">
-<a href="#overview">Tổng quan</a>
-<a href="#features">Tính năng</a>
-<a href="#process">Quy trình</a>
-<a href="#tech">Công nghệ</a>
-<a href="#demo">Demo</a>
+<a href="/" class="active">Tổng quan</a>
+<a href="/features">Tính năng</a>
+<a href="/pricing">Giá</a>
+<a href="/contact">Liên hệ</a>
 </nav>
 <div class="auth-actions" id="authActions">
-<a href="/admin/index.html" class="auth-btn login-btn" id="loginBtn">Đăng nhập</a>
-<a href="/org-trial.html" class="auth-btn register-btn" id="trialBtn">Dùng thử</a>
-<a href="/org-register.html" class="auth-btn register-btn" style="background:#8e44ad;border-color:#732d91;" id="orgRegisterBtn">Đăng ký tổ chức</a>
+<a href="/login" class="auth-btn login-btn" id="loginBtn">Đăng nhập</a>
+<a href="/register" class="auth-btn register-btn org-register-btn">Đăng ký tổ chức</a>
 </div>
 <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">☰</button>
 </div>
 </header>
 
-<!-- Hero Section -->
-<section class="hero">
+<section class="hero hero-v2" id="top">
+<div class="hero-atmosphere" aria-hidden="true"></div>
 <div class="container hero-inner">
 <div class="hero-content">
-<h1>Hệ thống bản đồ và dẫn đường trong nhà</h1>
+<p class="brand-signal">IndoorNav</p>
+<h1>Từ vẽ bản đồ đến chỉ đường trong nhà</h1>
 <p class="hero-description">
-Giải pháp định vị và chỉ đường trong nhà bằng QR, PDR, TPF và thuật toán A*.
-Ứng dụng Android kết nối backend Node.js, quản lý bản đồ qua Web Editor.
+Một hệ thống SaaS: quản trị trên Dashboard, soạn tầng trên Web Editor, người dùng đi trong tòa nhà qua app Android.
 </p>
+<div class="cta-buttons">
+<a href="/login" class="btn btn-primary">Dùng thử miễn phí</a>
+<a href="/pricing" class="btn btn-ghost">Xem bảng giá</a>
 </div>
-<div class="hero-visual">
-<!-- CSS-only mockup: phone + map -->
+</div>
+<div class="hero-visual" aria-hidden="true">
 <div class="phone-mockup">
 <div class="phone-screen">
 <div class="map-preview">
-<div class="room room-1">Phòng A</div>
-<div class="room room-2">Phòng B</div>
-<div class="room room-3">Phòng C</div>
+<div class="room room-1">Sảnh</div>
+<div class="room room-2">A101</div>
+<div class="room room-3">Thang máy</div>
 <div class="path"></div>
 <div class="user-dot"></div>
 </div>
 </div>
 </div>
 </div>
+</div>
 </section>
 
-<!-- Features Section -->
-<section class="features" id="features">
+<section class="why" id="overview">
 <div class="container">
-<h2 class="section-title">Tính năng chính</h2>
-<div class="features-grid">
-<div class="feature-card">
-<div class="feature-icon">🏢</div>
-<h3>Quản lý tòa nhà</h3>
-<p>Tạo và quản lý nhiều tòa nhà, từng tầng, thông tin metadata.</p>
-</div>
-<div class="feature-card">
-<div class="feature-icon">🛠️</div>
+<header class="section-head">
+<h2 class="section-title">Ba lớp, một luồng vận hành</h2>
+<p class="section-lead">Không phải bộ công cụ rời — Dashboard, Editor và Android cùng một nguồn bản đồ đã xuất bản.</p>
+</header>
+<div class="why-grid">
+<article class="why-item reveal">
+<span class="why-index">01</span>
+<h3>Dashboard</h3>
+<p>Tổ chức, tòa nhà, người dùng, gói dịch vụ và vòng đời bản đồ draft / published.</p>
+<a href="/login" class="text-link">Vào Dashboard</a>
+</article>
+<article class="why-item reveal">
+<span class="why-index">02</span>
 <h3>Web Map Editor</h3>
-<p>Công cụ vẽ bản đồ indoor trực quan: phòng, tường, node, edge, POI.</p>
-</div>
-<div class="feature-card">
-<div class="feature-icon">📷</div>
-<h3>QR Anchor</h3>
-<p>Đặt điểm QR để xác định vị trí tuyệt đối khi vào nhà.</p>
-</div>
-<div class="feature-card">
-<div class="feature-icon">🧭</div>
-<h3>Tìm đường A*</h3>
-<p>Thuật toán A* tìm đường đi ngắn nhất trên đồ thị topology.</p>
-</div>
-<div class="feature-card">
-<div class="feature-icon">📡</div>
-<h3>PDR/TPF</h3>
-<p>Theo dõi vị trí realtime bằng cảm biến (bước, heading) và bộ lọc particle.</p>
-</div>
-<div class="feature-card">
-<div class="feature-icon">📱</div>
+<p>Vẽ phòng, đường đi, POI, QR; lưu nháp, khóa tầng khi cộng tác, rồi publish lên server.</p>
+<a href="/features#editor" class="text-link">Xem Editor</a>
+</article>
+<article class="why-item reveal">
+<span class="why-index">03</span>
 <h3>App Android</h3>
-<p>Ứng dụng Android Jetpack Compose, quét QR, định vị, chỉ đường.</p>
+<p>Quét QR neo vị trí, theo dõi PDR/TPF, tìm đường A* trên bản đã publish.</p>
+<a href="/features#android" class="text-link">Xem Android</a>
+</article>
+</div>
+</div>
+</section>
+
+<section class="deepdive deepdive--editor" id="editor">
+<div class="container deepdive-inner">
+<div class="deepdive-copy reveal">
+<p class="deepdive-kicker">Web Map Editor</p>
+<h2>Soạn tầng như đang dựng không gian thật</h2>
+<p>
+Draft tách khỏi bản publish. Autosave nháp lên server. Khóa tầng khi nhiều người sửa.
+Android chỉ đọc bản đã xuất bản — không đụng payload sai.
+</p>
+<ul class="deepdive-list">
+<li>Draft / Publish tách biệt</li>
+<li>Khóa tầng đa tab / đa người</li>
+<li>POI, QR, topology đường đi</li>
+</ul>
+<a href="/features#editor" class="btn btn-primary">Chi tiết Editor</a>
+</div>
+<div class="deepdive-visual reveal" aria-hidden="true">
+<div class="editor-canvas">
+<div class="editor-toolbar">
+<span class="tb-dot"></span><span class="tb-dot"></span><span class="tb-dot"></span>
+<span class="tb-label">Floor 1 · Draft</span>
+<span class="tb-badge">Autosave</span>
+</div>
+<div class="editor-stage">
+<div class="ed-room er1"></div>
+<div class="ed-room er2"></div>
+<div class="ed-room er3"></div>
+<div class="ed-edge"></div>
+<div class="ed-node n1"></div>
+<div class="ed-node n2"></div>
+<div class="ed-qr">QR</div>
+</div>
 </div>
 </div>
 </div>
 </section>
 
-<!-- Process Section -->
-<section class="process" id="process">
+<section class="deepdive deepdive--android" id="android">
+<div class="container deepdive-inner deepdive-inner--flip">
+<div class="deepdive-copy reveal">
+<p class="deepdive-kicker">App Android</p>
+<h2>Chỉ đường khi Wi‑Fi ngoài trời không còn đủ</h2>
+<p>
+Người dùng quét QR tại lối vào để neo tầng và tọa độ, rồi app theo dõi bước và hướng,
+dẫn đường ngắn trên đồ thị topology đã soạn trong Editor.
+</p>
+<ul class="deepdive-list">
+<li>QR Anchor — neo tuyệt đối</li>
+<li>PDR / TPF — theo dõi trong nhà</li>
+<li>A* — đường đi trên topology</li>
+</ul>
+<a href="/features#android" class="btn btn-primary">Chi tiết Android</a>
+</div>
+<div class="deepdive-visual reveal" aria-hidden="true">
+<div class="android-stack">
+<div class="android-chip">QR</div>
+<div class="android-chip">PDR</div>
+<div class="android-chip">A*</div>
+<div class="android-route">
+<span class="route-start">Lối vào</span>
+<span class="route-line"></span>
+<span class="route-end">Phòng đích</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<section class="proof" id="proof">
 <div class="container">
-<h2 class="section-title">Quy trình hoạt động</h2>
-<div class="process-steps">
-<div class="step">
-<div class="step-number">1</div>
-<h3>Vẽ bản đồ</h3>
-<p>Admin sử dụng Web Editor để vẽ bản đồ tầng, đặt node, edge và QR anchor.</p>
+<header class="section-head">
+<h2 class="section-title">Luồng đã khép kín</h2>
+<p class="section-lead">Số liệu sản phẩm — không phải vanity metric giả.</p>
+</header>
+<div class="proof-grid">
+<div class="proof-item reveal">
+<span class="proof-num">3</span>
+<span class="proof-label">Lớp sản phẩm</span>
+<p>Dashboard · Editor · Android</p>
 </div>
-<div class="step-arrow">→</div>
-<div class="step">
-<div class="step-number">2</div>
-<h3>Publish</h3>
-<p>Xuất bản bản đồ lên server Node.js, lưu vào MongoDB.</p>
+<div class="proof-item reveal">
+<span class="proof-num">4</span>
+<span class="proof-label">Bước vận hành</span>
+<p>Vẽ → Publish → Quét QR → Chỉ đường</p>
 </div>
-<div class="step-arrow">→</div>
-<div class="step">
-<div class="step-number">3</div>
-<h3>Quét QR</h3>
-<p>Người dùng quét QR tại vị trí bắt đầu để xác định tọa độ và tầng.</p>
-</div>
-<div class="step-arrow">→</div>
-<div class="step">
-<div class="step-number">4</div>
-<h3>Định vị & Chỉ đường</h3>
-<p>App sử dụng PDR/TPF theo dõi, A* tính đường, hiển thị hướng dẫn.</p>
+<div class="proof-item reveal">
+<span class="proof-num">1</span>
+<span class="proof-label">Nguồn sự thật</span>
+<p>Bản publish trên server cho mọi client</p>
 </div>
 </div>
 </div>
 </section>
 
-<!-- Tech Stack Section -->
-<section class="tech" id="tech">
-<div class="container">
-<h2 class="section-title">Công nghệ sử dụng</h2>
-<div class="tech-grid">
-<div class="tech-badge">Node.js</div>
-<div class="tech-badge">Express</div>
-<div class="tech-badge">MongoDB Atlas</div>
-<div class="tech-badge">Kotlin</div>
-<div class="tech-badge">Jetpack Compose</div>
-<div class="tech-badge">QR Code</div>
-<div class="tech-badge">PDR</div>
-<div class="tech-badge">TPF</div>
-<div class="tech-badge">A* Pathfinding</div>
-<div class="tech-badge">HTML/CSS/JS</div>
+<section class="cta-band" id="cta">
+<div class="container cta-band-inner">
+<div class="cta-band-copy reveal">
+<h2>Muốn dùng thử hoặc trao đổi triển khai?</h2>
+<p>Đăng nhập để dùng hệ thống, hoặc gửi yêu cầu tư vấn qua form liên hệ.</p>
+</div>
+<div class="cta-band-actions reveal">
+<a href="/login" class="btn btn-primary btn-large">Dùng thử miễn phí</a>
+<a href="/contact" class="btn btn-ghost btn-large">Liên hệ</a>
 </div>
 </div>
 </section>
 
-<!-- Demo CTA Section -->
-<section class="cta" id="demo">
-<div class="container">
-<h2>Trải nghiệm thực tế</h2>
-<p>Tải ứng dụng Android để trải nghiệm định vị và chỉ đường trong nhà.</p>
-<div class="cta-buttons">
-<a href="#" class="btn btn-primary btn-large">Tải APK (coming soon)</a>
-</div>
-<p class="cta-note">Dự án luận văn tốt nghiệp ngành Công nghệ thông tin.</p>
-</div>
-</section>
-
-<!-- Footer -->
 <footer class="footer">
-<div class="container">
-<p>&copy; 2025 - Hệ thống Bản đồ và Dẫn đường Trong nhà</p>
-<p>Đồ án/Luận văn tốt nghiệp - Trình độ Đại học</p>
+<div class="container footer-inner">
+<p>&copy; 2026 IndoorNav — Hệ thống Bản đồ và Dẫn đường Trong nhà</p>
+<p>Đồ án / Luận văn tốt nghiệp — ngành Công nghệ thông tin</p>
 </div>
 </footer>
 
-<script src="landing.js"></script>
+<script src="/landing.js?v=20260721video2"></script>
+<script>
+(function () {
+  if (!('IntersectionObserver' in window)) {
+    document.querySelectorAll('.reveal').forEach(function (el) { el.classList.add('is-visible'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) {
+        e.target.classList.add('is-visible');
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+  document.querySelectorAll('.reveal').forEach(function (el) { io.observe(el); });
+})();
+</script>
 </body>
 </html>

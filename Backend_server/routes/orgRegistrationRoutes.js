@@ -12,14 +12,14 @@ const {
   approveRegistration,
   rejectRegistration
 } = require('../controllers/orgRegistrationController');
-const { auth, requireSuperAdmin } = require('../middlewares/auth');
+const { auth, requirePermission, P } = require('../middlewares/auth');
 const { publicRegisterLimiter } = require('../middlewares/rateLimit');
 
 router.post('/public', publicRegisterLimiter, submitPublicRegistration);
 router.post('/self-service', publicRegisterLimiter, submitSelfServiceTrial);
 
-router.get('/', auth, requireSuperAdmin, listRegistrations);
-router.post('/:id/approve', auth, requireSuperAdmin, approveRegistration);
-router.post('/:id/reject', auth, requireSuperAdmin, rejectRegistration);
+router.get('/', auth, requirePermission(P.PLATFORM_REGISTRATIONS_MANAGE), listRegistrations);
+router.post('/:id/approve', auth, requirePermission(P.PLATFORM_REGISTRATIONS_MANAGE), approveRegistration);
+router.post('/:id/reject', auth, requirePermission(P.PLATFORM_REGISTRATIONS_MANAGE), rejectRegistration);
 
 module.exports = router;

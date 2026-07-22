@@ -56,7 +56,13 @@ const mapVersionSchema = new mongoose.Schema({
     }
 
 }, {
-    timestamps: false   // published_at đã đủ, không cần thêm createdAt/updatedAt
+    timestamps: false,   // published_at đã đủ, không cần thêm createdAt/updatedAt
+    autoIndex: false // tạo unique index bằng preflight script sau khi duplicate = 0
 });
+
+mapVersionSchema.index(
+    { building_id: 1, floor_number: 1, version: 1 },
+    { unique: true }
+);
 
 module.exports = mongoose.model('MapVersion', mapVersionSchema);

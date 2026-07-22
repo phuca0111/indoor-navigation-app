@@ -42,14 +42,23 @@
             label: 'Cửa',
             fields: [
                 { key: 'name', type: 'string', label: 'Tên' },
-                { key: 'width', type: 'number', label: 'Rộng', min: 10 }
+                {
+                    key: 'width',
+                    type: 'number',
+                    label: 'Chiều dài',
+                    unit: 'm',
+                    valueIn: 'px',
+                    min: 0.1,
+                    step: 0.1
+                }
             ]
         },
         poi: {
             label: 'POI',
             fields: [
                 { key: 'name', type: 'string', label: 'Tên' },
-                { key: 'category', type: 'string', label: 'Loại' }
+                { key: 'category', type: 'string', label: 'Loại' },
+                { key: 'size', type: 'number', label: 'Kích thước', min: 12, max: 96 }
             ]
         },
         node: {

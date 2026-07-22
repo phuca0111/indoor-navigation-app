@@ -4,18 +4,48 @@
 // ============================================
 
 const express = require('express');
-const router = express.Router();   // Tạo 1 tấm biển báo mới
+const router = express.Router();
 
-// Lôi não bộ xử lý từ controllers ra
-const { register, login, refresh, logout, unlockSession, registerPublic } = require('../controllers/authController');
-const { auth, requireAdmin } = require('../middlewares/auth');
-const { loginLimiter, publicRegisterLimiter, refreshLimiter } = require('../middlewares/rateLimit');
+const {
+  register,
+  login,
+  refresh,
+  logout,
+  logoutAll,
+  unlockSession,
+  registerPublic,
+  forgotPassword,
+  resetPassword,
+  googleStatus,
+  googleAuthStart,
+  googleAuthCallback,
+  completeTwoFactorLogin
+} = require('../controllers/authController');
+const { auth, requireAdmin, requirePermission, P } = require('../middlewares/auth');
+const {
+  loginLimiter,
+  publicRegisterLimiter,
+  refreshLimiter,
+  forgotPasswordLimiter,
+  resetPasswordLimiter
+} = require('../middlewares/rateLimit');
+const { confirmEmailVerificationPublic } = require('../controllers/identityController');
 
-router.post('/login',    loginLimiter, login);                          // Public
-router.post('/register', auth, requireAdmin, register); // Super Admin hoặc Org Admin
-router.post('/public-register', publicRegisterLimiter, registerPublic);          // Public — self-service registration
-router.post('/refresh',  refreshLimiter, refresh);                        // Public — dùng refreshToken
-router.post('/logout',   logout);                         // Public — có thể không cần token
-router.post('/unlock-session', auth, unlockSession);      // Private — mở khóa editor bằng password
+router.post('/login', loginLimiter, login);
+router.post('/register', auth, requireAdmin, register);
+router.post('/public-register', publicRegisterLimiter, registerPublic);
+router.post('/refresh', refreshLimiter, refresh);
+router.post('/2fa/complete', loginLimiter, completeTwoFactorLogin);
+router.post('/email-verification/confirm', loginLimiter, confirmEmailVerificationPublic);
+router.post('/logout', logout);
+router.post('/logout-all', auth, requirePermission(P.IDENTITY_SESSION_REVOKE), logoutAll);
+router.post('/unlock-session', auth, unlockSession);
+router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
+router.post('/reset-password', resetPasswordLimiter, resetPassword);
+
+// Phase 8 — Google OAuth (Admin web)
+router.get('/google/status', googleStatus);
+router.get('/google', googleAuthStart);
+router.get('/google/callback', googleAuthCallback);
 
 module.exports = router;

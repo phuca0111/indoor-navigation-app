@@ -8,8 +8,12 @@ const {
   confirmBankPayment,
   listTransactions,
   TOPUP_MIN,
-  TOPUP_MAX
-} = require('../services/bankWalletService');
+  TOPUP_MAX,
+  isPersonalPayment,
+  resolvePersonalPaymentForApp,
+  resolvePersonalPayment,
+  confirmPersonalPayment
+} = require('../application/billing/bankWalletApplicationService');
 
 async function postRegister(req, res) {
   try {
@@ -76,6 +80,11 @@ async function getResolvePayment(req, res) {
     if (!invoiceId || !token) {
       return res.status(400).json({ message: 'Thiếu invoiceId hoặc token.' });
     }
+    // Đơn thanh toán gói cá nhân dùng chung schema QR (invoiceId = paymentId)
+    if (await isPersonalPayment(invoiceId)) {
+      const data = await resolvePersonalPaymentForApp(invoiceId, token);
+      return res.json(data);
+    }
     const data = await resolvePaymentFromQr({ invoiceId, token });
     res.json(data);
   } catch (e) {
@@ -88,6 +97,20 @@ async function postConfirmPayment(req, res) {
     const { invoice_id, payment_token } = req.body;
     if (!invoice_id || !payment_token) {
       return res.status(400).json({ message: 'Thiếu invoice_id hoặc payment_token.' });
+    }
+    // Đơn thanh toán gói cá nhân (dùng chung endpoint confirm với app)
+    if (await isPersonalPayment(invoice_id)) {
+      const r = await confirmPersonalPayment({
+        bankUserId: req.bankUserId,
+        paymentId: invoice_id,
+        token: payment_token
+      });
+      return res.json({
+        success: true,
+        balance: r.wallet_balance,
+        plan: r.plan,
+        duplicated: r.duplicated
+      });
     }
     const result = await confirmBankPayment({
       bankUserId: req.bankUserId,
@@ -110,6 +133,37 @@ function getTopupLimits(req, res) {
   res.json({ min: TOPUP_MIN, max: TOPUP_MAX, currency: 'VND' });
 }
 
+// ===== Thanh toán gói cá nhân qua QR (không gắn Invoice/Organization) =====
+async function getResolvePersonal(req, res) {
+  try {
+    const { paymentId, token } = req.query;
+    if (!paymentId || !token) {
+      return res.status(400).json({ message: 'Thiếu paymentId hoặc token.' });
+    }
+    const data = await resolvePersonalPayment(paymentId, token);
+    res.json(data);
+  } catch (e) {
+    res.status(e.status || 500).json({ message: e.message, code: e.code });
+  }
+}
+
+async function postConfirmPersonal(req, res) {
+  try {
+    const { payment_id, payment_token } = req.body;
+    if (!payment_id || !payment_token) {
+      return res.status(400).json({ message: 'Thiếu payment_id hoặc payment_token.' });
+    }
+    const result = await confirmPersonalPayment({
+      bankUserId: req.bankUserId,
+      paymentId: payment_id,
+      token: payment_token
+    });
+    res.json({ success: true, ...result });
+  } catch (e) {
+    res.status(e.status || 500).json({ message: e.message, code: e.code });
+  }
+}
+
 module.exports = {
   postRegister,
   postLogin,
@@ -118,5 +172,7 @@ module.exports = {
   getTransactions,
   getResolvePayment,
   postConfirmPayment,
-  getTopupLimits
+  getTopupLimits,
+  getResolvePersonal,
+  postConfirmPersonal
 };

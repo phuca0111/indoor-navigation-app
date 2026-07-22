@@ -1,0 +1,103 @@
+﻿<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Liên hệ | IndoorNav</title>
+    <meta name="description" content="Gửi yêu cầu tư vấn, demo hoặc hỗ trợ hệ thống Indoor Navigation.">
+    <link rel="stylesheet" href="/styles.css?v=20260721c6">
+    <link rel="stylesheet" href="/css/landing-layout.css?v=20260721settings2">
+    <link rel="stylesheet" href="/css/landing-contact.css?v=20260721c6">
+</head>
+<body>
+<header class="header">
+    <div class="container header-inner">
+        <div class="logo">
+            <a href="/" aria-label="IndoorNav — Trang chủ">
+                <span class="logo-icon">📍</span>
+                <span class="logo-text">IndoorNav</span>
+            </a>
+        </div>
+        <nav class="nav" id="mainNav">
+            <a href="/">Tổng quan</a>
+            <a href="/features">Tính năng</a>
+            <a href="/pricing">Giá</a>
+            <a href="/contact">Liên hệ</a>
+        </nav>
+        <div class="auth-actions" id="authActions">
+            <a href="/login" class="auth-btn login-btn">Đăng nhập</a>
+            <a href="/register" class="auth-btn register-btn org-register-btn">Đăng ký tổ chức</a>
+        </div>
+        <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">☰</button>
+    </div>
+</header>
+
+<section class="contact-section" id="contact">
+    <div class="container">
+        <div class="landing-card">
+            <h2 class="section-title">Liên hệ</h2>
+            <p class="landing-muted" style="margin-top: 10px;">
+                Yêu cầu được lưu vào hệ thống quản trị (CRM). Email chỉ dùng để thông báo tùy chọn.
+            </p>
+            <form id="contactForm" novalidate>
+                <fieldset class="contact-request-type">
+                    <legend>Loại yêu cầu</legend>
+                    <label><input type="radio" name="request_type" value="DEMO" checked> Đăng ký Demo</label>
+                    <label><input type="radio" name="request_type" value="CONSULT"> Tư vấn triển khai</label>
+                    <label><input type="radio" name="request_type" value="PRICING"> Báo giá</label>
+                    <label><input type="radio" name="request_type" value="SUPPORT"> Hỗ trợ kỹ thuật</label>
+                    <label><input type="radio" name="request_type" value="BUG"> Báo lỗi</label>
+                    <label><input type="radio" name="request_type" value="OTHER"> Khác</label>
+                </fieldset>
+
+                <div class="form-grid">
+                    <div>
+                        <label for="contactName">Họ tên</label>
+                        <input id="contactName" name="name" type="text" required minlength="2" maxlength="120" placeholder="Nguyễn Văn A" autocomplete="name">
+                    </div>
+                    <div>
+                        <label for="contactEmail">Email</label>
+                        <input id="contactEmail" name="email" type="email" required maxlength="200" placeholder="admin@congty.com" autocomplete="email">
+                    </div>
+                    <div>
+                        <label for="contactPhone">Số điện thoại</label>
+                        <input id="contactPhone" name="phone" type="tel" maxlength="40" placeholder="0901234567" autocomplete="tel">
+                    </div>
+                    <div>
+                        <label for="contactCompany">Công ty</label>
+                        <input id="contactCompany" name="company" type="text" maxlength="160" placeholder="Công ty ABC">
+                    </div>
+                </div>
+                <label for="contactWebsite">Website (tuỳ chọn)</label>
+                <input id="contactWebsite" name="website" type="url" maxlength="300" placeholder="https://...">
+
+                <label for="contactSubject">Chủ đề</label>
+                <input id="contactSubject" name="subject" type="text" maxlength="200" placeholder="VD: Muốn demo hệ thống">
+
+                <label for="contactMessage">Nội dung</label>
+                <textarea id="contactMessage" name="message" required minlength="10" maxlength="4000" placeholder="Mô tả nhu cầu của bạn…"></textarea>
+
+                <div class="contact-actions">
+                    <button class="btn btn-primary btn-large" type="submit">Gửi yêu cầu</button>
+                    <a class="btn btn-secondary btn-large" href="/pricing">Xem gói</a>
+                </div>
+                <div id="contactStatus" class="status" aria-live="polite"></div>
+                <p class="contact-note">
+                    Sau khi gửi, đội ngũ sẽ xử lý trong Admin → Website → Liên hệ.
+                </p>
+            </form>
+        </div>
+    </div>
+</section>
+
+<footer class="footer">
+    <div class="container">
+        <p>&copy; 2025 - Hệ thống Bản đồ và Dẫn đường Trong nhà</p>
+        <p>Đồ án/Luận văn tốt nghiệp - Trình độ Đại học</p>
+    </div>
+</footer>
+
+<script src="/landing.js?v=20260721settings2"></script>
+<script src="/contact.js?v=20260721c6"></script>
+</body>
+</html>

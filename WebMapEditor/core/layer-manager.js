@@ -138,6 +138,31 @@
         return true;
     }
 
+    function setColor(id, color) {
+        var layer = layers.find(function (l) { return l.id === id; });
+        if (!layer) return false;
+        layer.color = color || null;
+        syncToDocument();
+        emitChanged({ action: 'color', layerId: id, color: layer.color });
+        return true;
+    }
+
+    /**
+     * Đổi thứ tự lớp trong danh sách. dir < 0 = lên trên, dir >= 0 = xuống dưới.
+     */
+    function moveLayer(id, dir) {
+        var idx = layers.findIndex(function (l) { return l.id === id; });
+        if (idx < 0) return false;
+        var target = idx + (dir < 0 ? -1 : 1);
+        if (target < 0 || target >= layers.length) return false;
+        var tmp = layers[idx];
+        layers[idx] = layers[target];
+        layers[target] = tmp;
+        syncToDocument();
+        emitChanged({ action: 'reorder', layerId: id });
+        return true;
+    }
+
     function removeLayer(id) {
         if (id === DEFAULT_LAYER_ID) return false;
         var idx = layers.findIndex(function (l) { return l.id === id; });
@@ -213,6 +238,8 @@
         renameLayer: renameLayer,
         setVisible: setVisible,
         setLocked: setLocked,
+        setColor: setColor,
+        moveLayer: moveLayer,
         removeLayer: removeLayer,
         isLayerVisible: isLayerVisible,
         isLayerLocked: isLayerLocked,
@@ -223,4 +250,4 @@
         syncToDocument: syncToDocument
     };
 });
-
+

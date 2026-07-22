@@ -36,6 +36,15 @@ document.getElementById('orgRegForm').addEventListener('submit', async function 
     password: document.getElementById('password').value
   };
 
+  const pwdErrors = (window.PasswordPolicy && window.PasswordPolicy.validatePasswordStrength)
+    ? window.PasswordPolicy.validatePasswordStrength(body.password)
+    : [];
+  if (pwdErrors.length) {
+    msgErr.textContent = pwdErrors[0];
+    msgErr.style.display = 'block';
+    return;
+  }
+
   try {
     const res = await fetch('/api/org-registrations/public', {
       method: 'POST',

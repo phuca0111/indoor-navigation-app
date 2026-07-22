@@ -19,7 +19,7 @@
     /**
      * @param {CanvasRenderingContext2D} ctx
      * @param {object} viewport — { zoom }
-     * @param {object} bg — { image, opacity, x, y, scale, rotation }
+     * @param {object} bg — { image, opacity, x, y, scale, scaleX, scaleY, rotation }
      * @param {{ highlightAdjust?: boolean }} options
      */
     function renderBackgroundImage(ctx, viewport, bg, options) {
@@ -29,14 +29,25 @@
         var zoom = viewport.zoom || 1;
         ctx.save();
         ctx.globalAlpha = bg.opacity != null ? bg.opacity : 0.5;
-        var bw = bg.image.width * (bg.scale || 1);
-        var bh = bg.image.height * (bg.scale || 1);
+        var fallbackScale = bg.scale > 0 ? bg.scale : 1;
+        var scaleX = bg.scaleX > 0 ? bg.scaleX : fallbackScale;
+        var scaleY = bg.scaleY > 0 ? bg.scaleY : fallbackScale;
+        var bw = bg.image.width * scaleX;
+        var bh = bg.image.height * scaleY;
         var bx = bg.x || 0;
         var by = bg.y || 0;
 
         ctx.translate(bx + bw / 2, by + bh / 2);
         ctx.rotate((bg.rotation || 0) * Math.PI / 180);
+        var contrast = bg.contrast != null ? bg.contrast : 1;
+        var brightness = bg.brightness != null ? bg.brightness : 0;
+        if (Math.abs(contrast - 1) > 1e-3 || Math.abs(brightness) > 1e-3) {
+            // CSS filter: contrast(%) brightness(%) — brightness 0→0%, 0 native=100%, +100→200%
+            var bPct = Math.max(0, 100 + brightness);
+            ctx.filter = 'contrast(' + (contrast * 100) + '%) brightness(' + bPct + '%)';
+        }
         ctx.drawImage(bg.image, -bw / 2, -bh / 2, bw, bh);
+        ctx.filter = 'none';
 
         if (options.highlightAdjust) {
             ctx.setLineDash([5, 5]);

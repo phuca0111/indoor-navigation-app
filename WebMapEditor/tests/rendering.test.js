@@ -3,7 +3,10 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { renderGrid } = require('../core/rendering/grid-renderer.js');
-const { renderCanvasClear } = require('../core/rendering/background-renderer.js');
+const {
+    renderCanvasClear,
+    renderBackgroundImage
+} = require('../core/rendering/background-renderer.js');
 
 function mockCtx() {
     var calls = [];
@@ -29,6 +32,29 @@ describe('Rendering Engine — grid + background', function () {
         var ctx = mockCtx();
         renderCanvasClear(ctx, 800, 600);
         expect(ctx.calls).toContain('fillRect');
+    });
+
+    it('renderBackgroundImage áp dụng scale ngang/dọc độc lập', function () {
+        var drawArgs = null;
+        var ctx = {
+            globalAlpha: 1,
+            filter: 'none',
+            save: function () {},
+            restore: function () {},
+            translate: function () {},
+            rotate: function () {},
+            drawImage: function () { drawArgs = Array.from(arguments); }
+        };
+        var image = { width: 100, height: 80 };
+        renderBackgroundImage(ctx, { zoom: 1 }, {
+            image: image,
+            x: 10,
+            y: 20,
+            scale: 1,
+            scaleX: 2,
+            scaleY: 0.5
+        });
+        expect(drawArgs).toEqual([image, -100, -20, 200, 40]);
     });
 
     it('renderGrid visible=false không vẽ', function () {
@@ -168,9 +194,10 @@ describe('Rendering Engine — poi renderer', function () {
     it('renderPoi gọi arc + fillText tên', function () {
         var { renderPoi } = require('../core/rendering/poi-renderer.js');
         var calls = [];
+        var renderedRadius = 0;
         var ctx = {
             beginPath: function () { calls.push('beginPath'); },
-            arc: function () { calls.push('arc'); },
+            arc: function (_x, _y, radius) { calls.push('arc'); renderedRadius = radius; },
             fill: function () { calls.push('fill'); },
             stroke: function () { calls.push('stroke'); },
             fillStyle: '', strokeStyle: '', lineWidth: 0,
@@ -182,6 +209,7 @@ describe('Rendering Engine — poi renderer', function () {
             typeInfo: { icon: '🚻', color: '#3498db' }
         });
         expect(calls).toContain('arc');
+        expect(renderedRadius).toBe(12);
         expect(calls.some(function (c) { return c.indexOf('fillText:WC 1') === 0; })).toBe(true);
     });
 });

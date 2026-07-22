@@ -24,6 +24,28 @@ function applyInspectorField(key, rawValue) {
     if (key === 'color' && typeof val === 'string' && val.indexOf('rgb') === 0 && typeof rgbToHex === 'function') {
         val = rgbToHex(val);
     }
+
+    // Field lưu px nhưng nhập theo mét (vd chiều dài cửa)
+    var desc = EditorCore.PropertyInspector.getDescriptor
+        ? EditorCore.PropertyInspector.getDescriptor()
+        : null;
+    var fieldMeta = null;
+    if (desc && desc.schema && desc.schema.fields) {
+        for (var fi = 0; fi < desc.schema.fields.length; fi++) {
+            if (desc.schema.fields[fi].key === key) {
+                fieldMeta = desc.schema.fields[fi];
+                break;
+            }
+        }
+    }
+    if (fieldMeta && fieldMeta.unit === 'm' && fieldMeta.valueIn === 'px'
+        && typeof metersToPixels === 'function' && Number.isFinite(val)) {
+        var minM = fieldMeta.min != null ? fieldMeta.min : 0.1;
+        val = Math.max(minM, val);
+        val = Math.round(metersToPixels(val));
+        if (val < 10) val = 10;
+    }
+
     patch[key] = val;
     EditorCore.PropertyInspector.applyPatch(patch);
     if (typeof draw === 'function') draw();
@@ -64,13 +86,25 @@ function renderSchemaPropGroup(descriptor, opts) {
             html += '<input type="color" id="' + inputId + '" value="' + escapeHtmlValue(colorVal) +
                 '" onchange="applyInspectorField(\'' + field.key + '\', this.value)">';
         } else if (field.type === 'number') {
+            var displayVal = val;
             var min = field.min != null ? ' min="' + field.min + '"' : '';
             var max = field.max != null ? ' max="' + field.max + '"' : '';
-            html += '<input type="number"' + min + max + ' value="' + escapeHtmlValue(val != null ? val : '') +
-                '" onchange="applyInspectorField(\'' + field.key + '\', this.value)">';
-            if (field.key === 'lineWeight' || field.key === 'thickness' || field.key === 'radius') {
-                html += '<span class="unit">px</span>';
+            var step = field.step != null ? ' step="' + field.step + '"' : '';
+            var unitHtml = '';
+            if (field.unit === 'm' && field.valueIn === 'px' && typeof pixelsToMeters === 'function') {
+                displayVal = (val != null && Number.isFinite(Number(val)))
+                    ? pixelsToMeters(Number(val)).toFixed(2)
+                    : '';
+                unitHtml = '<span class="unit">m</span>';
+                if (!step) step = ' step="0.1"';
+            } else if (field.key === 'lineWeight' || field.key === 'thickness' || field.key === 'radius') {
+                unitHtml = '<span class="unit">px</span>';
+            } else if (field.unit) {
+                unitHtml = '<span class="unit">' + escapeHtmlValue(field.unit) + '</span>';
             }
+            html += '<input type="number"' + min + max + step + ' value="' +
+                escapeHtmlValue(displayVal != null ? displayVal : '') +
+                '" onchange="applyInspectorField(\'' + field.key + '\', this.value)">' + unitHtml;
         } else {
             html += '<input type="text" value="' + escapeHtmlValue(val != null ? val : '') +
                 '" onchange="applyInspectorField(\'' + field.key + '\', this.value)">';

@@ -27,12 +27,12 @@
     }
 
     /**
-     * @param {{ skipValidation?: boolean }} options
+     * @param {{ skipValidation?: boolean, mapData?: object }} options
      * @returns {{ ok: boolean, mapData?: object, validation?: object, cancelled?: boolean }}
      */
     function runExportPipeline(options) {
         options = options || {};
-        var mapData = buildMapDataForPublish();
+        var mapData = options.mapData || buildMapDataForPublish();
         // Gắn Block/Insert/lines dù build qua Map Adapter (Document chưa có field này)
         if (typeof attachEditorCadExtras === 'function') {
             mapData = attachEditorCadExtras(mapData);
@@ -42,19 +42,65 @@
             root.EditorCore.assertPublishSchema(mapData);
         }
 
+        var navigationPayload = null;
+        if (root.EditorCore && typeof root.EditorCore.toNavigationPayload === 'function') {
+            try {
+                navigationPayload = root.EditorCore.toNavigationPayload(mapData);
+            } catch (eNav) {
+                if (typeof console !== 'undefined' && console.warn) {
+                    console.warn('[ExportPipeline] toNavigationPayload:', eNav.message);
+                }
+            }
+        }
+
         if (options.skipValidation) {
-            return { ok: true, mapData: mapData, validation: { ok: true, errors: [], warnings: [] } };
+            return {
+                ok: true,
+                mapData: mapData,
+                navigationPayload: navigationPayload,
+                validation: { ok: true, errors: [], warnings: [] }
+            };
         }
 
-        if (!root.EditorCore || typeof root.EditorCore.validateMapData !== 'function') {
-            return { ok: true, mapData: mapData, validation: { ok: true, errors: [], warnings: [] } };
-        }
+        var validation = (root.EditorCore && typeof root.EditorCore.validateMapData === 'function')
+            ? root.EditorCore.validateMapData(mapData)
+            : { ok: true, errors: [], warnings: [] };
 
-        var validation = root.EditorCore.validateMapData(mapData);
-        if (!validation.ok) {
-            return { ok: false, mapData: mapData, validation: validation };
+        validation = mergePluginValidators(validation, mapData);
+
+        return {
+            ok: validation.ok,
+            mapData: mapData,
+            navigationPayload: navigationPayload,
+            validation: validation
+        };
+    }
+
+    // Gộp kết quả của các validator plugin (registerValidator) vào validation gốc
+    function mergePluginValidators(validation, mapData) {
+        var out = {
+            ok: validation && validation.ok !== false,
+            errors: (validation && validation.errors) ? validation.errors.slice() : [],
+            warnings: (validation && validation.warnings) ? validation.warnings.slice() : []
+        };
+        var plugin = root.EditorCore && root.EditorCore.PluginAPI;
+        if (!plugin || typeof plugin.runValidators !== 'function') {
+            out.ok = out.errors.length === 0;
+            return out;
         }
-        return { ok: true, mapData: mapData, validation: validation };
+        var issues = [];
+        try {
+            issues = plugin.runValidators(mapData) || [];
+        } catch (e) {
+            issues = [{ level: 'error', code: 'plugin_validator_error', message: e.message, meta: {} }];
+        }
+        issues.forEach(function (it) {
+            if (!it) return;
+            if (it.level === 'warning') out.warnings.push(it);
+            else out.errors.push(it);
+        });
+        out.ok = out.errors.length === 0;
+        return out;
     }
 
     root.EditorCore = root.EditorCore || {};

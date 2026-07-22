@@ -1,0 +1,234 @@
+name: indoor-nav-staging
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  preflight:
+    image: node:22.17.0-alpine3.22
+    <<: *service-defaults
+    restart: "no"
+    working_dir: /workspace
+    env_file: [.env.staging]
+    command: ["node", "ops/scripts/preflight.js"]
+    volumes:
+      - ./:/workspace:ro
+    networks: [backend]
+
+  api:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: Backend_server/Dockerfile
+    env_file: [.env.staging]
+    environment:
+      NODE_ENV: production
+      DEPLOY_ENV: staging
+      PORT: "5000"
+      HOST: 0.0.0.0
+      STORAGE_BACKEND: minio
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: "9000"
+      MINIO_USE_SSL: "false"
+      MINIO_PUBLIC_READ: "false"
+      PUBLISH_QUEUE: bullmq
+      PUBLISH_WORKER_IN_PROCESS: "true"
+      LOG_FORMAT: json
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      preflight:
+        condition: service_completed_successfully
+      mongo-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5000/api/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+    networks: [frontend, backend]
+    deploy:
+      resources:
+        limits: { cpus: "1.00", memory: 768M }
+        reservations: { memory: 256M }
+
+  nginx:
+    <<: *service-defaults
+    image: nginx:1.28.0-alpine3.21
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:size=64m,uid=101,gid=101
+      - /var/run:size=1m,uid=101,gid=101
+      - /tmp:size=16m
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+      - "${HTTPS_PORT:-8443}:8443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ops/nginx/proxy_params:/etc/nginx/proxy_params:ro
+      - ./ops/nginx/tls-enabled:/etc/nginx/tls-enabled:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [frontend]
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 128M }
+
+  mongo:
+    <<: *service-defaults
+    image: mongo:8.0.12
+    env_file: [.env.staging]
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--auth", "--keyFile", "/run/secrets/mongo-keyfile"]
+    secrets:
+      - source: mongo_keyfile
+        target: mongo-keyfile
+        uid: "999"
+        gid: "999"
+        mode: 0400
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --username \"$$MONGO_INITDB_ROOT_USERNAME\" --password \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval \"quit(db.adminCommand('ping').ok ? 0 : 2)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 40s
+    networks: [backend]
+    deploy:
+      resources:
+        limits: { cpus: "1.00", memory: 1G }
+
+  mongo-init:
+    <<: *service-defaults
+    image: mongo:8.0.12
+    restart: "no"
+    env_file: [.env.staging]
+    depends_on:
+      mongo:
+        condition: service_healthy
+    command: ["sh", "-ec", "mongosh --host mongo:27017 --username \"$$MONGO_INITDB_ROOT_USERNAME\" --password \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval \"try { rs.status() } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}) }\""]
+    networks: [backend]
+
+  redis:
+    <<: *service-defaults
+    image: redis:7.4.5-alpine3.21
+    env_file: [.env.staging]
+    command: ["sh", "-ec", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [backend]
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 384M }
+
+  minio:
+    <<: *service-defaults
+    image: quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z
+    env_file: [.env.staging]
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+    deploy:
+      resources:
+        limits: { cpus: "0.75", memory: 512M }
+
+  prometheus:
+    <<: *service-defaults
+    image: prom/prometheus:v3.5.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=15d", "--web.enable-lifecycle"]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    secrets: [metrics_token]
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [backend]
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 512M }
+
+  alertmanager:
+    <<: *service-defaults
+    image: prom/alertmanager:v0.28.1
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager"]
+    volumes:
+      - ./ops/observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    depends_on:
+      alert-adapter:
+        condition: service_healthy
+    networks: [backend]
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 128M }
+
+  alert-adapter:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: Backend_server/Dockerfile
+    command: ["node", "workers/alertAdapter.js"]
+    env_file: [.env.staging]
+    environment:
+      NODE_ENV: production
+      ALERT_ADAPTER_PORT: "8080"
+    read_only: true
+    tmpfs: ["/tmp:size=16m"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    networks: [backend]
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 128M }
+
+networks:
+  frontend:
+  backend:
+    internal: true
+
+volumes:
+  mongo_data:
+  redis_data:
+  minio_data:
+  uploads:
+  prometheus_data:
+  alertmanager_data:
+
+secrets:
+  mongo_keyfile:
+    file: ./ops/secrets/mongo-keyfile
+  metrics_token:
+    file: ./ops/secrets/metrics-token

@@ -1,0 +1,58 @@
+﻿<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Giá | IndoorNav</title>
+    <meta name="description" content="Bảng giá IndoorNav đồng bộ từ catalog Billing (FREE / PRO / ENTERPRISE).">
+    <link rel="stylesheet" href="/styles.css?v=20260721c6">
+    <link rel="stylesheet" href="/css/landing-layout.css?v=20260721settings2">
+    <link rel="stylesheet" href="/css/landing-pricing.css?v=20260721c6">
+</head>
+<body>
+<header class="header">
+    <div class="container header-inner">
+        <div class="logo">
+            <a href="/" aria-label="IndoorNav — Trang chủ">
+                <span class="logo-icon">📍</span>
+                <span class="logo-text">IndoorNav</span>
+            </a>
+        </div>
+        <nav class="nav" id="mainNav">
+            <a href="/">Tổng quan</a>
+            <a href="/features">Tính năng</a>
+            <a href="/pricing">Giá</a>
+            <a href="/contact">Liên hệ</a>
+        </nav>
+        <div class="auth-actions" id="authActions">
+            <a href="/login" class="auth-btn login-btn">Đăng nhập</a>
+            <a href="/register" class="auth-btn register-btn org-register-btn">Đăng ký tổ chức</a>
+        </div>
+        <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">☰</button>
+    </div>
+</header>
+
+<section class="pricing-section" id="pricing">
+    <div class="container">
+        <h2 class="section-title">Gói dịch vụ</h2>
+        <p class="landing-muted" style="margin-top: 10px; text-align: center;">
+            Giá và hạn mức lấy từ catalog Billing của hệ thống — không chỉnh tay trên CMS.
+        </p>
+        <div id="pricingGrid" class="pricing-grid" aria-live="polite">
+            <!-- JS fill từ /api/billing/plans -->
+        </div>
+        <p id="pricingStatus" class="pricing-status" aria-live="polite"></p>
+    </div>
+</section>
+
+<footer class="footer">
+    <div class="container">
+        <p>&copy; 2025 - Hệ thống Bản đồ và Dẫn đường Trong nhà</p>
+        <p>Đồ án/Luận văn tốt nghiệp - Trình độ Đại học</p>
+    </div>
+</footer>
+
+<script src="/landing.js?v=20260721settings2"></script>
+<script src="/pricing.js?v=20260721cmsfix1"></script>
+</body>
+</html>

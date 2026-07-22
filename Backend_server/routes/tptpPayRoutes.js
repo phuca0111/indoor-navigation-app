@@ -2,7 +2,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const router = express.Router();
-const { getPayPage, getPaymentStatus, getBankLink } = require('../controllers/tptpPayController');
+const { getPayPage, getPaymentStatus, getBankLink, getPersonalPayPage } = require('../controllers/tptpPayController');
 
 const payLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -11,6 +11,7 @@ const payLimiter = rateLimit({
 });
 
 router.get('/pay/:invoiceId', payLimiter, getPayPage);
+router.get('/personal/:id', payLimiter, getPersonalPayPage);
 router.get('/status/:invoiceId', payLimiter, getPaymentStatus);
 router.get('/bank-link', payLimiter, getBankLink);
 

@@ -1,0 +1,89 @@
+﻿<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng ký tổ chức | IndoorNav</title>
+    <meta name="description" content="Đăng ký tổ chức IndoorNav — gửi hồ sơ chờ Super Admin duyệt.">
+    <link rel="stylesheet" href="/styles.css?v=20260721c6">
+    <link rel="stylesheet" href="/css/landing-layout.css?v=20260721settings2">
+    <link rel="stylesheet" href="/css/landing-auth.css?v=20260721c6">
+</head>
+<body>
+<header class="header">
+    <div class="container header-inner">
+        <div class="logo">
+            <a href="/" aria-label="IndoorNav — Trang chủ">
+                <span class="logo-icon">📍</span>
+                <span class="logo-text">IndoorNav</span>
+            </a>
+        </div>
+        <nav class="nav" id="mainNav">
+            <a href="/">Tổng quan</a>
+            <a href="/features">Tính năng</a>
+            <a href="/pricing">Giá</a>
+            <a href="/contact">Liên hệ</a>
+        </nav>
+        <div class="auth-actions" id="authActions">
+            <a href="/login" class="auth-btn login-btn">Đăng nhập</a>
+            <a href="/register" class="auth-btn register-btn org-register-btn">Đăng ký tổ chức</a>
+        </div>
+        <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">☰</button>
+    </div>
+</header>
+
+<section class="landing-page-section">
+    <div class="container">
+        <div class="landing-card landing-card--narrow">
+            <h2>Đăng ký tổ chức</h2>
+            <p class="landing-muted">Gửi hồ sơ để sử dụng hệ thống. Super Admin sẽ duyệt trong 1–2 ngày làm việc. Sau khi được duyệt, đăng nhập tại trang Đăng nhập.</p>
+
+            <form id="orgRegForm" class="auth-form" novalidate>
+                <label for="organizationName">Tên tổ chức *</label>
+                <input id="organizationName" type="text" required placeholder="VD: Bệnh viện ABC" autocomplete="organization">
+
+                <label for="slug">Mã định danh *</label>
+                <input id="slug" type="text" placeholder="VD: benh-vien-abc (tự sinh khi nhập tên)" autocomplete="off">
+                <p class="field-hint">Chỉ chữ thường, số và dấu gạch ngang.</p>
+
+                <label for="contactName">Họ tên người đại diện *</label>
+                <input id="contactName" type="text" required placeholder="Nguyễn Văn A" autocomplete="name">
+
+                <label for="contactEmail">Email đăng nhập *</label>
+                <input id="contactEmail" type="email" required placeholder="admin@congty.com" autocomplete="email">
+
+                <label for="contactPhone">Số điện thoại</label>
+                <input id="contactPhone" type="tel" placeholder="0901234567" autocomplete="tel">
+
+                <label for="password">Mật khẩu *</label>
+                <input id="password" type="password" required minlength="8" placeholder="Vd: Demo@1234" autocomplete="new-password">
+                <p class="field-hint">Ít nhất 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt.</p>
+
+                <button class="btn btn-primary btn-large btn-block" type="submit">Gửi hồ sơ đăng ký</button>
+
+                <div id="msgOk" class="ok-msg" role="status"></div>
+                <div id="msgErr" class="error-msg" role="alert"></div>
+
+                <p class="auth-links">
+                    Đã có tài khoản? <a href="/login">Đăng nhập</a>
+                </p>
+                <p class="auth-links">
+                    Đã có tài khoản? <a href="/login">Đăng nhập</a>
+                </p>
+            </form>
+        </div>
+    </div>
+</section>
+
+<footer class="footer">
+    <div class="container">
+        <p>&copy; 2025 - Hệ thống Bản đồ và Dẫn đường Trong nhà</p>
+        <p>Đồ án/Luận văn tốt nghiệp - Trình độ Đại học</p>
+    </div>
+</footer>
+
+<script src="/landing.js?v=20260721settings2"></script>
+<script src="/password-policy.js"></script>
+<script src="/register.js"></script>
+</body>
+</html>

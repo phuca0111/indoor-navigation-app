@@ -17,9 +17,9 @@ const ActivityLog = require('../../models/ActivityLog');
 
 const API = '/api';
 
-function tokenFor(userId, role) {
+function tokenFor(userId, role, sv = 0) {
   return jwt.sign(
-    { userId: String(userId), role },
+    { userId: String(userId), role, sv },
     process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
@@ -64,9 +64,9 @@ describe('Floor lifecycle — add/remove + publish range', () => {
     if (!orgUser) throw new Error('Thiếu ORG_ADMIN — không chạy Floor lifecycle test');
     if (!baUser) throw new Error('Thiếu BUILDING_ADMIN — không chạy Floor lifecycle test');
 
-    superToken = tokenFor(superUser._id, 'SUPER_ADMIN');
-    orgToken = tokenFor(orgUser._id, 'ORG_ADMIN');
-    baToken = tokenFor(baUser._id, 'BUILDING_ADMIN');
+    superToken = tokenFor(superUser._id, 'SUPER_ADMIN', Number(superUser.session_version) || 0);
+    orgToken = tokenFor(orgUser._id, 'ORG_ADMIN', Number(orgUser.session_version) || 0);
+    baToken = tokenFor(baUser._id, 'BUILDING_ADMIN', Number(baUser.session_version) || 0);
   });
 
   afterAll(async () => {

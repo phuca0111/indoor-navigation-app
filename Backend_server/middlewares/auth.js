@@ -1,16 +1,18 @@
 // ============================================
 // FILE: auth.js (Middleware)
-// MỤC ĐÍCH: ÔNG BẢO VỆ GÁC CỔNG - Soi thẻ JWT trước khi cho vào
-// MỌI API CẦN BẢO MẬT ĐỀU PHẢI ĐI QUA ÔNG NÀY TRƯỚC
+// MỤC ĐÍCH: JWT auth + RBAC theo permission (B1)
 // ============================================
 
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
-const Organization = require('../models/Organization');
-const { assertUserOrgActive } = require('../utils/orgAccess');
-const { isUserQuotaLocked } = require('../utils/overQuotaLock');
+const { resolveEffectivePrincipal } = require('../application/identity/principalApplicationService');
+const { ActorContext } = require('../application/identity/ActorContext');
+const {
+  P,
+  roleHasPermission,
+  roleHasAnyPermission,
+  roleHasAllPermissions
+} = require('../utils/permissions');
 
-// Hàm bảo vệ: Kiểm tra thẻ JWT có hợp lệ không
 const auth = async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
@@ -21,49 +23,107 @@ const auth = async (req, res, next) => {
 
         const token = authHeader.split(' ')[1];
         const thongTinTrongThe = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = thongTinTrongThe;
 
-        if (['ORG_ADMIN', 'BUILDING_ADMIN'].includes(req.user.role)) {
-            const dbUser = await User.findById(req.user.userId)
-                .select('organization_id is_active role')
-                .lean();
-            if (!dbUser || !dbUser.is_active) {
-                return res.status(403).json({ message: 'Tài khoản đã bị khóa.', code: 'USER_INACTIVE' });
-            }
-            const orgCheck = await assertUserOrgActive(dbUser);
-            if (!orgCheck.ok) {
-                return res.status(403).json({ message: orgCheck.message, code: orgCheck.code });
-            }
-            const org = await Organization.findById(dbUser.organization_id);
-            if (org && await isUserQuotaLocked(dbUser._id, org)) {
-                return res.status(403).json({
-                    message: 'Tài khoản bị khóa do vượt hạn mức gói. Liên hệ ORG Admin hoặc nâng cấp PRO.',
-                    code: 'OVER_QUOTA_USER_LOCKED'
+        if (thongTinTrongThe.jti) {
+            const { has: isBlacklisted } = require('../services/tokenBlacklist');
+            if (await isBlacklisted(thongTinTrongThe.jti)) {
+                return res.status(401).json({
+                    message: 'Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại.',
+                    code: 'TOKEN_REVOKED'
                 });
             }
-            req.user.organization_id = String(dbUser.organization_id);
         }
+
+        const principal = await resolveEffectivePrincipal(thongTinTrongThe);
+        req.effectivePrincipal = principal;
+        req.actorContext = ActorContext.fromRequest(req, principal);
+        req.user = principal.toLegacyClaims();
 
         next();
     } catch (error) {
-        res.status(401).json({ message: 'Thẻ không hợp lệ hoặc đã hết hạn! Vui lòng đăng nhập lại.' });
+        res.status(error.status || 401).json({
+            message: error.message || 'Thẻ không hợp lệ hoặc đã hết hạn! Vui lòng đăng nhập lại.',
+            code: error.code || 'TOKEN_INVALID'
+        });
     }
 };
 
-// Hàm kiểm tra vai trò: Chỉ cho Super Admin đi qua
+function denyPermission(res, needed) {
+    return res.status(403).json({
+        message: 'Bạn không có quyền thực hiện thao tác này.',
+        code: 'PERMISSION_DENIED',
+        required: needed
+    });
+}
+
+/**
+ * Cần TẤT CẢ permission trong danh sách.
+ * @param {...string} permissions
+ */
+function requirePermission(...permissions) {
+    const needed = permissions.filter(Boolean);
+    return (req, res, next) => {
+        if (!req.user) {
+            return res.status(401).json({ message: 'Chưa đăng nhập.', code: 'UNAUTHORIZED' });
+        }
+        if (!needed.length || !roleHasAllPermissions(req.user.role, needed)) {
+            return denyPermission(res, needed);
+        }
+        next();
+    };
+}
+
+/**
+ * Cần ÍT NHẤT MỘT permission.
+ * @param {...string} permissions
+ */
+function requireAnyPermission(...permissions) {
+    const needed = permissions.filter(Boolean);
+    return (req, res, next) => {
+        if (!req.user) {
+            return res.status(401).json({ message: 'Chưa đăng nhập.', code: 'UNAUTHORIZED' });
+        }
+        if (!needed.length || !roleHasAnyPermission(req.user.role, needed)) {
+            return denyPermission(res, needed);
+        }
+        next();
+    };
+}
+
+/**
+ * Super Admin — dùng permission platform.orgs.manage
+ * (chỉ SUPER_ADMIN có '*' nên pass; role khác 403 + code PERMISSION_DENIED).
+ */
 const requireSuperAdmin = (req, res, next) => {
-    if (req.user.role !== 'SUPER_ADMIN') {
-        return res.status(403).json({ message: 'Bạn không có quyền Super Admin để thực hiện thao tác này!' });
+    if (!req.user) {
+        return res.status(401).json({ message: 'Chưa đăng nhập.', code: 'UNAUTHORIZED' });
+    }
+    if (!roleHasPermission(req.user.role, P.PLATFORM_ORGS_MANAGE)) {
+        return res.status(403).json({
+            message: 'Bạn không có quyền Super Admin để thực hiện thao tác này!',
+            code: 'PERMISSION_DENIED',
+            required: [P.PLATFORM_ORGS_MANAGE]
+        });
     }
     next();
 };
 
-// Super Admin hoặc Org Admin (quản lý trong phạm vi organization)
-const requireAdmin = (req, res, next) => {
-    if (!req.user || !['SUPER_ADMIN', 'ORG_ADMIN'].includes(req.user.role)) {
-        return res.status(403).json({ message: 'Bạn không có quyền thực hiện thao tác quản trị này!' });
-    }
-    next();
-};
+/** Super hoặc Finance Admin — module Thu–Chi */
+const requireFinanceAccess = requirePermission(P.FINANCE_ACCESS);
 
-module.exports = { auth, requireSuperAdmin, requireAdmin };
+/** Super Admin hoặc Org Admin */
+const requireAdmin = requireAnyPermission(P.PLATFORM_USERS_MANAGE, P.ORG_USERS_MANAGE);
+
+/** Tạo tòa nhà: SUPER / ORG / REGISTERED_USER */
+const requireBuildingCreator = requirePermission(P.BUILDINGS_CREATE);
+
+module.exports = {
+    auth,
+    requireSuperAdmin,
+    requireFinanceAccess,
+    requireAdmin,
+    requireBuildingCreator,
+    requirePermission,
+    requireAnyPermission,
+    P
+};

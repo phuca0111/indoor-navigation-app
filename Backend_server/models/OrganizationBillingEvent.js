@@ -27,7 +27,8 @@ const organizationBillingEventSchema = new mongoose.Schema({
   },
   plan: {
     type: String,
-    enum: ['FREE', 'PRO', 'ENTERPRISE'],
+    uppercase: true,
+    trim: true,
     default: null
   },
   amount: { type: Number, default: 0 },
@@ -36,6 +37,16 @@ const organizationBillingEventSchema = new mongoose.Schema({
   period_end_at: { type: Date, default: null },
   external_ref: { type: String, default: '' },
   idempotency_key: { type: String, default: '' },
+  processing_status: {
+    type: String,
+    enum: ['PENDING', 'PROCESSING', 'APPLIED', 'FAILED'],
+    default: 'PENDING',
+    index: true
+  },
+  processing_started_at: { type: Date, default: null },
+  processed_at: { type: Date, default: null },
+  processing_attempts: { type: Number, default: 0 },
+  processing_error: { type: String, default: '' },
   note: { type: String, default: '' },
   metadata: { type: Object, default: {} },
   created_by: {

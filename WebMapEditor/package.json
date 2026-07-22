@@ -5,9 +5,13 @@
   "description": "Indoor Navigation Web Map Editor — Phase 1 tests",
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:phase4": "vitest run tests/tool-command-manager.test.js tests/map-adapter.test.js",
+    "test:phase5": "vitest run tests/map-adapter.test.js tests/version-manager.test.js",
+    "test:pre-release": "vitest run tests/validation.test.js tests/map-adapter.test.js tests/snap-engine.test.js tests/block-manager.test.js tests/tool-command-manager.test.js"
   },
   "devDependencies": {
+    "happy-dom": "^20.10.6",
     "vitest": "^3.2.4"
   }
 }

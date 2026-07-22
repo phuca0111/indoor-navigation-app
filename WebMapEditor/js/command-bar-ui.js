@@ -6,8 +6,13 @@
 
     var TOOL_LABELS_VI = {
         select: 'Chọn', wall: 'Tường', line: 'Đoạn thẳng', polygon: 'Đa giác',
-        room: 'Phòng', circle: 'Tròn', door: 'Cửa', poi: 'Điểm POI',
-        qr: 'Mốc QR', path: 'Đường đi', ruler: 'Thước đo', polyline: 'Tường'
+        room: 'Phòng', circle: 'Tròn', door: 'Cửa', poi: 'Điểm POI', point: 'Điểm mốc',
+        qr: 'Mốc QR', path: 'Đường đi', ruler: 'Dist',         area: 'Area', polyline: 'Tường',
+        hatch: 'Hatch', hatchedit: 'Hatchedit', ellipse: 'Elip', arc: 'Cung', regpoly: 'Đa giác đều',
+        ltscale: 'LTScale', region: 'Region', redraw: 'Redraw',
+        block: 'Block', insert: 'Insert', attdef: 'ATTDef', attedit: 'ATTEdit',
+        dimlinear: 'Dimlinear', dimaligned: 'Dimaligned', dimedit: 'DIMEdit', block: 'Block', insert: 'Insert',
+        calibrate: 'Calibrate', 'bg-crop': 'Crop nền', 'bg-adjust': 'Chỉnh nền'
     };
 
     function toolLabel(toolId) {

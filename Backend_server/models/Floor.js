@@ -77,6 +77,8 @@ const wallSchema = new mongoose.Schema({
     type: { type: String, default: 'segment' },
     is_outer: { type: Boolean, default: false },
     thickness: { type: Number, default: 4 },
+    // Linetype (nét đứt cho tường ẩn) — Android bỏ qua, editor giữ khi publish/reload
+    lineStyle: { type: String, default: 'solid' },
     points: [{ x: Number, y: Number }]
 }, { _id: false });
 
@@ -124,26 +126,54 @@ const floorSchema = new mongoose.Schema({
         default: null
     },
 
+    // Public/Android chỉ đọc field quen thuộc; Mixed giữ nguyên metadata editor mới.
     map_data: {
-        scale_ratio: { type: Number, default: 0.5 },
-        map_bearing_offset: { type: Number, default: 0 },
-        background_image: { type: String, default: '' },
-        rooms: { type: [roomSchema], default: [] },
-        doors: { type: [doorSchema], default: [] },
-        pois: { type: [poiSchema], default: [] },
-        nodes: { type: [nodeSchema], default: [] },
-        edges: { type: [edgeSchema], default: [] },
-        walls: { type: [wallSchema], default: [] },
-        qr_anchors: { type: [qrAnchorSchema], default: [] },
-        // WebMapEditor CAD extras (Android bỏ qua)
-        lines: { type: [mongoose.Schema.Types.Mixed], default: [] },
-        blocks: { type: [mongoose.Schema.Types.Mixed], default: [] },
-        blockInserts: { type: [mongoose.Schema.Types.Mixed], default: [] }
+        type: mongoose.Schema.Types.Mixed,
+        default: () => ({
+            schema_version: 1,
+            scale_ratio: 0.5,
+            map_bearing_offset: 0,
+            background_image: '',
+            rooms: [],
+            doors: [],
+            pois: [],
+            nodes: [],
+            edges: [],
+            walls: [],
+            qr_anchors: [],
+            lines: [],
+            blocks: [],
+            blockInserts: [],
+            cadPoints: [],
+            dimensions: [],
+            advancedFeatures: {}
+        })
+    },
+
+    // Phase 8 — nháp server (không đẩy public / Android)
+    draft_map_data: {
+        type: mongoose.Schema.Types.Mixed,
+        default: null
+    },
+    draft_updated_at: {
+        type: Date,
+        default: null
+    },
+    draft_updated_by: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
     }
 
 }, {
     timestamps: true,
-    collection: 'mapdatas'  // Giữ tên collection cũ để tương thích ngược 100%
+    collection: 'mapdatas',  // Giữ tên collection cũ để tương thích ngược 100%
+    autoIndex: false // unique index chỉ tạo sau scripts/map-lifecycle-index-preflight.js --apply
 });
+
+floorSchema.index({ building_id: 1, floor_number: 1 }, { unique: true });
+floorSchema.index({ building_id: 1, floor_name: 1 });
+floorSchema.index({ building_id: 1, 'map_data.rooms.name': 1 });
+floorSchema.index({ building_id: 1, 'map_data.pois.name': 1 });
 
 module.exports = mongoose.model('Floor', floorSchema);

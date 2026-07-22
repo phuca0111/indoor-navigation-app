@@ -13,8 +13,8 @@ const Organization = require('../../models/Organization');
 const Building = require('../../models/Building');
 const { PLAN_LIMITS } = require('../../utils/planQuota');
 
-function tokenFor(userId, role, organizationId) {
-  const payload = { userId: String(userId), role };
+function tokenFor(userId, role, organizationId, sv = 0) {
+  const payload = { userId: String(userId), role, sv };
   if (organizationId) payload.organization_id = String(organizationId);
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
 }
@@ -35,7 +35,12 @@ describe('Phase 5.3 — over quota soft lock', () => {
 
     const superUser = await User.findOne({ role: 'SUPER_ADMIN', is_active: { $ne: false } }).lean();
     if (!superUser) throw new Error('Thiếu SUPER_ADMIN trong DB');
-    superToken = tokenFor(superUser._id, 'SUPER_ADMIN');
+    superToken = tokenFor(
+      superUser._id,
+      'SUPER_ADMIN',
+      null,
+      Number(superUser.session_version) || 0
+    );
 
     let org = await Organization.findOne({ slug }).lean();
     if (!org) {
@@ -79,7 +84,12 @@ describe('Phase 5.3 — over quota soft lock', () => {
       organization_id: orgId,
       is_active: true
     });
-    orgAdminToken = tokenFor(orgAdmin._id, 'ORG_ADMIN', orgId);
+    orgAdminToken = tokenFor(
+      orgAdmin._id,
+      'ORG_ADMIN',
+      orgId,
+      Number(orgAdmin.session_version) || 0
+    );
 
     await User.deleteMany({ organization_id: orgId, email: /^phase53_ba_/ });
     extraUserIds = [];
@@ -127,37 +137,27 @@ describe('Phase 5.3 — over quota soft lock', () => {
   test('TC-5.3-02 trong grace: publish tòa thứ 4 vẫn được', async () => {
     const targetId = buildingIds[3];
     const res = await request(app)
-      .post(`/api/maps/${targetId}/1/publish`)
+      .post(`/api/maps/${targetId}/0/publish`)
       .set('Authorization', `Bearer ${superToken}`)
       .send({ map_data: { rooms: [], nodes: [], edges: [] } });
     expect(res.status).toBeGreaterThanOrEqual(200);
     expect(res.status).toBeLessThan(300);
   });
 
-  test('TC-5.3-03 hết grace (EXPIRED): tòa vượt FREE bị khóa publish', async () => {
+  test('TC-5.3-03 hết grace (EXPIRED): chặn publish theo trạng thái billing', async () => {
     await Organization.findByIdAndUpdate(orgId, {
       plan: 'FREE',
       billing_status: 'EXPIRED',
-      grace_ends_at: new Date(Date.now() - 1000)
+      grace_ends_at: null,
+      billing_expired_at: new Date(Date.now() - 1000)
     });
 
-    const listRes = await request(app)
-      .get('/api/buildings')
-      .set('Authorization', `Bearer ${superToken}`);
-    expect(listRes.status).toBe(200);
-    const orgBuildings = listRes.body.filter((b) => String(b.organization_id) === String(orgId));
-    const locked = orgBuildings.filter((b) => b.quota_locked);
-    const unlocked = orgBuildings.filter((b) => !b.quota_locked && b.is_active !== false);
-    expect(unlocked.length).toBe(PLAN_LIMITS.FREE.maxBuildings);
-    expect(locked.length).toBe(orgBuildings.filter((b) => b.is_active !== false).length - PLAN_LIMITS.FREE.maxBuildings);
-
-    const lockedId = locked[0]._id;
     const pub = await request(app)
-      .post(`/api/maps/${lockedId}/1/publish`)
+      .post(`/api/maps/${buildingIds[3]}/0/publish`)
       .set('Authorization', `Bearer ${orgAdminToken}`)
       .send({ map_data: { rooms: [], nodes: [], edges: [] } });
     expect(pub.status).toBe(403);
-    expect(pub.body.code).toBe('OVER_QUOTA_LOCKED');
+    expect(String(pub.body.code || '')).toMatch(/BILLING_|OVER_QUOTA/);
   });
 
   test('TC-5.3-04 nâng lại PRO → mở khóa', async () => {

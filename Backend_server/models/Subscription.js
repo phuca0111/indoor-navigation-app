@@ -10,12 +10,13 @@ const subscriptionSchema = new mongoose.Schema({
   },
   plan: {
     type: String,
-    enum: ['FREE', 'PRO', 'ENTERPRISE'],
+    uppercase: true,
+    trim: true,
     required: true
   },
   status: {
     type: String,
-    enum: ['TRIALING', 'ACTIVE', 'PAST_DUE', 'GRACE_PERIOD', 'CANCELED', 'EXPIRED'],
+    enum: ['TRIALING', 'ACTIVE', 'PAST_DUE', 'GRACE_PERIOD', 'CANCELED', 'EXPIRED', 'ARCHIVED'],
     default: 'ACTIVE',
     index: true
   },
@@ -29,6 +30,11 @@ const subscriptionSchema = new mongoose.Schema({
     default: 'MANUAL'
   },
   provider_subscription_id: { type: String, default: '' },
+  billing_event_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'OrganizationBillingEvent',
+    default: null
+  },
   is_current: { type: Boolean, default: true, index: true },
   note: { type: String, default: '' },
   metadata: { type: Object, default: {} },
@@ -44,6 +50,10 @@ const subscriptionSchema = new mongoose.Schema({
 subscriptionSchema.index(
   { organization_id: 1, is_current: 1 },
   { unique: true, partialFilterExpression: { is_current: true } }
+);
+subscriptionSchema.index(
+  { billing_event_id: 1 },
+  { unique: true, partialFilterExpression: { billing_event_id: { $type: 'objectId' } } }
 );
 
 module.exports = mongoose.model('Subscription', subscriptionSchema);

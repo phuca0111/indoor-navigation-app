@@ -32,6 +32,22 @@ if (scaleInp) {
     });
 }
 
+var ltScaleInp = document.getElementById('ltScaleInput');
+if (ltScaleInp) {
+    ltScaleInp.addEventListener('change', function (e) {
+        if (!e.target) return;
+        if (typeof setLtScale === 'function') {
+            setLtScale(e.target.value);
+        } else {
+            var n = parseFloat(e.target.value);
+            window.ltScale = (Number.isFinite(n) && n > 0) ? Math.max(0.1, Math.min(10, n)) : 1;
+            e.target.value = window.ltScale;
+            if (typeof draw === 'function') draw();
+        }
+        if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+    });
+}
+
 if (typeof applyScalePolicy === 'function') applyScalePolicy();
 
 var mapBearingInp = document.getElementById('mapBearingInput');
@@ -62,6 +78,41 @@ if (rulerModeSel) {
 if (document.getElementById('gridCheck')) document.getElementById('gridCheck').addEventListener('change', draw);
 if (document.getElementById('dimCheck')) document.getElementById('dimCheck').addEventListener('change', draw);
 
+// === OSNAP: đồng bộ checkbox ↔ SnapEngine + hút lưới → mode grid ===
+(function initOsnapUi() {
+    function syncChecksFromEngine() {
+        if (!window.EditorCore || !EditorCore.SnapEngine || !EditorCore.SnapEngine.getModes) return;
+        var m = EditorCore.SnapEngine.getModes();
+        function set(id, on) {
+            var el = document.getElementById(id);
+            if (el) el.checked = !!on;
+        }
+        set('snapEndpointCheck', m.endpoint !== false);
+        set('snapMidpointCheck', m.midpoint !== false);
+        set('snapIntersectionCheck', m.intersection !== false);
+        set('snapPerpCheck', m.perpendicular !== false);
+        set('snapCenterCheck', m.center !== false);
+        set('snapQuadrantCheck', m.quadrant !== false);
+        set('snapExtensionCheck', !!m.extension);
+        set('snapFromCheck', !!m.from);
+        set('snapNearestCheck', !!m.nearest);
+        set('snapNodeCheck', m.node !== false);
+    }
+    var snapCheck = document.getElementById('snapCheck');
+    if (snapCheck) {
+        snapCheck.addEventListener('change', function () {
+            if (window.EditorCore && EditorCore.SnapEngine) {
+                EditorCore.SnapEngine.setMode('grid', snapCheck.checked);
+            }
+        });
+        if (window.EditorCore && EditorCore.SnapEngine) {
+            EditorCore.SnapEngine.setMode('grid', snapCheck.checked);
+        }
+    }
+    syncChecksFromEngine();
+    window.syncOsnapChecksFromEngine = syncChecksFromEngine;
+})();
+
 // === ẢNH NỀN ===
 var bImport = document.getElementById('btnImportBg');
 if (bImport) {
@@ -70,7 +121,121 @@ if (bImport) {
     });
 }
 
-// Upload ảnh → hiện nền
+/** Fit viewport + reset transform ảnh nền (sau khi img đã load). */
+function fitViewportToBackgroundImage(img) {
+    if (!img || !canvas) return;
+    var scaleX = canvas.width / img.width;
+    var scaleY = canvas.height / img.height;
+    zoom = Math.min(scaleX, scaleY) * 0.9;
+    panX = (canvas.width - img.width * zoom) / 2;
+    panY = (canvas.height - img.height * zoom) / 2;
+    window.bgX = 0;
+    window.bgY = 0;
+    window.bgScale = 1.0;
+    window.bgScaleX = 1.0;
+    window.bgScaleY = 1.0;
+    window.bgRotation = 0;
+    window.bgOpacity = 0.5;
+    window.bgContrast = 1;
+    window.bgBrightness = 0;
+
+    var bSli = document.getElementById('bgOpacitySlider');
+    if (bSli) bSli.value = 50;
+    var bVal = document.getElementById('bgOpacityVal');
+    if (bVal) bVal.textContent = '50%';
+    var cSli = document.getElementById('bgContrastSlider');
+    if (cSli) cSli.value = '1';
+    var brSli = document.getElementById('bgBrightnessSlider');
+    if (brSli) brSli.value = '0';
+    if (typeof setBgContrast === 'function') setBgContrast(1);
+    if (typeof setBgBrightness === 'function') setBgBrightness(0);
+    if (zoomLevelSpan) zoomLevelSpan.textContent = Math.round(zoom * 100) + '%';
+}
+
+/**
+ * Gắn ảnh nền vào canvas — LUÔN set window.bgImage (AssetManager chỉ đồng bộ URL/data).
+ * Không tự quét phòng: dùng nút «Quét phòng».
+ */
+function applyBackgroundImageSrc(src, opts) {
+    opts = opts || {};
+    var img = new Image();
+    img.onload = function () {
+        window.bgImage = img;
+        window.bgImageBase64 = src || '';
+        window.bgStorageKey = opts.storageKey || '';
+        if (opts.storageKey || (window.StorageApi && StorageApi.isHttpOrUploadUrl && StorageApi.isHttpOrUploadUrl(src))) {
+            window.bgLastPersistedUrl = src;
+        }
+        if (window.EditorCore && EditorCore.AssetManager) {
+            if (opts.storageKey && typeof EditorCore.AssetManager.setBackgroundFromUrl === 'function') {
+                EditorCore.AssetManager.setBackgroundFromUrl(src, opts.storageKey);
+            } else {
+                EditorCore.AssetManager.setBackgroundFromDataUrl(src);
+            }
+        }
+        if (opts.fitViewport !== false) fitViewportToBackgroundImage(img);
+        if (typeof draw === 'function') draw();
+        if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+        // Persist nháp local ngay (URL ngắn) — tránh F5 mất nền
+        if (typeof flushAutosaveNow === 'function') flushAutosaveNow();
+        else if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
+        if (typeof opts.onDone === 'function') opts.onDone(img);
+    };
+    img.onerror = function () {
+        if (typeof showToast === 'function') {
+            showToast('Không tải được ảnh nền', 'error');
+        }
+    };
+    img.src = src;
+}
+window.applyBackgroundImageSrc = applyBackgroundImageSrc;
+
+/** WE6: upload Storage → map_data giữ URL (không Base64). */
+async function persistBackgroundFileToStorage(file) {
+    var bid = window.buildingId;
+    var floorEl = document.getElementById('floorSelect');
+    var floor = floorEl ? floorEl.value : '0';
+    if (!bid || !window.StorageApi || typeof StorageApi.uploadBackground !== 'function') {
+        if (typeof showToast === 'function') {
+            showToast(bid
+                ? 'Ảnh nền tạm (local) — thiếu Storage API'
+                : 'Ảnh nền tạm local — mở từ Dashboard (có tòa) để lưu Storage', 'info');
+        }
+        return { ok: false, skipped: true };
+    }
+    if (typeof showToast === 'function') showToast('Đang upload ảnh nền…', 'info');
+    var result = await StorageApi.uploadBackground(bid, floor, file, apiFetch);
+    if (result.unauthorized) {
+        if (typeof showToast === 'function') showToast('Hết phiên — đăng nhập lại', 'error');
+        return result;
+    }
+    if (!result.ok) {
+        if (typeof showToast === 'function') {
+            showToast(result.message || 'Upload ảnh nền thất bại — giữ bản tạm', 'error');
+        }
+        return result;
+    }
+    window.bgLastPersistedUrl = result.url || '';
+    applyBackgroundImageSrc(result.url, {
+        storageKey: result.key || '',
+        fitViewport: false,
+        onDone: function () {
+            // Đẩy draft server ngay — không đợi 8s
+            if (typeof syncDraftToServerQuiet === 'function') {
+                syncDraftToServerQuiet();
+            } else if (typeof scheduleDraftServerSync === 'function') {
+                scheduleDraftServerSync();
+            }
+        }
+    });
+    if (typeof showToast === 'function') {
+        showToast('Đã lưu ảnh nền lên Storage', 'success');
+    }
+    return result;
+}
+window.persistBackgroundFileToStorage = persistBackgroundFileToStorage;
+
+// Upload ảnh → hiện nền ngay; upload Storage nếu có tòa; KHÔNG tự quét phòng
 var bInp = document.getElementById('bgInput');
 if (bInp) {
     bInp.addEventListener('change', function (e) {
@@ -79,39 +244,18 @@ if (bInp) {
 
         var reader = new FileReader();
         reader.onload = function (event) {
-            if (window.EditorCore && EditorCore.AssetManager) {
-                EditorCore.AssetManager.setBackgroundFromDataUrl(event.target.result);
-            } else {
-                window.bgImageBase64 = event.target.result;
-            }
-            var img = new Image();
-            img.onload = function () {
-                if (!window.EditorCore || !EditorCore.AssetManager) {
-                    window.bgImage = img;
+            var dataUrl = event.target.result;
+            applyBackgroundImageSrc(dataUrl, {
+                fitViewport: true,
+                onDone: function () {
+                    persistBackgroundFileToStorage(file).catch(function (err) {
+                        console.warn('[WE6] upload background', err);
+                    });
                 }
-                var scaleX = canvas.width / img.width;
-                var scaleY = canvas.height / img.height;
-                zoom = Math.min(scaleX, scaleY) * 0.9;
-                panX = (canvas.width - img.width * zoom) / 2;
-                panY = (canvas.height - img.height * zoom) / 2;
-                window.bgX = 0; // Reset vị trí nền khi load ảnh mới
-                window.bgY = 0;
-                window.bgScale = 1.0;
-                window.bgRotation = 0;
-                window.bgOpacity = 0.5;
-                
-                var bSli = document.getElementById('bgOpacitySlider');
-                if (bSli) bSli.value = 50;
-                var bVal = document.getElementById('bgOpacityVal');
-                if (bVal) bVal.textContent = '50%';
-                if (zoomLevelSpan) zoomLevelSpan.textContent = Math.round(zoom * 100) + '%';
-
-                draw();
-                detectRoomsFromImage(img);
-            };
-            img.src = event.target.result;
+            });
         };
         reader.readAsDataURL(file);
+        e.target.value = '';
     });
 }
 
@@ -120,12 +264,20 @@ var bRem = document.getElementById('btnRemoveBg');
 if (bRem) {
     bRem.addEventListener('click', function () {
         saveState();
+        var bid = window.buildingId;
+        var floorEl = document.getElementById('floorSelect');
+        var floor = floorEl ? floorEl.value : '0';
+        var key = window.bgStorageKey;
+        if (bid && key && window.StorageApi && typeof StorageApi.deleteBackground === 'function') {
+            StorageApi.deleteBackground(bid, floor, key, apiFetch).catch(function () { /* ignore */ });
+        }
         if (window.EditorCore && EditorCore.AssetManager) {
             EditorCore.AssetManager.clearBackground();
-        } else {
-            window.bgImage = null;
-            window.bgImageBase64 = '';
         }
+        window.bgImage = null;
+        window.bgImageBase64 = '';
+        window.bgStorageKey = '';
+        window.bgLastPersistedUrl = '';
         draw();
     });
 }
@@ -166,17 +318,34 @@ if (bSli) {
             return;
         }
 
+        var previousFloor = activeFloor;
+        if (typeof releaseFloorLock === 'function') {
+            Promise.resolve(releaseFloorLock(previousFloor)).catch(function () { /* ignore */ });
+        }
+
         if (typeof updateEditorFloorLabel === 'function') updateEditorFloorLabel();
+        if (typeof persistEditorFloor === 'function') persistEditorFloor(targetFloor);
         loadMapFromServer().then(function (result) {
             activeFloor = floorSelect.value;
             if (typeof updateEditorMapVersion === 'function') {
                 updateEditorMapVersion(result && result.version != null ? result.version : null);
             }
-            if (typeof checkAutoSave === 'function') {
-                checkAutoSave({ serverLoaded: !!(result && result.loaded) });
+            if (typeof acquireFloorLock === 'function') {
+                Promise.resolve(acquireFloorLock(false)).then(function () {
+                    if (typeof checkAutoSave === 'function') {
+                        checkAutoSave({ serverLoaded: !!(result && result.loaded) });
+                    }
+                    if (window.editorFloorLockReadOnly) return;
+                    if (typeof resumeAutoSave === 'function') resumeAutoSave({ clean: true });
+                    if (typeof startAutoSave === 'function') startAutoSave(true, { cleanStart: true });
+                }).catch(function () { /* ignore */ });
+            } else {
+                if (typeof checkAutoSave === 'function') {
+                    checkAutoSave({ serverLoaded: !!(result && result.loaded) });
+                }
+                if (typeof resumeAutoSave === 'function') resumeAutoSave({ clean: true });
+                if (typeof startAutoSave === 'function') startAutoSave(true, { cleanStart: true });
             }
-            if (typeof resumeAutoSave === 'function') resumeAutoSave({ clean: true });
-            if (typeof startAutoSave === 'function') startAutoSave(true, { cleanStart: true });
         });
     });
 

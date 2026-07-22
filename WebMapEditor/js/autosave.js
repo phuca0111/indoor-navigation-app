@@ -90,9 +90,9 @@ function setAutosaveStatus(text, isError) {
 }
 
 function markAutosaveDirty() {
+    if (window.editorFloorLockReadOnly) return;
     _autosaveDirty = true;
-    // Nếu map đã load xong mà vẫn bị pause nhầm → tự mở lại
-    if (_autosavePaused && window.editorMapLoadHandled) {
+    if (_autosavePaused && window.editorMapLoadHandled && _autosavePauseReason !== 'floor-lock-readonly') {
         console.warn('[Autosave] dirty khi vẫn pause (' + _autosavePauseReason + ') — tự resume');
         _autosavePaused = false;
         _autosavePauseReason = '';
@@ -142,14 +142,20 @@ function writeAutosaveSnapshot(snapshot) {
         return { ok: true, bytes: json.length };
     } catch (e) {
         if (e && (e.name === 'QuotaExceededError' || /quota/i.test(String(e.message)))) {
+            var keptUrl = (snapshot && snapshot.bgLastPersistedUrl) || '';
+            if (!keptUrl && snapshot && snapshot.bgImageBase64 &&
+                typeof snapshot.bgImageBase64 === 'string' &&
+                snapshot.bgImageBase64.indexOf('/uploads/') === 0) {
+                keptUrl = snapshot.bgImageBase64;
+            }
             var lite = Object.assign({}, snapshot, {
-                bgImageBase64: '',
+                bgImageBase64: keptUrl,
                 autosaveBgStripped: true
             });
             try {
                 var liteJson = JSON.stringify(lite);
                 localStorage.setItem(key, liteJson);
-                return { ok: true, strippedBg: true, bytes: liteJson.length };
+                return { ok: true, strippedBg: !keptUrl, bytes: liteJson.length };
             } catch (e2) {
                 return { ok: false, error: e2 };
             }
@@ -216,6 +222,7 @@ function runAutoSaveTick() {
         if (result.strippedBg) msg += ' (bỏ ảnh nền — quá lớn)';
         setAutosaveStatus(msg, false);
         console.log('[Autosave] OK', getAutosaveKey(), result.bytes != null ? (result.bytes + ' bytes') : '');
+        if (typeof scheduleDraftServerSync === 'function') scheduleDraftServerSync();
     } catch (e) {
         _autosaveLastError = e;
         console.error('[Autosave] Lỗi:', e);
@@ -265,6 +272,10 @@ function stopAutoSave() {
  */
 function startAutoSave(forceRestart, options) {
     options = options || {};
+    if (window.editorFloorLockReadOnly) {
+        pauseAutoSave('floor-lock-readonly');
+        return;
+    }
     syncAutosaveProjectContext();
     var key = getAutosaveKey();
 
@@ -320,7 +331,12 @@ function contentFingerprint(data) {
             pathEdges: data.pathEdges || [],
             qrs: data.qrs || [],
             blocks: data.blocks || [],
-            blockInserts: data.blockInserts || []
+            blockInserts: data.blockInserts || [],
+            dimensions: data.dimensions || [],
+            advancedFeatures: data.advancedFeatures || {},
+            // WE6: fingerprint gồm nền — tránh bỏ qua restore khi chỉ đổi ảnh nền
+            bg: data.bgImageBase64 || data.background_image || '',
+            ltScale: data.ltScale != null ? data.ltScale : 1
         });
     } catch (e) {
         return '';
@@ -338,7 +354,12 @@ function getCanvasContentFingerprint() {
         pathEdges: typeof pathEdges !== 'undefined' ? pathEdges : [],
         qrs: typeof qrs !== 'undefined' ? qrs : [],
         blocks: typeof blocks !== 'undefined' ? blocks : [],
-        blockInserts: typeof blockInserts !== 'undefined' ? blockInserts : []
+        blockInserts: typeof blockInserts !== 'undefined' ? blockInserts : [],
+        dimensions: typeof dimensions !== 'undefined' ? dimensions : [],
+        advancedFeatures: (typeof window !== 'undefined' && window.editorAdvanced)
+            ? window.editorAdvanced : {},
+        bgImageBase64: (typeof window !== 'undefined' && window.bgImageBase64) ? window.bgImageBase64 : '',
+        ltScale: (typeof getLtScale === 'function') ? getLtScale() : ((typeof window !== 'undefined' && window.ltScale != null) ? window.ltScale : 1)
     });
 }
 
@@ -363,6 +384,7 @@ function readAutosaveRaw() {
     syncAutosaveProjectContext();
     var uid = getCurrentUserId();
     var primaryKey = getAutosaveKey();
+    var currentFloor = getCurrentFloor();
     var savedData = null;
     var foundKey = null;
 
@@ -371,41 +393,29 @@ function readAutosaveRaw() {
         if (savedData) foundKey = primaryKey;
     } catch (e) { /* ignore */ }
 
-    // Legacy: tầng 0 từng bị lưu nhầm thành _1 (vì "0" falsy)
-    if (!savedData) {
-        var floor = getCurrentFloor();
+    /**
+     * Legacy ONLY for tầng trệt: trước đây "0" falsy → nháp tầng 0 từng ghi nhầm key *_1.
+     * KHÔNG lấy nháp tầng khác (vd. *_0 khi đang ở tầng 1) — gây hiện bản tầng trệt trên tầng 1.
+     */
+    if (!savedData && currentFloor === '0') {
         var bid = window.buildingId || 'default';
-        var candidates = [];
-        if (floor === '0') {
-            candidates.push('floorplan_autosave_' + uid + '_' + bid + '_1');
-            candidates.push('floorplan_autosave_anon_' + bid + '_0');
-            candidates.push('floorplan_autosave_anon_' + bid + '_1');
-        }
-        if (floor === '1') {
-            candidates.push('floorplan_autosave_' + uid + '_' + bid + '_0');
-        }
-        // Quét mọi key cùng user+building
-        try {
-            var prefix = 'floorplan_autosave_' + uid + '_' + bid + '_';
-            var prefixAnon = 'floorplan_autosave_anon_' + bid + '_';
-            for (var i = 0; i < localStorage.length; i++) {
-                var k = localStorage.key(i);
-                if (!k) continue;
-                if (k.indexOf(prefix) === 0 || k.indexOf(prefixAnon) === 0) {
-                    if (candidates.indexOf(k) < 0) candidates.push(k);
-                }
-            }
-        } catch (e2) { /* ignore */ }
-
-        for (var c = 0; c < candidates.length; c++) {
+        var legacyCandidates = [
+            'floorplan_autosave_' + uid + '_' + bid + '_1',
+            'floorplan_autosave_anon_' + bid + '_0',
+            'floorplan_autosave_anon_' + bid + '_1'
+        ];
+        for (var c = 0; c < legacyCandidates.length; c++) {
             try {
-                var raw = localStorage.getItem(candidates[c]);
-                if (raw) {
-                    savedData = raw;
-                    foundKey = candidates[c];
-                    console.warn('[Autosave] Tìm thấy nháp ở key cũ:', foundKey, '→ sẽ dùng / migrate sang', primaryKey);
-                    break;
-                }
+                var raw = localStorage.getItem(legacyCandidates[c]);
+                if (!raw) continue;
+                var parsed = JSON.parse(raw);
+                // Chỉ nhận nếu nháp thuộc tầng 0 (hoặc thiếu floor = legacy tầng trệt)
+                var draftFloor = parsed && parsed.floor != null ? String(parsed.floor) : '0';
+                if (draftFloor !== '0') continue;
+                savedData = raw;
+                foundKey = legacyCandidates[c];
+                console.warn('[Autosave] Legacy nháp tầng 0 từ key:', foundKey);
+                break;
             } catch (e3) { /* ignore */ }
         }
     }
@@ -414,17 +424,20 @@ function readAutosaveRaw() {
         if (window.EditorCore && EditorCore.CrashRecovery && EditorCore.CrashRecovery.loadSession) {
             var crashRes = EditorCore.CrashRecovery.loadSession(
                 window.buildingId || 'default',
-                getCurrentFloor(),
+                currentFloor,
                 uid
             );
             if (crashRes && crashRes.ok && crashRes.data && crashRes.data.legacy) {
                 var crashUser = crashRes.data.userId || (crashRes.data.legacy && crashRes.data.legacy.userId);
-                if (!crashUser || String(crashUser) === String(uid)) {
+                var crashFloor = crashRes.data.floor != null
+                    ? String(crashRes.data.floor)
+                    : (crashRes.data.legacy.floor != null ? String(crashRes.data.legacy.floor) : currentFloor);
+                if ((!crashUser || String(crashUser) === String(uid)) && crashFloor === currentFloor) {
                     savedData = JSON.stringify(Object.assign({}, crashRes.data.legacy, {
                         autosaveAt: crashRes.data.savedAt || null,
                         userId: uid,
                         buildingId: crashRes.data.buildingId,
-                        floor: crashRes.data.floor
+                        floor: currentFloor
                     }));
                     foundKey = 'CrashRecovery';
                 }
@@ -432,11 +445,21 @@ function readAutosaveRaw() {
         }
     }
 
-    // Migrate key cũ → key đúng
+    // Chỉ migrate khi nháp đúng tầng hiện tại (tránh copy geometry tầng 0 → key tầng 1)
     if (savedData && foundKey && foundKey !== primaryKey && foundKey !== 'CrashRecovery') {
         try {
-            localStorage.setItem(primaryKey, savedData);
-            console.log('[Autosave] Đã migrate nháp', foundKey, '→', primaryKey);
+            var migrateParsed = JSON.parse(savedData);
+            var migrateFloor = migrateParsed && migrateParsed.floor != null
+                ? String(migrateParsed.floor)
+                : currentFloor;
+            if (migrateFloor === currentFloor) {
+                localStorage.setItem(primaryKey, savedData);
+                console.log('[Autosave] Đã migrate nháp', foundKey, '→', primaryKey);
+            } else {
+                console.warn('[Autosave] Bỏ migrate — nháp tầng', migrateFloor, '≠', currentFloor);
+                savedData = null;
+                foundKey = null;
+            }
         } catch (e4) {
             console.warn('[Autosave] Migrate thất bại:', e4);
         }
@@ -467,13 +490,26 @@ function checkAutoSave(opts) {
             return false;
         }
 
+        // WHY: Không bao giờ apply nháp của tầng khác lên canvas tầng đang mở
+        var currentFloor = getCurrentFloor();
+        if (data.floor != null && String(data.floor) !== String(currentFloor)) {
+            console.warn('[Autosave] Bỏ qua nháp tầng', data.floor, '— đang ở tầng', currentFloor);
+            return false;
+        }
+
         var draftFp = contentFingerprint(data);
         var canvasFp = getCanvasContentFingerprint();
         var draftHasBlocks = (data.blocks && data.blocks.length) || (data.blockInserts && data.blockInserts.length);
         var canvasHasBlocks = (typeof blockInserts !== 'undefined' && blockInserts.length)
             || (typeof blocks !== 'undefined' && blocks.length);
-        // Nếu nháp có Block/Insert mà canvas không → luôn khôi phục (tránh mất sau F5)
-        var forceBlockRestore = !!(draftHasBlocks && !canvasHasBlocks);
+        var draftHasDims = data.dimensions && data.dimensions.length;
+        var canvasHasDims = typeof dimensions !== 'undefined' && dimensions.length;
+        var draftBg = data.bgImageBase64 || data.background_image || '';
+        var canvasBg = (typeof window !== 'undefined' && window.bgImageBase64) ? window.bgImageBase64 : '';
+        // Nếu nháp có Block/Insert/Dim/ảnh nền mà canvas không → luôn khôi phục (tránh mất sau F5)
+        var forceBlockRestore = !!(draftHasBlocks && !canvasHasBlocks)
+            || !!(draftHasDims && !canvasHasDims)
+            || !!(draftBg && !canvasBg);
         if (draftFp && draftFp === canvasFp && !forceBlockRestore) {
             console.log('[Autosave] Nháp trùng bản đang mở — không cần khôi phục');
             return false;

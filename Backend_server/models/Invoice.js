@@ -5,7 +5,8 @@ const invoiceSchema = new mongoose.Schema({
   organization_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Organization',
-    required: true,
+    required: false,
+    default: null,
     index: true
   },
   subscription_id: {
@@ -32,14 +33,24 @@ const invoiceSchema = new mongoose.Schema({
   },
   plan: {
     type: String,
-    enum: ['FREE', 'PRO', 'ENTERPRISE'],
+    uppercase: true,
+    trim: true,
     default: null
   },
   amount: { type: Number, default: 0 },
+  tax_amount: { type: Number, default: 0 },
+  discount_amount: { type: Number, default: 0 },
+  line_items_snapshot: { type: [Object], default: [] },
+  tax_snapshot: { type: Object, default: {} },
+  customer_snapshot: { type: Object, default: {} },
+  seller_snapshot: { type: Object, default: {} },
   currency: { type: String, default: 'VND' },
   period_start: { type: Date, default: null },
   period_end: { type: Date, default: null },
   paid_at: { type: Date, default: null },
+  captured_at: { type: Date, default: null },
+  receipt_number: { type: String, default: '' },
+  receipt_snapshot: { type: Object, default: {} },
   due_at: { type: Date, default: null },
   external_ref: { type: String, default: '' },
   idempotency_key: { type: String, default: '' },
@@ -58,5 +69,6 @@ invoiceSchema.index(
   { organization_id: 1, idempotency_key: 1 },
   { unique: true, partialFilterExpression: { idempotency_key: { $type: 'string', $ne: '' } } }
 );
+invoiceSchema.index({ organization_id: 1, status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Invoice', invoiceSchema);
