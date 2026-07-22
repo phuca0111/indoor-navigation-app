@@ -428,6 +428,28 @@
     }
 
     /**
+     * Đa giác đều n cạnh (Polygon / POL).
+     * Tâm (cx,cy), bán kính tới đỉnh (inscribed circumradius), số cạnh sides≥3,
+     * rotation (rad) = góc đỉnh đầu. Trả về n điểm (không lặp đỉnh đầu).
+     */
+    function regularPolygon(cx, cy, radius, sides, rotation) {
+        sides = Math.round(sides || 6);
+        if (sides < 3) sides = 3;
+        if (sides > 64) sides = 64;
+        radius = Math.abs(radius || 0);
+        rotation = rotation || 0;
+        var pts = [];
+        for (var i = 0; i < sides; i++) {
+            var th = rotation + (Math.PI * 2 * i) / sides;
+            pts.push({
+                x: cx + radius * Math.cos(th),
+                y: cy + radius * Math.sin(th)
+            });
+        }
+        return pts;
+    }
+
+    /**
      * Nối 2 polyline (Join). Chọn cặp đầu mút gần nhau nhất để ghép, tự đảo
      * chiều khi cần. Nếu 2 đầu mút trùng (khoảng cách < tol) thì bỏ điểm lặp.
      * @returns {{points:[{x,y}], gap:number}|null}
@@ -458,6 +480,77 @@
         return { points: merged, gap: best.gap };
     }
 
+    /**
+     * Đóng polyline (PEdit Close): nếu đầu≠đuôi thì thêm đỉnh đầu vào cuối;
+     * nếu đã gần khép thì snap đuôi về đầu.
+     * @returns {{points:[{x,y}], closed:boolean, alreadyClosed:boolean}|null}
+     */
+    function closePolyline(points, tol) {
+        if (!Array.isArray(points) || points.length < 3) return null;
+        tol = tol != null ? tol : 1e-6;
+        var out = points.map(function (p) { return { x: p.x, y: p.y }; });
+        var a = out[0], b = out[out.length - 1];
+        var gap = distance(a, b);
+        if (gap < tol) {
+            out[out.length - 1] = { x: a.x, y: a.y };
+            return { points: out, closed: true, alreadyClosed: true };
+        }
+        out.push({ x: a.x, y: a.y });
+        return { points: out, closed: true, alreadyClosed: false };
+    }
+
+    function fitPolyline(points, closed) {
+        if (!Array.isArray(points) || points.length < 3) return null;
+        var source = points.map(function (p) { return { x: Number(p.x), y: Number(p.y) }; });
+        if (source.some(function (p) { return !Number.isFinite(p.x) || !Number.isFinite(p.y); })) return null;
+        if (closed && distance(source[0], source[source.length - 1]) < 1e-6) source.pop();
+        var out = [];
+        if (!closed) out.push(source[0]);
+        for (var i = 0; i < source.length - (closed ? 0 : 1); i++) {
+            var a = source[i];
+            var b = source[(i + 1) % source.length];
+            out.push(
+                { x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 },
+                { x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 }
+            );
+        }
+        if (!closed) out.push(source[source.length - 1]);
+        if (closed && out.length) out.push({ x: out[0].x, y: out[0].y });
+        return out;
+    }
+
+    function splinePolyline(points, closed, samplesPerSegment) {
+        if (!Array.isArray(points) || points.length < 3) return null;
+        var source = points.map(function (p) { return { x: Number(p.x), y: Number(p.y) }; });
+        if (source.some(function (p) { return !Number.isFinite(p.x) || !Number.isFinite(p.y); })) return null;
+        if (closed && distance(source[0], source[source.length - 1]) < 1e-6) source.pop();
+        samplesPerSegment = Math.max(2, Math.min(32, Math.round(samplesPerSegment || 8)));
+        var out = [];
+        var segmentCount = closed ? source.length : source.length - 1;
+        function at(index) {
+            if (closed) return source[(index + source.length) % source.length];
+            return source[Math.max(0, Math.min(source.length - 1, index))];
+        }
+        for (var i = 0; i < segmentCount; i++) {
+            var p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
+            for (var step = 0; step < samplesPerSegment; step++) {
+                var t = step / samplesPerSegment;
+                var t2 = t * t, t3 = t2 * t;
+                out.push({
+                    x: 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t +
+                        (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+                        (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+                    y: 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t +
+                        (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+                        (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3)
+                });
+            }
+        }
+        if (closed) out.push({ x: out[0].x, y: out[0].y });
+        else out.push({ x: source[source.length - 1].x, y: source[source.length - 1].y });
+        return out;
+    }
+
     return {
         segmentIntersection: segmentIntersection,
         lineIntersection: lineIntersection,
@@ -477,6 +570,10 @@
         explodePolyline: explodePolyline,
         offsetPolyline: offsetPolyline,
         joinPolylines: joinPolylines,
-        ellipsePolyline: ellipsePolyline
+        closePolyline: closePolyline,
+        fitPolyline: fitPolyline,
+        splinePolyline: splinePolyline,
+        ellipsePolyline: ellipsePolyline,
+        regularPolygon: regularPolygon
     };
 });

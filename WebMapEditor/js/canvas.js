@@ -90,8 +90,11 @@ function draw() {
             } else {
                 ctx.save();
                 ctx.globalAlpha = window.bgOpacity;
-                var bw = window.bgImage.width * window.bgScale;
-                var bh = window.bgImage.height * window.bgScale;
+                var fallbackScale = window.bgScale > 0 ? window.bgScale : 1;
+                var scaleX = window.bgScaleX > 0 ? window.bgScaleX : fallbackScale;
+                var scaleY = window.bgScaleY > 0 ? window.bgScaleY : fallbackScale;
+                var bw = window.bgImage.width * scaleX;
+                var bh = window.bgImage.height * scaleY;
                 ctx.translate(window.bgX + bw / 2, window.bgY + bh / 2);
                 ctx.rotate((window.bgRotation || 0) * Math.PI / 180);
                 ctx.drawImage(window.bgImage, -bw / 2, -bh / 2, bw, bh);
@@ -136,6 +139,7 @@ function draw() {
                 drawLineSegment(line, sel);
             });
         }
+        drawXrefOverlays();
 
         if (typeof drawBlockInserts === 'function') {
             drawBlockInserts();
@@ -166,6 +170,7 @@ function draw() {
                 if (typeof drawCadPoint === 'function') drawCadPoint(cp, selPt);
             });
         }
+        drawDigitalTwinOverlays();
 
         qrs.forEach(function (qr) {
             if (typeof legacyIsObjectVisible === 'function' && !legacyIsObjectVisible(qr)) return;
@@ -198,6 +203,9 @@ function draw() {
         }
         if (currentTool === 'ellipse' && typeof drawEllipsePreview === 'function') {
             drawEllipsePreview();
+        }
+        if (currentTool === 'regpoly' && typeof drawRegpolyPreview === 'function') {
+            drawRegpolyPreview();
         }
         if (currentTool === 'align' && typeof drawAlignPreview === 'function') {
             drawAlignPreview();
@@ -258,6 +266,54 @@ function draw() {
     } catch (errSnap) {
         console.error('Lỗi snap marker:', errSnap);
     }
+}
+
+function drawXrefOverlays() {
+    var manager = window.EditorCore && EditorCore.XRefManager;
+    var refs = window.editorAdvanced && window.editorAdvanced.xrefs;
+    if (!manager || !Array.isArray(refs) || !refs.length) return;
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    refs.forEach(function (ref) {
+        manager.resolve(ref).forEach(function (entity) {
+            if (entity.type === 'room') drawRoom(entity.data, false);
+            else if (entity.type === 'wall') drawWall(entity.data, false);
+            else if (entity.type === 'line') drawLineSegment(entity.data, false);
+        });
+    });
+    ctx.restore();
+}
+
+function drawDigitalTwinOverlays() {
+    var twin = window.EditorCore && EditorCore.DigitalTwin;
+    var bindings = window.editorAdvanced && window.editorAdvanced.twinBindings;
+    if (!twin || !Array.isArray(bindings) || !bindings.length) return;
+    var collections = { room: rooms, wall: walls, line: lines, door: doors, poi: pois };
+    twin.buildOverlay(bindings).forEach(function (overlay) {
+        var collection = collections[overlay.entityType] || [];
+        var object = collection.find(function (item) { return String(item.id) === String(overlay.entityId); });
+        if (!object) return;
+        var x, y;
+        if (object.cx != null && object.cy != null) { x = object.cx; y = object.cy; }
+        else if (Array.isArray(object.points) && object.points.length) {
+            x = object.points.reduce(function (sum, p) { return sum + p.x; }, 0) / object.points.length;
+            y = object.points.reduce(function (sum, p) { return sum + p.y; }, 0) / object.points.length;
+        } else { x = object.x; y = object.y; }
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        var colors = {
+            normal: '#22c55e', warning: '#f59e0b', critical: '#ef4444',
+            stale: '#64748b', unknown: '#94a3b8'
+        };
+        ctx.save();
+        ctx.fillStyle = colors[overlay.status] || colors.unknown;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2 / zoom;
+        ctx.beginPath();
+        ctx.arc(x, y, 6 / zoom, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+    });
 }
 
 // === VẼ LƯỚI ===
@@ -439,6 +495,7 @@ function drawWall(wall, isSelected) {
         for (var i = 1; i < wall.points.length; i++) {
             ctx.lineTo(wall.points[i].x, wall.points[i].y);
         }
+        if (wall.closed) ctx.closePath();
         ctx.stroke();
     }
 
@@ -453,6 +510,7 @@ function drawWall(wall, isSelected) {
     for (var j = 1; j < wall.points.length; j++) {
         ctx.lineTo(wall.points[j].x, wall.points[j].y);
     }
+    if (wall.closed) ctx.closePath();
     ctx.stroke();
     ctx.setLineDash([]);
     if (isSelected) {
@@ -460,8 +518,13 @@ function drawWall(wall, isSelected) {
         if (typeof drawSegmentRotateHandle === 'function') drawSegmentRotateHandle(wall, { color: '#f59e0b' });
     }
     // Nhãn chiều dài từng cạnh tường (checkbox «Hiện kích thước»)
-    for (var k = 0; k < wall.points.length - 1; k++) {
-        drawSegmentLengthLabel(wall.points[k], wall.points[k + 1], {
+    var wallSegN = wall.closed ? wall.points.length : wall.points.length - 1;
+    for (var k = 0; k < wallSegN; k++) {
+        var ka = wall.points[k];
+        var kb = wall.points[(k + 1) % wall.points.length];
+        if (wall.closed && k === wall.points.length - 1 &&
+            ka.x === wall.points[0].x && ka.y === wall.points[0].y) break; // điểm trùng cuối
+        drawSegmentLengthLabel(ka, kb, {
             color: isSelected ? '#f59e0b' : (isOuter ? '#ef4444' : '#334155'),
             requireDimCheck: true
         });
@@ -546,6 +609,7 @@ function drawLineSegment(line, isSelected) {
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
     for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    if (line.closed) ctx.closePath();
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();

@@ -12,7 +12,7 @@
     "test:phase5-ui": "vitest run tests/phase5-ui-smoke.test.js",
     "test:we2": "vitest run tests/we2-draft-api.test.js",
     "test:ui-shell": "vitest run tests/ui-shell-smoke.test.js",
-    "test:pre-release": "vitest run tests/validation.test.js tests/map-adapter.test.js tests/snap-engine.test.js tests/block-manager.test.js tests/tool-command-manager.test.js"
+    "test:pre-release": "vitest run tests/we2-draft-api.test.js tests/phase4-ui-smoke.test.js tests/phase5-ui-smoke.test.js tests/ui-shell-smoke.test.js tests/web-quality-accessibility.test.js tests/validation.test.js tests/map-adapter.test.js"
   },
   "devDependencies": {
     "happy-dom": "^20.10.6",

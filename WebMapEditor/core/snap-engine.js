@@ -20,6 +20,9 @@
         INTERSECTION: 'intersection',
         PERPENDICULAR: 'perpendicular',
         CENTER: 'center',
+        QUADRANT: 'quadrant',
+        EXTENSION: 'extension',
+        FROM: 'from',
         NEAREST: 'nearest',
         NODE: 'node'
     };
@@ -28,10 +31,13 @@
     var KIND_PRIORITY = {
         endpoint: 3,
         node: 2.8,
+        quadrant: 2.7,
         center: 2.6,
         midpoint: 2,
         intersection: 1,
         perpendicular: 0.5,
+        from: 0.45,
+        extension: 0.4,
         nearest: 0.2,
         grid: 0
     };
@@ -43,7 +49,8 @@
         tolerancePx: 12,
         modes: {
             grid: true, endpoint: true, midpoint: true, intersection: true,
-            perpendicular: true, center: true, nearest: false, node: true
+            perpendicular: true, center: true, quadrant: true,
+            extension: false, from: false, nearest: false, node: true
         }
     };
 
@@ -236,6 +243,75 @@
         return points;
     }
 
+    function projectPointToInfiniteLine(point, a, b) {
+        var vx = b.x - a.x;
+        var vy = b.y - a.y;
+        var len2 = vx * vx + vy * vy;
+        if (len2 < 1e-10) return null;
+        var t = ((point.x - a.x) * vx + (point.y - a.y) * vy) / len2;
+        return { x: a.x + t * vx, y: a.y + t * vy, t: t };
+    }
+
+    function collectExtensionPoints(cursor) {
+        if (!settings.modes.extension || !cursor) return [];
+        var tol = getTolerance();
+        var tol2 = tol * tol;
+        var segs = collectExtensionSegments();
+        var out = [];
+        for (var i = 0; i < segs.length; i++) {
+            var hit = projectPointToInfiniteLine(cursor, segs[i].a, segs[i].b);
+            if (!hit || (hit.t >= 0 && hit.t <= 1)) continue;
+            if (dist2(cursor.x, cursor.y, hit.x, hit.y) > tol2) continue;
+            out.push({
+                x: hit.x,
+                y: hit.y,
+                kind: SNAP.EXTENSION,
+                source: 'extension:' + segs[i].source
+            });
+        }
+        return out;
+    }
+
+    function collectExtensionSegments() {
+        var out = [];
+        function addPolyline(object, type, index) {
+            var points = object && object.points;
+            if (!Array.isArray(points) || points.length < 2 || object.closed) return;
+            if (type === 'line' && (object.type === 'arc' || object.type === 'ellipse')) return;
+            var id = object.id != null ? object.id : index;
+            out.push({
+                a: points[0], b: points[1],
+                source: type + ':' + id + ':start'
+            });
+            if (points.length > 2) {
+                out.push({
+                    a: points[points.length - 2], b: points[points.length - 1],
+                    source: type + ':' + id + ':end'
+                });
+            }
+        }
+        (globalThis.walls || []).forEach(function (wall, index) {
+            addPolyline(wall, 'wall', index);
+        });
+        (globalThis.lines || []).forEach(function (line, index) {
+            addPolyline(line, 'line', index);
+        });
+        return out;
+    }
+
+    function collectFromPoint(from, offset) {
+        if (!settings.modes.from || !from || !offset) return null;
+        var fx = Number(from.x), fy = Number(from.y);
+        var ox = Number(offset.x), oy = Number(offset.y);
+        if (![fx, fy, ox, oy].every(Number.isFinite)) return null;
+        return {
+            x: fx + ox,
+            y: fy + oy,
+            kind: SNAP.FROM,
+            source: 'from'
+        };
+    }
+
     function collectSnapPointsFromLegacy() {
         var rootRef = globalThis;
         var points = [];
@@ -252,10 +328,61 @@
 
         (rootRef.lines || []).forEach(function (ln, li) {
             var lpts = ln.points || [];
+            var lineSource = 'line:' + (ln.id != null ? ln.id : li);
             for (var i = 0; i < lpts.length; i++) {
-                pushEndpoint(points, lpts[i].x, lpts[i].y, 'line:' + (ln.id != null ? ln.id : li));
+                pushEndpoint(points, lpts[i].x, lpts[i].y, lineSource);
                 if (settings.modes.midpoint && i > 0) {
-                    pushMidpoint(points, lpts[i - 1].x, lpts[i - 1].y, lpts[i].x, lpts[i].y, 'line:' + (ln.id != null ? ln.id : li));
+                    pushMidpoint(points, lpts[i - 1].x, lpts[i - 1].y, lpts[i].x, lpts[i].y, lineSource);
+                }
+            }
+            if (ln.type === 'arc' && ln.arc) {
+                if (settings.modes.center) {
+                    points.push({
+                        x: ln.arc.cx, y: ln.arc.cy,
+                        kind: SNAP.CENTER, source: lineSource
+                    });
+                }
+                if (settings.modes.quadrant && ln.arc.radius > 0) {
+                    var arcQuadrants = [
+                        { x: ln.arc.cx + ln.arc.radius, y: ln.arc.cy },
+                        { x: ln.arc.cx - ln.arc.radius, y: ln.arc.cy },
+                        { x: ln.arc.cx, y: ln.arc.cy + ln.arc.radius },
+                        { x: ln.arc.cx, y: ln.arc.cy - ln.arc.radius }
+                    ];
+                    var arcThreshold2 = Math.pow(Math.max(2, ln.arc.radius * 0.12), 2);
+                    arcQuadrants.forEach(function (quadrant) {
+                        if (lpts.some(function (p) {
+                            return dist2(p.x, p.y, quadrant.x, quadrant.y) <= arcThreshold2;
+                        })) {
+                            points.push({
+                                x: quadrant.x, y: quadrant.y,
+                                kind: SNAP.QUADRANT, source: lineSource
+                            });
+                        }
+                    });
+                }
+            } else if (ln.type === 'ellipse' && ln.ellipse) {
+                var ellipse = ln.ellipse;
+                if (settings.modes.center) {
+                    points.push({
+                        x: ellipse.cx, y: ellipse.cy,
+                        kind: SNAP.CENTER, source: lineSource
+                    });
+                }
+                if (settings.modes.quadrant && ellipse.rx > 0 && ellipse.ry > 0) {
+                    var cos = Math.cos(ellipse.rotation || 0);
+                    var sin = Math.sin(ellipse.rotation || 0);
+                    [
+                        { lx: ellipse.rx, ly: 0 }, { lx: -ellipse.rx, ly: 0 },
+                        { lx: 0, ly: ellipse.ry }, { lx: 0, ly: -ellipse.ry }
+                    ].forEach(function (local) {
+                        points.push({
+                            x: ellipse.cx + local.lx * cos - local.ly * sin,
+                            y: ellipse.cy + local.lx * sin + local.ly * cos,
+                            kind: SNAP.QUADRANT,
+                            source: lineSource
+                        });
+                    });
                 }
             }
         });
@@ -288,6 +415,14 @@
             if (r.shape === 'circle') {
                 if (settings.modes.center && r.cx != null && r.cy != null) {
                     points.push({ x: r.cx, y: r.cy, kind: SNAP.CENTER, source: 'room:' + r.id });
+                }
+                if (settings.modes.quadrant && r.cx != null && r.cy != null && r.radius > 0) {
+                    points.push(
+                        { x: r.cx + r.radius, y: r.cy, kind: SNAP.QUADRANT, source: 'room:' + r.id },
+                        { x: r.cx - r.radius, y: r.cy, kind: SNAP.QUADRANT, source: 'room:' + r.id },
+                        { x: r.cx, y: r.cy + r.radius, kind: SNAP.QUADRANT, source: 'room:' + r.id },
+                        { x: r.cx, y: r.cy - r.radius, kind: SNAP.QUADRANT, source: 'room:' + r.id }
+                    );
                 }
             } else if (r.shape === 'polygon' && r.points) {
                 r.points.forEach(function (p, i) {
@@ -373,6 +508,9 @@
             if (c.kind === SNAP.INTERSECTION && !settings.modes.intersection) return;
             if (c.kind === SNAP.PERPENDICULAR && !settings.modes.perpendicular) return;
             if (c.kind === SNAP.CENTER && !settings.modes.center) return;
+            if (c.kind === SNAP.QUADRANT && !settings.modes.quadrant) return;
+            if (c.kind === SNAP.EXTENSION && !settings.modes.extension) return;
+            if (c.kind === SNAP.FROM && !settings.modes.from) return;
             if (c.kind === SNAP.NEAREST && !settings.modes.nearest) return;
             if (c.kind === SNAP.NODE && !settings.modes.node) return;
 
@@ -436,6 +574,13 @@
                 if (nearestPt) candidates = candidates.concat(nearestPt);
             }
 
+            if (settings.modes.extension) {
+                candidates = candidates.concat(collectExtensionPoints(point));
+            }
+
+            var fromPt = collectFromPoint(opts.from, opts.fromOffset);
+            if (fromPt) candidates.push(fromPt);
+
             var objSnap = findBestObjectSnap(point, candidates);
             if (objSnap) return objSnap;
         }
@@ -486,9 +631,13 @@
         collectSnapPointsFromLegacy: collectSnapPointsFromLegacy,
         collectIntersectionPoints: collectIntersectionPoints,
         collectPerpendicularPoints: collectPerpendicularPoints,
+        collectExtensionPoints: collectExtensionPoints,
+        collectExtensionSegments: collectExtensionSegments,
+        collectFromPoint: collectFromPoint,
         collectNearestPoint: collectNearestPoint,
         collectAllSegments: collectAllSegments,
         footPerpendicularToSegment: footPerpendicularToSegment,
+        projectPointToInfiniteLine: projectPointToInfiniteLine,
         segmentIntersection: segmentIntersection,
         setMode: setMode,
         getModes: getModes,

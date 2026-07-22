@@ -4,6 +4,24 @@
 // ============================================================
 
 var DRAFT_V1_PREFIX = '/api/v1';
+var draftRevisions = {};
+
+function draftRevisionKey(buildingId, floor) {
+    return String(buildingId) + ':' + String(floor);
+}
+
+function rememberDraftRevision(buildingId, floor, version, etag) {
+    var key = draftRevisionKey(buildingId, floor);
+    draftRevisions[key] = {
+        version: Number(version) || 0,
+        etag: etag || ('"draft-' + (Number(version) || 0) + '"')
+    };
+    return draftRevisions[key];
+}
+
+function getDraftRevision(buildingId, floor) {
+    return draftRevisions[draftRevisionKey(buildingId, floor)] || null;
+}
 
 function buildDraftUrl(buildingId, floor) {
     return DRAFT_V1_PREFIX + '/buildings/' + encodeURIComponent(buildingId) +
@@ -106,12 +124,19 @@ async function fetchDraft(buildingId, floor, apiFetchFn) {
     }
 
     var data = await parseJsonResponse(resp);
+    var revision = rememberDraftRevision(
+        buildingId,
+        floor,
+        data.version,
+        resp.headers && resp.headers.get ? resp.headers.get('ETag') : null
+    );
     return {
         ok: true,
         payload: data.payload || null,
         version: data.version,
         updatedAt: data.updatedAt,
         updated_by: data.updated_by,
+        etag: revision.etag,
         resp: resp
     };
 }
@@ -132,20 +157,53 @@ async function putDraft(buildingId, floor, mapData, apiFetchFn) {
 
     var body = stripBase64BackgroundForServer(mapData);
     var url = buildDraftUrl(buildingId, floor);
+    var revision = getDraftRevision(buildingId, floor) || rememberDraftRevision(buildingId, floor, 0);
+    var sessionId = '';
+    if (typeof getEditSessionId === 'function') sessionId = getEditSessionId();
+    var headers = {
+        'Content-Type': 'application/json',
+        'If-Match': revision.etag
+    };
+    if (sessionId) headers['X-Edit-Session'] = sessionId;
     var resp = await apiFetchFn(url, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ map_data: body })
+        headers: headers,
+        body: JSON.stringify({
+            map_data: body,
+            expected_version: revision.version,
+            edit_session_id: sessionId
+        })
     });
 
     var data = await parseJsonResponse(resp);
 
     if (resp.status === 401) return { unauthorized: true, data: data, resp: resp };
     if (resp.status === 403) return { forbidden: true, data: data, resp: resp };
+    if (resp.status === 409) {
+        if (data.current && data.current.version != null) {
+            rememberDraftRevision(buildingId, floor, data.current.version);
+        }
+        return {
+            ok: false,
+            conflict: true,
+            status: 409,
+            code: data.code || 'DRAFT_CONFLICT',
+            current: data.current || null,
+            message: data.message,
+            data: data,
+            resp: resp
+        };
+    }
     if (!resp.ok) {
         return { ok: false, status: resp.status, data: data, resp: resp };
     }
 
+    var savedRevision = rememberDraftRevision(
+        buildingId,
+        floor,
+        data.version,
+        resp.headers && resp.headers.get ? resp.headers.get('ETag') : null
+    );
     return {
         ok: true,
         version: data.version,
@@ -153,6 +211,7 @@ async function putDraft(buildingId, floor, mapData, apiFetchFn) {
         message: data.message,
         bgStripped: !!body._bgStrippedForServer,
         bgKeptPersistedUrl: !!body._bgKeptPersistedUrl,
+        etag: savedRevision.etag,
         resp: resp
     };
 }
@@ -164,6 +223,8 @@ var DraftApi = {
     isPersistedBackgroundUrl: isPersistedBackgroundUrl,
     stripBase64BackgroundForServer: stripBase64BackgroundForServer,
     isDraftPayloadMeaningful: isDraftPayloadMeaningful,
+    getDraftRevision: getDraftRevision,
+    rememberDraftRevision: rememberDraftRevision,
     fetchDraft: fetchDraft,
     putDraft: putDraft
 };

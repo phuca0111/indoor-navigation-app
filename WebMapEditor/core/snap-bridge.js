@@ -39,7 +39,11 @@
         x = Number(x) || 0;
         y = Number(y) || 0;
         if (root.EditorCore && root.EditorCore.SnapEngine) {
-            return root.EditorCore.SnapEngine.snapPoint({ x: x, y: y }, opts || {});
+            var fromSnap = root.EditorCore.FromSnap;
+            var enriched = fromSnap ? fromSnap.enrich(opts) : (opts || {});
+            var result = root.EditorCore.SnapEngine.snapPoint({ x: x, y: y }, enriched);
+            if (fromSnap && result && result.kind === 'from') fromSnap.consume();
+            return result;
         }
         return {
             x: legacySnapAxis(x),

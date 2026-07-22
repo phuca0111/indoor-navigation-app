@@ -19,7 +19,7 @@
     /**
      * @param {CanvasRenderingContext2D} ctx
      * @param {object} viewport — { zoom }
-     * @param {object} bg — { image, opacity, x, y, scale, rotation }
+     * @param {object} bg — { image, opacity, x, y, scale, scaleX, scaleY, rotation }
      * @param {{ highlightAdjust?: boolean }} options
      */
     function renderBackgroundImage(ctx, viewport, bg, options) {
@@ -29,8 +29,11 @@
         var zoom = viewport.zoom || 1;
         ctx.save();
         ctx.globalAlpha = bg.opacity != null ? bg.opacity : 0.5;
-        var bw = bg.image.width * (bg.scale || 1);
-        var bh = bg.image.height * (bg.scale || 1);
+        var fallbackScale = bg.scale > 0 ? bg.scale : 1;
+        var scaleX = bg.scaleX > 0 ? bg.scaleX : fallbackScale;
+        var scaleY = bg.scaleY > 0 ? bg.scaleY : fallbackScale;
+        var bw = bg.image.width * scaleX;
+        var bh = bg.image.height * scaleY;
         var bx = bg.x || 0;
         var by = bg.y || 0;
 

@@ -35,6 +35,12 @@
                 return { shape: 'perp', color: '#fb923c', sizePx: 28, label: 'VUÔNG' };
             case 'center':
                 return { shape: 'circle', color: '#22d3ee', sizePx: 26, label: 'TÂM' };
+            case 'quadrant':
+                return { shape: 'diamond', color: '#06b6d4', sizePx: 26, label: 'PHẦN TƯ' };
+            case 'extension':
+                return { shape: 'square', color: '#f97316', sizePx: 24, label: 'KÉO DÀI' };
+            case 'from':
+                return { shape: 'triangle', color: '#ec4899', sizePx: 26, label: 'TỪ ĐIỂM' };
             case 'nearest':
                 return { shape: 'diamond', color: '#a78bfa', sizePx: 22, label: 'GẦN' };
             case 'node':

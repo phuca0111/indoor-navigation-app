@@ -57,7 +57,8 @@
             label: 'POI',
             fields: [
                 { key: 'name', type: 'string', label: 'Tên' },
-                { key: 'category', type: 'string', label: 'Loại' }
+                { key: 'category', type: 'string', label: 'Loại' },
+                { key: 'size', type: 'number', label: 'Kích thước', min: 12, max: 96 }
             ]
         },
         node: {

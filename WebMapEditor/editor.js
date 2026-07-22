@@ -32,6 +32,22 @@ if (scaleInp) {
     });
 }
 
+var ltScaleInp = document.getElementById('ltScaleInput');
+if (ltScaleInp) {
+    ltScaleInp.addEventListener('change', function (e) {
+        if (!e.target) return;
+        if (typeof setLtScale === 'function') {
+            setLtScale(e.target.value);
+        } else {
+            var n = parseFloat(e.target.value);
+            window.ltScale = (Number.isFinite(n) && n > 0) ? Math.max(0.1, Math.min(10, n)) : 1;
+            e.target.value = window.ltScale;
+            if (typeof draw === 'function') draw();
+        }
+        if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+    });
+}
+
 if (typeof applyScalePolicy === 'function') applyScalePolicy();
 
 var mapBearingInp = document.getElementById('mapBearingInput');
@@ -62,6 +78,41 @@ if (rulerModeSel) {
 if (document.getElementById('gridCheck')) document.getElementById('gridCheck').addEventListener('change', draw);
 if (document.getElementById('dimCheck')) document.getElementById('dimCheck').addEventListener('change', draw);
 
+// === OSNAP: đồng bộ checkbox ↔ SnapEngine + hút lưới → mode grid ===
+(function initOsnapUi() {
+    function syncChecksFromEngine() {
+        if (!window.EditorCore || !EditorCore.SnapEngine || !EditorCore.SnapEngine.getModes) return;
+        var m = EditorCore.SnapEngine.getModes();
+        function set(id, on) {
+            var el = document.getElementById(id);
+            if (el) el.checked = !!on;
+        }
+        set('snapEndpointCheck', m.endpoint !== false);
+        set('snapMidpointCheck', m.midpoint !== false);
+        set('snapIntersectionCheck', m.intersection !== false);
+        set('snapPerpCheck', m.perpendicular !== false);
+        set('snapCenterCheck', m.center !== false);
+        set('snapQuadrantCheck', m.quadrant !== false);
+        set('snapExtensionCheck', !!m.extension);
+        set('snapFromCheck', !!m.from);
+        set('snapNearestCheck', !!m.nearest);
+        set('snapNodeCheck', m.node !== false);
+    }
+    var snapCheck = document.getElementById('snapCheck');
+    if (snapCheck) {
+        snapCheck.addEventListener('change', function () {
+            if (window.EditorCore && EditorCore.SnapEngine) {
+                EditorCore.SnapEngine.setMode('grid', snapCheck.checked);
+            }
+        });
+        if (window.EditorCore && EditorCore.SnapEngine) {
+            EditorCore.SnapEngine.setMode('grid', snapCheck.checked);
+        }
+    }
+    syncChecksFromEngine();
+    window.syncOsnapChecksFromEngine = syncChecksFromEngine;
+})();
+
 // === ẢNH NỀN ===
 var bImport = document.getElementById('btnImportBg');
 if (bImport) {
@@ -81,6 +132,8 @@ function fitViewportToBackgroundImage(img) {
     window.bgX = 0;
     window.bgY = 0;
     window.bgScale = 1.0;
+    window.bgScaleX = 1.0;
+    window.bgScaleY = 1.0;
     window.bgRotation = 0;
     window.bgOpacity = 0.5;
     window.bgContrast = 1;

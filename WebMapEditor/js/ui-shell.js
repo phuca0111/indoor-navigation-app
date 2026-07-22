@@ -61,7 +61,7 @@
             var tab = tabs.find(function (t) { return t.dataset.tab === tabId; });
             if (!panel || !tab) return;
             setActive(tabs, tab, true);
-            setActive(panels, panel, true);
+            setActive(panels, panel, false);
             var prefs = loadPrefs();
             prefs.ribbonTab = tabId;
             savePrefs(prefs);
@@ -89,7 +89,7 @@
             var tab = tabs.find(function (t) { return t.dataset.stab === tabId || t.dataset.rtab === tabId; });
             if (!panel || !tab) return;
             setActive(tabs, tab, true);
-            setActive(panels, panel, true);
+            setActive(panels, panel, false);
             var prefs = loadPrefs();
             prefs[prefKey] = tabId;
             savePrefs(prefs);

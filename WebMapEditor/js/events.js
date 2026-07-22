@@ -25,7 +25,7 @@ canvas.addEventListener('wheel', function (e) {
     var beforeZoom = screenToWorld(mouseX, mouseY);
     var zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
     zoom *= zoomFactor;
-    zoom = Math.max(0.1, Math.min(5, zoom));
+    zoom = Math.max(0.01, Math.min(10, zoom));
     var afterZoom = screenToWorld(mouseX, mouseY);
     panX += (afterZoom.x - beforeZoom.x) * zoom;
     panY += (afterZoom.y - beforeZoom.y) * zoom;
@@ -343,6 +343,13 @@ function handleLeftMouseDown(e) {
         }
         draw();
     }
+    // --- TOOL: ĐA GIÁC ĐỀU (Polygon / POL) ---
+    else if (currentTool === 'regpoly') {
+        if (typeof handleRegpolyClick === 'function') {
+            handleRegpolyClick(snappedX, snappedY);
+        }
+        draw();
+    }
     // --- TOOL: ĐIỂM MỐC (Point / PO) ---
     else if (currentTool === 'point') {
         if (typeof handlePointClick === 'function') {
@@ -440,6 +447,9 @@ function handleLeftMouseDown(e) {
     else if (currentTool === 'hatch') {
         handleHatchPointerDown(snappedX, snappedY, world.x, world.y);
     }
+    else if (currentTool === 'hatchedit') {
+        handleHatcheditPointerDown(snappedX, snappedY, world.x, world.y);
+    }
 
     // --- TOOL: CALIBRATE (CAL) ---
     else if (currentTool === 'calibrate') {
@@ -520,6 +530,7 @@ function handleLeftMouseDown(e) {
 
         // Kéo đỉnh đoạn/tường khi đang chọn (không cần lệnh PE)
         if (selectedObject && (selectedObject.type === 'line' || selectedObject.type === 'wall')
+            && selectedObject.data.type !== 'arc' && selectedObject.data.type !== 'ellipse'
             && typeof hitPolylineVertex === 'function') {
             var sv = hitPolylineVertex(world.x, world.y, selectedObject.data);
             if (sv >= 0) {
@@ -1035,6 +1046,10 @@ function handleMouseMove(e, world) {
         updateEllipsePreview(snappedX, snappedY);
         draw();
     }
+    if (currentTool === 'regpoly' && typeof updateRegpolyPreview === 'function') {
+        updateRegpolyPreview(snappedX, snappedY);
+        draw();
+    }
     // Preview cung tròn (Arc)
     if (currentTool === 'arc' && typeof updateArcPreview === 'function') {
         updateArcPreview(snappedX, snappedY);
@@ -1133,7 +1148,7 @@ function handleMouseMove(e, world) {
     }
 
     // Repaint OSNAP marker khi rê chuột (tool vẽ + Chọn)
-    var snapRepaintTools = ['select', 'wall', 'line', 'arc', 'ellipse', 'point', 'align', 'room', 'circle', 'door', 'poi', 'path', 'ruler', 'area', 'polygon', 'dimlinear', 'dimaligned', 'dimedit',
+    var snapRepaintTools = ['select', 'wall', 'line', 'arc', 'ellipse', 'regpoly', 'point', 'align', 'room', 'circle', 'door', 'poi', 'path', 'ruler', 'area', 'polygon', 'dimlinear', 'dimaligned', 'dimedit',
         'dimcontinue', 'dimbaseline', 'dimangular', 'dimradius', 'dimdiameter',
         'move', 'copy', 'rotate', 'scale', 'mirror', 'trim', 'extend', 'fillet', 'chamfer', 'break', 'pedit', 'mline', 'array', 'matchprop', 'explode', 'offset', 'join',
         'divide', 'calibrate', 'bg-crop', 'bg-adjust', 'bg-warp'];
@@ -1446,6 +1461,34 @@ function handleHatchPointerDown(snappedX, snappedY, rawX, rawY) {
     if (typeof draw === 'function') draw();
 }
 window.handleHatchPointerDown = handleHatchPointerDown;
+
+function handleHatcheditPointerDown(snappedX, snappedY, rawX, rawY) {
+    var api = getHatchApi();
+    if (!api || typeof findRoomAt !== 'function') {
+        if (typeof showToast === 'function') showToast('Hatchedit chưa sẵn sàng', 'error');
+        return;
+    }
+    var room = findRoomAt(rawX, rawY) || findRoomAt(snappedX, snappedY);
+    if (!room) {
+        if (typeof showToast === 'function') showToast('HE: click phòng có hatch (hoặc chưa có) để sửa', 'info');
+        return;
+    }
+    if (typeof blockIfObjectLayerLocked === 'function' && blockIfObjectLayerLocked(room, 'sửa hatch')) {
+        return;
+    }
+    // Nếu chưa có hatch → tạo mặc định theo loại phòng để có gì mà sửa
+    if (!api.hasHatch(room)) {
+        if (typeof saveState === 'function') saveState();
+        api.applyToRoom(room, api.defaultForRoomType(room.type || 'Khác'));
+    }
+    setEditorSelection('room', room);
+    if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
+    if (typeof draw === 'function') draw();
+    if (typeof showToast === 'function') {
+        showToast('Hatchedit: sửa pattern/màu/góc trong panel thuộc tính', 'info');
+    }
+}
+window.handleHatcheditPointerDown = handleHatcheditPointerDown;
 
 function clearHatchFromSelectedRoom() {
     var api = getHatchApi();

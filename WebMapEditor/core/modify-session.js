@@ -33,9 +33,16 @@
         axisA: null,
         cutting: null, // { type, data, segIndex }
         peditVertex: -1,
+        peditUndo: [],
+        peditDragCaptured: false,
         mlinePoints: [],
         mlineThickness: 12,
         arrayCount: 4,
+        arrayMode: 'linear', // linear | rect | polar
+        arrayCols: 3,
+        arrayRows: 2,
+        arrayPolarAngle: 360,
+        arrayRotateItems: true,
         matchSource: null, // { type, props }
         firstPick: null, // Fillet/Chamfer: cạnh đầu tiên { type, data, segIndex }
         filletRadius: 20,
@@ -75,6 +82,8 @@
         state.axisA = null;
         state.cutting = null;
         state.peditVertex = -1;
+        state.peditUndo = [];
+        state.peditDragCaptured = false;
         state.mlinePoints = [];
         state.matchSource = null;
         state.firstPick = null;
@@ -105,9 +114,11 @@
         });
     }
 
-    function activate(mode) {
+    function activate(mode, options) {
+        options = options || {};
         state.mode = mode;
         reset();
+        if (options.array) setArrayOptions(options.array);
         if (mode === MODE.MLINE) {
             if (typeof window !== 'undefined' && window.defaultWallThickness) {
                 state.mlineThickness = Math.max(2, window.defaultWallThickness);
@@ -191,7 +202,8 @@
                 return getSnapshot();
             }
             state.stage = 'pedit';
-            state.message = 'PEdit: kéo đỉnh · Ctrl+click trên cạnh = thêm đỉnh · Del xóa · Esc xong';
+            state.peditUndo = [];
+            state.message = 'PEdit: kéo đỉnh · C đóng · J nối · W rộng · F fit · S spline · U undo';
             return getSnapshot();
         }
         // transform + array cần selection
@@ -204,15 +216,22 @@
             state.stage = 'axis';
             state.message = 'Lật trục: 2 điểm = trục. Nhanh hơn: panel «Lật ngang/dọc» khi đang chọn.';
         } else if (mode === MODE.ARRAY) {
-            if (typeof prompt === 'function') {
-                var raw = prompt('Sao chép hàng loạt — tổng số bản (gồm gốc)?', String(state.arrayCount));
-                if (raw != null && raw !== '') {
-                    var n = parseInt(raw, 10);
-                    if (n >= 2 && n <= 50) state.arrayCount = n;
-                }
+            if (!(options && options.skipPrompt)) {
+                promptArrayOptions();
             }
-            state.stage = 'base';
-            state.message = 'Hàng loạt ×' + state.arrayCount + ': click gốc → click hướng/khoảng cách (copy lặp đều).';
+            if (state.arrayMode === 'polar') {
+                state.stage = 'center';
+                state.message = 'Array Polar ×' + state.arrayCount + ' / ' + state.arrayPolarAngle +
+                    '°: click tâm quay' + (state.arrayRotateItems ? ' (xoay theo)' : '');
+            } else if (state.arrayMode === 'rect') {
+                state.stage = 'base';
+                state.message = 'Array Rect ' + state.arrayCols + '×' + state.arrayRows +
+                    ': click gốc → click góc ô (ΔX=cột, ΔY=hàng)';
+            } else {
+                state.stage = 'base';
+                state.message = 'Array Linear ×' + state.arrayCount +
+                    ': click gốc → click hướng/khoảng cách (copy lặp đều)';
+            }
         } else if (mode === MODE.ROTATE) {
             state.stage = 'base';
             state.message = 'Xoay CAD: gốc → hướng. Nhanh: kéo chấm xoay trên phòng/đoạn/tường hoặc nhập ° ở panel.';
@@ -279,7 +298,6 @@
     }
 
     function commitSave() {
-        if (typeof saveState === 'function') saveState();
         if (typeof syncSpatialIndexFromLegacy === 'function') syncSpatialIndexFromLegacy();
         if (typeof updateObjectList === 'function') updateObjectList();
         if (typeof updatePropertiesPanel === 'function') updatePropertiesPanel();
@@ -727,6 +745,113 @@
         return created;
     }
 
+    /** Array chữ nhật: ô đơn vị (ΔX=cột, ΔY=hàng), bỏ ô (0,0). */
+    function applyRectArray(sel, base, dest) {
+        var T = OT();
+        if (!T || !sel || !base || !dest) return 0;
+        var colDx = dest.x - base.x;
+        var rowDy = dest.y - base.y;
+        var cols = Math.max(1, Math.min(30, state.arrayCols | 0));
+        var rows = Math.max(1, Math.min(30, state.arrayRows | 0));
+        var created = 0;
+        for (var r = 0; r < rows; r++) {
+            for (var c = 0; c < cols; c++) {
+                if (r === 0 && c === 0) continue;
+                var copy = T.cloneObject(sel.type, sel.data, nextIdFor);
+                T.translateObject(sel.type, copy, colDx * c, rowDy * r);
+                pushClone(sel.type, copy);
+                created++;
+            }
+        }
+        return created;
+    }
+
+    /** Array tròn quanh tâm — góc đều trên cung fillAngle°. */
+    function applyPolarArray(sel, center) {
+        var T = OT();
+        if (!T || !sel || !center) return 0;
+        var n = Math.max(2, Math.min(50, state.arrayCount | 0));
+        var fillRad = (Math.max(1, Math.min(360, Number(state.arrayPolarAngle) || 360)) * Math.PI) / 180;
+        var created = 0;
+        for (var i = 1; i < n; i++) {
+            var ang = (fillRad * i) / n;
+            var copy = T.cloneObject(sel.type, sel.data, nextIdFor);
+            var keepRot = (copy && copy.rotation != null) ? copy.rotation : null;
+            T.rotateObject(sel.type, copy, center.x, center.y, ang);
+            if (!state.arrayRotateItems && keepRot != null && copy.rotation != null) {
+                copy.rotation = keepRot;
+            }
+            pushClone(sel.type, copy);
+            created++;
+        }
+        return created;
+    }
+
+    function setArrayOptions(opts) {
+        opts = opts || {};
+        if (opts.mode === 'linear' || opts.mode === 'rect' || opts.mode === 'polar') {
+            state.arrayMode = opts.mode;
+        }
+        if (opts.count != null) setArrayCount(opts.count);
+        if (opts.cols != null) {
+            state.arrayCols = Math.max(1, Math.min(30, parseInt(opts.cols, 10) || 1));
+        }
+        if (opts.rows != null) {
+            state.arrayRows = Math.max(1, Math.min(30, parseInt(opts.rows, 10) || 1));
+        }
+        if (opts.polarAngle != null) {
+            var a = parseFloat(opts.polarAngle);
+            if (Number.isFinite(a)) state.arrayPolarAngle = Math.max(1, Math.min(360, a));
+        }
+        if (opts.rotateItems != null) state.arrayRotateItems = !!opts.rotateItems;
+    }
+
+    function promptArrayOptions() {
+        if (typeof prompt !== 'function') return;
+        var defM = state.arrayMode === 'rect' ? 'R' : (state.arrayMode === 'polar' ? 'P' : 'L');
+        var rawM = prompt('Array: L=Thẳng / R=Chữ nhật / P=Tròn [' + defM + ']', defM);
+        if (rawM != null && String(rawM).trim() !== '') {
+            var m = String(rawM).trim().toUpperCase().charAt(0);
+            if (m === 'R') state.arrayMode = 'rect';
+            else if (m === 'P') state.arrayMode = 'polar';
+            else state.arrayMode = 'linear';
+        }
+        if (state.arrayMode === 'rect') {
+            var rawC = prompt('Array chữ nhật — số cột (1–30):', String(state.arrayCols));
+            if (rawC != null && rawC !== '') {
+                var cols = parseInt(rawC, 10);
+                if (cols >= 1 && cols <= 30) state.arrayCols = cols;
+            }
+            var rawR = prompt('Array chữ nhật — số hàng (1–30):', String(state.arrayRows));
+            if (rawR != null && rawR !== '') {
+                var rows = parseInt(rawR, 10);
+                if (rows >= 1 && rows <= 30) state.arrayRows = rows;
+            }
+        } else if (state.arrayMode === 'polar') {
+            var rawN = prompt('Array tròn — tổng số bản (gồm gốc, 2–50):', String(state.arrayCount));
+            if (rawN != null && rawN !== '') {
+                var pn = parseInt(rawN, 10);
+                if (pn >= 2 && pn <= 50) state.arrayCount = pn;
+            }
+            var rawA = prompt('Array tròn — góc phủ (° , 1–360):', String(state.arrayPolarAngle));
+            if (rawA != null && rawA !== '') {
+                var ang = parseFloat(rawA);
+                if (Number.isFinite(ang) && ang >= 1 && ang <= 360) state.arrayPolarAngle = ang;
+            }
+            var rawRot = prompt('Xoay từng bản theo góc? (Y/N) [Y]', state.arrayRotateItems ? 'Y' : 'N');
+            if (rawRot != null && String(rawRot).trim() !== '') {
+                var ch = String(rawRot).trim().toUpperCase().charAt(0);
+                state.arrayRotateItems = (ch !== 'N' && ch !== '0');
+            }
+        } else {
+            var raw = prompt('Array thẳng — tổng số bản (gồm gốc, 2–50):', String(state.arrayCount));
+            if (raw != null && raw !== '') {
+                var n = parseInt(raw, 10);
+                if (n >= 2 && n <= 50) state.arrayCount = n;
+            }
+        }
+    }
+
     function pickObjectAt(wx, wy) {
         if (typeof findNodeAt === 'function') {
             var n = findNodeAt(wx, wy); if (n) return { type: 'node', data: n };
@@ -930,6 +1055,53 @@
             }
         }
 
+        if (state.mode === MODE.PEDIT && state.stage === 'pedit-join') {
+            var selJoin = getSelection();
+            if (!selJoin || (selJoin.type !== 'wall' && selJoin.type !== 'line')) {
+                state.stage = 'pedit';
+                state.message = 'PEdit Join: cần chọn tường/đoạn';
+                return getSnapshot();
+            }
+            var hit = pickObjectAt(pt.x, pt.y);
+            if (!hit || hit.data === selJoin.data) {
+                state.message = 'PEdit Join: click đối tượng thứ 2 (cùng loại)';
+                return getSnapshot();
+            }
+            if (hit.type !== selJoin.type) {
+                state.message = 'PEdit Join: chỉ nối cùng loại';
+                if (typeof showToast === 'function') showToast(state.message, 'error');
+                return getSnapshot();
+            }
+            if (selJoin.data.type === 'arc' || hit.data.type === 'arc') {
+                if (typeof showToast === 'function') showToast('Cung tròn không hỗ trợ nối trong PEdit', 'error');
+                return getSnapshot();
+            }
+            var geJ = GE();
+            if (!geJ || !geJ.joinPolylines) return getSnapshot();
+            var tolJ = 8 / (typeof zoom !== 'undefined' ? zoom : 1);
+            var joined = geJ.joinPolylines(selJoin.data.points, hit.data.points, tolJ);
+            if (!joined || joined.points.length < 2) {
+                if (typeof showToast === 'function') showToast('Không nối được 2 đối tượng này', 'error');
+                return getSnapshot();
+            }
+            if (typeof saveState === 'function') saveState();
+            pushPeditUndo(selJoin, hit);
+            clearPeditCurveData(selJoin);
+            selJoin.data.points = joined.points;
+            if (selJoin.data.type === 'arc') selJoin.data.type = 'segment';
+            // Xóa đối tượng 2
+            if (hit.type === 'wall' && typeof walls !== 'undefined') {
+                walls = walls.filter(function (w) { return w.id !== hit.data.id; });
+            } else if (hit.type === 'line' && typeof lines !== 'undefined') {
+                lines = lines.filter(function (ln) { return ln.id !== hit.data.id; });
+            }
+            commitSave();
+            state.stage = 'pedit';
+            state.message = 'PEdit Join OK · C/J/W tiếp hoặc Esc';
+            if (typeof showToast === 'function') showToast('PEdit: đã nối', 'success');
+            return getSnapshot();
+        }
+
         if (state.mode === MODE.PEDIT && state.stage === 'pedit' && sel) {
             var pts = sel.data.points;
             if (!pts) return getSnapshot();
@@ -945,6 +1117,8 @@
                 var insertAt = findEdgeInsertPoint(pts, pt, thr * 2.5);
                 if (insertAt) {
                     if (typeof saveState === 'function') saveState();
+                    pushPeditUndo(sel);
+                    clearPeditCurveData(sel);
                     pts.splice(insertAt.index + 1, 0, { x: insertAt.x, y: insertAt.y });
                     if (sel.type === 'room' && OT()) OT().updatePolygonBBox(sel.data);
                     commitSave();
@@ -961,12 +1135,20 @@
                 if (typeof showToast === 'function') {
                     showToast('Kéo đỉnh: chỉ click+kéo (không Shift). Thêm đỉnh: Ctrl+click trên cạnh', 'error');
                 }
+                if (typeof saveState === 'function') saveState();
+                pushPeditUndo(sel);
+                clearPeditCurveData(sel);
+                state.peditDragCaptured = true;
                 state.peditVertex = nearest;
                 state.message = 'PEdit: đang kéo đỉnh #' + (nearest + 1);
                 return getSnapshot();
             }
 
             if (nearest >= 0) {
+                if (typeof saveState === 'function') saveState();
+                pushPeditUndo(sel);
+                clearPeditCurveData(sel);
+                state.peditDragCaptured = true;
                 state.peditVertex = nearest;
                 state.message = 'PEdit: đang kéo đỉnh #' + (nearest + 1);
             } else if (typeof showToast === 'function') {
@@ -994,20 +1176,36 @@
         }
 
         // Move / Copy / Rotate / Scale / Array
+        if (state.mode === MODE.ARRAY && state.arrayMode === 'polar' && state.stage === 'center' && sel) {
+            if (typeof saveState === 'function') saveState();
+            var pn = applyPolarArray(sel, pt);
+            commitSave();
+            state.message = 'Array Polar: đã thêm ' + pn + ' bản (tổng ' + state.arrayCount + ')';
+            if (typeof showToast === 'function') showToast(state.message, 'success');
+            state.stage = 'center';
+            state.preview = null;
+            return getSnapshot();
+        }
         if (state.stage === 'base') {
             state.base = pt;
             state.stage = 'dest';
             state.message = state.mode === MODE.ARRAY
-                ? 'Array: click điểm khoảng cách (vector lặp)'
+                ? (state.arrayMode === 'rect'
+                    ? 'Array Rect: click góc ô đơn vị (ΔX=cột, ΔY=hàng)'
+                    : 'Array: click điểm khoảng cách (vector lặp)')
                 : 'Click điểm đích';
             return getSnapshot();
         }
         if (state.stage === 'dest' && state.base && sel) {
             if (typeof saveState === 'function') saveState();
             if (state.mode === MODE.ARRAY) {
-                var n = applyArray(sel, state.base, pt);
+                var nAdded = state.arrayMode === 'rect'
+                    ? applyRectArray(sel, state.base, pt)
+                    : applyArray(sel, state.base, pt);
                 commitSave();
-                state.message = 'Hàng loạt: đã thêm ' + n + ' bản (tổng ' + state.arrayCount + ')';
+                state.message = state.arrayMode === 'rect'
+                    ? ('Array Rect: đã thêm ' + nAdded + ' bản (' + state.arrayCols + '×' + state.arrayRows + ')')
+                    : ('Array Linear: đã thêm ' + nAdded + ' bản (tổng ' + state.arrayCount + ')');
                 if (typeof showToast === 'function') showToast(state.message, 'success');
             } else {
                 applyTransform(sel, state.base, pt);
@@ -1107,12 +1305,149 @@
 
     function onPointerUp() {
         if (state.mode === MODE.PEDIT && state.peditVertex >= 0) {
-            if (typeof saveState === 'function') saveState();
             commitSave();
             state.peditVertex = -1;
+            state.peditDragCaptured = false;
             state.message = 'PEdit: đã cập nhật đỉnh';
         }
         return getSnapshot();
+    }
+
+    function cloneData(value) {
+        return JSON.parse(JSON.stringify(value));
+    }
+
+    function clearPeditCurveData(sel) {
+        if (!sel || !sel.data) return;
+        delete sel.data.peditControlPoints;
+        delete sel.data.peditCurve;
+    }
+
+    function pushPeditUndo(sel, extra) {
+        if (!sel || !sel.data) return;
+        state.peditUndo.push({
+            type: sel.type,
+            data: cloneData(sel.data),
+            extra: extra ? { type: extra.type, data: cloneData(extra.data) } : null
+        });
+        if (state.peditUndo.length > 30) state.peditUndo.shift();
+    }
+
+    function peditUndoLast(sel) {
+        var snapshot = state.peditUndo.pop();
+        if (!snapshot || !sel || !sel.data) {
+            state.message = 'PEdit Undo: không còn thao tác để hoàn tác';
+            return false;
+        }
+        Object.keys(sel.data).forEach(function (key) { delete sel.data[key]; });
+        Object.assign(sel.data, cloneData(snapshot.data));
+        if (snapshot.extra) {
+            var collection = snapshot.extra.type === 'wall'
+                ? (typeof walls !== 'undefined' ? walls : null)
+                : (snapshot.extra.type === 'line' && typeof lines !== 'undefined' ? lines : null);
+            if (collection && !collection.some(function (item) {
+                return String(item.id) === String(snapshot.extra.data.id);
+            })) {
+                collection.push(cloneData(snapshot.extra.data));
+            }
+        }
+        if (sel.type === 'room' && OT()) OT().updatePolygonBBox(sel.data);
+        commitSave();
+        state.message = 'PEdit Undo: đã hoàn tác thao tác gần nhất';
+        if (typeof showToast === 'function') showToast(state.message, 'success');
+        return true;
+    }
+
+    function peditCurve(sel, mode) {
+        if (!sel || !sel.data || !Array.isArray(sel.data.points)) return false;
+        var ge = GE();
+        var fn = mode === 'fit' ? ge && ge.fitPolyline : ge && ge.splinePolyline;
+        if (!fn) return false;
+        var isClosed = !!sel.data.closed;
+        var controlPoints = Array.isArray(sel.data.peditControlPoints)
+            ? sel.data.peditControlPoints
+            : cloneData(sel.data.points);
+        var next = mode === 'fit'
+            ? fn(controlPoints, isClosed)
+            : fn(controlPoints, isClosed, 8);
+        if (!next || next.length < 3) {
+            state.message = 'PEdit ' + mode + ': cần ít nhất 3 đỉnh hợp lệ';
+            return false;
+        }
+        if (typeof saveState === 'function') saveState();
+        pushPeditUndo(sel);
+        sel.data.peditControlPoints = cloneData(controlPoints);
+        sel.data.points = next;
+        sel.data.peditCurve = mode;
+        if (sel.type === 'room' && OT()) OT().updatePolygonBBox(sel.data);
+        commitSave();
+        state.message = 'PEdit ' + (mode === 'fit' ? 'Fit' : 'Spline') + ': đã làm mượt';
+        if (typeof showToast === 'function') showToast(state.message, 'success');
+        return true;
+    }
+
+    function peditClose(sel) {
+        if (!sel || !sel.data || !sel.data.points) return false;
+        if (sel.type === 'room') {
+            // Đa giác phòng đã đóng
+            state.message = 'PEdit: đa giác phòng đã đóng sẵn';
+            return false;
+        }
+        var ge = GE();
+        if (!ge || !ge.closePolyline) return false;
+        var res = ge.closePolyline(sel.data.points, 1e-3);
+        if (!res) {
+            state.message = 'PEdit Close: cần ≥3 đỉnh';
+            return false;
+        }
+        if (typeof saveState === 'function') saveState();
+        pushPeditUndo(sel);
+        clearPeditCurveData(sel);
+        sel.data.points = res.points;
+        sel.data.closed = true;
+        commitSave();
+        state.message = res.alreadyClosed
+            ? 'PEdit Close: đã khép (snap đuôi→đầu)'
+            : 'PEdit Close: đã đóng polyline';
+        if (typeof showToast === 'function') showToast(state.message, 'success');
+        return true;
+    }
+
+    function peditWidth(sel) {
+        if (!sel || !sel.data) return false;
+        if (sel.type !== 'wall' && sel.type !== 'line') {
+            state.message = 'PEdit Width: chỉ tường / đoạn';
+            return false;
+        }
+        var cur = sel.type === 'wall'
+            ? (sel.data.thickness != null ? sel.data.thickness : 4)
+            : (sel.data.lineWeight != null ? sel.data.lineWeight : 2);
+        var raw = null;
+        var promptFn = (typeof globalThis !== 'undefined' && typeof globalThis.prompt === 'function')
+            ? globalThis.prompt
+            : (typeof prompt === 'function' ? prompt : null);
+        if (promptFn) {
+            raw = promptFn('PEdit Width — độ dày (px):', String(cur));
+        }
+        if (raw == null || String(raw).trim() === '') return false;
+        var n = parseFloat(raw);
+        if (!Number.isFinite(n) || n <= 0) {
+            if (typeof showToast === 'function') showToast('Độ dày không hợp lệ', 'error');
+            return false;
+        }
+        if (typeof saveState === 'function') saveState();
+        pushPeditUndo(sel);
+        if (sel.type === 'wall') {
+            sel.data.thickness = Math.max(1, Math.min(80, n));
+        } else {
+            sel.data.lineWeight = (typeof clampLineWeight === 'function')
+                ? clampLineWeight(n)
+                : Math.max(0.5, Math.min(20, n));
+        }
+        commitSave();
+        state.message = 'PEdit Width = ' + (sel.type === 'wall' ? sel.data.thickness : sel.data.lineWeight);
+        if (typeof showToast === 'function') showToast(state.message, 'success');
+        return true;
     }
 
     function onKeyDown(key, opts) {
@@ -1125,6 +1460,46 @@
             }
             return getSnapshot();
         }
+        if (state.mode === MODE.PEDIT && state.stage === 'pedit') {
+            var selP = getSelection();
+            var k = String(key || '').toLowerCase();
+            if (k === 'c') {
+                peditClose(selP);
+                return getSnapshot();
+            }
+            if (k === 'j') {
+                if (!selP || (selP.type !== 'wall' && selP.type !== 'line')) {
+                    state.message = 'PEdit Join: chọn tường/đoạn trước';
+                    return getSnapshot();
+                }
+                state.stage = 'pedit-join';
+                state.message = 'PEdit Join: click đối tượng thứ 2 (cùng loại) để nối';
+                if (typeof showToast === 'function') showToast(state.message, 'info');
+                return getSnapshot();
+            }
+            if (k === 'w') {
+                peditWidth(selP);
+                return getSnapshot();
+            }
+            if (k === 'f') {
+                peditCurve(selP, 'fit');
+                return getSnapshot();
+            }
+            if (k === 's') {
+                peditCurve(selP, 'spline');
+                return getSnapshot();
+            }
+            if (k === 'u') {
+                peditUndoLast(selP);
+                return getSnapshot();
+            }
+        }
+        if (state.mode === MODE.PEDIT && state.stage === 'pedit-join' &&
+            (key === 'Escape' || key === 'Esc')) {
+            state.stage = 'pedit';
+            state.message = 'PEdit: đã hủy Join · C/J/W tiếp';
+            return getSnapshot();
+        }
         if ((key === 'Delete' || key === 'Backspace') && state.mode === MODE.PEDIT) {
             var sel = getSelection();
             if (sel && sel.data.points && sel.data.points.length > 2 && state.peditVertex < 0) {
@@ -1133,6 +1508,8 @@
             if (sel && sel.data.points && sel.data.points.length > 2) {
                 var idx = state.peditVertex >= 0 ? state.peditVertex : sel.data.points.length - 1;
                 if (typeof saveState === 'function') saveState();
+                pushPeditUndo(sel);
+                clearPeditCurveData(sel);
                 sel.data.points.splice(idx, 1);
                 if (sel.type === 'room' && OT()) OT().updatePolygonBBox(sel.data);
                 state.peditVertex = -1;
@@ -1156,6 +1533,11 @@
             mlinePoints: state.mlinePoints.slice(),
             mlineThickness: state.mlineThickness,
             arrayCount: state.arrayCount,
+            arrayMode: state.arrayMode,
+            arrayCols: state.arrayCols,
+            arrayRows: state.arrayRows,
+            arrayPolarAngle: state.arrayPolarAngle,
+            arrayRotateItems: state.arrayRotateItems,
             matchSource: state.matchSource,
             preview: state.preview,
             message: state.message
@@ -1195,6 +1577,7 @@
         getSnapshot: getSnapshot,
         setMlineThickness: setMlineThickness,
         setArrayCount: setArrayCount,
+        setArrayOptions: setArrayOptions,
         isActive: isActive,
         isModifyTool: isModifyTool,
         getMode: getMode

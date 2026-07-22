@@ -64,6 +64,39 @@
         delete room.hatch;
     }
 
+    /**
+     * Hatchedit (HE): cập nhật 1 thuộc tính hatch trên phòng.
+     * pattern='none' → xóa hatch. Nếu phòng chưa có hatch thì tạo từ mặc định rồi patch.
+     * @returns {object|null} hatch sau khi cập nhật (null nếu đã xóa)
+     */
+    function updateHatchProp(room, key, value) {
+        if (!room || !key) return null;
+        var cur = hasHatch(room) ? normalize(room.hatch) : normalize({});
+        if (key === 'pattern' && String(value).toLowerCase() === 'none') {
+            clearFromRoom(room);
+            return null;
+        }
+        if (key === 'pattern' || key === 'color' || key === 'spacing' || key === 'angle') {
+            cur[key] = value;
+        } else {
+            return hasHatch(room) ? normalize(room.hatch) : null;
+        }
+        return applyToRoom(room, cur);
+    }
+
+    /** Sao chép style hatch từ phòng nguồn (hoặc style object) sang phòng đích. */
+    function copyHatch(fromStyleOrRoom, toRoom) {
+        if (!toRoom) return null;
+        var src = fromStyleOrRoom && fromStyleOrRoom.hatch
+            ? fromStyleOrRoom.hatch
+            : fromStyleOrRoom;
+        if (!src || src.pattern === 'none') {
+            clearFromRoom(toRoom);
+            return null;
+        }
+        return applyToRoom(toRoom, src);
+    }
+
     function hasHatch(room) {
         return !!(room && room.hatch && room.hatch.pattern && room.hatch.pattern !== 'none');
     }
@@ -196,6 +229,8 @@
         defaultForRoomType: defaultForRoomType,
         applyToRoom: applyToRoom,
         clearFromRoom: clearFromRoom,
+        updateHatchProp: updateHatchProp,
+        copyHatch: copyHatch,
         hasHatch: hasHatch,
         roomBounds: roomBounds,
         draw: draw,

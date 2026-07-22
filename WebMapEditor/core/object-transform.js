@@ -90,6 +90,14 @@
         }
         if (type === 'wall' || type === 'line') {
             mapPoints(data, function (p) { return translatePoint(p, dx, dy); });
+            if (data.arc) {
+                data.arc.cx += dx;
+                data.arc.cy += dy;
+            }
+            if (data.ellipse) {
+                data.ellipse.cx += dx;
+                data.ellipse.cy += dy;
+            }
             return data;
         }
         if (data.x != null) data.x += dx;
@@ -124,6 +132,19 @@
         }
         if (type === 'wall' || type === 'line') {
             mapPoints(data, function (p) { return rotatePoint(p, cx, cy, angleRad); });
+            if (data.arc) {
+                var arcCenter = rotatePoint({ x: data.arc.cx, y: data.arc.cy }, cx, cy, angleRad);
+                data.arc.cx = arcCenter.x;
+                data.arc.cy = arcCenter.y;
+            }
+            if (data.ellipse) {
+                var ellipseCenter = rotatePoint(
+                    { x: data.ellipse.cx, y: data.ellipse.cy }, cx, cy, angleRad
+                );
+                data.ellipse.cx = ellipseCenter.x;
+                data.ellipse.cy = ellipseCenter.y;
+                data.ellipse.rotation = (data.ellipse.rotation || 0) + angleRad;
+            }
             return data;
         }
         if (data.x != null && data.y != null) {
@@ -164,6 +185,21 @@
         if (type === 'wall' || type === 'line') {
             mapPoints(data, function (p) { return scalePoint(p, cx, cy, factor); });
             if (data.thickness) data.thickness *= factor;
+            if (data.arc) {
+                var arcCenter = scalePoint({ x: data.arc.cx, y: data.arc.cy }, cx, cy, factor);
+                data.arc.cx = arcCenter.x;
+                data.arc.cy = arcCenter.y;
+                data.arc.radius *= factor;
+            }
+            if (data.ellipse) {
+                var ellipseCenter = scalePoint(
+                    { x: data.ellipse.cx, y: data.ellipse.cy }, cx, cy, factor
+                );
+                data.ellipse.cx = ellipseCenter.x;
+                data.ellipse.cy = ellipseCenter.y;
+                data.ellipse.rx *= factor;
+                data.ellipse.ry *= factor;
+            }
             return data;
         }
         if (data.x != null && data.y != null) {
@@ -198,6 +234,27 @@
         }
         if (type === 'wall' || type === 'line') {
             mapPoints(data, function (p) { return mirrorPoint(p, a, b); });
+            if (data.arc) {
+                var arcCenter = mirrorPoint({ x: data.arc.cx, y: data.arc.cy }, a, b);
+                data.arc.cx = arcCenter.x;
+                data.arc.cy = arcCenter.y;
+            }
+            if (data.ellipse) {
+                var oldCenter = { x: data.ellipse.cx, y: data.ellipse.cy };
+                var oldRotation = data.ellipse.rotation || 0;
+                var oldMajor = {
+                    x: oldCenter.x + data.ellipse.rx * Math.cos(oldRotation),
+                    y: oldCenter.y + data.ellipse.rx * Math.sin(oldRotation)
+                };
+                var mirroredCenter = mirrorPoint(oldCenter, a, b);
+                var mirroredMajor = mirrorPoint(oldMajor, a, b);
+                data.ellipse.cx = mirroredCenter.x;
+                data.ellipse.cy = mirroredCenter.y;
+                data.ellipse.rotation = Math.atan2(
+                    mirroredMajor.y - mirroredCenter.y,
+                    mirroredMajor.x - mirroredCenter.x
+                );
+            }
             return data;
         }
         if (data.x != null && data.y != null) {
@@ -258,6 +315,8 @@
         }
         if (type === 'wall' || type === 'line') {
             snap.points = cloneJson(data.points || []);
+            if (data.arc) snap.arc = cloneJson(data.arc);
+            if (data.ellipse) snap.ellipse = cloneJson(data.ellipse);
             return snap;
         }
         if (data.x != null) snap.x = data.x;
@@ -303,6 +362,8 @@
             else delete data.rotationDeg;
         } else if (type === 'wall' || type === 'line') {
             data.points = cloneJson(s.points || []);
+            if (s.arc) data.arc = cloneJson(s.arc);
+            if (s.ellipse) data.ellipse = cloneJson(s.ellipse);
         } else {
             if (s.x != null) data.x = s.x;
             if (s.y != null) data.y = s.y;

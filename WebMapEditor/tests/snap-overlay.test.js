@@ -16,6 +16,9 @@ describe('SnapOverlay — OSNAP markers', function () {
         expect(Overlay.getMarkerSpec('intersection').shape).toBe('diamond');
         expect(Overlay.getMarkerSpec('intersection').color).toBe('#fbbf24');
         expect(Overlay.getMarkerSpec('perpendicular').shape).toBe('perp');
+        expect(Overlay.getMarkerSpec('quadrant').label).toBe('PHẦN TƯ');
+        expect(Overlay.getMarkerSpec('extension').label).toBe('KÉO DÀI');
+        expect(Overlay.getMarkerSpec('from').label).toBe('TỪ ĐIỂM');
         expect(Overlay.getMarkerSpec('grid').shape).toBe('cross');
     });
 

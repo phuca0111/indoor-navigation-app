@@ -333,8 +333,10 @@ function contentFingerprint(data) {
             blocks: data.blocks || [],
             blockInserts: data.blockInserts || [],
             dimensions: data.dimensions || [],
+            advancedFeatures: data.advancedFeatures || {},
             // WE6: fingerprint gồm nền — tránh bỏ qua restore khi chỉ đổi ảnh nền
-            bg: data.bgImageBase64 || data.background_image || ''
+            bg: data.bgImageBase64 || data.background_image || '',
+            ltScale: data.ltScale != null ? data.ltScale : 1
         });
     } catch (e) {
         return '';
@@ -354,7 +356,10 @@ function getCanvasContentFingerprint() {
         blocks: typeof blocks !== 'undefined' ? blocks : [],
         blockInserts: typeof blockInserts !== 'undefined' ? blockInserts : [],
         dimensions: typeof dimensions !== 'undefined' ? dimensions : [],
-        bgImageBase64: (typeof window !== 'undefined' && window.bgImageBase64) ? window.bgImageBase64 : ''
+        advancedFeatures: (typeof window !== 'undefined' && window.editorAdvanced)
+            ? window.editorAdvanced : {},
+        bgImageBase64: (typeof window !== 'undefined' && window.bgImageBase64) ? window.bgImageBase64 : '',
+        ltScale: (typeof getLtScale === 'function') ? getLtScale() : ((typeof window !== 'undefined' && window.ltScale != null) ? window.ltScale : 1)
     });
 }
 

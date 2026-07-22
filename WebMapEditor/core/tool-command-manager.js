@@ -20,9 +20,10 @@
         point: 'point', po: 'point',
         polyline: 'wall', pl: 'wall', pline: 'wall',
         wall: 'wall', w: 'wall',
-        polygon: 'polygon', g: 'polygon', pol: 'polygon',
+        polygon: 'polygon', g: 'polygon',
+        regpoly: 'regpoly', pol: 'regpoly', rp: 'regpoly',
         select: 'select', v: 'select',
-        room: 'room', r: 'room',
+        room: 'room', rm: 'room',
         circle: 'circle', c: 'circle',
         door: 'door', d: 'door',
         poi: 'poi', p: 'poi',
@@ -51,6 +52,8 @@
         // Block / Insert
         block: 'block', b: 'block',
         insert: 'insert', i: 'insert',
+        attdef: 'attdef', att: 'attdef',
+        attedit: 'attedit', ate: 'attedit',
         // Phase 3 Annotation
         dimlinear: 'dimlinear', dli: 'dimlinear', dimlin: 'dimlinear',
         dimaligned: 'dimaligned', dal: 'dimaligned', dimal: 'dimaligned',
@@ -63,7 +66,12 @@
         divide: 'divide', div: 'divide',
         area: 'area', aa: 'area',
         boundary: 'boundary', bo: 'boundary',
+        region: 'region', reg: 'region',
+        redraw: 'redraw', re: 'redraw', r: 'redraw',
         hatch: 'hatch', h: 'hatch', bhatch: 'hatch',
+        hatchedit: 'hatchedit', he: 'hatchedit',
+        // Linetype scale
+        ltscale: 'ltscale', lts: 'ltscale',
         // Phase 4 Image
         calibrate: 'calibrate', cal: 'calibrate',
         'bg-crop': 'bg-crop', crop: 'bg-crop', bgcrop: 'bg-crop',

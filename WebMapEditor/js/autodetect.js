@@ -413,17 +413,19 @@ function findRegionsV2(edges, data, w, h) {
 
 function imagePixelToWorldCoords(px, py) {
     var scale = window.bgScale != null ? window.bgScale : 1;
+    var scaleX = window.bgScaleX > 0 ? window.bgScaleX : scale;
+    var scaleY = window.bgScaleY > 0 ? window.bgScaleY : scale;
     var bx = window.bgX || 0;
     var by = window.bgY || 0;
     var rotDeg = window.bgRotation || 0;
     var img = window.bgImage;
     if (!img || Math.abs(rotDeg) < 1e-6) {
-        return { x: bx + px * scale, y: by + py * scale };
+        return { x: bx + px * scaleX, y: by + py * scaleY };
     }
-    var bw = img.width * scale;
-    var bh = img.height * scale;
-    var lx = px * scale - bw / 2;
-    var ly = py * scale - bh / 2;
+    var bw = img.width * scaleX;
+    var bh = img.height * scaleY;
+    var lx = px * scaleX - bw / 2;
+    var ly = py * scaleY - bh / 2;
     var rad = rotDeg * Math.PI / 180;
     var cos = Math.cos(rad);
     var sin = Math.sin(rad);

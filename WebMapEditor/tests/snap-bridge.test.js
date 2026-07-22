@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const Snap = require('../core/snap-engine.js');
+const FromSnap = require('../core/from-snap.js');
 const Bridge = require('../core/snap-bridge.js');
 
 describe('SnapBridge — OSNAP ↔ legacy tools', function () {
@@ -15,6 +16,7 @@ describe('SnapBridge — OSNAP ↔ legacy tools', function () {
         globalThis.pois = [];
         globalThis.EditorCore = {
             SnapEngine: Snap,
+            FromSnap: FromSnap,
             SpatialIndex: {
                 getStats: function () { return { active: false, count: 0 }; },
                 syncFromLegacyWindow: function () {
@@ -25,8 +27,9 @@ describe('SnapBridge — OSNAP ↔ legacy tools', function () {
         Snap.configure({
             gridEnabled: true,
             objectSnapEnabled: true,
-            modes: { grid: true, endpoint: true, midpoint: true }
+            modes: { grid: true, endpoint: true, midpoint: true, from: true }
         });
+        FromSnap.cancel();
     });
 
     it('snapWorldPoint dùng SnapEngine khi có EditorCore', function () {
@@ -48,5 +51,14 @@ describe('SnapBridge — OSNAP ↔ legacy tools', function () {
     it('syncSpatialIndexFromLegacy gọi SpatialIndex', function () {
         var stats = Bridge.syncSpatialIndexFromLegacy();
         expect(stats).toEqual({ count: 0, active: true });
+    });
+
+    it('FROM được bridge bổ sung và consume đúng một lần', function () {
+        expect(FromSnap.arm({ x: 100, y: 50 }, { x: 25, y: -10 })).toBe(true);
+        var first = Bridge.snapWorldPoint(125, 40, { gridSnap: false });
+        expect(first).toMatchObject({ kind: 'from', x: 125, y: 40 });
+        expect(FromSnap.getState()).toBeNull();
+        var second = Bridge.snapWorldPoint(125, 40, { gridSnap: false });
+        expect(second.kind).not.toBe('from');
     });
 });
