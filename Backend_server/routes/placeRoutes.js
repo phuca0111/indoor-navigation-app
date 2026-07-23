@@ -32,11 +32,17 @@ const {
   rejectProposal,
   previewValidation
 } = require('../controllers/placeRegistryController');
-const { auth, requirePermission, requireAnyPermission, requireSuperAdmin } = require('../middlewares/auth');
+const {
+  auth,
+  optionalAuth,
+  requirePermission,
+  requireAnyPermission,
+  requireSuperAdmin
+} = require('../middlewares/auth');
 const { P } = require('../utils/permissions');
 
-// —— Public Registry (không bắt buộc Super) ——
-router.get('/', listPlacesRegistry);
+// —— Public Registry (không bắt buộc Super); có token MAP_MOD/SUPER → list/detail admin ——
+router.get('/', optionalAuth, listPlacesRegistry);
 router.post('/search', searchPlacesRegistry);
 router.get('/meta/visibility', auth, requireAnyPermission(P.PLACE_MANAGE, P.PLACE_MODERATE), getVisibilityMeta);
 
@@ -61,6 +67,6 @@ router.delete('/:id', auth, requireSuperAdmin, removePlace);
 router.post('/:id/attach-building', auth, requirePermission(P.PLACE_MANAGE), attachBuilding);
 router.post('/:id/detach-building', auth, requirePermission(P.PLACE_MANAGE), detachBuilding);
 
-router.get('/:id', getPlaceRegistry);
+router.get('/:id', optionalAuth, getPlaceRegistry);
 
 module.exports = router;

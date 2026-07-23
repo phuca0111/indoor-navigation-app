@@ -45,8 +45,8 @@ function canModerate(user) {
 
 async function listPlacesRegistry(req, res) {
   try {
-    if (canModerate(req.user) && req.query.all === '1') {
-      // Moderator: dùng list admin cũ qua query — giữ public mặc định
+    // MAP_MOD / SUPER: giữ list admin cũ (filter status, mọi publication)
+    if (canModerate(req.user)) {
       const PlaceCtrl = require('./placeController');
       return PlaceCtrl.listPlaces(req, res);
     }

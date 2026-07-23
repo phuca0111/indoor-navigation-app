@@ -115,6 +115,18 @@ exports[`Target Architecture v2 — persistence boundaries Controller legacy Mod
     "occurrences": 1,
   },
   {
+    "edge": "controllers/placeModerationController.js -> models/MapModerationReport.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeModerationController.js -> models/PlaceOwnershipRequest.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeModerationController.js -> models/PlaceProposal.js",
+    "occurrences": 1,
+  },
+  {
     "edge": "controllers/placeOwnershipController.js -> models/ActivityLog.js",
     "occurrences": 1,
   },
@@ -131,11 +143,39 @@ exports[`Target Architecture v2 — persistence boundaries Controller legacy Mod
     "occurrences": 1,
   },
   {
+    "edge": "controllers/placeRegistryController.js -> models/MapModerationReport.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeRegistryController.js -> models/Place.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeRegistryController.js -> models/PlaceOwnershipRequest.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeRegistryController.js -> models/PlaceProposal.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/placeRegistryController.js -> models/PlaceReview.js",
+    "occurrences": 1,
+  },
+  {
     "edge": "controllers/qrController.js -> models/QrCode.js",
     "occurrences": 1,
   },
   {
     "edge": "controllers/qrController.js -> models/QrScanLog.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/workspaceController.js -> models/Building.js",
+    "occurrences": 1,
+  },
+  {
+    "edge": "controllers/workspaceController.js -> models/Place.js",
     "occurrences": 1,
   },
 ]
