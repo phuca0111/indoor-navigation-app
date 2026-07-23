@@ -16,6 +16,11 @@ class PoiCategoryTest {
         assertEquals(PoiCategory.EXIT, PoiCategory.fromRaw("Lối ra"))
         assertEquals(PoiCategory.INFO, PoiCategory.fromRaw("ATM"))
         assertEquals(PoiCategory.INFO, PoiCategory.fromRaw("Quầy lễ tân"))
+        assertEquals(PoiCategory.FOOD, PoiCategory.fromRaw("Nhà hàng"))
+        assertEquals(PoiCategory.PARKING, PoiCategory.fromRaw("Bãi đỗ xe"))
+        assertEquals(PoiCategory.MEDICAL, PoiCategory.fromRaw("Phòng y tế"))
+        assertEquals(PoiCategory.SECURITY, PoiCategory.fromRaw("Phòng bảo vệ"))
+        assertEquals(PoiCategory.SAFETY, PoiCategory.fromRaw("Bình chữa cháy"))
         assertEquals(PoiCategory.OTHER, PoiCategory.fromRaw("Khác"))
         assertEquals(PoiCategory.OTHER, PoiCategory.fromRaw("Điểm mốc"))
     }
@@ -34,6 +39,9 @@ class PoiCategoryTest {
         assertEquals(PoiCategory.ELEVATOR, PoiCategory.fromRaw(null, 2))
         assertEquals(PoiCategory.STAIRS, PoiCategory.fromRaw(null, 3))
         assertEquals(PoiCategory.EXIT, PoiCategory.fromRaw(null, 6))
+        assertEquals(PoiCategory.FOOD, PoiCategory.fromRaw(null, 8))
+        assertEquals(PoiCategory.PARKING, PoiCategory.fromRaw(null, 10))
+        assertEquals(PoiCategory.SAFETY, PoiCategory.fromRaw(null, 16))
     }
 
     @Test

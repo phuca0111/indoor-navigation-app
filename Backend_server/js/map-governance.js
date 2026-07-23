@@ -25,6 +25,46 @@
       .replace(/"/g, '&quot;');
   }
 
+  function shortId(id) {
+    const s = String(id || '').trim();
+    if (!s) return '<span class="mgc-muted">—</span>';
+    if (s.length <= 14) return '<code class="mgc-id" title="' + escapeHtml(s) + '">' + escapeHtml(s) + '</code>';
+    return (
+      '<code class="mgc-id" title="' + escapeHtml(s) + '">' +
+      escapeHtml(s.slice(0, 6) + '…' + s.slice(-4)) +
+      '</code>'
+    );
+  }
+
+  function ellipsisText(text, maxLen) {
+    const t = String(text == null ? '' : text).trim();
+    if (!t) return '<span class="mgc-muted">—</span>';
+    const max = maxLen || 48;
+    const shown = t.length > max ? t.slice(0, max - 1) + '…' : t;
+    return '<span class="mgc-ellipsis" title="' + escapeHtml(t) + '">' + escapeHtml(shown) + '</span>';
+  }
+
+  function statusBadge(status) {
+    const s = String(status || '').toUpperCase();
+    let mod = 'muted';
+    if (s === 'PUBLISHED' || s === 'VERIFIED' || s === 'OFFICIAL' || s === 'ACTIVE') mod = 'ok';
+    else if (s === 'COMMUNITY') mod = 'info';
+    else if (s === 'PENDING' || s === 'DRAFT') mod = 'warn';
+    else if (s === 'REJECTED' || s === 'INACTIVE') mod = 'danger';
+    else if (s === 'PRIVATE' || s === 'UNVERIFIED') mod = 'muted';
+    return '<span class="mgc-badge mgc-badge--' + mod + '">' + escapeHtml(s || '—') + '</span>';
+  }
+
+  function emptyRow(colspan, title, hint) {
+    return (
+      '<tr><td colspan="' + colspan + '">' +
+      '<div class="mgc-empty">' +
+      '<strong>' + escapeHtml(title) + '</strong>' +
+      (hint ? '<p>' + escapeHtml(hint) + '</p>' : '') +
+      '</div></td></tr>'
+    );
+  }
+
   let cache = [];
   let selectedId = null;
 
@@ -38,10 +78,12 @@
       const q = document.getElementById('filterPlaceKeyword')?.value?.trim() || '';
       const status = document.getElementById('filterPlaceStatus')?.value || '';
       const verified = document.getElementById('filterPlaceVerified')?.value || '';
+      const publication = document.getElementById('filterPlacePublication')?.value || '';
       const params = new URLSearchParams();
       if (q) params.set('q', q);
       if (status) params.set('status', status);
       if (verified) params.set('verified', verified);
+      if (publication) params.set('publication_status', publication);
       params.set('limit', '100');
 
       const res = await fetch(API + '/places?' + params.toString(), { headers: headers() });
@@ -68,15 +110,14 @@
     }
     tbody.innerHTML = cache.map((p) => {
       const gps = (Number(p.latitude) || 0).toFixed(5) + ', ' + (Number(p.longitude) || 0).toFixed(5);
-      const aliases = (p.aliases || []).slice(0, 3).join(', ') || '—';
-      const verified = p.verified ? '<span class="badge" style="background:#d1fae5;color:#065f46;">Đã xác minh</span>' : '—';
+      const verified = p.verified ? '<span class="badge" style="background:#d1fae5;color:#065f46;">Đã XM</span>' : '—';
       return (
         '<tr>' +
-        '<td title="' + escapeHtml(p.name) + '"><strong>' + escapeHtml(p.name) + '</strong></td>' +
-        '<td>' + escapeHtml(aliases) + '</td>' +
+        '<td title="' + escapeHtml(p.name) + '"><strong>' + escapeHtml(p.name) + '</strong><div style="font-size:11px;color:#667085;">' + escapeHtml(p.slug || '') + '</div></td>' +
         '<td>' + escapeHtml(p.category || '—') + '</td>' +
         '<td style="font-size:12px;">' + escapeHtml(gps) + '</td>' +
-        '<td>' + escapeHtml(p.status || '') + '</td>' +
+        '<td>' + escapeHtml(p.publication_status || 'PUBLIC') + '</td>' +
+        '<td>' + escapeHtml(p.owner_type || 'UNCLAIMED') + '</td>' +
         '<td>' + verified + '</td>' +
         '<td>' + (p.building_count || 0) + '</td>' +
         '<td style="white-space:nowrap;">' +
@@ -97,9 +138,13 @@
       aliases: [],
       latitude: 0,
       longitude: 0,
+      radius: 80,
+      slug: '',
       address: '',
       category: '',
       status: 'ACTIVE',
+      owner_type: 'UNCLAIMED',
+      publication_status: 'PUBLIC',
       verified: false,
       notes: ''
     });
@@ -136,9 +181,13 @@
     set('placeFormAliases', Array.isArray(p.aliases) ? p.aliases.join(', ') : '');
     set('placeFormLat', p.latitude ?? 0);
     set('placeFormLng', p.longitude ?? 0);
+    set('placeFormRadius', p.radius ?? 80);
+    set('placeFormSlug', p.slug || '');
     set('placeFormAddress', p.address || '');
     set('placeFormCategory', p.category || '');
     set('placeFormStatus', p.status || 'ACTIVE');
+    set('placeFormOwnerType', p.owner_type || 'UNCLAIMED');
+    set('placeFormPublication', p.publication_status || 'PUBLIC');
     set('placeFormNotes', p.notes || '');
     const ver = document.getElementById('placeFormVerified');
     if (ver) ver.checked = !!p.verified;
@@ -157,12 +206,17 @@
       aliases: document.getElementById('placeFormAliases')?.value || '',
       latitude: Number(document.getElementById('placeFormLat')?.value) || 0,
       longitude: Number(document.getElementById('placeFormLng')?.value) || 0,
+      radius: Number(document.getElementById('placeFormRadius')?.value) || 80,
+      slug: document.getElementById('placeFormSlug')?.value?.trim() || undefined,
       address: document.getElementById('placeFormAddress')?.value || '',
       category: document.getElementById('placeFormCategory')?.value || '',
       status: document.getElementById('placeFormStatus')?.value || 'ACTIVE',
+      owner_type: document.getElementById('placeFormOwnerType')?.value || 'UNCLAIMED',
+      publication_status: document.getElementById('placeFormPublication')?.value || 'PUBLIC',
       notes: document.getElementById('placeFormNotes')?.value || '',
       verified: !!document.getElementById('placeFormVerified')?.checked
     };
+    if (!payload.slug) delete payload.slug;
     if (!payload.name) {
       alert('Nhập tên địa điểm.');
       return;
@@ -856,18 +910,20 @@
     const tbody = document.getElementById('mapVersionsBuildingList');
     if (!tbody) return;
     if (!list.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="analytics-muted">Không có tòa nhà.</td></tr>';
+      tbody.innerHTML = emptyRow(6, 'Không có tòa nhà', 'Thử xóa bộ lọc tên hoặc tạo building mới.');
       return;
     }
     tbody.innerHTML = list.slice(0, 200).map((b) => (
       '<tr>' +
-      '<td><strong>' + escapeHtml(b.name) + '</strong></td>' +
-      '<td>' + escapeHtml(b.status || '') + '</td>' +
-      '<td>' + escapeHtml(b.visibility || 'PRIVATE') + '</td>' +
-      '<td>' + escapeHtml(String(b.total_floors || 1)) + '</td>' +
-      '<td style="font-size:11px;">' + escapeHtml(b.place_id ? String(b.place_id) : '—') + '</td>' +
-      '<td><button type="button" class="btn-edit" style="background:#8e44ad;color:#fff;" onclick="openMapVersionModal(\'' +
-        escapeHtml(String(b._id)) + '\', ' + Number(b.total_floors || 1) + ')">Phiên bản</button></td>' +
+      '<td><strong class="mgc-name">' + ellipsisText(b.name, 42) + '</strong></td>' +
+      '<td>' + statusBadge(b.status) + '</td>' +
+      '<td>' + statusBadge(b.visibility || 'PRIVATE') + '</td>' +
+      '<td class="mgc-num">' + escapeHtml(String(b.total_floors || 1)) + '</td>' +
+      '<td>' + shortId(b.place_id) + '</td>' +
+      '<td class="mgc-actions">' +
+        '<button type="button" class="btn-edit mgc-btn-version" onclick="openMapVersionModal(\'' +
+        escapeHtml(String(b._id)) + '\', ' + Number(b.total_floors || 1) + ')">Phiên bản</button>' +
+      '</td>' +
       '</tr>'
     )).join('');
   }
@@ -881,18 +937,22 @@
       if (!hub.ok) throw new Error(data.message || 'Không tải được queue xác minh');
       const rows = data.verification_queue || [];
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="5" class="analytics-muted">Không có Place PENDING. Dùng «Gửi XM» ở tab Địa điểm.</td></tr>';
+        tbody.innerHTML = emptyRow(
+          5,
+          'Không có Place đang chờ xác minh',
+          'Vào tab Địa điểm → chọn Place → bấm «Gửi XM» để đưa vào hàng đợi.'
+        );
         return;
       }
       tbody.innerHTML = rows.map((p) => {
         const gps = (Number(p.latitude) || 0).toFixed(4) + ', ' + (Number(p.longitude) || 0).toFixed(4);
         return (
           '<tr>' +
-          '<td><strong>' + escapeHtml(p.name) + '</strong></td>' +
-          '<td>' + escapeHtml(p.verification_status || '') + '</td>' +
-          '<td>' + escapeHtml(p.verification_note || '—') + '</td>' +
-          '<td style="font-size:12px;">' + escapeHtml(gps) + '</td>' +
-          '<td style="white-space:nowrap;">' +
+          '<td><strong class="mgc-name">' + ellipsisText(p.name, 40) + '</strong></td>' +
+          '<td>' + statusBadge(p.verification_status) + '</td>' +
+          '<td>' + ellipsisText(p.verification_note || '—', 56) + '</td>' +
+          '<td><code class="mgc-gps">' + escapeHtml(gps) + '</code></td>' +
+          '<td class="mgc-actions">' +
             '<button type="button" class="btn-create" onclick="MapGovernance.resolveVerify(\'' + p._id + '\',\'approve\')">Duyệt</button> ' +
             '<button type="button" class="btn-logout" onclick="MapGovernance.resolveVerify(\'' + p._id + '\',\'reject\')">Từ chối</button>' +
           '</td></tr>'
@@ -943,21 +1003,243 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Không tải được hub cộng đồng');
       const list = data.community_buildings || [];
-      if (meta) meta.textContent = 'Tổng COMMUNITY/OFFICIAL: ' + list.length;
+      if (meta) {
+        meta.innerHTML =
+          '<span class="mgc-meta-pill">Tổng COMMUNITY/OFFICIAL: <strong>' +
+          list.length +
+          '</strong></span>';
+      }
       if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="analytics-muted">Chưa có building COMMUNITY/OFFICIAL đã PUBLISHED.</td></tr>';
+        tbody.innerHTML = emptyRow(
+          4,
+          'Chưa có bản đồ cộng đồng',
+          'Building cần PUBLISHED và Visibility COMMUNITY hoặc OFFICIAL.'
+        );
         return;
       }
       tbody.innerHTML = list.map((b) => (
         '<tr>' +
-        '<td><strong>' + escapeHtml(b.name) + '</strong></td>' +
-        '<td>' + escapeHtml(b.visibility || '') + '</td>' +
-        '<td>' + escapeHtml(b.address || '—') + '</td>' +
-        '<td style="font-size:11px;">' + escapeHtml(b.place_id ? String(b.place_id) : '—') + '</td>' +
+        '<td><strong class="mgc-name">' + ellipsisText(b.name, 40) + '</strong></td>' +
+        '<td>' + statusBadge(b.visibility) + '</td>' +
+        '<td>' + ellipsisText(b.address || '—', 52) + '</td>' +
+        '<td>' + shortId(b.place_id) + '</td>' +
         '</tr>'
       )).join('');
     } catch (e) {
       if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="analytics-error">' + escapeHtml(e.message) + '</td></tr>';
+    }
+  }
+
+  async function loadProposals() {
+    const tbody = document.getElementById('mapProposalsList');
+    const meta = document.getElementById('proposalsMeta');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="admin-table-loading-cell">Đang tải…</td></tr>';
+    try {
+      const status = document.getElementById('filterProposalStatus')?.value || 'QUEUE';
+      const params = new URLSearchParams();
+      if (status) params.set('status', status);
+      const res = await fetch(API + '/place-proposals?' + params.toString(), { headers: headers() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Không tải được đề xuất');
+      const rows = data.proposals || [];
+      if (meta) meta.textContent = 'Số mục: ' + rows.length;
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="analytics-muted">Không có đề xuất.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map((p) => {
+        const gps = (Number(p.latitude) || 0).toFixed(4) + ', ' + (Number(p.longitude) || 0).toFixed(4);
+        const dup = Math.round((p.duplicate_score || 0) * 100);
+        const risk = Math.round((p.risk_score || 0) * 100);
+        const rec = p.validation?.recommendation || '—';
+        let actions = '—';
+        if (p.status === 'PENDING' || p.status === 'DUPLICATE') {
+          actions =
+            '<button type="button" class="btn-create" onclick="MapGovernance.approveProposal(\'' + p._id + '\',' +
+            (p.status === 'DUPLICATE' ? 'true' : 'false') + ')">Duyệt</button> ' +
+            '<button type="button" class="btn-logout" onclick="MapGovernance.rejectProposal(\'' + p._id + '\')">Từ chối</button>';
+        }
+        return (
+          '<tr>' +
+          '<td><strong>' + escapeHtml(p.name) + '</strong><div style="font-size:11px;color:#667085;">' + escapeHtml(p.category || '') + '</div></td>' +
+          '<td style="font-size:12px;">' + escapeHtml(gps) + '</td>' +
+          '<td>' + dup + '%</td>' +
+          '<td>' + risk + '%</td>' +
+          '<td>' + escapeHtml(p.status) + '</td>' +
+          '<td style="font-size:11px;">' + escapeHtml(rec) + '</td>' +
+          '<td style="white-space:nowrap;">' + actions + '</td>' +
+          '</tr>'
+        );
+      }).join('');
+    } catch (e) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="analytics-error">' + escapeHtml(e.message) + '</td></tr>';
+    }
+  }
+
+  async function openCreateProposal() {
+    const name = prompt('Tên Place đề xuất:');
+    if (!name) return;
+    const lat = Number(prompt('Latitude:', '10.78') || 0);
+    const lng = Number(prompt('Longitude:', '106.70') || 0);
+    const category = prompt('Category:', 'mall') || '';
+    const address = prompt('Địa chỉ (tuỳ chọn):', '') || '';
+    try {
+      const res = await fetch(API + '/place-proposals', {
+        method: 'POST',
+        headers: headers(true),
+        body: JSON.stringify({ name, latitude: lat, longitude: lng, category, address })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Gửi thất bại');
+      alert(data.message || 'Đã gửi.');
+      await loadProposals();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function approveProposal(id, forceDuplicate) {
+    const force = !!forceDuplicate;
+    if (force && !confirm('Đề xuất bị đánh dấu DUPLICATE. Vẫn tạo Place mới?')) return;
+    try {
+      const res = await fetch(API + '/place-proposals/' + id + '/approve', {
+        method: 'POST',
+        headers: headers(true),
+        body: JSON.stringify({ force })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Duyệt thất bại');
+      alert(data.message + (data.place ? '\nPlace: ' + data.place.name : ''));
+      await loadProposals();
+      if (typeof loadPlaces === 'function') await loadPlaces();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function rejectProposal(id) {
+    const reason = prompt('Lý do từ chối:') || '';
+    try {
+      const res = await fetch(API + '/place-proposals/' + id + '/reject', {
+        method: 'POST',
+        headers: headers(true),
+        body: JSON.stringify({ reason })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Từ chối thất bại');
+      await loadProposals();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  let wizardPlaceId = null;
+
+  async function wizardSearchPlaces() {
+    const box = document.getElementById('wizardPlaceResults');
+    const q = document.getElementById('wizardPlaceQ')?.value?.trim() || '';
+    if (box) box.innerHTML = '<p class="analytics-muted">Đang tìm…</p>';
+    try {
+      // Admin list (đầy đủ) + fallback public search
+      let rows = [];
+      const admin = await fetch(API + '/places?q=' + encodeURIComponent(q) + '&limit=20', { headers: headers() });
+      const adminData = await admin.json().catch(() => ({}));
+      if (admin.ok) rows = adminData.places || [];
+      else {
+        const pub = await fetch(API + '/places/search?q=' + encodeURIComponent(q) + '&limit=20');
+        const pubData = await pub.json().catch(() => ({}));
+        rows = pubData.places || [];
+      }
+      if (!rows.length) {
+        box.innerHTML = '<p class="analytics-muted">Không tìm thấy. Hãy tạo Place / gửi đề xuất trước.</p>';
+        return;
+      }
+      box.innerHTML = rows.map((p) => (
+        '<button type="button" class="btn-edit" style="display:block;width:100%;text-align:left;margin:4px 0;" onclick="MapGovernance.wizardSelectPlace(\'' +
+        p._id + '\',\'' + escapeHtml(p.name).replace(/'/g, '') + '\',' + (Number(p.radius) || 80) + ')">' +
+        '<strong>' + escapeHtml(p.name) + '</strong> · ' + escapeHtml(p.slug || '') +
+        ' <span style="color:#667085;">(' + (Number(p.latitude) || 0).toFixed(4) + ', ' + (Number(p.longitude) || 0).toFixed(4) + ')</span>' +
+        '</button>'
+      )).join('');
+    } catch (e) {
+      if (box) box.innerHTML = '<p class="analytics-error">' + escapeHtml(e.message) + '</p>';
+    }
+  }
+
+  function wizardSelectPlace(id, name, radius) {
+    wizardPlaceId = id;
+    const sel = document.getElementById('wizardSelectedPlace');
+    if (sel) sel.innerHTML = 'Đã chọn: <strong>' + escapeHtml(name) + '</strong> <code>' + escapeHtml(id) + '</code>';
+    const nameEl = document.getElementById('wizardWsName');
+    if (nameEl && !nameEl.value) nameEl.value = name + ' Community';
+    const rEl = document.getElementById('wizardWsRadius');
+    if (rEl) rEl.value = radius || 50;
+  }
+
+  async function wizardCreateWorkspace() {
+    const meta = document.getElementById('wizardWsMeta');
+    if (!wizardPlaceId) {
+      alert('Chọn Place ở bước 1.');
+      return;
+    }
+    const payload = {
+      place_id: wizardPlaceId,
+      name: document.getElementById('wizardWsName')?.value?.trim() || '',
+      kind: document.getElementById('wizardWsKind')?.value || 'COMMUNITY',
+      total_floors: Number(document.getElementById('wizardWsFloors')?.value) || 1,
+      activation_radius: Number(document.getElementById('wizardWsRadius')?.value) || 50,
+      description: document.getElementById('wizardWsDesc')?.value || ''
+    };
+    if (!payload.name) {
+      alert('Nhập tên Workspace.');
+      return;
+    }
+    try {
+      if (meta) meta.textContent = 'Đang tạo…';
+      const res = await fetch(API + '/indoor-workspaces', {
+        method: 'POST',
+        headers: headers(true),
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Tạo thất bại');
+      const bid = data.next?.building_id || data.building?._id;
+      if (meta) meta.textContent = 'OK · Workspace ' + (data.workspace?._id || '') + ' · Building ' + bid;
+      await loadWorkspaces();
+      if (bid && typeof window.openEditor === 'function') {
+        if (confirm('Tạo thành công. Mở Editor CAD ngay?')) window.openEditor(bid);
+      } else {
+        alert(data.message || 'Đã tạo Workspace.');
+      }
+    } catch (e) {
+      if (meta) meta.textContent = '';
+      alert(e.message);
+    }
+  }
+
+  async function loadWorkspaces() {
+    const tbody = document.getElementById('wizardWsList');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5">Đang tải…</td></tr>';
+    try {
+      const res = await fetch(API + '/indoor-workspaces?limit=30', { headers: headers() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Không tải Workspace');
+      const rows = data.workspaces || [];
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="analytics-muted">Chưa có Workspace.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map((w) => (
+        '<tr>' +
+        '<td><strong>' + escapeHtml(w.name) + '</strong></td>' +
+        '<td>' + escapeHtml(w.kind) + '</td>' +
+        '<td style="font-size:11px;">' + escapeHtml(String(w.place_id || '')) + '</td>' +
+        '<td style="font-size:11px;">' + escapeHtml(String(w.building_id || '')) + '</td>' +
+        '<td><button type="button" class="btn-edit" onclick="openEditor(\'' + escapeHtml(String(w.building_id)) + '\')">Editor</button></td>' +
+        '</tr>'
+      )).join('');
+    } catch (e) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="analytics-error">' + escapeHtml(e.message) + '</td></tr>';
     }
   }
 
@@ -972,6 +1254,14 @@
     detachBuilding,
     setBuildingVisibility,
     lockPlace,
+    loadProposals,
+    openCreateProposal,
+    approveProposal,
+    rejectProposal,
+    wizardSearchPlaces,
+    wizardSelectPlace,
+    wizardCreateWorkspace,
+    loadWorkspaces,
     loadReviews,
     openSubmitReview,
     approveReview,

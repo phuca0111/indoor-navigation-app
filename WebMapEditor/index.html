@@ -38,7 +38,7 @@
                         <button type="button" onclick="this.closest('details').open=false; exportJSON()"><i data-lucide="download"></i> Lưu file (JSON)</button>
                         <button type="button" onclick="this.closest('details').open=false; document.getElementById('importFile').click()"><i data-lucide="upload"></i> Mở file (JSON)</button>
                         <div class="hdr-menu-sep"></div>
-                        <button type="button" onclick="this.closest('details').open=false; exportMapToPdf()"><i data-lucide="file-down"></i> Xuất PDF</button>
+                        <button type="button" onclick="this.closest('details').open=false; openPlotPageSetupDialog()"><i data-lucide="file-down"></i> Xuất PDF…</button>
                         <button type="button" onclick="this.closest('details').open=false; document.getElementById('importPdf').click()"><i data-lucide="file-up"></i> Nhập PDF</button>
                         <div class="hdr-menu-sep"></div>
                         <button type="button" onclick="this.closest('details').open=false; exportMapToDxf()"><i data-lucide="file-down"></i> Xuất DXF (CAD)</button>
@@ -543,8 +543,9 @@
     <!-- Phase UI shell -->
     <script src="js/ui-shell.js?v=20260719hdr"></script>
 
-    <!-- Xuất/Nhập PDF (kiểu AutoCAD) -->
-    <script src="js/pdf-io.js?v=20260718pdf"></script>
+    <!-- Xuất/Nhập PDF (Page Setup kiểu AutoCAD) -->
+    <script src="core/plot-page-setup.js?v=20260723plot2"></script>
+    <script src="js/pdf-io.js?v=20260723plot2"></script>
 
     <script src="editor.js?v=20260716we6b"></script>
     <script>

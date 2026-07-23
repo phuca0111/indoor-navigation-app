@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Khám phá địa điểm — IndoorNav Outdoor Map</title>
+  <meta name="description" content="Bản đồ ngoài trời OSM + Place Registry: tìm địa điểm, xem marker, mở bản đồ trong nhà.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="/css/explore.css?v=20260723ex3">
+</head>
+<body>
+  <div class="ex-shell">
+    <aside class="ex-sidebar">
+      <div class="ex-brand">
+        <a href="/">IndoorNav</a>
+        <p>Outdoor Map · OSM + Place Registry<br>Tìm địa điểm → xem Indoor (nếu có)</p>
+      </div>
+      <div class="ex-search">
+        <input id="exQ" type="search" placeholder="Tìm Vincom, AEON, bệnh viện…" autocomplete="off">
+        <select id="exCat" aria-label="Loại địa điểm">
+          <option value="">Tất cả loại</option>
+          <option value="mall">Trung tâm thương mại</option>
+          <option value="hospital">Bệnh viện</option>
+          <option value="campus">Campus / Trường</option>
+          <option value="airport">Sân bay</option>
+          <option value="office">Văn phòng</option>
+          <option value="station">Ga / Bến</option>
+          <option value="other">Khác</option>
+        </select>
+        <div class="ex-actions">
+          <button type="button" class="ex-btn ex-btn-primary" id="exSearchBtn">Tìm kiếm</button>
+          <button type="button" class="ex-btn" id="exNearBtn">Gần tôi</button>
+          <button type="button" class="ex-btn" id="exReloadBtn">Tất cả</button>
+        </div>
+        <div class="ex-meta" id="exStatus">Đang tải Place công khai…</div>
+      </div>
+      <div class="ex-list" id="exList"></div>
+      <div class="ex-detail" id="exDetail" hidden>
+        <h3 id="exDetailTitle">—</h3>
+        <p id="exDetailAddr"></p>
+        <div class="ex-meta" id="exDetailMeta"></div>
+        <div id="exDetailIndoor"></div>
+      </div>
+    </aside>
+    <main id="ex-map" aria-label="Bản đồ OpenStreetMap"></main>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="/explore/explore.js?v=20260723ex3"></script>
+</body>
+</html>

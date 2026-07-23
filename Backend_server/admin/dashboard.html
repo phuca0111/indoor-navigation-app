@@ -16,7 +16,7 @@
       })();
     </script>
     <link rel="stylesheet" href="css/admin.css?v=20260721navfix1">
-    <link rel="stylesheet" href="css/admin-theme.css?v=20260721audit1">
+    <link rel="stylesheet" href="css/admin-theme.css?v=20260723mgcui1">
     <link rel="stylesheet" href="css/admin-tokens.css?v=20260721wq1">
 </head>
 <body class="admin-shell-body">
@@ -164,6 +164,14 @@
                 <button type="button" class="tab-btn super-admin-only places-tab-btn" data-tab="places" onclick="switchTab('places')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s7-4.5 7-11a7 7 0 1 0-14 0c0 6.5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></span>
                   <span>Địa điểm</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only map-proposals-tab-btn" data-tab="map-proposals" onclick="switchTab('map-proposals')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/></svg></span>
+                  <span>Đề xuất Place</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only map-wizard-tab-btn" data-tab="map-wizard" onclick="switchTab('map-wizard')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2 6h6l-5 4 2 6-5-4-5 4 2-6-5-4h6z"/></svg></span>
+                  <span>Tạo bản đồ trong nhà</span>
                 </button>
                 <button type="button" class="tab-btn super-admin-only map-reviews-tab-btn" data-tab="map-reviews" onclick="switchTab('map-reviews')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
@@ -1159,8 +1167,8 @@
   <div class="buildings-section">
     <div class="section-header">
       <div>
-        <h3>Quản trị bản đồ — Địa điểm</h3>
-        <p class="analytics-tab-intro" style="margin:6px 0 0;">Địa điểm vật lý (chuẩn hóa). Tòa nhà gắn <code>place_id</code>. Hiển thị: Riêng tư / Không liệt kê / Cộng đồng / Chính thức.</p>
+        <h3>Place Registry — Địa điểm</h3>
+        <p class="analytics-tab-intro" style="margin:6px 0 0;">Địa điểm ngoài đời (GPS, category, slug). Không chứa CAD/Floor. Tòa nhà gắn <code>place_id</code>.</p>
       </div>
       <button type="button" class="btn-add" onclick="MapGovernance.openCreate()">+ Thêm địa điểm</button>
     </div>
@@ -1181,6 +1189,16 @@
         </select>
       </div>
       <div>
+        <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Công bố</label>
+        <select id="filterPlacePublication" onchange="MapGovernance.loadPlaces()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:120px;">
+          <option value="">Tất cả</option>
+          <option value="PUBLIC">PUBLIC</option>
+          <option value="DRAFT">DRAFT</option>
+          <option value="UNLISTED">UNLISTED</option>
+          <option value="ARCHIVED">ARCHIVED</option>
+        </select>
+      </div>
+      <div>
         <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Xác minh</label>
         <select id="filterPlaceVerified" onchange="MapGovernance.loadPlaces()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:110px;">
           <option value="">Tất cả</option>
@@ -1198,11 +1216,11 @@
       <table class="buildings-table">
         <thead>
           <tr>
-            <th>Tên</th>
-            <th>Tên gọi khác</th>
+            <th>Tên / slug</th>
             <th>Danh mục</th>
             <th>GPS</th>
-            <th>Trạng thái</th>
+            <th>Công bố</th>
+            <th>Owner</th>
             <th>Xác minh</th>
             <th>Tòa nhà</th>
             <th>Thao tác</th>
@@ -1212,6 +1230,119 @@
           <tr><td colspan="8">Chọn tab để tải…</td></tr>
         </tbody>
       </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: Đề xuất Place (PHASE 2) ===== -->
+<div id="tab-map-proposals" class="tab-content" style="display:none;">
+  <div class="buildings-section">
+    <div class="section-header">
+      <div>
+        <h3>Đề xuất Place — Moderation</h3>
+        <p class="analytics-tab-intro" style="margin:6px 0 0;">User gửi Proposal → Validation (duplicate/risk) → Super duyệt tạo Place.</p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button type="button" class="btn-add" onclick="MapGovernance.openCreateProposal()">+ Gửi đề xuất thử</button>
+        <button type="button" class="btn-edit" onclick="MapGovernance.loadProposals()">Làm mới</button>
+      </div>
+    </div>
+    <div class="filter-bar" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+      <select id="filterProposalStatus" onchange="MapGovernance.loadProposals()" style="padding:6px 10px;border-radius:6px;border:1px solid #ddd;">
+        <option value="QUEUE">Hàng đợi (Pending+Duplicate)</option>
+        <option value="PENDING">PENDING</option>
+        <option value="DUPLICATE">DUPLICATE</option>
+        <option value="APPROVED">APPROVED</option>
+        <option value="REJECTED">REJECTED</option>
+        <option value="">Tất cả</option>
+      </select>
+      <span id="proposalsMeta" style="font-size:12px;color:#667085;align-self:center;"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="buildings-table">
+        <thead>
+          <tr>
+            <th>Tên</th>
+            <th>GPS</th>
+            <th>Dup%</th>
+            <th>Risk%</th>
+            <th>Trạng thái</th>
+            <th>Gợi ý</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="mapProposalsList">
+          <tr><td colspan="7">Chọn tab để tải…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: Wizard Indoor Workspace (PHASE 3) ===== -->
+<div id="tab-map-wizard" class="tab-content" style="display:none;">
+  <div class="buildings-section">
+    <div class="section-header">
+      <div>
+        <h3>Tạo bản đồ trong nhà</h3>
+        <p class="analytics-tab-intro" style="margin:6px 0 0;">Wizard: chọn Place → tạo Indoor Workspace → mở Editor (CAD không đổi). GPS lấy từ Place.</p>
+      </div>
+    </div>
+
+    <div style="display:grid;gap:16px;max-width:720px;">
+      <div style="background:#fff;border:1px solid #eaecf0;border-radius:12px;padding:16px;">
+        <h4 style="margin:0 0 10px;">Bước 1 — Tìm Place</h4>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input id="wizardPlaceQ" type="search" placeholder="Tên địa điểm…" style="flex:1;min-width:200px;padding:8px 10px;border:1px solid #d0d5dd;border-radius:8px;">
+          <button type="button" class="btn-edit" onclick="MapGovernance.wizardSearchPlaces()">Tìm</button>
+        </div>
+        <div id="wizardPlaceResults" style="margin-top:10px;max-height:180px;overflow:auto;"></div>
+        <div id="wizardSelectedPlace" style="margin-top:8px;font-size:13px;color:#344054;"></div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #eaecf0;border-radius:12px;padding:16px;">
+        <h4 style="margin:0 0 10px;">Bước 2 — Indoor Workspace</h4>
+        <div style="display:grid;gap:10px;">
+          <label style="font-size:12px;color:#667085;">Tên Workspace
+            <input id="wizardWsName" style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid #d0d5dd;border-radius:8px;">
+          </label>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+            <label style="font-size:12px;color:#667085;">Loại
+              <select id="wizardWsKind" style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid #d0d5dd;border-radius:8px;">
+                <option value="COMMUNITY">COMMUNITY</option>
+                <option value="OFFICIAL">OFFICIAL</option>
+                <option value="ORG">ORG</option>
+                <option value="PERSONAL">PERSONAL</option>
+                <option value="EXPERIMENTAL">EXPERIMENTAL</option>
+              </select>
+            </label>
+            <label style="font-size:12px;color:#667085;">Số tầng
+              <input id="wizardWsFloors" type="number" min="1" value="1" style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid #d0d5dd;border-radius:8px;">
+            </label>
+            <label style="font-size:12px;color:#667085;">Bán kính kích hoạt (m)
+              <input id="wizardWsRadius" type="number" min="10" value="50" style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid #d0d5dd;border-radius:8px;">
+            </label>
+          </div>
+          <label style="font-size:12px;color:#667085;">Mô tả
+            <textarea id="wizardWsDesc" rows="2" style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid #d0d5dd;border-radius:8px;"></textarea>
+          </label>
+          <button type="button" class="btn-create" onclick="MapGovernance.wizardCreateWorkspace()">Tạo Workspace + mở Editor</button>
+          <p id="wizardWsMeta" style="font-size:12px;color:#667085;margin:0;"></p>
+        </div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #eaecf0;border-radius:12px;padding:16px;">
+        <h4 style="margin:0 0 10px;">Workspace gần đây</h4>
+        <button type="button" class="btn-edit" onclick="MapGovernance.loadWorkspaces()">Làm mới danh sách</button>
+        <div class="table-wrap" style="margin-top:10px;">
+          <table class="buildings-table">
+            <thead>
+              <tr><th>Tên</th><th>Kind</th><th>Place</th><th>Building</th><th></th></tr>
+            </thead>
+            <tbody id="wizardWsList"><tr><td colspan="5" class="analytics-muted">Bấm làm mới…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -1440,12 +1571,12 @@
       <h3>Version Manager — Phiên bản bản đồ</h3>
       <button type="button" class="btn-edit" onclick="MapGovernance.loadMapVersions()">Làm mới</button>
     </div>
-    <p class="analytics-tab-intro">Chọn tòa nhà để xem lịch sử phiên bản / rollback (dùng API <code>/api/map-versions</code>).</p>
-    <div class="admin-filter-row" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
-      <input id="mapVersionBuildingFilter" type="search" placeholder="Lọc tên tòa…" style="min-width:220px;" oninput="MapGovernance.filterVersionBuildings()">
+    <p class="analytics-tab-intro">Chọn tòa nhà để xem lịch sử phiên bản / rollback (API <code>/api/map-versions</code>).</p>
+    <div class="admin-filter-row mgc-toolbar">
+      <input id="mapVersionBuildingFilter" type="search" placeholder="Lọc tên tòa…" oninput="MapGovernance.filterVersionBuildings()">
     </div>
-    <div class="table-container">
-      <table class="admin-table">
+    <div class="table-wrap mgc-table-wrap">
+      <table class="buildings-table mgc-table mgc-table--versions">
         <thead>
           <tr>
             <th>Tòa nhà</th>
@@ -1453,7 +1584,7 @@
             <th>Visibility</th>
             <th>Tầng</th>
             <th>Place</th>
-            <th></th>
+            <th>Thao tác</th>
           </tr>
         </thead>
         <tbody id="mapVersionsBuildingList"></tbody>
@@ -1469,16 +1600,16 @@
       <h3>Xác minh địa điểm</h3>
       <button type="button" class="btn-edit" onclick="MapGovernance.loadVerification()">Làm mới</button>
     </div>
-    <p class="analytics-tab-intro">Queue Place <code>PENDING</code> — duyệt / từ chối xác minh.</p>
-    <div class="table-container">
-      <table class="admin-table">
+    <p class="analytics-tab-intro">Hàng đợi Place <code>PENDING</code> — duyệt hoặc từ chối xác minh.</p>
+    <div class="table-wrap mgc-table-wrap">
+      <table class="buildings-table mgc-table mgc-table--verify">
         <thead>
           <tr>
             <th>Tên</th>
             <th>Trạng thái XM</th>
             <th>Ghi chú</th>
             <th>GPS</th>
-            <th></th>
+            <th>Thao tác</th>
           </tr>
         </thead>
         <tbody id="mapVerifyList"></tbody>
@@ -1494,10 +1625,10 @@
       <h3>Bản đồ cộng đồng</h3>
       <button type="button" class="btn-edit" onclick="MapGovernance.loadCommunityHub()">Làm mới</button>
     </div>
-    <p class="analytics-tab-intro">Building <code>PUBLISHED</code> + <code>COMMUNITY/OFFICIAL</code> (cùng filter public API).</p>
-    <div id="mapCommunityMeta" class="analytics-muted" style="margin-bottom:8px;"></div>
-    <div class="table-container">
-      <table class="admin-table">
+    <p class="analytics-tab-intro">Building <code>PUBLISHED</code> + <code>COMMUNITY</code>/<code>OFFICIAL</code> (cùng filter public API).</p>
+    <div id="mapCommunityMeta" class="mgc-meta"></div>
+    <div class="table-wrap mgc-table-wrap">
+      <table class="buildings-table mgc-table mgc-table--community">
         <thead>
           <tr>
             <th>Tòa nhà</th>
@@ -2201,10 +2332,13 @@
                     <input type="number" id="addBuildingLng" step="any" value="106.6">
                 </div>
             </div>
-            <label>Tổ chức:</label>
-            <select id="addBuildingOrganizationId" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
-                <option value="">Chọn tổ chức...</option>
-            </select>
+            <div id="addBuildingOrgWrap">
+                <label>Tổ chức:</label>
+                <select id="addBuildingOrganizationId" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
+                    <option value="">Chọn tổ chức...</option>
+                </select>
+                <p style="font-size:12px;color:#667085;margin:6px 0 0;">Chỉ Super Admin chọn tổ chức khi tạo hộ. Tài khoản tổ chức/cá nhân được gắn tự động.</p>
+            </div>
             <div class="modal-actions">
                 <button onclick="closeAddBuildingModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
                 <button id="btnSaveNewBuilding" class="btn-create">Lưu Tòa Nhà</button>
@@ -2312,10 +2446,12 @@
                 <option value="DRAFT">Nháp</option>
                 <option value="PUBLISHED">Đã xuất bản</option>
             </select>
-            <label>Tổ chức:</label>
-            <select id="editBuildingOrganizationId" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
-                <option value="">Chọn tổ chức...</option>
-            </select>
+            <div id="editBuildingOrgWrap">
+                <label>Tổ chức:</label>
+                <select id="editBuildingOrganizationId" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
+                    <option value="">Chọn tổ chức...</option>
+                </select>
+            </div>
             <div class="modal-actions">
                 <button onclick="closeEditBuildingModal()" class="btn-logout" style="background:#95a5a6;">Hủy</button>
                 <button onclick="saveEditBuilding()" class="btn-create">Lưu Thay Đổi</button>
@@ -2701,8 +2837,8 @@
     <script src="../js/admin-shell.js?v=20260717ad33"></script>
     <script src="../js/orgListSort.js?v=20260708l"></script>
     <script src="../js/dashboardTableSort.js?v=20260708l"></script>
-    <script src="../js/dashboard.js?v=20260722mgc7"></script>
-    <script src="../js/map-governance.js?v=20260722mgc7"></script>
+    <script src="../js/dashboard.js?v=20260723orghide1"></script>
+    <script src="../js/map-governance.js?v=20260723mgcui1"></script>
     <script src="../js/website-cms.js?v=20260721audit1"></script>
     <script src="../js/admin-ui.js?v=20260717ad32"></script>
 
@@ -2735,6 +2871,32 @@
             <label style="font-size:12px; color:#667085;">Danh mục
               <input id="placeFormCategory" placeholder="trung tâm thương mại, bệnh viện, trường…" style="display:block; width:100%; margin-top:4px; padding:8px 10px; border:1px solid #d0d5dd; border-radius:8px;">
             </label>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+              <label style="font-size:12px; color:#667085;">Bán kính Place (m)
+                <input id="placeFormRadius" type="number" min="10" max="5000" value="80" style="display:block; width:100%; margin-top:4px; padding:8px 10px; border:1px solid #d0d5dd; border-radius:8px;">
+              </label>
+              <label style="font-size:12px; color:#667085;">Slug (để trống = tự sinh)
+                <input id="placeFormSlug" placeholder="vincom-dong-khoi" style="display:block; width:100%; margin-top:4px; padding:8px 10px; border:1px solid #d0d5dd; border-radius:8px;">
+              </label>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+              <label style="font-size:12px; color:#667085;">Owner type
+                <select id="placeFormOwnerType" style="display:block; width:100%; margin-top:4px; padding:8px 10px; border:1px solid #d0d5dd; border-radius:8px;">
+                  <option value="UNCLAIMED">UNCLAIMED</option>
+                  <option value="ORGANIZATION">ORGANIZATION</option>
+                  <option value="PERSONAL">PERSONAL</option>
+                  <option value="PLATFORM">PLATFORM</option>
+                </select>
+              </label>
+              <label style="font-size:12px; color:#667085;">Công bố
+                <select id="placeFormPublication" style="display:block; width:100%; margin-top:4px; padding:8px 10px; border:1px solid #d0d5dd; border-radius:8px;">
+                  <option value="PUBLIC">PUBLIC</option>
+                  <option value="DRAFT">DRAFT</option>
+                  <option value="UNLISTED">UNLISTED</option>
+                  <option value="ARCHIVED">ARCHIVED</option>
+                </select>
+              </label>
+            </div>
             <label style="font-size:12px; color:#667085;">Trạng thái
               <select id="placeFormStatus" style="display:block; width:100%; margin-top:4px; padding:8px 10px; border:1px solid #d0d5dd; border-radius:8px;">
                 <option value="ACTIVE">ACTIVE</option>

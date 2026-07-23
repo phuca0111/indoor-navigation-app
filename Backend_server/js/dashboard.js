@@ -18,7 +18,7 @@ let planCatalogLoading = null;
 let _financeInvoicesCache = [];
 let _financePaymentsCache = [];
 
-const VALID_DASHBOARD_TABS = new Set(['overview', 'buildings', 'maps', 'users', 'logs', 'organizations', 'myorg', 'billing', 'plans', 'finance', 'analytics', 'registrations', 'profile', 'website', 'places', 'map-reviews', 'map-duplicates', 'map-ownership', 'map-merges', 'map-moderation', 'map-stats', 'map-versions', 'map-verify', 'map-community']);
+const VALID_DASHBOARD_TABS = new Set(['overview', 'buildings', 'maps', 'users', 'logs', 'organizations', 'myorg', 'billing', 'plans', 'finance', 'analytics', 'registrations', 'profile', 'website', 'places', 'map-proposals', 'map-wizard', 'map-reviews', 'map-duplicates', 'map-ownership', 'map-merges', 'map-moderation', 'map-stats', 'map-versions', 'map-verify', 'map-community']);
 
 function validatePasswordStrengthClient(password) {
   const errors = [];
@@ -94,7 +94,7 @@ function sanitizeTabForRole(tab, role) {
   if (tab === 'places' && role !== 'SUPER_ADMIN') {
     return role === 'ORG_ADMIN' ? 'billing' : 'buildings';
   }
-  if ((tab === 'map-reviews' || tab === 'map-duplicates' || tab === 'map-ownership' || tab === 'map-merges' || tab === 'map-moderation' || tab === 'map-stats' || tab === 'map-versions' || tab === 'map-verify' || tab === 'map-community') && role !== 'SUPER_ADMIN') {
+  if ((tab === 'map-proposals' || tab === 'map-wizard' || tab === 'map-reviews' || tab === 'map-duplicates' || tab === 'map-ownership' || tab === 'map-merges' || tab === 'map-moderation' || tab === 'map-stats' || tab === 'map-versions' || tab === 'map-verify' || tab === 'map-community') && role !== 'SUPER_ADMIN') {
     return role === 'ORG_ADMIN' ? 'billing' : 'buildings';
   }
   if (role === 'BUILDING_ADMIN' && tab === 'analytics') return 'buildings';
@@ -1854,6 +1854,24 @@ async function switchTab(name, options) {
     }
     if (typeof window.MapGovernance?.loadPlaces === 'function') {
       await window.MapGovernance.loadPlaces();
+    }
+  }
+  if (tab === 'map-proposals') {
+    if (currentUser?.role !== 'SUPER_ADMIN') {
+      await switchTab('overview', { skipHistory: true });
+      return;
+    }
+    if (typeof window.MapGovernance?.loadProposals === 'function') {
+      await window.MapGovernance.loadProposals();
+    }
+  }
+  if (tab === 'map-wizard') {
+    if (currentUser?.role !== 'SUPER_ADMIN') {
+      await switchTab('overview', { skipHistory: true });
+      return;
+    }
+    if (typeof window.MapGovernance?.loadWorkspaces === 'function') {
+      await window.MapGovernance.loadWorkspaces();
     }
   }
   if (tab === 'map-reviews') {
@@ -9183,20 +9201,23 @@ if (typeof document !== 'undefined') {
 }
 
 function openAddBuildingModal() {
-  // Nếu là Super Admin và chưa load organizations, load ngay
-  if (currentUser?.role === 'SUPER_ADMIN' && allOrganizations.length === 0) {
-    fetchOrganizations();
-  }
-  if (currentUser?.role === 'ORG_ADMIN' && currentUser.organization_id) {
-    const orgSelect = document.getElementById('addBuildingOrganizationId');
+  const isSuper = currentUser?.role === 'SUPER_ADMIN';
+  const orgWrap = document.getElementById('addBuildingOrgWrap');
+  const orgSelect = document.getElementById('addBuildingOrganizationId');
+
+  if (orgWrap) orgWrap.style.display = isSuper ? '' : 'none';
+
+  if (isSuper) {
+    if (allOrganizations.length === 0) fetchOrganizations();
     if (orgSelect) {
-      orgSelect.value = currentUser.organization_id;
-      orgSelect.disabled = true;
+      orgSelect.disabled = false;
+      orgSelect.value = '';
     }
-  } else {
-    const orgSelect = document.getElementById('addBuildingOrganizationId');
-    if (orgSelect) orgSelect.disabled = false;
+  } else if (orgSelect) {
+    orgSelect.value = '';
+    orgSelect.disabled = true;
   }
+
   document.getElementById('addBuildingModal').style.display = 'flex';
 }
 function closeAddBuildingModal() { document.getElementById('addBuildingModal').style.display = 'none'; }
@@ -9208,15 +9229,30 @@ async function saveNewBuilding() {
   const floors = parseInt(document.getElementById('addBuildingFloors').value) || 1;
   const lat = parseFloat(document.getElementById('addBuildingLat').value) || 0;
   const lng = parseFloat(document.getElementById('addBuildingLng').value) || 0;
-  let orgId = document.getElementById('addBuildingOrganizationId').value.trim();
-  if (!orgId && currentUser?.role === 'ORG_ADMIN') orgId = currentUser.organization_id || '';
+  const isSuper = currentUser?.role === 'SUPER_ADMIN';
+  const orgId = isSuper
+    ? (document.getElementById('addBuildingOrganizationId')?.value || '').trim()
+    : '';
+
   if (!name) return alert('Vui lòng nhập tên tòa nhà!');
-  if (!orgId) return alert('Vui lòng chọn organization!');
+  if (isSuper && !orgId) return alert('Super Admin phải chọn tổ chức khi tạo tòa nhà.');
+
+  const payload = {
+    name,
+    address,
+    description: desc,
+    total_floors: floors,
+    lat,
+    lng
+  };
+  // Role thấp: không gửi organization_id — ORG_ADMIN gắn org của mình; REGISTERED_USER = Personal
+  if (isSuper) payload.organization_id = orgId;
+
   try {
     const res = await apiFetch('/buildings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, address, description: desc, total_floors: floors, lat, lng, organization_id: orgId })
+      body: JSON.stringify(payload)
     });
     if (res.ok) { alert('Đã thêm tòa nhà mới!'); closeAddBuildingModal(); fetchBuildings(); }
     else { const d = await res.json(); alert('Lỗi: ' + d.message); }
@@ -9233,8 +9269,12 @@ function openEditBuildingModal(id) {
   const b = allBuildings.find(x => x._id === id);
   if (!b) return;
 
-  // Nếu là Super Admin và chưa load organizations, load ngay
-  if (currentUser?.role === 'SUPER_ADMIN' && allOrganizations.length === 0) {
+  const isSuper = currentUser?.role === 'SUPER_ADMIN';
+  const orgWrap = document.getElementById('editBuildingOrgWrap');
+  const orgSelect = document.getElementById('editBuildingOrganizationId');
+  if (orgWrap) orgWrap.style.display = isSuper ? '' : 'none';
+
+  if (isSuper && allOrganizations.length === 0) {
     fetchOrganizations();
   }
 
@@ -9246,7 +9286,10 @@ function openEditBuildingModal(id) {
   document.getElementById('editBuildingLat').value = b.gps_location ? b.gps_location.lat : 0;
   document.getElementById('editBuildingLng').value = b.gps_location ? b.gps_location.lng : 0;
   document.getElementById('editBuildingStatus').value = b.status || 'DRAFT';
-  document.getElementById('editBuildingOrganizationId').value = b.organization_id || '';
+  if (orgSelect) {
+    orgSelect.value = b.organization_id || '';
+    orgSelect.disabled = !isSuper;
+  }
   const floorMsg = document.getElementById('editBuildingFloorMsg');
   if (floorMsg) {
     floorMsg.style.display = 'none';

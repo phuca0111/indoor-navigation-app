@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Maps — IndoorNav</title>
+  <meta name="description" content="My Maps: khám phá Place, workspace, yêu thích và đề xuất bản đồ trong nhà.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app-hub.css?v=20260723hub2">
+</head>
+<body>
+  <div class="hub-shell">
+    <aside class="hub-sidebar">
+      <a class="hub-brand" href="/app">My Maps</a>
+      <p class="hub-brand-sub">IndoorNav · không gian bản đồ của bạn</p>
+      <nav class="hub-nav" id="hubNav">
+        <button type="button" data-view="home" class="is-active">Tổng quan</button>
+        <button type="button" data-view="explore">Explore</button>
+        <button type="button" data-view="maps">My Maps</button>
+        <button type="button" data-view="favorites">Yêu thích</button>
+        <button type="button" data-view="history">Lịch sử</button>
+        <button type="button" data-view="proposals">Đề xuất</button>
+        <button type="button" data-view="notifications">Thông báo</button>
+        <button type="button" data-view="account">Tài khoản</button>
+      </nav>
+      <div class="hub-sidebar-foot">
+        <a href="/explore" target="_blank" rel="noopener">Bản đồ ngoài trời ↗</a>
+        <button type="button" id="hubLogout" class="hub-linkish">Đăng xuất</button>
+      </div>
+    </aside>
+
+    <main class="hub-main">
+      <header class="hub-top">
+        <div>
+          <h1 id="hubTitle">Tổng quan</h1>
+          <p id="hubSubtitle" class="hub-muted">Đang tải…</p>
+        </div>
+        <div class="hub-user" id="hubUserChip">—</div>
+      </header>
+      <section id="hubContent" class="hub-content"></section>
+    </main>
+  </div>
+  <script src="/app/app.js?v=20260723hub3"></script>
+</body>
+</html>

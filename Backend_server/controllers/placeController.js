@@ -18,6 +18,14 @@ const {
   scanDuplicatePairs,
   DEFAULT_THRESHOLD
 } = require('../services/placeDuplicateDetection');
+const {
+  ensureUniquePlaceSlug,
+  normalizeOwnerType,
+  normalizePublicationStatus,
+  haversineMeters,
+  PLACE_OWNER_TYPES,
+  PLACE_PUBLICATION_STATUS
+} = require('../utils/placeRegistry');
 
 function logActivity(data) {
   ActivityLog.create(data).catch(() => {});
@@ -49,12 +57,16 @@ function serializePlace(doc, extras = {}) {
   return {
     _id: p._id,
     name: p.name,
+    slug: p.slug || '',
     aliases: p.aliases || [],
     latitude: p.latitude,
     longitude: p.longitude,
+    radius: p.radius != null ? p.radius : 80,
     address: p.address || '',
     category: p.category || '',
     boundary: p.boundary || null,
+    owner_type: p.owner_type || 'UNCLAIMED',
+    publication_status: p.publication_status || 'PUBLIC',
     verified: !!p.verified,
     verification_status: p.verification_status || (p.verified ? 'VERIFIED' : 'UNVERIFIED'),
     verification_note: p.verification_note || '',
@@ -69,7 +81,8 @@ function serializePlace(doc, extras = {}) {
     created_by: p.created_by || null,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
-    building_count: extras.building_count
+    building_count: extras.building_count,
+    distance_m: extras.distance_m
   };
 }
 
@@ -93,6 +106,14 @@ async function listPlaces(req, res) {
     const filter = {};
     if (status && ['DRAFT', 'ACTIVE', 'LOCKED', 'MERGED'].includes(status)) {
       filter.status = status;
+    }
+    if (req.query.publication_status) {
+      const pub = normalizePublicationStatus(req.query.publication_status, '');
+      if (PLACE_PUBLICATION_STATUS.includes(pub)) filter.publication_status = pub;
+    }
+    if (req.query.owner_type) {
+      const ot = normalizeOwnerType(req.query.owner_type, '');
+      if (PLACE_OWNER_TYPES.includes(ot)) filter.owner_type = ot;
     }
     if (verified === 'true') filter.verified = true;
     if (verified === 'false') filter.verified = false;
@@ -200,13 +221,21 @@ async function createPlace(req, res) {
 
     const place = await Place.create({
       name,
+      slug: await ensureUniquePlaceSlug(Place, req.body?.slug || name),
       aliases,
       latitude,
       longitude,
+      radius: Math.min(Math.max(Number(req.body?.radius) || 80, 10), 5000),
       address: String(req.body?.address || '').slice(0, 500),
       category,
       boundary: req.body?.boundary || null,
+      owner_type: normalizeOwnerType(
+        req.body?.owner_type,
+        owner_org_id ? 'ORGANIZATION' : 'UNCLAIMED'
+      ),
+      publication_status: normalizePublicationStatus(req.body?.publication_status, 'PUBLIC'),
       verified: !!req.body?.verified,
+      verification_status: req.body?.verified ? 'VERIFIED' : 'UNVERIFIED',
       owner_org_id,
       owner_type: owner_org_id ? 'ORGANIZATION' : (req.body?.owner_type || 'UNCLAIMED'),
       status: normalizePlaceStatus(req.body?.status, 'ACTIVE'),
@@ -295,12 +324,30 @@ async function updatePlace(req, res) {
       if (!name) return res.status(400).json({ message: 'Tên Place không được để trống.' });
       place.name = name;
     }
+    if (body.slug !== undefined) {
+      place.slug = await ensureUniquePlaceSlug(Place, body.slug || place.name, place._id);
+    } else if (body.name !== undefined) {
+      // đổi tên → refresh slug nếu slug cũ trống hoặc auto từ tên cũ
+      place.slug = await ensureUniquePlaceSlug(Place, place.name, place._id);
+    }
     if (body.aliases !== undefined) place.aliases = parseAliases(body.aliases);
     if (body.latitude !== undefined) place.latitude = Number(body.latitude) || 0;
     if (body.longitude !== undefined) place.longitude = Number(body.longitude) || 0;
+    if (body.radius !== undefined) {
+      place.radius = Math.min(Math.max(Number(body.radius) || 80, 10), 5000);
+    }
     if (body.address !== undefined) place.address = String(body.address || '').slice(0, 500);
     if (body.category !== undefined) place.category = String(body.category || '').slice(0, 80);
     if (body.boundary !== undefined) place.boundary = body.boundary;
+    if (body.owner_type !== undefined) {
+      place.owner_type = normalizeOwnerType(body.owner_type, place.owner_type || 'UNCLAIMED');
+    }
+    if (body.publication_status !== undefined) {
+      place.publication_status = normalizePublicationStatus(
+        body.publication_status,
+        place.publication_status || 'PUBLIC'
+      );
+    }
     if (body.verified !== undefined) {
       place.verified = !!body.verified;
       if (place.verified) {
@@ -329,6 +376,7 @@ async function updatePlace(req, res) {
         const org = await Organization.findById(body.owner_org_id).select('_id').lean();
         if (!org) return res.status(400).json({ message: 'Organization không tồn tại.' });
         place.owner_org_id = body.owner_org_id;
+        if (!body.owner_type) place.owner_type = 'ORGANIZATION';
       }
     }
 
@@ -598,11 +646,124 @@ async function updateBuildingVisibility(req, res) {
   }
 }
 
+// GET /api/places/search — PUBLIC Place Registry search
+async function searchPlacesPublic(req, res) {
+  try {
+    const q = String(req.query.q || '').trim();
+    const category = String(req.query.category || '').trim();
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+    const lat = req.query.lat != null ? Number(req.query.lat) : null;
+    const lng = req.query.lng != null ? Number(req.query.lng) : null;
+    const radiusM = Number(req.query.radius_m) || 5000;
+
+    const filter = {
+      status: 'ACTIVE',
+      publication_status: { $in: ['PUBLIC'] }
+    };
+    if (category) {
+      filter.category = new RegExp(category.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    }
+    if (q) {
+      const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.$or = [
+        { name: new RegExp(safe, 'i') },
+        { aliases: new RegExp(safe, 'i') },
+        { address: new RegExp(safe, 'i') },
+        { slug: new RegExp(safe, 'i') }
+      ];
+    }
+
+    let rows = await Place.find(filter)
+      .select('name slug aliases latitude longitude radius address category owner_type publication_status verification_status verified status')
+      .limit(limit * 3)
+      .lean();
+
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      rows = rows
+        .map((p) => ({
+          ...p,
+          distance_m: haversineMeters(lat, lng, p.latitude || 0, p.longitude || 0)
+        }))
+        .filter((p) => p.distance_m <= radiusM)
+        .sort((a, b) => a.distance_m - b.distance_m);
+    }
+
+    rows = rows.slice(0, limit);
+    const counts = await buildingCountsByPlaceIds(rows.map((r) => r._id));
+
+    return res.status(200).json({
+      total: rows.length,
+      places: rows.map((r) => serializePlace(r, {
+        building_count: counts[String(r._id)] || 0,
+        distance_m: r.distance_m
+      }))
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+  }
+}
+
+// GET /api/places/public/:idOrSlug — PUBLIC detail (chỉ PUBLIC + ACTIVE)
+async function getPlacePublic(req, res) {
+  try {
+    const key = String(req.params.idOrSlug || '').trim();
+    if (!key) return res.status(400).json({ message: 'Thiếu id hoặc slug.' });
+
+    let place = null;
+    if (mongoose.Types.ObjectId.isValid(key)) {
+      place = await Place.findById(key).lean();
+    }
+    if (!place) {
+      place = await Place.findOne({ slug: key }).lean();
+    }
+    if (!place) return res.status(404).json({ message: 'Không tìm thấy Place.' });
+    if (place.status !== 'ACTIVE' || place.publication_status !== 'PUBLIC') {
+      return res.status(404).json({ message: 'Place không công khai.', code: 'PLACE_NOT_PUBLIC' });
+    }
+
+    const indoorBuildings = await Building.find({
+      place_id: place._id,
+      status: 'PUBLISHED',
+      is_active: { $ne: false },
+      visibility: { $in: ['COMMUNITY', 'OFFICIAL'] }
+    })
+      .select('name visibility total_floors workspace_id status')
+      .limit(20)
+      .lean();
+
+    let workspaces = [];
+    try {
+      const IndoorWorkspace = require('../models/IndoorWorkspace');
+      workspaces = await IndoorWorkspace.find({
+        place_id: place._id,
+        status: { $in: ['ACTIVE', 'DRAFT'] }
+      })
+        .select('name kind status building_id is_current_published')
+        .limit(20)
+        .lean();
+    } catch (_) {
+      workspaces = [];
+    }
+
+    return res.status(200).json({
+      place: serializePlace(place, { building_count: indoorBuildings.length }),
+      has_indoor: indoorBuildings.length > 0,
+      indoor_published_count: indoorBuildings.length,
+      indoor_buildings: indoorBuildings,
+      workspaces
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
+  }
+}
+
 // GET /api/places/meta/visibility — enum cho UI
 async function getVisibilityMeta(_req, res) {
   return res.status(200).json({
     visibility: MAP_VISIBILITY_VALUES,
     place_status: ['DRAFT', 'ACTIVE', 'LOCKED', 'MERGED'],
+    owner_types: PLACE_OWNER_TYPES,
+    publication_status: PLACE_PUBLICATION_STATUS,
     matrix: {
       note: 'COMMUNITY/OFFICIAL chỉ có ý nghĩa tìm kiếm khi Building.status = PUBLISHED',
       PRIVATE: 'Chỉ owner / nội bộ',
@@ -625,5 +786,7 @@ module.exports = {
   getVisibilityMeta,
   checkDuplicates,
   scanDuplicates,
-  resolvePlaceVerification
+  resolvePlaceVerification,
+  searchPlacesPublic,
+  getPlacePublic
 };

@@ -11,7 +11,6 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.drawText
 
 /** Vẽ icon POI lên Canvas (không cần asset bitmap). */
 fun DrawScope.drawPoiIcon(
@@ -26,17 +25,19 @@ fun DrawScope.drawPoiIcon(
     drawCircle(Color.White, radius = r + 2f, center = center)
     drawCircle(bg, radius = r, center = center)
 
+    fun drawShortLabel(label: String) {
+        val layout = textMeasurer.measure(
+            label,
+            TextStyle(fontSize = (iconSize * 0.42f).sp, color = Color.White),
+        )
+        drawText(
+            layout,
+            topLeft = Offset(center.x - layout.size.width / 2f, center.y - layout.size.height / 2f),
+        )
+    }
+
     when (category) {
-        PoiCategory.TOILET -> {
-            val layout = textMeasurer.measure(
-                "WC",
-                TextStyle(fontSize = (iconSize * 0.42f).sp, color = Color.White),
-            )
-            drawText(
-                layout,
-                topLeft = Offset(center.x - layout.size.width / 2f, center.y - layout.size.height / 2f),
-            )
-        }
+        PoiCategory.TOILET -> drawShortLabel("WC")
         PoiCategory.STAIRS -> {
             val stepH = iconSize * 0.14f
             val stepW = iconSize * 0.22f
@@ -112,6 +113,10 @@ fun DrawScope.drawPoiIcon(
                 style = Stroke(width = iconSize * 0.08f),
             )
         }
+        PoiCategory.PARKING -> drawShortLabel("P")
+        PoiCategory.MEDICAL -> drawShortLabel("+")
+        PoiCategory.SECURITY -> drawShortLabel("S")
+        PoiCategory.SAFETY -> drawShortLabel("!")
         else -> drawCircle(Color.White, radius = r * 0.22f, center = center)
     }
 }

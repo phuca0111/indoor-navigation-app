@@ -1,7 +1,11 @@
-// login.js (Landing WL4) — POST /api/auth/login → lưu token → /admin/dashboard.html
+// login.js (Landing) — POST /api/auth/login → Admin hoặc My Maps (/app)
 (function () {
     var API_URL = '/api';
-    var APP_HOME = '/admin/dashboard.html';
+
+    function appHomeForRole(role) {
+        if (role === 'REGISTERED_USER') return '/app';
+        return '/admin/dashboard.html';
+    }
 
     function clearAuthStorage() {
         localStorage.removeItem('token');
@@ -31,7 +35,6 @@
         el.style.display = 'block';
     }
 
-    // Google OAuth callback: /login#token=...&refreshToken=...&google=1
     (function consumeGoogleCallback() {
         var hash = (window.location.hash || '').replace(/^#/, '');
         if (!hash) return;
@@ -70,16 +73,17 @@
             return;
         }
         if (token) {
+            var role = params.get('role') || '';
             applyAuthTokens({
                 token: token,
                 refreshToken: refreshToken,
                 user: {
                     email: params.get('email') || '',
-                    role: params.get('role') || '',
+                    role: role,
                     id: params.get('userId') || ''
                 }
             });
-            window.location.replace(APP_HOME);
+            window.location.replace(appHomeForRole(role));
         }
     })();
 
@@ -105,7 +109,9 @@
                 headers: { Authorization: 'Bearer ' + token }
             });
             if (res.ok) {
-                window.location.replace(APP_HOME);
+                var data = await res.json().catch(function () { return {}; });
+                var role = data.role || (data.user && data.user.role) || localStorage.getItem('userRole') || '';
+                window.location.replace(appHomeForRole(role));
             } else {
                 clearAuthStorage();
             }
@@ -144,7 +150,8 @@
 
                 if (response.ok && data.token) {
                     applyAuthTokens(data);
-                    window.location.replace(APP_HOME);
+                    var role = (data.user && data.user.role) || '';
+                    window.location.replace(appHomeForRole(role));
                     return;
                 }
                 showError(data.message || ('Đăng nhập thất bại (HTTP ' + response.status + ').'));

@@ -63,6 +63,14 @@ function createApp() {
   app.get(['/demo', '/demo/', '/demo/index.html'], (req, res) => {
     res.redirect(302, '/login');
   });
+  app.get(['/explore', '/explore/'], (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.sendFile(path.join(__dirname, 'public', 'explore', 'index.html'));
+  });
+  app.get(['/app', '/app/', '/app/index.html'], (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.sendFile(path.join(__dirname, 'public', 'app', 'index.html'));
+  });
   app.get('/blog/:slug', (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.sendFile(path.join(__dirname, 'public', 'blog', 'index.html'));
