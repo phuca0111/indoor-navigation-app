@@ -29,6 +29,9 @@ const routes = {
   storage: require('./storageRoutes'),
   contact: require('./contactRoutes'),
   places: require('./placeRoutes'),
+  placeProposals: require('./placeProposalRoutes'),
+  indoorWorkspaces: require('./indoorWorkspaceRoutes'),
+  hub: require('./hubRoutes'),
   mapReviews: require('./mapReviewRoutes'),
   placeOwnership: require('./placeOwnershipRoutes'),
   placeMerges: require('./placeMergeRoutes'),
@@ -68,6 +71,9 @@ function mountRoutes(app, middleware = {}) {
   app.use('/api/auth', routes.auth);
   app.use('/api/buildings', routes.buildings);
   app.use('/api/places', routes.places);
+  app.use('/api/place-proposals', routes.placeProposals);
+  app.use('/api/indoor-workspaces', routes.indoorWorkspaces);
+  app.use('/api/hub', routes.hub);
   app.use('/api/map-reviews', routes.mapReviews);
   app.use('/api/place-ownership', routes.placeOwnership);
   app.use('/api/place-merges', routes.placeMerges);

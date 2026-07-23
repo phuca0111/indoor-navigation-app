@@ -100,6 +100,14 @@ const buildingSchema = new mongoose.Schema({
         enum: ['PRIVATE', 'UNLISTED', 'COMMUNITY', 'OFFICIAL'],
         default: 'PRIVATE',
         index: true
+    },
+
+    // PHASE 3 — link ngược Indoor Workspace (legacy 1:1)
+    workspace_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'IndoorWorkspace',
+        default: null,
+        index: true
     }
 
 }, {

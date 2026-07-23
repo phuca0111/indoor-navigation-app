@@ -7187,3 +7187,163 @@ body[data-admin-theme="dark"] .website-contact-history li { background: #101828;
   .publish-jobs-foot span { display: none; }
   .publish-jobs-done { margin-left: auto; }
 }
+
+/* ===== Map Governance tables UI (community / verify / versions) ===== */
+.mgc-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.mgc-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.mgc-table th,
+.mgc-table td {
+  vertical-align: middle;
+}
+
+.mgc-table--community th:nth-child(1),
+.mgc-table--community td:nth-child(1) { width: 28%; }
+.mgc-table--community th:nth-child(2),
+.mgc-table--community td:nth-child(2) { width: 14%; }
+.mgc-table--community th:nth-child(3),
+.mgc-table--community td:nth-child(3) { width: 38%; }
+.mgc-table--community th:nth-child(4),
+.mgc-table--community td:nth-child(4) { width: 20%; }
+
+.mgc-table--versions th:nth-child(1),
+.mgc-table--versions td:nth-child(1) { width: 28%; }
+.mgc-table--versions th:nth-child(2),
+.mgc-table--versions td:nth-child(2) { width: 12%; }
+.mgc-table--versions th:nth-child(3),
+.mgc-table--versions td:nth-child(3) { width: 12%; }
+.mgc-table--versions th:nth-child(4),
+.mgc-table--versions td:nth-child(4) { width: 8%; }
+.mgc-table--versions th:nth-child(5),
+.mgc-table--versions td:nth-child(5) { width: 18%; }
+.mgc-table--versions th:nth-child(6),
+.mgc-table--versions td:nth-child(6) { width: 14%; }
+
+.mgc-table--verify th:nth-child(1),
+.mgc-table--verify td:nth-child(1) { width: 24%; }
+.mgc-table--verify th:nth-child(2),
+.mgc-table--verify td:nth-child(2) { width: 14%; }
+.mgc-table--verify th:nth-child(3),
+.mgc-table--verify td:nth-child(3) { width: 28%; }
+.mgc-table--verify th:nth-child(4),
+.mgc-table--verify td:nth-child(4) { width: 16%; }
+.mgc-table--verify th:nth-child(5),
+.mgc-table--verify td:nth-child(5) { width: 18%; }
+
+.mgc-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.mgc-toolbar input[type="search"] {
+  min-width: 240px;
+  padding: 9px 12px;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  font: inherit;
+  background: #fff;
+}
+
+.mgc-meta {
+  margin: 0 0 12px;
+}
+.mgc-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #344054;
+  font-size: 13px;
+}
+
+.mgc-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.mgc-badge--ok { background: #dcfae6; color: #027a48; }
+.mgc-badge--info { background: #e0f2fe; color: #026aa2; }
+.mgc-badge--warn { background: #fef0c7; color: #b54708; }
+.mgc-badge--danger { background: #fee4e2; color: #b42318; }
+.mgc-badge--muted { background: #f2f4f7; color: #475467; }
+
+.mgc-id,
+.mgc-gps {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #475467;
+  background: #f9fafb;
+  border: 1px solid #eaecf0;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.mgc-ellipsis,
+.mgc-name {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.mgc-num { text-align: center; font-variant-numeric: tabular-nums; }
+.mgc-actions { white-space: nowrap; }
+.mgc-muted { color: #98a2b3; }
+
+.mgc-btn-version {
+  background: #7c3aed !important;
+  color: #fff !important;
+  border: none;
+}
+
+.mgc-empty {
+  text-align: center;
+  padding: 28px 16px;
+  color: #667085;
+}
+.mgc-empty strong {
+  display: block;
+  color: #344054;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+.mgc-empty p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+body[data-admin-theme="dark"] .mgc-table-wrap {
+  background: var(--admin-surface);
+  border-color: var(--admin-border);
+}
+body[data-admin-theme="dark"] .mgc-meta-pill {
+  background: rgba(70, 95, 255, 0.16);
+  color: var(--admin-text);
+}
+body[data-admin-theme="dark"] .mgc-id,
+body[data-admin-theme="dark"] .mgc-gps {
+  background: rgba(255,255,255,0.04);
+  border-color: var(--admin-border);
+  color: var(--admin-muted);
+}

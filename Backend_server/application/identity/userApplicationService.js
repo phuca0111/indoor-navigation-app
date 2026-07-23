@@ -19,6 +19,11 @@ async function getMe(userId) {
     user.organization_id = user.organization._id;
   }
   user.permissions = permissionsForRole(user.role);
+  // My Maps: UI label END_USER; DB vẫn REGISTERED_USER
+  user.display_role = user.role === 'REGISTERED_USER' ? 'END_USER' : user.role;
+  user.display_role_label = user.role === 'REGISTERED_USER'
+    ? 'Người dùng'
+    : (user.role || '');
   return user;
 }
 

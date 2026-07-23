@@ -28,6 +28,11 @@ fun PoiFilterChips(
         PoiCategory.STAIRS,
         PoiCategory.EXIT,
         PoiCategory.FOOD,
+        PoiCategory.PARKING,
+        PoiCategory.MEDICAL,
+        PoiCategory.SECURITY,
+        PoiCategory.SAFETY,
+        PoiCategory.INFO,
     )
     Row(
         modifier = modifier

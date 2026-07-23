@@ -31,6 +31,9 @@ data class MapData(
     @SerializedName("bgX") val bgX: Float = 0f,
     @SerializedName("bgY") val bgY: Float = 0f,
     @SerializedName("bgScale") val bgScale: Float = 1f,
+    // 0 = payload cũ chưa có field; sanitized()/MapView sẽ fallback về bgScale.
+    @SerializedName("bgScaleX") val bgScaleX: Float = 0f,
+    @SerializedName("bgScaleY") val bgScaleY: Float = 0f,
     @SerializedName("bgRotation") val bgRotation: Float = 0f
 )
 
@@ -116,8 +119,9 @@ data class Poi(
     val x: Int,
     val y: Int,
     val type: String? = null,
-    @SerializedName("poi_type") val poiType: String? = null,
-    val typeIndex: Int? = null
+    @SerializedName(value = "poi_type", alternate = ["poiType"]) val poiType: String? = null,
+    val typeIndex: Int? = null,
+    val size: Float = 24f
 )
 
 /**
@@ -141,10 +145,14 @@ fun MapData.sanitized(): MapData = copy(
         w.copy(points = w.points ?: emptyList())
     },
     doors = doors ?: emptyList(),
-    pois = pois ?: emptyList(),
+    pois = (pois ?: emptyList()).map { poi ->
+        poi.copy(size = poi.size?.takeIf { it in 12f..96f } ?: 24f)
+    },
     qrAnchors = qrAnchors ?: emptyList(),
     bgX = bgX ?: 0f,
     bgY = bgY ?: 0f,
     bgScale = bgScale ?: 1f,
+    bgScaleX = bgScaleX?.takeIf { it > 0f } ?: bgScale?.takeIf { it > 0f } ?: 1f,
+    bgScaleY = bgScaleY?.takeIf { it > 0f } ?: bgScale?.takeIf { it > 0f } ?: 1f,
     bgRotation = bgRotation ?: 0f
 )

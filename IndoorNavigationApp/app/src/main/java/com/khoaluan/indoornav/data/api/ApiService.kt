@@ -8,16 +8,50 @@ package com.khoaluan.indoornav.data.api
 import com.khoaluan.indoornav.BuildConfig
 import com.khoaluan.indoornav.data.model.Building
 import com.khoaluan.indoornav.data.model.MapResponse
+import com.khoaluan.indoornav.data.model.PlacePublicResponse
+import com.khoaluan.indoornav.data.model.PlaceSearchResponse
 import retrofit2.Response
 import retrofit2.http.GET
 import retrofit2.http.Path
 
 interface ApiService {
 
-    // GET /api/buildings/public - Lay danh sach tat ca toa nha (public, khong can auth)
-// Tra ve: List<Building> -> dung trong MapViewModel.fetchBuildings() de hien thi danh sach toa nha
+    // GET /api/buildings/public - Lay danh sach toa nha COMMUNITY/OFFICIAL (public)
     @GET("buildings/public")
     suspend fun getBuildings(): Response<List<Building>>
+
+    // GET /api/places/search — Place Registry public (PHASE Android)
+    @GET("places/search")
+    suspend fun searchPlaces(
+        @retrofit2.http.Query("q") q: String? = null,
+        @retrofit2.http.Query("lat") lat: Double? = null,
+        @retrofit2.http.Query("lng") lng: Double? = null,
+        @retrofit2.http.Query("radius_m") radiusM: Int? = null,
+        @retrofit2.http.Query("limit") limit: Int? = 50
+    ): Response<PlaceSearchResponse>
+
+    // GET /api/places/public/{idOrSlug} — chi tiết + indoor_buildings
+    @GET("places/public/{idOrSlug}")
+    suspend fun getPlacePublic(
+        @Path("idOrSlug") idOrSlug: String
+    ): Response<PlacePublicResponse>
+
+    // GET /api/community/buildings?q=&lat=&lng=&radius_m= — search cộng đồng
+    @GET("community/buildings")
+    suspend fun searchCommunityBuildings(
+        @retrofit2.http.Query("q") q: String? = null,
+        @retrofit2.http.Query("lat") lat: Double? = null,
+        @retrofit2.http.Query("lng") lng: Double? = null,
+        @retrofit2.http.Query("radius_m") radiusM: Int? = null,
+        @retrofit2.http.Query("limit") limit: Int? = 50
+    ): Response<CommunityBuildingsResponse>
+
+    // GET /api/buildings/check-location?lat=&lng= — nearest trong bán kính
+    @GET("buildings/check-location")
+    suspend fun checkLocation(
+        @retrofit2.http.Query("lat") lat: Double,
+        @retrofit2.http.Query("lng") lng: Double
+    ): Response<CheckLocationResponse>
 
     // GET /api/maps/{buildingId}/{floor}/public - Lay ban do 1 tang cu the
 // Tra ve: MapResponse {mapData, buildingId, floorNumber} -> dung trong MapViewModel.fetchMap()
@@ -59,4 +93,17 @@ data class QrLookupResponse(
     val y: Float,
     val node_id: String?,
     val label: String?
+)
+
+/** Response GET /api/community/buildings */
+data class CommunityBuildingsResponse(
+    val total: Int = 0,
+    val buildings: List<Building> = emptyList()
+)
+
+/** Response GET /api/buildings/check-location */
+data class CheckLocationResponse(
+    val found: Boolean = false,
+    val message: String? = null,
+    val buildings: List<Building> = emptyList()
 )

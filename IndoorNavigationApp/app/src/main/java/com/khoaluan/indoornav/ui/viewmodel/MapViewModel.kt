@@ -70,6 +70,12 @@ sealed interface BuildingListUiState {
     data class Success(val buildings: List<com.khoaluan.indoornav.data.model.Building>) : BuildingListUiState
     data class Error(val message: String) : BuildingListUiState
 }
+
+sealed interface PlaceListUiState {
+    object Loading : PlaceListUiState
+    data class Success(val places: List<com.khoaluan.indoornav.data.model.PlaceSummary>) : PlaceListUiState
+    data class Error(val message: String) : PlaceListUiState
+}
 data class MapCameraState(
     val scale: Float = 1f,
     val offset: Offset = Offset.Zero,
@@ -96,6 +102,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val gpsGeofenceManager = com.khoaluan.indoornav.navigation.gps.GPSGeofenceManager(context)
     private val _detectedBuilding = MutableStateFlow<com.khoaluan.indoornav.data.model.Building?>(null)
     val detectedBuilding: StateFlow<com.khoaluan.indoornav.data.model.Building?> = _detectedBuilding.asStateFlow()
+    private val _detectedPlace = MutableStateFlow<com.khoaluan.indoornav.data.model.PlaceSummary?>(null)
+    val detectedPlace: StateFlow<com.khoaluan.indoornav.data.model.PlaceSummary?> = _detectedPlace.asStateFlow()
+    private var cachedBuildingsForGeofence: List<com.khoaluan.indoornav.data.model.Building> = emptyList()
+    private var cachedPlacesForGeofence: List<com.khoaluan.indoornav.data.model.PlaceSummary> = emptyList()
     // FIX #10: Lưu floor mục tiêu từ QR scan để load đúng tầng
     private val _initialFloor = MutableStateFlow<Int?>(null)
     val initialFloor: StateFlow<Int?> = _initialFloor.asStateFlow()
@@ -107,15 +117,39 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         _initialFloor.value = null
         return floor
     }
-    // Bat dau theo doi GPS: nhan list buildings tu API, khi user vao vung -> cap nhat detectedBuilding
+    // Bat dau theo doi GPS: uu tien Place.radius; fallback Building
     fun startGpsGeofencing(buildings: List<com.khoaluan.indoornav.data.model.Building>) {
-        gpsGeofenceManager.startMonitoring(buildings) { building ->
-            _detectedBuilding.value = building
+        cachedBuildingsForGeofence = buildings
+        restartOutdoorGeofencing()
+    }
+
+    fun startPlaceGeofencing(places: List<com.khoaluan.indoornav.data.model.PlaceSummary>) {
+        cachedPlacesForGeofence = places
+        restartOutdoorGeofencing()
+    }
+
+    private fun restartOutdoorGeofencing() {
+        val places = cachedPlacesForGeofence
+        if (places.isNotEmpty()) {
+            gpsGeofenceManager.startMonitoringPlaces(places) { place ->
+                _detectedPlace.value = place
+                _detectedBuilding.value = null
+            }
+            return
+        }
+        val buildings = cachedBuildingsForGeofence
+        if (buildings.isNotEmpty()) {
+            gpsGeofenceManager.startMonitoring(buildings) { building ->
+                _detectedBuilding.value = building
+                _detectedPlace.value = null
+            }
         }
     }
+
     // Huy thong bao geofence (khi user da chon toa nha thu cong)
     fun dismissGeofence() {
         _detectedBuilding.value = null
+        _detectedPlace.value = null
     }
     // Dung theo doi GPS (goi khi chuyen sang Indoor Navigation de tiet kiem pin)
     fun stopGpsGeofencing() {
@@ -153,10 +187,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun exitIndoorNavigation() {
         clearLocalizationSession()
-        val listState = _buildingListState.value
-        if (listState is BuildingListUiState.Success) {
-            startGpsGeofencing(listState.buildings)
-        }
+        restartOutdoorGeofencing()
     }
     // Tham so reroute (tu dong tinh lai duong khi user lo route)
     private val rerouteCooldownMs = 3000L // Cooldown 3s giua 2 lan reroute
@@ -180,6 +211,15 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     }
     private val _buildingListState = MutableStateFlow<BuildingListUiState>(BuildingListUiState.Loading)
     val buildingListState: StateFlow<BuildingListUiState> = _buildingListState.asStateFlow()
+    private val _placeListState = MutableStateFlow<PlaceListUiState>(PlaceListUiState.Loading)
+    val placeListState: StateFlow<PlaceListUiState> = _placeListState.asStateFlow()
+    private val _placeQuery = MutableStateFlow("")
+    val placeQuery: StateFlow<String> = _placeQuery.asStateFlow()
+    private val _placeActionMessage = MutableStateFlow<String?>(null)
+    val placeActionMessage: StateFlow<String?> = _placeActionMessage.asStateFlow()
+    fun clearPlaceActionMessage() {
+        _placeActionMessage.value = null
+    }
     private val _navState = MutableStateFlow(NavigationState())
     val navState: StateFlow<NavigationState> = _navState.asStateFlow()
     private val _qrScanError = MutableStateFlow<String?>(null)
@@ -195,6 +235,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     }
     init {
         fetchBuildings()
+        searchPlaces("")
     }
     fun refreshMap(buildingId: String, level: Int = 0) {
         fetchMap(buildingId, level)
@@ -214,6 +255,62 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 }
             } catch (e: Exception) {
                 _buildingListState.value = BuildingListUiState.Error("Lỗi mạng: ${e.message}")
+            }
+        }
+    }
+
+    /** Place Registry — tìm địa điểm công khai (q rỗng = danh sách PUBLIC). */
+    fun searchPlaces(q: String) {
+        _placeQuery.value = q
+        viewModelScope.launch {
+            _placeListState.value = PlaceListUiState.Loading
+            try {
+                val api = RetrofitClient.getApiService()
+                val response = api.searchPlaces(
+                    q = q.trim().ifEmpty { null },
+                    limit = 50
+                )
+                if (response.isSuccessful) {
+                    val places = response.body()?.places ?: emptyList()
+                    _placeListState.value = PlaceListUiState.Success(places)
+                    startPlaceGeofencing(places)
+                } else {
+                    _placeListState.value = PlaceListUiState.Error("Lỗi Place: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                _placeListState.value = PlaceListUiState.Error("Lỗi mạng: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Mở Indoor từ Place: 1 building → mở ngay; nhiều → trả list chọn; 0 → thông báo.
+     */
+    fun openPlaceIndoor(
+        idOrSlug: String,
+        onSingleBuilding: (String) -> Unit,
+        onMultipleBuildings: (List<com.khoaluan.indoornav.data.model.IndoorBuildingSummary>) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val api = RetrofitClient.getApiService()
+                val response = api.getPlacePublic(idOrSlug)
+                if (!response.isSuccessful) {
+                    _placeActionMessage.value = "Không tải được Place (${response.code()})"
+                    return@launch
+                }
+                val body = response.body()
+                val indoors = body?.indoorBuildings.orEmpty()
+                when {
+                    indoors.isEmpty() -> {
+                        _placeActionMessage.value =
+                            "Place chưa có bản đồ trong nhà công khai."
+                    }
+                    indoors.size == 1 -> onSingleBuilding(indoors.first().id)
+                    else -> onMultipleBuildings(indoors)
+                }
+            } catch (e: Exception) {
+                _placeActionMessage.value = "Lỗi mạng: ${e.message}"
             }
         }
     }

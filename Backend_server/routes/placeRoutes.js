@@ -1,5 +1,6 @@
 // ============================================
-// Map Governance P0 — Place routes (Super Admin)
+// Place Registry — routes
+// Public search/detail trước; Super Admin CRUD sau.
 // ============================================
 
 const express = require('express');
@@ -16,10 +17,17 @@ const {
   getVisibilityMeta,
   checkDuplicates,
   scanDuplicates,
-  resolvePlaceVerification
+  resolvePlaceVerification,
+  searchPlacesPublic,
+  getPlacePublic
 } = require('../controllers/placeController');
 const { auth, requireSuperAdmin } = require('../middlewares/auth');
 
+// —— Public Place Registry (PHASE 1) ——
+router.get('/search', searchPlacesPublic);
+router.get('/public/:idOrSlug', getPlacePublic);
+
+// —— Super Admin ——
 router.use(auth, requireSuperAdmin);
 
 router.get('/meta/visibility', getVisibilityMeta);

@@ -58,8 +58,10 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-                // Lắng nghe tòa nhà được phát hiện qua GPS Geofencing ngoài trời
+                // Lắng nghe geofence Place (ưu tiên) hoặc Building (fallback)
                 val detectedBuilding by viewModel.detectedBuilding.collectAsState()
+                val detectedPlace by viewModel.detectedPlace.collectAsState()
+                var indoorChoices by remember { mutableStateOf<List<com.khoaluan.indoornav.data.model.IndoorBuildingSummary>?>(null) }
 
                 Surface(modifier = androidx.compose.ui.Modifier.fillMaxSize().systemBarsPadding()) {
                     Box(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
@@ -89,20 +91,66 @@ class MainActivity : ComponentActivity() {
                                     viewModel = viewModel,
                                     onBack = { 
                                         currentBuildingId = null
-                                        viewModel.exitIndoorNavigation() // Bật lại định vị GPS ngoài trời
+                                        viewModel.exitIndoorNavigation()
                                     },
                                     onScanQR = { isScanningQR = true }
                                 )
                             }
                         }
 
-                        // Dialog GPS Geofence hiển thị đè đắt giá (Sleek Glassmorphism Design)
-                        if (detectedBuilding != null) {
+                        if (detectedPlace != null && currentBuildingId == null) {
                             AlertDialog(
                                 onDismissRequest = { viewModel.dismissGeofence() },
                                 title = {
                                     Text(
-                                        text = "📍 Phát hiện tòa nhà",
+                                        text = "Phát hiện địa điểm",
+                                        style = androidx.compose.ui.text.TextStyle(
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                            fontSize = 20.sp,
+                                            color = androidx.compose.ui.graphics.Color.White
+                                        )
+                                    )
+                                },
+                                text = {
+                                    Text(
+                                        text = "Bạn đang gần \"${detectedPlace!!.name}\" (bán kính Place). Mở bản đồ trong nhà?",
+                                        fontSize = 15.sp,
+                                        color = androidx.compose.ui.graphics.Color.LightGray
+                                    )
+                                },
+                                confirmButton = {
+                                    Button(
+                                        onClick = {
+                                            val key = detectedPlace!!.slug?.takeIf { it.isNotBlank() }
+                                                ?: detectedPlace!!.id
+                                            viewModel.dismissGeofence()
+                                            viewModel.openPlaceIndoor(
+                                                idOrSlug = key,
+                                                onSingleBuilding = { currentBuildingId = it },
+                                                onMultipleBuildings = { indoorChoices = it }
+                                            )
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = androidx.compose.ui.graphics.Color(0xFF00E5FF)
+                                        )
+                                    ) {
+                                        Text("Bắt đầu", color = androidx.compose.ui.graphics.Color.Black, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { viewModel.dismissGeofence() }) {
+                                        Text("Để sau", color = androidx.compose.ui.graphics.Color.Gray)
+                                    }
+                                },
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                                containerColor = androidx.compose.ui.graphics.Color(0xFF1E1E2C)
+                            )
+                        } else if (detectedBuilding != null && currentBuildingId == null) {
+                            AlertDialog(
+                                onDismissRequest = { viewModel.dismissGeofence() },
+                                title = {
+                                    Text(
+                                        text = "Phát hiện tòa nhà",
                                         style = androidx.compose.ui.text.TextStyle(
                                             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                                             fontSize = 20.sp,
@@ -131,14 +179,39 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 dismissButton = {
-                                    TextButton(
-                                        onClick = { viewModel.dismissGeofence() }
-                                    ) {
+                                    TextButton(onClick = { viewModel.dismissGeofence() }) {
                                         Text("Để sau", color = androidx.compose.ui.graphics.Color.Gray)
                                     }
                                 },
                                 shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
                                 containerColor = androidx.compose.ui.graphics.Color(0xFF1E1E2C)
+                            )
+                        }
+
+                        val choices = indoorChoices
+                        if (choices != null) {
+                            AlertDialog(
+                                onDismissRequest = { indoorChoices = null },
+                                title = { Text("Chọn bản đồ trong nhà") },
+                                text = {
+                                    androidx.compose.foundation.layout.Column {
+                                        choices.forEach { b ->
+                                            TextButton(
+                                                onClick = {
+                                                    indoorChoices = null
+                                                    currentBuildingId = b.id
+                                                }
+                                            ) {
+                                                Text(b.name)
+                                            }
+                                        }
+                                    }
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = { indoorChoices = null }) {
+                                        Text("Đóng")
+                                    }
+                                }
                             )
                         }
                     }

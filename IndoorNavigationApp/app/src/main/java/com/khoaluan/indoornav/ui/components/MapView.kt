@@ -51,7 +51,8 @@ private data class PoiDrawData(
     val id: Int,
     val name: String,
     val pos: Offset,
-    val color: Color
+    val category: PoiCategory,
+    val size: Float
 )
 
 /**
@@ -167,13 +168,13 @@ fun MapView(
 
     val drawPois = remember(mapData) {
         mapData.pois.map { poi ->
-            val color = when (poi.type?.lowercase()) {
-                "stairs" -> Color(0xFF9C27B0)
-                "elevator" -> Color(0xFF4CAF50)
-                "restroom" -> Color(0xFF03A9F4)
-                else -> Color(0xFFFFC107)
-            }
-            PoiDrawData(poi.id, poi.name ?: "", Offset(poi.x.toFloat(), poi.y.toFloat()), color)
+            PoiDrawData(
+                id = poi.id,
+                name = poi.name ?: "",
+                pos = Offset(poi.x.toFloat(), poi.y.toFloat()),
+                category = poi.resolveCategory(),
+                size = poi.size.coerceIn(12f, 96f),
+            )
         }
     }
 
@@ -279,7 +280,9 @@ fun MapView(
                         val size = state.painter.intrinsicSize
                         withTransform({
                             translate(mapData.bgX, mapData.bgY)
-                            scale(mapData.bgScale, mapData.bgScale, pivot = Offset.Zero)
+                            val scaleX = mapData.bgScaleX.takeIf { it > 0f } ?: mapData.bgScale
+                            val scaleY = mapData.bgScaleY.takeIf { it > 0f } ?: mapData.bgScale
+                            scale(scaleX, scaleY, pivot = Offset.Zero)
                             rotate(mapData.bgRotation, pivot = Offset(size.width / 2f, size.height / 2f))
                         }) {
                             with(painter) { draw(size) }
@@ -396,7 +399,13 @@ fun MapView(
  // LAYER 5: POIs
                 drawPois.forEach { poi ->
                     val isSelected = poi.id == selectedPoiId
-                    drawCircle(if (isSelected) Color.Red else poi.color, radius = (if (isSelected) 8f else 6f) / scale, center = poi.pos)
+                    drawPoiIcon(
+                        category = poi.category,
+                        center = poi.pos,
+                        iconSize = poi.size / scale,
+                        isSelected = isSelected,
+                        textMeasurer = textMeasurer,
+                    )
                     if (scale > 0.6f) {
                         val layout = textMeasurer.measure(poi.name, androidx.compose.ui.text.TextStyle(fontSize = (9f/scale).sp))
                         // FIX: Counter-rotate POI text to keep it always horizontal

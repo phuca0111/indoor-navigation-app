@@ -11,7 +11,7 @@
     var dictionaries = {
         vi: {
             'menu.file': 'Tệp', 'file.new': 'Bản đồ mới', 'file.save': 'Lưu file (JSON)',
-            'file.open': 'Mở file (JSON)', 'file.exportPdf': 'Xuất PDF', 'file.importPdf': 'Nhập PDF',
+            'file.open': 'Mở file (JSON)', 'file.exportPdf': 'Xuất PDF…', 'file.importPdf': 'Nhập PDF',
             'file.exportDxf': 'Xuất DXF (CAD)', 'file.importDxf': 'Nhập DXF (CAD)',
             'file.exportSvg': 'Xuất SVG', 'file.importSvg': 'Nhập SVG',
             'theme.auto': 'Tự động', 'theme.light': 'Sáng', 'theme.dark': 'Tối',
@@ -19,7 +19,7 @@
         },
         en: {
             'menu.file': 'File', 'file.new': 'New map', 'file.save': 'Save file (JSON)',
-            'file.open': 'Open file (JSON)', 'file.exportPdf': 'Export PDF', 'file.importPdf': 'Import PDF',
+            'file.open': 'Open file (JSON)', 'file.exportPdf': 'Export PDF…', 'file.importPdf': 'Import PDF',
             'file.exportDxf': 'Export DXF (CAD)', 'file.importDxf': 'Import DXF (CAD)',
             'file.exportSvg': 'Export SVG', 'file.importSvg': 'Import SVG',
             'theme.auto': 'Auto', 'theme.light': 'Light', 'theme.dark': 'Dark',

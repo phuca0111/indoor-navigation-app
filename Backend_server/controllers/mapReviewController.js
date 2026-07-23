@@ -100,6 +100,19 @@ async function createReview(req, res) {
       });
     }
 
+    // Demo plan: không gửi OFFICIAL
+    if (visibility === 'OFFICIAL' && req.user.role !== 'SUPER_ADMIN') {
+      const User = require('../models/User');
+      const { assertCanRequestOfficial } = require('../services/personalPlanGates');
+      const me = await User.findById(req.user.userId).select('plan plan_expires_at role').lean();
+      if (me?.role === 'REGISTERED_USER' || !me?.role) {
+        const offGate = assertCanRequestOfficial(me || { plan: 'FREE' });
+        if (!offGate.ok) {
+          return res.status(403).json({ message: offGate.message, code: offGate.code });
+        }
+      }
+    }
+
     const building = await Building.findById(buildingId);
     if (!building) return res.status(404).json({ message: 'Không tìm thấy tòa nhà.' });
 

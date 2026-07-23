@@ -8,40 +8,83 @@ import android.location.LocationManager
 import android.os.Bundle
 import android.util.Log
 import com.khoaluan.indoornav.data.model.Building
+import com.khoaluan.indoornav.data.model.PlaceSummary
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * FILE: GPSGeofenceManager.kt
- * MỤC ĐÍCH: Quản lý GPS Geofencing ngoài trời dùng LocationManager nguyên bản của Android.
- * Hoạt động 100% offline, gọn nhẹ, không cần Google Play Services.
- * Tự động ngắt GPS (Gateway shutdown) khi người dùng vào chế độ Indoor Mode để tiết kiệm pin.
+ * GPS Geofencing ngoài trời — ưu tiên Place.radius; fallback Building 150m.
  */
 class GPSGeofenceManager(private val context: Context) {
 
+    data class GeofenceSite(
+        val id: String,
+        val name: String,
+        val lat: Double,
+        val lng: Double,
+        val radiusM: Float,
+        val building: Building? = null,
+        val place: PlaceSummary? = null
+    )
+
     private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     private var locationListener: LocationListener? = null
-    
-    private var monitoredBuildings: List<Building> = emptyList()
-    private var onEnterBuildingCallback: ((Building) -> Unit)? = null
-    private var activeBuildingId: String? = null
 
-    private val defaultActivationRadiusMeters = 150f // Bán kính kích hoạt mặc định 150m
+    private var monitoredSites: List<GeofenceSite> = emptyList()
+    private var onEnterSiteCallback: ((GeofenceSite) -> Unit)? = null
+    private var activeSiteId: String? = null
 
-    /**
-     * Bắt đầu giám sát vị trí GPS ngoài trời dựa trên danh sách tòa nhà
-     */
+    private val defaultBuildingRadiusMeters = 150f
+
     @SuppressLint("MissingPermission")
     fun startMonitoring(buildings: List<Building>, onEnter: (Building) -> Unit) {
-        stopMonitoring() // Dọn dẹp listener cũ nếu có
-        
-        monitoredBuildings = buildings
-        onEnterBuildingCallback = onEnter
-        activeBuildingId = null
+        val sites = buildings.mapNotNull { b ->
+            val gps = b.gpsLocation ?: return@mapNotNull null
+            GeofenceSite(
+                id = b.id,
+                name = b.name,
+                lat = gps.lat,
+                lng = gps.lng,
+                radiusM = defaultBuildingRadiusMeters,
+                building = b
+            )
+        }
+        startMonitoringSites(sites) { site ->
+            site.building?.let(onEnter)
+        }
+    }
 
-        Log.d("GPSGeofenceManager", "Bắt đầu giám sát GPS cho ${buildings.size} tòa nhà")
+    @SuppressLint("MissingPermission")
+    fun startMonitoringPlaces(places: List<PlaceSummary>, onEnter: (PlaceSummary) -> Unit) {
+        val sites = places.mapNotNull { p ->
+            val lat = p.latitude ?: return@mapNotNull null
+            val lng = p.longitude ?: return@mapNotNull null
+            if (lat == 0.0 && lng == 0.0) return@mapNotNull null
+            val radius = (p.radius ?: 80.0).toFloat().coerceIn(30f, 2000f)
+            GeofenceSite(
+                id = p.id,
+                name = p.name,
+                lat = lat,
+                lng = lng,
+                radiusM = radius,
+                place = p
+            )
+        }
+        startMonitoringSites(sites) { site ->
+            site.place?.let(onEnter)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun startMonitoringSites(sites: List<GeofenceSite>, onEnter: (GeofenceSite) -> Unit) {
+        stopMonitoring()
+        monitoredSites = sites
+        onEnterSiteCallback = onEnter
+        activeSiteId = null
+
+        Log.d("GPSGeofenceManager", "Bắt đầu giám sát GPS cho ${sites.size} site")
 
         locationListener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
@@ -54,17 +97,14 @@ class GPSGeofenceManager(private val context: Context) {
         }
 
         try {
-            // Đăng ký nhận cập nhật từ GPS_PROVIDER (realtime ngoài trời) 
-            // và NETWORK_PROVIDER (fallback tiết kiệm pin)
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 locationManager.requestLocationUpdates(
                     LocationManager.GPS_PROVIDER,
-                    5000L, // 5 giây cập nhật 1 lần ngoài trời
-                    5f,    // Thay đổi 5 mét
+                    5000L,
+                    5f,
                     locationListener!!
                 )
             }
-            
             if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                 locationManager.requestLocationUpdates(
                     LocationManager.NETWORK_PROVIDER,
@@ -78,48 +118,42 @@ class GPSGeofenceManager(private val context: Context) {
         }
     }
 
-    /**
-     * Dừng toàn bộ cập nhật GPS để tiết kiệm pin tuyệt đối (GPS Gateway Shutdown)
-     */
     fun stopMonitoring() {
         locationListener?.let {
             locationManager.removeUpdates(it)
             Log.i("GPSGeofenceManager", "Đã ngắt kết nối định vị GPS ngoài trời (Gateway Shutdown)")
         }
         locationListener = null
-        onEnterBuildingCallback = null
-        activeBuildingId = null
+        onEnterSiteCallback = null
+        activeSiteId = null
     }
 
-    /**
-     * Kiểm tra khoảng cách của User tới tất cả các geofence tòa nhà
-     */
     private fun checkGeofences(location: Location) {
-        for (building in monitoredBuildings) {
-            val gps = building.gpsLocation ?: continue
+        var best: GeofenceSite? = null
+        var bestDist = Float.MAX_VALUE
+        for (site in monitoredSites) {
             val distance = calculateDistance(
                 location.latitude, location.longitude,
-                gps.lat, gps.lng
+                site.lat, site.lng
             )
-
-            Log.d("GPSGeofenceManager", "Khoảng cách tới ${building.name}: ${distance}m")
-
-            if (distance <= defaultActivationRadiusMeters) {
-                if (activeBuildingId != building.id) {
-                    activeBuildingId = building.id
-                    Log.i("GPSGeofenceManager", "Đã đi vào Geofence của tòa nhà: ${building.name}")
-                    onEnterBuildingCallback?.invoke(building)
-                }
-                break // Ưu tiên tòa nhà gần nhất phát hiện được
+            if (distance <= site.radiusM && distance < bestDist) {
+                best = site
+                bestDist = distance
             }
+        }
+        val hit = best ?: return
+        if (activeSiteId != hit.id) {
+            activeSiteId = hit.id
+            Log.i(
+                "GPSGeofenceManager",
+                "Vào geofence ${hit.name} (${bestDist.toInt()}m / radius ${hit.radiusM.toInt()}m)"
+            )
+            onEnterSiteCallback?.invoke(hit)
         }
     }
 
-    /**
-     * Công thức Haversine tính khoảng cách địa lý chính xác giữa 2 điểm (Lat, Lng) ra mét
-     */
     private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
-        val r = 6371000 // Bán kính Trái Đất theo mét
+        val r = 6371000
         val dLat = Math.toRadians(lat2 - lat1)
         val dLon = Math.toRadians(lon2 - lon1)
         val a = sin(dLat / 2) * sin(dLat / 2) +
