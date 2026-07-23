@@ -168,15 +168,18 @@
         const lng = pos.coords.longitude;
         if (userMarker) map.removeLayer(userMarker);
         if (userCircle) map.removeLayer(userCircle);
+        const accent =
+          getComputedStyle(document.documentElement).getPropertyValue('--outdoor-accent').trim() ||
+          'currentColor';
         userMarker = L.circleMarker([lat, lng], {
           radius: 8,
-          color: '#2d8cff',
-          fillColor: '#2d8cff',
+          color: accent,
+          fillColor: accent,
           fillOpacity: 0.9
         }).addTo(map);
         userCircle = L.circle([lat, lng], {
           radius: GEOFENCE_M,
-          color: '#2d8cff',
+          color: accent,
           weight: 1,
           fillOpacity: 0.08
         }).addTo(map);
