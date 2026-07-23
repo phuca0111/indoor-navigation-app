@@ -5,6 +5,11 @@
 // ============================================
 
 const mongoose = require('mongoose');
+const {
+  WORKSPACE_STATUS,
+  WORKSPACE_STATUS_VALUES,
+  syncWorkspaceStatusFromBuildingStatus
+} = require('../utils/placePlatform');
 
 const buildingSchema = new mongoose.Schema({
 
@@ -100,10 +105,31 @@ const buildingSchema = new mongoose.Schema({
         enum: ['PRIVATE', 'UNLISTED', 'COMMUNITY', 'OFFICIAL'],
         default: 'PRIVATE',
         index: true
+    },
+
+    // GĐ1 — Indoor Workspace lifecycle (Building giả lập Workspace; editor giữ nguyên)
+    // DRAFT | IN_REVIEW | PUBLISHED | DEPRECATED | ARCHIVED
+    workspace_status: {
+        type: String,
+        enum: WORKSPACE_STATUS_VALUES,
+        default: WORKSPACE_STATUS.DRAFT,
+        index: true
     }
 
 }, {
     timestamps: true   // Tự thêm cột ngày tạo + ngày cập nhật
+});
+
+buildingSchema.pre('save', function syncWorkspaceLifecycle() {
+    if (this.isModified('workspace_status') && !this.isModified('status')) {
+        return;
+    }
+    if (this.isNew || this.isModified('status')) {
+        this.workspace_status = syncWorkspaceStatusFromBuildingStatus(
+            this.status,
+            this.workspace_status
+        );
+    }
 });
 
 module.exports = mongoose.model('Building', buildingSchema);

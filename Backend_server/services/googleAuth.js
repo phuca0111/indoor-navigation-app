@@ -112,9 +112,50 @@ async function exchangeCode(code) {
   };
 }
 
+/**
+ * Android / Credential Manager — xác minh Google ID token (không cần authorization code).
+ * @param {string} idToken
+ * @returns {Promise<{ email: string, googleId: string, name: string }>}
+ */
+async function verifyIdToken(idToken) {
+  if (!process.env.GOOGLE_CLIENT_ID) {
+    const err = new Error('Google OAuth chưa được cấu hình.');
+    err.status = 503;
+    err.code = 'GOOGLE_OAUTH_DISABLED';
+    throw err;
+  }
+  if (!idToken || typeof idToken !== 'string') {
+    const err = new Error('Thiếu idToken.');
+    err.status = 400;
+    err.code = 'GOOGLE_ID_TOKEN_MISSING';
+    throw err;
+  }
+
+  const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+  const ticket = await client.verifyIdToken({
+    idToken,
+    audience: process.env.GOOGLE_CLIENT_ID
+  });
+  const payload = ticket.getPayload() || {};
+  const email = String(payload.email || '').toLowerCase().trim();
+  const googleId = String(payload.sub || '');
+  if (!email || !googleId || payload.email_verified !== true) {
+    const err = new Error('Token Google không hợp lệ hoặc email chưa xác minh.');
+    err.status = 401;
+    err.code = 'GOOGLE_ID_TOKEN_INVALID';
+    throw err;
+  }
+  return {
+    email,
+    googleId,
+    name: String(payload.name || payload.given_name || email.split('@')[0] || '')
+  };
+}
+
 module.exports = {
   isGoogleEnabled,
   getCallbackUrl,
   getAuthUrl,
-  exchangeCode
+  exchangeCode,
+  verifyIdToken
 };

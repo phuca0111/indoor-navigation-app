@@ -97,6 +97,16 @@ sealed interface BuildingListUiState {
     data class Success(val buildings: List<com.khoaluan.indoornav.data.model.Building>) : BuildingListUiState
     data class Error(val message: String) : BuildingListUiState
 }
+
+/** GĐ8 — danh sách Place Registry (có/không indoor). */
+sealed interface PlaceListUiState {
+    object Idle : PlaceListUiState
+    object Loading : PlaceListUiState
+    data class Success(val places: List<com.khoaluan.indoornav.data.api.PlaceDto>) : PlaceListUiState
+    data class Error(val message: String) : PlaceListUiState
+    /** Place tồn tại nhưng chưa có Indoor Workspace publish. */
+    data class NoIndoor(val placeName: String, val placeId: String) : PlaceListUiState
+}
 data class MapCameraState(
     val scale: Float = 1f,
     val offset: Offset = Offset.Zero,
@@ -272,6 +282,13 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     }
     private val _buildingListState = MutableStateFlow<BuildingListUiState>(BuildingListUiState.Loading)
     val buildingListState: StateFlow<BuildingListUiState> = _buildingListState.asStateFlow()
+
+    private val _placeListState = MutableStateFlow<PlaceListUiState>(PlaceListUiState.Idle)
+    val placeListState: StateFlow<PlaceListUiState> = _placeListState.asStateFlow()
+
+    private val _placeNotice = MutableStateFlow<String?>(null)
+    val placeNotice: StateFlow<String?> = _placeNotice.asStateFlow()
+    fun clearPlaceNotice() { _placeNotice.value = null }
     private val _navState = MutableStateFlow(NavigationState())
     val navState: StateFlow<NavigationState> = _navState.asStateFlow()
     private val _qrScanError = MutableStateFlow<String?>(null)
@@ -375,6 +392,79 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             }
         }
     }
+
+    /** GĐ8 — tải Place Registry (song song / thay discovery). */
+    fun fetchPlaces(query: String? = null) {
+        viewModelScope.launch {
+            _placeListState.value = PlaceListUiState.Loading
+            try {
+                val api = RetrofitClient.getApiService()
+                val places = if (query.isNullOrBlank()) {
+                    val response = api.getPlaces(limit = 50)
+                    if (!response.isSuccessful) {
+                        // Place Registry là bổ sung — không chặn list tòa nhà
+                        val msg = when (response.code()) {
+                            401, 403 -> "Place Registry chưa public trên server (cần restart Backend GĐ2+)."
+                            else -> "Lỗi Place: ${response.code()}"
+                        }
+                        _placeListState.value = PlaceListUiState.Error(msg)
+                        return@launch
+                    }
+                    response.body()?.places.orEmpty()
+                } else {
+                    val response = api.searchPlaces(
+                        com.khoaluan.indoornav.data.api.PlaceSearchBody(q = query, limit = 50)
+                    )
+                    if (!response.isSuccessful) {
+                        val msg = when (response.code()) {
+                            401, 403 -> "Place Registry chưa public trên server (cần restart Backend GĐ2+)."
+                            else -> "Lỗi Place: ${response.code()}"
+                        }
+                        _placeListState.value = PlaceListUiState.Error(msg)
+                        return@launch
+                    }
+                    response.body()?.places.orEmpty()
+                }
+                _placeListState.value = PlaceListUiState.Success(places)
+            } catch (e: Exception) {
+                _placeListState.value = PlaceListUiState.Error("Lỗi mạng Place: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * GĐ8 — mở indoor từ Place: nếu có workspace publish → trả buildingId;
+     * nếu chưa → NoIndoor notice (không crash).
+     */
+    fun resolveIndoorBuildingFromPlace(placeId: String, onBuilding: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val api = RetrofitClient.getApiService()
+                val res = api.getPlace(placeId)
+                if (!res.isSuccessful) {
+                    _placeNotice.value = "Không tải được Place (${res.code()})"
+                    return@launch
+                }
+                val body = res.body()
+                val place = body?.place
+                val indoor = body?.indoorWorkspaces.orEmpty()
+                if (indoor.isEmpty()) {
+                    _placeListState.value = PlaceListUiState.NoIndoor(
+                        placeName = place?.name ?: "Place",
+                        placeId = placeId
+                    )
+                    _placeNotice.value =
+                        "${place?.name ?: placeId} chưa có bản đồ trong nhà. Hãy đề xuất / tạo workspace trên web."
+                    return@launch
+                }
+                val buildingId = indoor.first().id
+                onBuilding(buildingId)
+            } catch (e: Exception) {
+                _placeNotice.value = "Lỗi Place: ${e.message}"
+            }
+        }
+    }
+
     // Lay ban do 1 tang tu backend, khoi tao GraphModel + LocationEngine
     // Goi khi: MapScreen vua vao (buildingId, floor=0) hoac user chon tang khac
     private fun fetchMap(buildingId: String, floor: Int, preserveCrossFloorPending: Boolean = false) {

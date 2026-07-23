@@ -62,6 +62,8 @@ function serializePlace(doc, extras = {}) {
     verified_by: p.verified_by || null,
     owner_org_id: p.owner_org_id || null,
     owner_org: extras.owner_org || null,
+    owner_type: p.owner_type || null,
+    publication_status: p.publication_status || null,
     status: p.status,
     notes: p.notes || '',
     created_by: p.created_by || null,
@@ -206,7 +208,10 @@ async function createPlace(req, res) {
       boundary: req.body?.boundary || null,
       verified: !!req.body?.verified,
       owner_org_id,
+      owner_type: owner_org_id ? 'ORGANIZATION' : (req.body?.owner_type || 'UNCLAIMED'),
       status: normalizePlaceStatus(req.body?.status, 'ACTIVE'),
+      publication_status: req.body?.publication_status
+        || (normalizePlaceStatus(req.body?.status, 'ACTIVE') === 'ACTIVE' ? 'PUBLISHED' : 'DRAFT'),
       notes: String(req.body?.notes || '').slice(0, 1000),
       created_by: req.user.userId
     });

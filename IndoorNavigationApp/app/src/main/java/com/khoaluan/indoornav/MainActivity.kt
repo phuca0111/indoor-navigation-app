@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        com.khoaluan.indoornav.data.api.RetrofitClient.init(this)
         setContent {
             IndoorNavigationAppTheme {
                 val viewModel: MapViewModel = viewModel()

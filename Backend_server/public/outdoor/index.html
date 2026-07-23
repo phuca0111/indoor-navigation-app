@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Outdoor Discovery — Indoor Mapping Platform</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --text: #e8eef5;
+      --muted: #8b9bb0;
+      --accent: #2d8cff;
+      --ok: #3dd68c;
+      --warn: #f0b429;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: grid;
+      grid-template-columns: 340px 1fr;
+    }
+    aside {
+      background: var(--panel);
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      border-right: 1px solid #2a3548;
+      overflow: hidden;
+    }
+    h1 { font-size: 1.1rem; margin: 0; font-weight: 650; }
+    .sub { color: var(--muted); font-size: 0.8rem; margin: 0; }
+    input, button {
+      width: 100%;
+      padding: 0.55rem 0.7rem;
+      border-radius: 8px;
+      border: 1px solid #2a3548;
+      background: #121a26;
+      color: var(--text);
+      font-size: 0.9rem;
+    }
+    button {
+      background: var(--accent);
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button.secondary { background: #243044; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #results {
+      flex: 1;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .place-card {
+      text-align: left;
+      background: #121a26;
+      padding: 0.65rem 0.75rem;
+      border-radius: 8px;
+      border: 1px solid #2a3548;
+      cursor: pointer;
+    }
+    .place-card:hover, .place-card.active { border-color: var(--accent); }
+    .place-card .name { font-weight: 600; font-size: 0.92rem; }
+    .place-card .meta { color: var(--muted); font-size: 0.75rem; margin-top: 0.2rem; }
+    .badge {
+      display: inline-block;
+      font-size: 0.68rem;
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+      margin-top: 0.35rem;
+      background: #243044;
+    }
+    .badge.ok { background: rgba(61, 214, 140, 0.2); color: var(--ok); }
+    .badge.warn { background: rgba(240, 180, 41, 0.2); color: var(--warn); }
+    #map { height: 100%; width: 100%; }
+    #detail {
+      background: #121a26;
+      border: 1px solid #2a3548;
+      border-radius: 8px;
+      padding: 0.75rem;
+      font-size: 0.85rem;
+      min-height: 88px;
+    }
+    #detail h2 { margin: 0 0 0.35rem; font-size: 1rem; }
+    #statusLine { color: var(--muted); font-size: 0.75rem; }
+    @media (max-width: 800px) {
+      body { grid-template-columns: 1fr; grid-template-rows: 45vh 55vh; }
+    }
+  </style>
+</head>
+<body>
+  <aside>
+    <div>
+      <h1>Outdoor Discovery</h1>
+      <p class="sub">OSM + Leaflet · marker từ Place Registry</p>
+    </div>
+    <input id="q" type="search" placeholder="Tìm Place (tên, địa chỉ…)" />
+    <div style="display:flex; gap:0.4rem;">
+      <button type="button" id="btnSearch">Tìm</button>
+      <button type="button" id="btnGps" class="secondary">GPS</button>
+    </div>
+    <div id="statusLine">Đang tải Place…</div>
+    <div id="detail"><p class="sub">Chọn marker hoặc kết quả tìm kiếm.</p></div>
+    <div id="results"></div>
+  </aside>
+  <div id="map" aria-label="Bản đồ ngoài trời"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="/outdoor/app.js"></script>
+</body>
+</html>

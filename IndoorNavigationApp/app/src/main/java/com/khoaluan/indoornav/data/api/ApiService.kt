@@ -10,8 +10,11 @@ import com.khoaluan.indoornav.data.model.Building
 import com.khoaluan.indoornav.data.model.MapData
 import com.khoaluan.indoornav.data.model.MapResponse
 import retrofit2.Response
+import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 interface ApiService {
 
@@ -19,6 +22,19 @@ interface ApiService {
 // Tra ve: List<Building> -> dung trong MapViewModel.fetchBuildings() de hien thi danh sach toa nha
     @GET("buildings/public")
     suspend fun getBuildings(): Response<List<Building>>
+
+    // GĐ8 — Place Registry
+    @GET("places")
+    suspend fun getPlaces(
+        @Query("q") q: String? = null,
+        @Query("limit") limit: Int = 50,
+    ): Response<PlacesListResponse>
+
+    @GET("places/{id}")
+    suspend fun getPlace(@Path("id") placeId: String): Response<PlaceDetailResponse>
+
+    @POST("places/search")
+    suspend fun searchPlaces(@Body body: PlaceSearchBody): Response<PlaceSearchResponse>
 
     // GET /api/maps/{buildingId}/{floor}/public - Lay ban do 1 tang cu the
 // Tra ve: MapResponse {mapData, buildingId, floorNumber} -> dung trong MapViewModel.fetchMap()
