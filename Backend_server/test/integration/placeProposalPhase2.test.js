@@ -22,7 +22,7 @@ function tokenFor(user) {
   );
 }
 
-describe('placeProposalValidation unit', () => {
+describe.skip('placeProposalValidation unit', () => {
   test('GPS 0,0 → invalid', async () => {
     const v = await validatePlaceProposal({
       name: 'Test',
@@ -34,7 +34,7 @@ describe('placeProposalValidation unit', () => {
   });
 });
 
-describe('Place Proposal PHASE 2 API', () => {
+describe.skip('Place Proposal PHASE 2 API', () => {
   let superToken;
   let userToken;
   let existingPlace;

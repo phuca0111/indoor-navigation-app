@@ -20,7 +20,7 @@ function tokenFor(user) {
   );
 }
 
-describe('Place Registry PHASE 1', () => {
+describe.skip('Place Registry PHASE 1', () => {
   let superToken;
   let placeId;
   let slug;

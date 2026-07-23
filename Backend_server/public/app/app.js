@@ -253,10 +253,18 @@
           longitude: Number(form.longitude.value),
           description: form.description.value.trim()
         };
-        const res = await api('/place-proposals', {
+        const res = await api('/proposals', {
           method: 'POST',
           headers: headers(true),
-          body: JSON.stringify(body)
+          body: JSON.stringify({
+            proposed_name: body.name,
+            name: body.name,
+            address: body.address,
+            category: body.category,
+            latitude: body.latitude,
+            longitude: body.longitude,
+            description: body.description
+          })
         });
         if (msg) msg.textContent = res.message || 'Đã gửi.';
         form.reset();

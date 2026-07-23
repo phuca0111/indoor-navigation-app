@@ -17,7 +17,9 @@ const {
   getVisibilityMeta,
   checkDuplicates,
   scanDuplicates,
-  resolvePlaceVerification
+  resolvePlaceVerification,
+  searchPlacesPublic,
+  getPlacePublic
 } = require('../controllers/placeController');
 const {
   listPlacesRegistry,
@@ -44,6 +46,8 @@ const { P } = require('../utils/permissions');
 // —— Public Registry (không bắt buộc Super); có token MAP_MOD/SUPER → list/detail admin ——
 router.get('/', optionalAuth, listPlacesRegistry);
 router.post('/search', searchPlacesRegistry);
+router.get('/search', searchPlacesPublic);
+router.get('/public/:idOrSlug', getPlacePublic);
 router.get('/meta/visibility', auth, requireAnyPermission(P.PLACE_MANAGE, P.PLACE_MODERATE), getVisibilityMeta);
 
 // Validation preview (GĐ4)

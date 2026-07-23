@@ -57,9 +57,30 @@
   }
 
   async function fetchPlaces(params) {
-    const qs = new URLSearchParams(params || {});
-    if (!qs.has('limit')) qs.set('limit', '80');
-    const res = await fetch(API + '/places/search?' + qs.toString());
+    const p = params || {};
+    const hasGeo = p.lat != null && p.lng != null;
+    const hasText = !!(p.q || p.category);
+    if (hasGeo || hasText) {
+      const res = await fetch(API + '/places/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          q: p.q || '',
+          category: p.category || '',
+          lat: p.lat,
+          lng: p.lng,
+          radius_m: p.radius_m || 3000,
+          limit: p.limit || 80
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Không tải được Place');
+      return data.places || [];
+    }
+    const qs = new URLSearchParams({ limit: String(p.limit || 80) });
+    if (p.q) qs.set('q', p.q);
+    if (p.category) qs.set('category', p.category);
+    const res = await fetch(API + '/places?' + qs.toString());
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.message || 'Không tải được Place');
     return data.places || [];
@@ -230,8 +251,8 @@
     if (el.indoor) el.indoor.innerHTML = '';
 
     try {
-      const key = p?.slug || idOrSlug;
-      const res = await fetch(API + '/places/public/' + encodeURIComponent(key));
+      const key = p?._id || idOrSlug;
+      const res = await fetch(API + '/places/' + encodeURIComponent(key));
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Không tải chi tiết');
       const place = data.place;
@@ -255,15 +276,18 @@
         (place.category || '—') +
         ' · GPS ' + (Number(place.latitude) || 0).toFixed(5) + ', ' + (Number(place.longitude) || 0).toFixed(5) +
         (place.radius != null ? ' · radius ' + place.radius + 'm' : '') +
-        (place.verified ? ' · Đã xác minh' : '');
+        (place.verified || place.verification_status === 'VERIFIED' ? ' · Đã xác minh' : '');
 
       const share = shareUrlForPlace(place);
+      const indoorList = data.indoor_workspaces || data.indoor_buildings || [];
+      const hasIndoor = data.has_indoor || indoorList.length > 0;
       let indoorHtml = '';
-      if (data.has_indoor && (data.indoor_buildings || []).length) {
+      if (hasIndoor && indoorList.length) {
         indoorHtml =
           '<p><strong>Bản đồ trong nhà công khai</strong></p><ul>' +
-          data.indoor_buildings.map((b) => (
-            '<li><strong>' + escapeHtml(b.name) + '</strong> · ' + escapeHtml(b.visibility || '') +
+          indoorList.map((b) => (
+            '<li><strong>' + escapeHtml(b.name) + '</strong> · ' +
+            escapeHtml(b.workspace_status || b.visibility || b.status || '') +
             ' · ' + (b.total_floors || 1) + ' tầng' +
             '<br><span class="ex-meta">Mở Indoor trên app Android (Place → Indoor). ' +
             '<a href="/login">Đăng nhập web</a> nếu bạn là chủ map.</span></li>'

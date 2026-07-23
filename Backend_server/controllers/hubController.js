@@ -224,16 +224,28 @@ async function listMyWorkspaces(req, res) {
   }
 }
 
-// GET /api/hub/proposals — own proposals
+// GET /api/hub/proposals — own proposals (schema GitHub: created_by + proposed_name)
 async function listMyProposals(req, res) {
   try {
-    const filter = { submitted_by: req.user.userId };
+    const filter = { created_by: req.user.userId };
     const status = String(req.query.status || '').trim().toUpperCase();
-    if (['PENDING', 'APPROVED', 'REJECTED', 'DUPLICATE'].includes(status)) {
-      filter.status = status;
+    if (['DRAFT', 'SUBMITTED', 'IN_REVIEW', 'APPROVED', 'REJECTED', 'PENDING', 'DUPLICATE'].includes(status)) {
+      // PENDING (UI cũ) ≈ SUBMITTED/IN_REVIEW
+      if (status === 'PENDING') {
+        filter.status = { $in: ['SUBMITTED', 'IN_REVIEW', 'DRAFT'] };
+      } else {
+        filter.status = status;
+      }
     }
     const rows = await PlaceProposal.find(filter).sort({ createdAt: -1 }).limit(50).lean();
-    return res.status(200).json({ total: rows.length, proposals: rows });
+    return res.status(200).json({
+      total: rows.length,
+      proposals: rows.map((p) => ({
+        ...p,
+        name: p.proposed_name || p.name || '',
+        submitted_by: p.created_by || p.submitted_by
+      }))
+    });
   } catch (e) {
     return res.status(500).json({ message: e.message });
   }

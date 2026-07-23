@@ -26,6 +26,7 @@ const {
   PLACE_OWNER_TYPES,
   PLACE_PUBLICATION_STATUS
 } = require('../utils/placeRegistry');
+const { isPlacePubliclyListed } = require('../utils/placePlatform');
 
 function logActivity(data) {
   ActivityLog.create(data).catch(() => {});
@@ -646,7 +647,7 @@ async function updateBuildingVisibility(req, res) {
   }
 }
 
-// GET /api/places/search — PUBLIC Place Registry search
+// GET /api/places/search — PUBLIC Place Registry search (query string)
 async function searchPlacesPublic(req, res) {
   try {
     const q = String(req.query.q || '').trim();
@@ -656,54 +657,22 @@ async function searchPlacesPublic(req, res) {
     const lng = req.query.lng != null ? Number(req.query.lng) : null;
     const radiusM = Number(req.query.radius_m) || 5000;
 
-    const filter = {
-      status: 'ACTIVE',
-      publication_status: { $in: ['PUBLIC'] }
-    };
-    if (category) {
-      filter.category = new RegExp(category.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    }
-    if (q) {
-      const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      filter.$or = [
-        { name: new RegExp(safe, 'i') },
-        { aliases: new RegExp(safe, 'i') },
-        { address: new RegExp(safe, 'i') },
-        { slug: new RegExp(safe, 'i') }
-      ];
-    }
-
-    let rows = await Place.find(filter)
-      .select('name slug aliases latitude longitude radius address category owner_type publication_status verification_status verified status')
-      .limit(limit * 3)
-      .lean();
-
-    if (Number.isFinite(lat) && Number.isFinite(lng)) {
-      rows = rows
-        .map((p) => ({
-          ...p,
-          distance_m: haversineMeters(lat, lng, p.latitude || 0, p.longitude || 0)
-        }))
-        .filter((p) => p.distance_m <= radiusM)
-        .sort((a, b) => a.distance_m - b.distance_m);
-    }
-
-    rows = rows.slice(0, limit);
-    const counts = await buildingCountsByPlaceIds(rows.map((r) => r._id));
-
-    return res.status(200).json({
-      total: rows.length,
-      places: rows.map((r) => serializePlace(r, {
-        building_count: counts[String(r._id)] || 0,
-        distance_m: r.distance_m
-      }))
+    const { searchPlaces } = require('../application/placeRegistry/placeRegistryApplicationService');
+    const result = await searchPlaces({
+      q,
+      category,
+      lat,
+      lng,
+      radius_m: radiusM,
+      limit
     });
+    return res.status(200).json(result);
   } catch (error) {
     return res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
   }
 }
 
-// GET /api/places/public/:idOrSlug — PUBLIC detail (chỉ PUBLIC + ACTIVE)
+// GET /api/places/public/:idOrSlug — PUBLIC detail (slug hoặc id)
 async function getPlacePublic(req, res) {
   try {
     const key = String(req.params.idOrSlug || '').trim();
@@ -717,40 +686,25 @@ async function getPlacePublic(req, res) {
       place = await Place.findOne({ slug: key }).lean();
     }
     if (!place) return res.status(404).json({ message: 'Không tìm thấy Place.' });
-    if (place.status !== 'ACTIVE' || place.publication_status !== 'PUBLIC') {
+    if (!isPlacePubliclyListed(place)) {
       return res.status(404).json({ message: 'Place không công khai.', code: 'PLACE_NOT_PUBLIC' });
     }
 
     const indoorBuildings = await Building.find({
       place_id: place._id,
-      status: 'PUBLISHED',
       is_active: { $ne: false },
-      visibility: { $in: ['COMMUNITY', 'OFFICIAL'] }
+      $or: [{ workspace_status: 'PUBLISHED' }, { status: 'PUBLISHED' }]
     })
-      .select('name visibility total_floors workspace_id status')
+      .select('name visibility total_floors workspace_id status workspace_status')
       .limit(20)
       .lean();
-
-    let workspaces = [];
-    try {
-      const IndoorWorkspace = require('../models/IndoorWorkspace');
-      workspaces = await IndoorWorkspace.find({
-        place_id: place._id,
-        status: { $in: ['ACTIVE', 'DRAFT'] }
-      })
-        .select('name kind status building_id is_current_published')
-        .limit(20)
-        .lean();
-    } catch (_) {
-      workspaces = [];
-    }
 
     return res.status(200).json({
       place: serializePlace(place, { building_count: indoorBuildings.length }),
       has_indoor: indoorBuildings.length > 0,
       indoor_published_count: indoorBuildings.length,
       indoor_buildings: indoorBuildings,
-      workspaces
+      indoor_workspaces: indoorBuildings
     });
   } catch (error) {
     return res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });

@@ -51,7 +51,7 @@ describe('My Maps Hub Phase 1', () => {
       address: 'HCMC',
       category: 'mall',
       status: 'ACTIVE',
-      publication_status: 'PUBLIC'
+      publication_status: 'PUBLISHED'
     });
   });
 
@@ -142,9 +142,10 @@ describe('My Maps Hub Phase 1', () => {
     expect(check.body.favorited).toBe(true);
 
     const prop = await request(app)
-      .post('/api/place-proposals')
+      .post('/api/proposals')
       .set('Authorization', 'Bearer ' + token)
       .send({
+        proposed_name: TAG + ' Proposal Unique ' + Date.now(),
         name: TAG + ' Proposal Unique ' + Date.now(),
         latitude: 10.781234,
         longitude: 106.712345,
