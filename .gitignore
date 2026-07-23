@@ -41,13 +41,35 @@ Backend_server/get_real_test_data.js
 Backend_server/test_api_*.js
 Backend_server/test_get_data*.js
 
-# Unit test Jest — luôn đưa lên Git
-!Backend_server/test/
-!Backend_server/test/**
+# Unit / instrumented tests — KHÔNG commit (theo yêu cầu local)
+Backend_server/test/
+IndoorNavigationApp/app/src/test/
+IndoorNavigationApp/app/src/androidTest/
+TEST_CASE_*.md
 
-# Gradle cache local (JDK zip, rất nặng)
+# Tài liệu / tiến độ / chat dump / README — KHÔNG commit (giữ local)
+*.md
+lam_luan_van/
+chat_*.md
+chats_*.md
+all_chats_sample.md
+gen_part1.js
+gen_part2.js
+nang-cap-he-thong-chuan-thuong-mai-saas.md
+
+# Gradle cache local (JDK zip / path Windows quá dài — KHÔNG commit)
 IndoorNavigationApp/.gradle-user-home/
+IndoorNavigationApp/.gradle-home/
+**/.gradle-home/
 .gradle-local/
+.cursor/
+IndoorNavigationApp.zip
+*.zip
+
+# File khóa tạm Microsoft Office
+**/~$*.docx
+**/~$*.pdf
+**/~$*
 
 # Script patch / backup tạm (không commit)
 Backend_server/admin/fix_*.py

@@ -3,8 +3,9 @@ package com.khoaluan.indoornav.ui.components
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -35,13 +36,15 @@ import kotlin.math.roundToInt
 
 /**
  * La bàn chỉ hướng Bắc — xoay theo cảm biến sensor.
- * Kim + chữ N xoay cùng một khối để tránh méo.
+ * Long-press: mở panel debug căn Bắc (không phải UX người dùng cuối).
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CompassButton(
     rotation: Float = 0f,
     mapRotationMode: MapRotationMode = MapRotationMode.NORTH_UP,
     onClick: () -> Unit = {},
+    onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var unwrappedRotation by remember { mutableFloatStateOf(0f) }
@@ -54,7 +57,7 @@ fun CompassButton(
 
     val animatedRotation by animateFloatAsState(
         targetValue = unwrappedRotation,
-        animationSpec = tween(durationMillis = 150),
+        animationSpec = tween(durationMillis = 50),
         label = "CompassRotation"
     )
 
@@ -67,7 +70,10 @@ fun CompassButton(
             .size(56.dp)
             .clip(CircleShape)
             .background(Color.White)
-            .clickable { onClick() },
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         // Chỉ báo dot (HEADING_UP mode)

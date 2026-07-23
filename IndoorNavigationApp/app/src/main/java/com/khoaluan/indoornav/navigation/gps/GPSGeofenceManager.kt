@@ -5,6 +5,7 @@ import android.content.Context
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import com.khoaluan.indoornav.data.model.Building
@@ -18,15 +19,21 @@ import kotlin.math.sqrt
  * MỤC ĐÍCH: Quản lý GPS Geofencing ngoài trời dùng LocationManager nguyên bản của Android.
  * Hoạt động 100% offline, gọn nhẹ, không cần Google Play Services.
  * Tự động ngắt GPS (Gateway shutdown) khi người dùng vào chế độ Indoor Mode để tiết kiệm pin.
+ *
+ * Ngoài geofence: cache [OutdoorGpsFix] (bearing khi đang đi) để seed Map Heading lúc quét QR.
  */
 class GPSGeofenceManager(private val context: Context) {
 
     private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     private var locationListener: LocationListener? = null
-    
+
     private var monitoredBuildings: List<Building> = emptyList()
     private var onEnterBuildingCallback: ((Building) -> Unit)? = null
     private var activeBuildingId: String? = null
+
+    /** Fix ngoài trời gần nhất — giữ cả sau [stopMonitoring] để handoff indoor. */
+    @Volatile
+    private var lastOutdoorFix: OutdoorGpsFix? = null
 
     private val defaultActivationRadiusMeters = 150f // Bán kính kích hoạt mặc định 150m
 
@@ -35,8 +42,8 @@ class GPSGeofenceManager(private val context: Context) {
      */
     @SuppressLint("MissingPermission")
     fun startMonitoring(buildings: List<Building>, onEnter: (Building) -> Unit) {
-        stopMonitoring() // Dọn dẹp listener cũ nếu có
-        
+        stopMonitoring(clearOutdoorCache = false) // Dọn listener cũ; giữ bearing đã cache
+
         monitoredBuildings = buildings
         onEnterBuildingCallback = onEnter
         activeBuildingId = null
@@ -45,6 +52,7 @@ class GPSGeofenceManager(private val context: Context) {
 
         locationListener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
+                cacheOutdoorFix(location)
                 checkGeofences(location)
             }
 
@@ -54,7 +62,7 @@ class GPSGeofenceManager(private val context: Context) {
         }
 
         try {
-            // Đăng ký nhận cập nhật từ GPS_PROVIDER (realtime ngoài trời) 
+            // Đăng ký nhận cập nhật từ GPS_PROVIDER (realtime ngoài trời)
             // và NETWORK_PROVIDER (fallback tiết kiệm pin)
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 locationManager.requestLocationUpdates(
@@ -64,7 +72,7 @@ class GPSGeofenceManager(private val context: Context) {
                     locationListener!!
                 )
             }
-            
+
             if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                 locationManager.requestLocationUpdates(
                     LocationManager.NETWORK_PROVIDER,
@@ -79,9 +87,10 @@ class GPSGeofenceManager(private val context: Context) {
     }
 
     /**
-     * Dừng toàn bộ cập nhật GPS để tiết kiệm pin tuyệt đối (GPS Gateway Shutdown)
+     * Dừng toàn bộ cập nhật GPS để tiết kiệm pin tuyệt đối (GPS Gateway Shutdown).
+     * @param clearOutdoorCache true khi thoát hẳn / reset; false khi vào indoor (giữ bearing handoff).
      */
-    fun stopMonitoring() {
+    fun stopMonitoring(clearOutdoorCache: Boolean = false) {
         locationListener?.let {
             locationManager.removeUpdates(it)
             Log.i("GPSGeofenceManager", "Đã ngắt kết nối định vị GPS ngoài trời (Gateway Shutdown)")
@@ -89,6 +98,87 @@ class GPSGeofenceManager(private val context: Context) {
         locationListener = null
         onEnterBuildingCallback = null
         activeBuildingId = null
+        if (clearOutdoorCache) {
+            lastOutdoorFix = null
+        }
+    }
+
+    fun getLastOutdoorFix(): OutdoorGpsFix? = lastOutdoorFix
+
+    /**
+     * Course-over-ground (Bắc thật) đủ tin cậy để seed Map Heading lúc vào indoor.
+     * Trả null nếu đứng yên / accuracy kém / bearing cũ / không có bearing.
+     */
+    fun takeReliableOutdoorCourseDeg(
+        nowMs: Long = System.currentTimeMillis(),
+        maxAgeMs: Long = MAX_COURSE_AGE_MS,
+        maxHorizontalAccuracyM: Float = MAX_HORIZONTAL_ACCURACY_M,
+        minSpeedMps: Float = MIN_WALK_SPEED_MPS,
+        maxBearingAccuracyDeg: Float = MAX_BEARING_ACCURACY_DEG,
+    ): Float? {
+        val fix = lastOutdoorFix ?: return null
+        if (nowMs - fix.timestampMs > maxAgeMs) {
+            Log.d("GPSGeofenceManager", "Outdoor course bỏ qua: quá cũ age=${nowMs - fix.timestampMs}ms")
+            return null
+        }
+        if (fix.accuracyMeters > maxHorizontalAccuracyM) {
+            Log.d("GPSGeofenceManager", "Outdoor course bỏ qua: accuracy=${fix.accuracyMeters}m")
+            return null
+        }
+        val bearing = fix.bearingDeg ?: run {
+            Log.d("GPSGeofenceManager", "Outdoor course bỏ qua: không có bearing")
+            return null
+        }
+        val speed = fix.speedMps
+        val bearingAcc = fix.bearingAccuracyDeg
+        val movingEnough = speed != null && speed >= minSpeedMps
+        val bearingSharp = bearingAcc != null && bearingAcc <= maxBearingAccuracyDeg
+        if (!movingEnough && !bearingSharp) {
+            Log.d(
+                "GPSGeofenceManager",
+                "Outdoor course bỏ qua: đứng yên/bearing yếu speed=$speed bearingAcc=$bearingAcc"
+            )
+            return null
+        }
+        Log.i(
+            "GPSGeofenceManager",
+            "Outdoor course tin cậy bearing=$bearing° speed=$speed acc=${fix.accuracyMeters}m"
+        )
+        return bearing
+    }
+
+    private fun cacheOutdoorFix(location: Location) {
+        val hasBearing = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            location.hasBearing()
+        } else {
+            location.bearing != 0f || location.hasSpeed()
+        }
+        val bearingAcc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && location.hasBearingAccuracy()) {
+            location.bearingAccuracyDegrees
+        } else {
+            null
+        }
+        val speed = if (location.hasSpeed()) location.speed else null
+        val fix = OutdoorGpsFix(
+            latitude = location.latitude,
+            longitude = location.longitude,
+            accuracyMeters = location.accuracy,
+            bearingDeg = if (hasBearing) location.bearing else null,
+            bearingAccuracyDeg = bearingAcc,
+            speedMps = speed,
+            timestampMs = location.time.takeIf { it > 0L } ?: System.currentTimeMillis(),
+            provider = location.provider,
+        )
+        // Ưu tiên GPS_PROVIDER; không ghi đè fix GPS tốt bằng NETWORK kém hơn
+        val prev = lastOutdoorFix
+        if (prev != null &&
+            prev.provider == LocationManager.GPS_PROVIDER &&
+            fix.provider != LocationManager.GPS_PROVIDER &&
+            fix.accuracyMeters > prev.accuracyMeters
+        ) {
+            return
+        }
+        lastOutdoorFix = fix
     }
 
     /**
@@ -127,5 +217,12 @@ class GPSGeofenceManager(private val context: Context) {
                 sin(dLon / 2) * sin(dLon / 2)
         val c = 2 * atan2(sqrt(a), sqrt(1 - a))
         return (r * c).toFloat()
+    }
+
+    companion object {
+        const val MAX_COURSE_AGE_MS = 45_000L
+        const val MAX_HORIZONTAL_ACCURACY_M = 30f
+        const val MIN_WALK_SPEED_MPS = 0.7f
+        const val MAX_BEARING_ACCURACY_DEG = 25f
     }
 }

@@ -1,4 +1,4 @@
-﻿package com.khoaluan.indoornav.navigation.pdr
+package com.khoaluan.indoornav.navigation.pdr
 
 
 
@@ -64,11 +64,11 @@ class RealtimeMotionEstimator {
 
     // Ngưỡng phát hiện chuyển động
 
-private val MICRO_MOTION_THRESHOLD = 0.5f
+private val MICRO_MOTION_THRESHOLD = 1.0f
 
-private val HARD_MOTION_THRESHOLD = 0.8f
+private val HARD_MOTION_THRESHOLD = 1.4f
 
-private val STATIONARY_THRESHOLD = 0.15f
+private val STATIONARY_THRESHOLD = 0.25f
 
 
 
@@ -220,6 +220,16 @@ private val STATIONARY_THRESHOLD = 0.15f
 
         return triggeredMicroStep
 
+    }
+
+    fun reset() {
+        isMoving = false
+        pseudoVelocity = 0f
+        motionConfidence = 1.0f
+        filteredEnergy = 0f
+        continuousLowEnergyMs = 0L
+        stableVelocityDurationMs = 0L
+        lastMoveTimeMs = 0L
     }
 
 }

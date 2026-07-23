@@ -56,6 +56,10 @@ function createApp() {
     next();
   };
 
+  app.get(['/outdoor', '/outdoor/'], (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.sendFile(path.join(__dirname, 'public', 'outdoor', 'index.html'));
+  });
   app.get(['/demo', '/demo/', '/demo/index.html'], (req, res) => {
     res.redirect(302, '/login');
   });

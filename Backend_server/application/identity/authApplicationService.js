@@ -20,7 +20,8 @@ const { normalizeFullName } = require('../../utils/fullNamePolicy');
 const {
   isGoogleEnabled,
   getAuthUrl,
-  exchangeCode
+  exchangeCode,
+  verifyIdToken
 } = require('../../services/googleAuth');
 const { createOAuthState, verifyOAuthState } = require('../../services/oauthState');
 const {
@@ -360,21 +361,7 @@ function startGoogleOAuth() {
   return { state, url: getAuthUrl(state) };
 }
 
-async function completeGoogleOAuth({ code, state }, context) {
-  if (!isGoogleEnabled()) {
-    throw Object.assign(new Error('Google OAuth chưa được cấu hình.'), {
-      status: 503,
-      code: 'GOOGLE_OAUTH_DISABLED'
-    });
-  }
-  const stateCheck = verifyOAuthState(state);
-  if (!stateCheck.ok) {
-    throw Object.assign(new Error('OAuth state không hợp lệ.'), {
-      status: 400,
-      code: stateCheck.code
-    });
-  }
-  const profile = await exchangeCode(code);
+async function upsertGoogleUser(profile, context) {
   let user = await identity.findUserByGoogleId(profile.googleId);
   if (!user) user = await identity.findUserByEmail(profile.email);
   if (!user) {
@@ -417,9 +404,53 @@ async function completeGoogleOAuth({ code, state }, context) {
       }
     });
   }
+  return user;
+}
+
+async function completeGoogleOAuth({ code, state }, context) {
+  if (!isGoogleEnabled()) {
+    throw Object.assign(new Error('Google OAuth chưa được cấu hình.'), {
+      status: 503,
+      code: 'GOOGLE_OAUTH_DISABLED'
+    });
+  }
+  const stateCheck = verifyOAuthState(state);
+  if (!stateCheck.ok) {
+    throw Object.assign(new Error('OAuth state không hợp lệ.'), {
+      status: 400,
+      code: stateCheck.code
+    });
+  }
+  const profile = await exchangeCode(code);
+  const user = await upsertGoogleUser(profile, context);
   const eligibility = await loadEligibility(user);
   if (!eligibility.ok) return eligibility;
   return { ok: true, session: await issueAuthSession(eligibility.user, context) };
+}
+
+/** Android Credential Manager — đăng nhập bằng Google ID token. */
+async function loginWithGoogleIdToken({ idToken }, context) {
+  if (!process.env.GOOGLE_CLIENT_ID) {
+    throw Object.assign(new Error('Google OAuth chưa được cấu hình.'), {
+      status: 503,
+      code: 'GOOGLE_OAUTH_DISABLED'
+    });
+  }
+  const profile = await verifyIdToken(idToken);
+  const user = await upsertGoogleUser(profile, context);
+  const eligibility = await loadEligibility(user);
+  if (!eligibility.ok) return eligibility;
+  const session = await issueAuthSession(eligibility.user, context);
+  return {
+    ok: true,
+    session: {
+      ...session,
+      user: {
+        ...session.user,
+        full_name: eligibility.user.full_name || profile.name || ''
+      }
+    }
+  };
 }
 
 async function issuePasswordReset(email, context) {
@@ -536,6 +567,7 @@ module.exports = {
   googleStatus,
   startGoogleOAuth,
   completeGoogleOAuth,
+  loginWithGoogleIdToken,
   issuePasswordReset,
   requestPasswordResetDelivery,
   resetPassword

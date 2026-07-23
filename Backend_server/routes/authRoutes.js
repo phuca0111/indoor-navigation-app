@@ -19,6 +19,7 @@ const {
   googleStatus,
   googleAuthStart,
   googleAuthCallback,
+  googleMobileLogin,
   completeTwoFactorLogin
 } = require('../controllers/authController');
 const { auth, requireAdmin, requirePermission, P } = require('../middlewares/auth');
@@ -43,9 +44,10 @@ router.post('/unlock-session', auth, unlockSession);
 router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
 router.post('/reset-password', resetPasswordLimiter, resetPassword);
 
-// Phase 8 — Google OAuth (Admin web)
+// Phase 8 — Google OAuth (Admin web) + Android ID token
 router.get('/google/status', googleStatus);
 router.get('/google', googleAuthStart);
 router.get('/google/callback', googleAuthCallback);
+router.post('/google', loginLimiter, googleMobileLogin);
 
 module.exports = router;

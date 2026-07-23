@@ -18,6 +18,9 @@ class RotationSmoother(
     private var currentSmoothRotation = 0f
     private var isInitialized = false
 
+    /** true = đang đi bộ: giảm maxAlpha để heading/HEADING_UP bám hướng thật, ít trễ. */
+    var isWalking: Boolean = false
+
     /**
      * @param targetRotation Góc xoay mục tiêu từ cảm biến (độ)
      * @param gyroMagnitude Độ lớn vận tốc góc (rad/s) để điều chỉnh alpha
@@ -29,22 +32,32 @@ class RotationSmoother(
             return currentSmoothRotation
         }
 
-        // 1. Tính toán Adaptive Alpha
-        // Gyro càng lớn (đang xoay nhanh) -> alpha càng nhỏ -> tin cảm biến mới hơn -> phản hồi nhanh
+        // Đi bộ: vẫn mượt (tránh mũi tên rung theo từng bước); quay nhanh → alpha thấp hơn
+        val effectiveMaxAlpha = if (isWalking) minOf(maxAlpha, 0.93f) else maxAlpha
+        val effectiveMinAlpha = if (isWalking) minOf(minAlpha, 0.78f) else minAlpha
+        val deadZoneDeg = if (isWalking) 1.0f else 0.4f
+
+        // 1. Adaptive Alpha — gyro lớn → tin cảm biến mới hơn
         val gyroThreshold = 0.5f // rad/s
         val normalizedGyro = (gyroMagnitude / gyroThreshold).coerceIn(0f, 1f)
-        val alpha = maxAlpha - (maxAlpha - minAlpha) * normalizedGyro
+        val alpha = effectiveMaxAlpha - (effectiveMaxAlpha - effectiveMinAlpha) * normalizedGyro
 
-        // 2. Tính toán độ chênh lệch ngắn nhất (xử lý lỗi 0-360)
+        // 2. Độ chênh ngắn nhất (0–360)
         val delta = shortestAngleDelta(currentSmoothRotation, targetRotation)
 
-        // 3. Jitter Suppression (Vùng chết)
-        if (abs(delta) < 0.3f) return currentSmoothRotation
+        // 3. Dead zone — đi bộ hơi rộng hơn để lọc rung bước, vẫn theo cua
+        if (abs(delta) < deadZoneDeg) return currentSmoothRotation
 
-        // 4. Low-pass Filter với Alpha biến thiên
+        // 4. Low-pass
         currentSmoothRotation = normalize(currentSmoothRotation + (1f - alpha) * delta)
 
         return currentSmoothRotation
+    }
+
+    fun reset() {
+        currentSmoothRotation = 0f
+        isInitialized = false
+        isWalking = false
     }
 
     private fun shortestAngleDelta(from: Float, to: Float): Float {

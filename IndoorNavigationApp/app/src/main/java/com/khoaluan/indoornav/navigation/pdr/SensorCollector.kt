@@ -5,14 +5,12 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import com.khoaluan.indoornav.navigation.diagnostics.SensorSessionLogger
 
 /**
  * FILE: SensorCollector.kt
- * MỤC ĐÍCH: Đăng ký và thu thập dữ liệu từ 3 cảm biến cốt lõi:
- *   - Accelerometer (gia tốc kế)  → phát hiện bước chân
- *   - Gyroscope (con quay hồi chuyển) → tính hướng quay
- *   - Magnetometer (la bàn từ trường) → hướng Bắc tuyệt đối
- * TẦN SUẤT: SENSOR_DELAY_GAME (~50Hz) — đủ nhanh, không tốn pin quá
+ * MỤC ĐÍCH: Đăng ký và thu thập dữ liệu cảm biến thô (KHÔNG xử lý thuật toán).
+ * Phase 0.0: có thể gắn [sensorLogger] để ghi JSONL.
  */
 class SensorCollector(context: Context) : SensorEventListener {
 
@@ -49,6 +47,9 @@ class SensorCollector(context: Context) : SensorEventListener {
     var onLinearAccelUpdate: ((values: FloatArray, timestampNs: Long) -> Unit)? = null
     var onStepSensorUpdate: (() -> Unit)? = null
 
+    /** Phase 0.0 — optional JSONL logger (null = không ghi). */
+    var sensorLogger: SensorSessionLogger? = null
+
     // ── Trạng thái ─────────────────────────────────────────────────────────────
     var isRunning = false
         private set
@@ -63,6 +64,10 @@ class SensorCollector(context: Context) : SensorEventListener {
         isRunning = true
     }
 
+    /** true nếu đang dùng GAME_ROTATION_VECTOR (yaw không bám Bắc địa lý). */
+    var usingGameRotationVector: Boolean = false
+        private set
+
     private fun registerSensors() {
         sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let {
             sensorManager.registerListener(this, it, currentDelay)
@@ -70,7 +75,13 @@ class SensorCollector(context: Context) : SensorEventListener {
         sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)?.let {
             sensorManager.registerListener(this, it, currentDelay)
         }
-        sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)?.let {
+        val gameRv = sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
+        val rotRv = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        // Compass-assist: ưu tiên ROTATION_VECTOR (có tham chiếu từ trường/Bắc),
+        // chỉ fallback GAME_ROTATION_VECTOR khi máy không hỗ trợ.
+        val rotationSensor = rotRv ?: gameRv
+        usingGameRotationVector = (rotationSensor?.type == Sensor.TYPE_GAME_ROTATION_VECTOR)
+        rotationSensor?.let {
             sensorManager.registerListener(this, it, currentDelay)
         }
         sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)?.let {
@@ -101,23 +112,33 @@ class SensorCollector(context: Context) : SensorEventListener {
             Sensor.TYPE_ACCELEROMETER -> {
                 accelValues = event.values.clone()
                 accelTimestamp = event.timestamp
+                sensorLogger?.logSensor("accel", accelValues, event.timestamp)
                 onAccelUpdate?.invoke(accelValues, event.timestamp)
             }
             Sensor.TYPE_GYROSCOPE -> {
                 gyroValues = event.values.clone()
                 gyroTimestamp = event.timestamp
+                sensorLogger?.logSensor("gyro", gyroValues, event.timestamp)
                 onGyroUpdate?.invoke(gyroValues, event.timestamp)
             }
-            Sensor.TYPE_ROTATION_VECTOR -> {
+            Sensor.TYPE_ROTATION_VECTOR, Sensor.TYPE_GAME_ROTATION_VECTOR -> {
                 rotationValues = event.values.clone()
+                sensorLogger?.logSensor("rotation_vector", rotationValues, event.timestamp)
                 onRotationUpdate?.invoke(rotationValues, event.timestamp)
             }
             Sensor.TYPE_LINEAR_ACCELERATION -> {
                 linearAccelValues = event.values.clone()
                 linearAccelTimestamp = event.timestamp
+                sensorLogger?.logSensor("linear_accel", linearAccelValues, event.timestamp)
                 onLinearAccelUpdate?.invoke(linearAccelValues, event.timestamp)
             }
             Sensor.TYPE_STEP_DETECTOR -> {
+                sensorLogger?.logSensor(
+                    "step_detector",
+                    floatArrayOf(1f),
+                    event.timestamp,
+                    force = true
+                )
                 onStepSensorUpdate?.invoke()
             }
         }

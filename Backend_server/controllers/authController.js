@@ -9,7 +9,8 @@ const {
   resetPassword: resetPasswordUseCase,
   googleStatus: getGoogleStatus,
   startGoogleOAuth,
-  completeGoogleOAuth
+  completeGoogleOAuth,
+  loginWithGoogleIdToken
 } = require('../application/identity/authApplicationService');
 const {
   issueAuthSession,
@@ -266,6 +267,22 @@ async function googleAuthCallback(req, res) {
   }
 }
 
+/** Android — POST /api/auth/google { idToken } */
+async function googleMobileLogin(req, res) {
+  try {
+    const result = await loginWithGoogleIdToken(req.body || {}, context(req));
+    if (!result.ok) {
+      return res.status(result.status || 401).json({
+        message: result.message || 'Không thể đăng nhập Google.',
+        code: result.code
+      });
+    }
+    return res.status(200).json({ message: 'Đăng nhập Google thành công!', ...result.session });
+  } catch (error) {
+    return sendError(res, error);
+  }
+}
+
 module.exports = {
   register,
   login,
@@ -280,5 +297,6 @@ module.exports = {
   issueAuthSession: issueAuthSessionCompatibility,
   googleStatus,
   googleAuthStart,
-  googleAuthCallback
+  googleAuthCallback,
+  googleMobileLogin
 };

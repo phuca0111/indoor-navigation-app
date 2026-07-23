@@ -136,10 +136,14 @@
         var nameSpan = el('span', 'explorer-building-name', bName);
         nameSpan.title = bName; // hover để xem tên đầy đủ (đã cắt bớt bằng …)
         head.appendChild(nameSpan);
-        var status = (meta && meta.status) || 'DRAFT';
-        head.appendChild(el('span',
-            'explorer-badge ' + (status === 'PUBLISHED' ? 'badge-pub' : 'badge-draft'),
-            status === 'PUBLISHED' ? 'Đã xuất bản' : 'Nháp'));
+        var status = (meta && (meta.workspace_status || meta.status)) || 'DRAFT';
+        var badgeClass = 'explorer-badge badge-draft';
+        var badgeText = 'Nháp';
+        if (status === 'PUBLISHED') { badgeClass = 'explorer-badge badge-pub'; badgeText = 'Đã xuất bản'; }
+        else if (status === 'IN_REVIEW') { badgeClass = 'explorer-badge badge-draft'; badgeText = 'Chờ duyệt'; }
+        else if (status === 'DEPRECATED') { badgeClass = 'explorer-badge badge-empty'; badgeText = 'Deprecated'; }
+        else if (status === 'ARCHIVED') { badgeClass = 'explorer-badge badge-empty'; badgeText = 'Archived'; }
+        head.appendChild(el('span', badgeClass, badgeText));
         root.appendChild(head);
 
         root.appendChild(renderBuildingInfo(meta));

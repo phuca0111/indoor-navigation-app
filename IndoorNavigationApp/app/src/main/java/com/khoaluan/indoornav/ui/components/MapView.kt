@@ -1,4 +1,4 @@
-﻿package com.khoaluan.indoornav.ui.components
+package com.khoaluan.indoornav.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -97,26 +97,26 @@ fun MapView(
     }
 
     // G2: HEADING_UP = -heading + offset; NORTH_UP = offset
-    // Offset tay áp ngay (không animate) — tránh khựng khi xoay tay quanh 90°.
-    // Chỉ animate phần heading từ sensor.
+    // Offset tay áp ngay. Heading: animate ngắn, dùng CÙNG giá trị cho map + mũi tên (tránh lệch phase).
     val headingDriven = computeHeadingDrivenRotation(mapRotationMode, unwrappedUserHeading)
     val animatedHeadingPart by animateFloatAsState(
         targetValue = headingDriven,
-        animationSpec = tween(durationMillis = 80, easing = androidx.compose.animation.core.LinearEasing),
+        animationSpec = tween(durationMillis = 140, easing = androidx.compose.animation.core.LinearEasing),
         label = "MapHeadingRotation"
     )
     val effectiveRotation = animatedHeadingPart + userMapBearingOffset
 
-    // UI Interpolation cho User Position & Heading
+    // UI Interpolation cho User Position (ngắn hơn — pivot HEADING_UP bám chấm)
     val animatedUserPos by androidx.compose.animation.core.animateOffsetAsState(
         targetValue = navState.userPos ?: Offset.Zero,
-        animationSpec = androidx.compose.animation.core.tween(durationMillis = 150, easing = androidx.compose.animation.core.LinearEasing),
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 80, easing = androidx.compose.animation.core.LinearEasing),
         label = "UserPosInterpolation"
     )
 
+    // NORTH_UP: mũi tên theo heading. HEADING_UP: mũi tên cố định hướng lên màn hình (= -effectiveRotation trong map space).
     val animatedUserHeading by animateFloatAsState(
         targetValue = unwrappedUserHeading,
-        animationSpec = tween(durationMillis = 80, easing = androidx.compose.animation.core.LinearEasing),
+        animationSpec = tween(durationMillis = 140, easing = androidx.compose.animation.core.LinearEasing),
         label = "UserHeadingInterpolation"
     )
 
@@ -191,6 +191,7 @@ fun MapView(
                     zoom = zoom,
                 )
                 if (delta != 0f) {
+                    // Compose detectTransformGestures: chiều dương khớp cảm giác xoay map theo tay
                     userMapBearingOffset += delta
                 }
 
@@ -228,15 +229,20 @@ fun MapView(
             }
         }
 
-        LaunchedEffect(navState.userPos, autoFollowUser, centerOnUserTrigger, mapRotationMode) {
-            val pos = navState.userPos ?: return@LaunchedEffect
+        LaunchedEffect(navState.userPos, animatedUserPos, autoFollowUser, centerOnUserTrigger, mapRotationMode) {
+            if (navState.userPos == null) return@LaunchedEffect
             // Recenter khi user bấm nút (cả 2 mode)
             if (centerOnUserTrigger > 0) {
                 autoFollowUser = true
             }
-            // CHỈ auto-center khi autoFollowUser = true, cho phép user tự do kéo bản đồ khi autoFollow = false
+            // HEADING_UP: center theo animated pos (khớp pivot + mũi tên); NORTH_UP: pos thô OK
             if (autoFollowUser) {
-                offset = Offset(screenW / 2f, screenH / 2f) - pos * scale
+                val followPos = if (mapRotationMode == MapRotationMode.HEADING_UP) {
+                    animatedUserPos
+                } else {
+                    navState.userPos
+                }
+                offset = Offset(screenW / 2f, screenH / 2f) - followPos * scale
             }
         }
 
@@ -260,11 +266,9 @@ fun MapView(
                     transformOrigin = TransformOrigin(0f, 0f)
                 }
         ) {
-            // Điểm xoay (Pivot) phải là tâm màn hình trong hệ toạ độ canvas:
-            // graphicsLayer đã áp scale và offset, nên tâm màn hình nhìn từ canvas = (screenW/2 - offset.x) / scale
-            // Nếu đang HEADING_UP và có userPos → xoay quanh user (đảm bảo user căn giữa không bị trrôi)
+            // HEADING_UP: pivot = cùng điểm với chấm/mũi tên (animated) — tránh map xoay lệch so với avatar
             val pivot = if (mapRotationMode == MapRotationMode.HEADING_UP && navState.userPos != null) {
-                navState.userPos
+                animatedUserPos
             } else {
                 // Tâm màn hình trong canvas space → xoay bản đồ quanh giữa view, không bị méo
                 Offset((screenW / 2f - offset.x) / scale, (screenH / 2f - offset.y) / scale)
@@ -410,38 +414,59 @@ fun MapView(
                     }
                 }
 
-                // LAYER 6: User Blue Dot + mũi tên heading
-                if (navState.userPos != null) {
-                    val pos = animatedUserPos
-                    drawCircle(Color(0xFF007AFF).copy(0.2f), radius = 25f / scale, center = pos)
-                    drawCircle(Color.White, radius = 10f / scale, center = pos)
-                    drawCircle(Color(0xFF007AFF), radius = 8f / scale, center = pos)
+                // User marker vẽ NGOÀI khối xoay map (kiểu la bàn: kim cố định đầu máy)
+            }
 
-                    // Tam giác đối xứng — thay drawLine để không bị méo khi zoom/xoay
-                    withTransform({
-                        translate(pos.x, pos.y)
-                        rotate(animatedUserHeading, pivot = Offset.Zero)
-                    }) {
-                        val tipY = -22f / scale
-                        val baseY = -6f / scale
-                        val halfW = 7f / scale
-                        val arrowPath = Path().apply {
-                            moveTo(0f, tipY)
-                            lineTo(-halfW, baseY)
-                            lineTo(halfW, baseY)
-                            close()
-                        }
-                        drawPath(arrowPath, Color(0xFF007AFF))
-                        drawPath(
-                            arrowPath,
-                            Color.White,
-                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5f / scale)
-                        )
+            // LAYER 6: Blue dot + mũi tên (NORTH_UP mặc định: tip = hướng đầu máy trên map)
+            if (navState.userPos != null) {
+                val posMap = animatedUserPos
+                val posScreen = rotateMapPointAroundPivot(posMap, pivot, effectiveRotation)
+                drawCircle(Color(0xFF007AFF).copy(0.2f), radius = 25f / scale, center = posScreen)
+                drawCircle(Color.White, radius = 10f / scale, center = posScreen)
+                drawCircle(Color(0xFF007AFF), radius = 8f / scale, center = posScreen)
+
+                val arrowRotation = if (mapRotationMode == MapRotationMode.HEADING_UP) {
+                    0f
+                } else {
+                    animatedUserHeading + effectiveRotation
+                }
+                withTransform({
+                    translate(posScreen.x, posScreen.y)
+                    rotate(arrowRotation, pivot = Offset.Zero)
+                }) {
+                    val tipY = -22f / scale
+                    val baseY = -6f / scale
+                    val halfW = 7f / scale
+                    val arrowPath = Path().apply {
+                        moveTo(0f, tipY)
+                        lineTo(-halfW, baseY)
+                        lineTo(halfW, baseY)
+                        close()
                     }
+                    drawPath(arrowPath, Color(0xFF007AFF))
+                    drawPath(
+                        arrowPath,
+                        Color.White,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5f / scale)
+                    )
                 }
             }
         }
     }
+}
+
+/** Xoay điểm map quanh pivot (cùng quy ước Canvas.rotate chiều kim đồng hồ). */
+private fun rotateMapPointAroundPivot(point: Offset, pivot: Offset, degrees: Float): Offset {
+    if (degrees == 0f) return point
+    val rad = Math.toRadians(degrees.toDouble())
+    val c = cos(rad).toFloat()
+    val s = sin(rad).toFloat()
+    val dx = point.x - pivot.x
+    val dy = point.y - pivot.y
+    return Offset(
+        x = pivot.x + dx * c - dy * s,
+        y = pivot.y + dx * s + dy * c,
+    )
 }
 
 /**

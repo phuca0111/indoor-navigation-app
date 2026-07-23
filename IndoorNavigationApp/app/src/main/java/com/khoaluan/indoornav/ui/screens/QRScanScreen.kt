@@ -34,6 +34,7 @@ import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import kotlinx.coroutines.delay
 import java.util.concurrent.Executors
 import java.util.concurrent.ExecutorService
 
@@ -47,11 +48,14 @@ import java.util.concurrent.ExecutorService
 @Composable
 fun QRScanScreen(
     onResult: (String) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    isProcessing: Boolean = false,
+    errorMessage: String? = null,
 ) {
     val context = LocalContext.current
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-    
+    var hasHandledResult by remember { mutableStateOf(false) }
+
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
@@ -69,20 +73,30 @@ fun QRScanScreen(
         }
     }
 
+    // Chỉ cho quét lại SAU lỗi + cooldown — tránh loop nhấp nháy khi QR còn trong khung
+    LaunchedEffect(errorMessage) {
+        if (errorMessage != null) {
+            delay(2_000)
+            hasHandledResult = false
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         if (hasCameraPermission) {
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),
                 cameraExecutor = cameraExecutor,
                 onBarcodeDetected = { barcode ->
-                    barcode.rawValue?.let { onResult(it) }
+                    if (hasHandledResult || isProcessing) return@CameraPreview
+                    barcode.rawValue?.let {
+                        hasHandledResult = true
+                        onResult(it)
+                    }
                 }
             )
 
-            // Overlay: Khung ngắm quét mã
             QRScannerOverlay()
 
-            // HUD Hướng dẫn
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -93,6 +107,19 @@ fun QRScanScreen(
             ) {
                 Text("Quét mã QR trên tường", color = Color.White, fontSize = 16.sp)
                 Text("Để xác định vị trí hiện tại của bạn", color = Color.Gray, fontSize = 12.sp)
+                if (!errorMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = errorMessage,
+                        color = Color(0xFFFF8A80),
+                        fontSize = 13.sp
+                    )
+                    Text(
+                        text = "Giữ QR trong khung — sẽ thử lại sau 2 giây",
+                        color = Color.Gray,
+                        fontSize = 11.sp
+                    )
+                }
             }
         } else {
             Text(
@@ -102,7 +129,21 @@ fun QRScanScreen(
             )
         }
 
-        // Nút quay lại
+        if (isProcessing) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color(0xFF00E5FF))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Đang xác định vị trí…", color = Color.White, fontSize = 14.sp)
+                }
+            }
+        }
+
         IconButton(
             onClick = onBack,
             modifier = Modifier.align(Alignment.TopStart).padding(top = 40.dp, start = 16.dp)
@@ -110,7 +151,7 @@ fun QRScanScreen(
             Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
         }
     }
-    
+
     DisposableEffect(Unit) {
         onDispose { cameraExecutor.shutdown() }
     }
@@ -137,11 +178,11 @@ fun CameraPreview(
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
             }
-            
+
             val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
             cameraProviderFuture.addListener({
                 val cameraProvider = cameraProviderFuture.get()
-                
+
                 val preview = Preview.Builder().build().also {
                     it.setSurfaceProvider(previewView.surfaceProvider)
                 }
@@ -179,7 +220,7 @@ fun CameraPreview(
                     Log.e("QRScan", "Binding camera thất bại", e)
                 }
             }, ContextCompat.getMainExecutor(ctx))
-            
+
             previewView
         },
         modifier = modifier
@@ -195,20 +236,16 @@ fun QRScannerOverlay() {
         val left = (width - boxSize) / 2
         val top = (height - boxSize) / 2
 
-        // Khung ngắm màu Neon
         drawRect(
             color = Color(0xFF00E5FF),
             topLeft = androidx.compose.ui.geometry.Offset(left, top),
             size = androidx.compose.ui.geometry.Size(boxSize, boxSize),
             style = Stroke(width = 4.dp.toPx())
         )
-        
-        // Vẽ thêm 4 góc cho chuyên nghiệp
+
         val cornerLen = 40.dp.toPx()
         val neonColor = Color(0xFF00E5FF)
-        // Top Left
         drawLine(neonColor, Offset(left - 2, top - 2), Offset(left + cornerLen, top - 2), 8f)
         drawLine(neonColor, Offset(left - 2, top - 2), Offset(left - 2, top + cornerLen), 8f)
-        // ... rườm rà quá, để vầy được rồi
     }
 }

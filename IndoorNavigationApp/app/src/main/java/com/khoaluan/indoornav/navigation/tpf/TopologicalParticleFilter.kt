@@ -6,8 +6,11 @@ import java.util.Random
 import kotlin.math.*
 
 /**
- * FILE: TopologicalParticleFilter.kt
- * MỤC ĐÍCH: Engine cốt lõi của Lớp 2. Chạy thuật toán lọc Hạt trên đồ thị.
+ * Topological Particle Filter.
+ *
+ * Fix 14/07 (lần 3): ngoài phòng bị đứng yên —
+ * khi kẹt cạnh cửa / graph đứt nối, snap không gian sang cạnh khớp heading
+ * + reseed nếu mean không dịch sau bước chân.
  */
 class TopologicalParticleFilter(
     private val graphModel: GraphModel,
@@ -18,85 +21,143 @@ class TopologicalParticleFilter(
 
     private val random = Random()
     private val edgeMap by lazy { graphModel.edges.associateBy { it.id } }
+    private val PERPENDICULAR_THRESHOLD_RAD = (PI / 4.0).toFloat()
 
-    /** Khởi tạo (Rải) 60 hạt ở xung quanh Node khi người dùng quét QR */
     fun initializeAtNode(nodeId: String) {
         particles.clear()
-        // GraphModel đã loại các cạnh bị chặn bởi tường.
         val connectedEdges = graphModel.getEdgesFromNode(nodeId)
         if (connectedEdges.isEmpty()) return
 
-        // Dải đều 60 hạt ngẫu nhiên ra các con đường nối với QR code
+        val weights = connectedEdges.map { max(0.35f, it.distanceMeters) }
+        val sumW = weights.sum()
         for (i in 0 until numParticles) {
-            val idx = random.nextInt(connectedEdges.size)
-            val edge = connectedEdges[idx]
-            // Luôn bắt đầu từ source (progress = 0)
-            particles.add(TopologicalParticle(edge.id, 0.0f, 1.0f / numParticles))
+            var r = random.nextFloat() * sumW
+            var idx = 0
+            while (idx < connectedEdges.lastIndex && r > weights[idx]) {
+                r -= weights[idx]
+                idx++
+            }
+            particles.add(TopologicalParticle(connectedEdges[idx].id, 0.0f, 1.0f / numParticles))
         }
     }
 
-    /** 
-     * Gọi hàm này MỖI KHI PDR PHÁT HIỆN 1 BƯỚC CHÂN 
-     * @param stepLengthM chiều dài bước chân từ Weinberg (mét)
-     * @param userHeadingRad góc hướng ngực người dùng từ La bàn/Gyro (radian)
-     */
     fun processStep(stepLengthM: Float, userHeadingRad: Float) {
         if (particles.isEmpty() || stepLengthM <= 0f) return
 
-        // Mức độ tin cậy của PDR: ta rắc thêm % nhiễu (Gaussian) để đề phòng hạt bị dính cục
-        val noiseStdDevM = stepLengthM * 0.15f  // Bước 1m thì nhiễu 0.15m
+        val before = getEstimatedLocation()
+        val noiseStdDevM = stepLengthM * 0.15f
         var totalWeight = 0f
 
-        // BƯỚC 1 & 2: TIẾN HẠT (PREDICT) & CHẤM ĐIỂM (UPDATE WEIGHT)
         for (p in particles) {
-            // Noise động học (Prediction model)
             val noisyStep = max(0.01f, stepLengthM + (random.nextGaussian() * noiseStdDevM).toFloat())
-            
-            // Xê dịch hạt trên hành lang
-            moveParticle(p, noisyStep, userHeadingRad + (random.nextGaussian() * 0.2f).toFloat())
+            moveParticle(p, noisyStep, userHeadingRad + (random.nextGaussian() * 0.12f).toFloat())
 
-            // Cập nhật sinh tồn: "Hạt này có đang đi dọc theo đường mà người dùng đang hướng tới không?"
             val edge = edgeMap[p.edgeId]
-            if (edge != null) {
-                // Hành lang có 2 hướng đi (vd: 0 độ và 180 độ)
-                var angle1 = edge.angleRad
-                var angle2 = edge.reverseAngleRad
-
-                // Tìm hướng gần nhất với la bàn của người dùng
-                val diff1 = shortestAngleDeltaRad(userHeadingRad, angle1)
-                val diff2 = shortestAngleDeltaRad(userHeadingRad, angle2)
-                val diff = min(abs(diff1), abs(diff2))
-
-                // Gaussian function: Lệch 0 độ -> 100 điểm, Lệch 90 độ -> Điểm cùi tự hủy
-                val sigma = 0.785f // StdDev góc ~ 45 độ
-                p.weight = exp(-(diff * diff) / (2 * sigma * sigma))
+            p.weight = if (edge != null) {
+                val diff = edgeHeadingMismatch(edge, userHeadingRad)
+                exp(-(diff * diff) / (2 * 0.70f * 0.70f))
             } else {
-                p.weight = 0f
+                0f
             }
             totalWeight += p.weight
         }
-
-        // BƯỚC 3: RESAMPLE (CHỌN LỌC TỰ NHIÊN)
         resample(totalWeight)
+
+        // Mean không dịch → reseed bám vị trí hiện tại (KHÔNG bước thêm — tránh nhảy xa khi xoay)
+        val after = getEstimatedLocation()
+        if (before != null && after != null) {
+            val movedPx = hypot(after.first - before.first, after.second - before.second)
+            if (movedPx < 12f) {
+                reseedNearPosition(after.first, after.second, userHeadingRad)
+            }
+        }
     }
 
-    /** 
-     * Tiến hạt tới trước dọc theo Graph 1 chiều. Nếu trúng ngã ba sẽ rẽ đại (sau đó sẽ bị Resample trừng phạt nếu rẽ sai)
-     */
+    fun reseedNearPosition(
+        x: Float,
+        y: Float,
+        userHeadingRad: Float,
+        searchRadiusPx: Float = 90f,
+    ) {
+        val nearby = ArrayList<Pair<GraphEdge, Float>>()
+        val seen = HashSet<String>()
+        for (e in graphModel.edges) {
+            val key = undirectedKey(e)
+            if (!seen.add(key)) continue
+            if (minDistanceToEdge(e, x, y) > searchRadiusPx) continue
+            nearby.add(e to edgeHeadingMismatch(e, userHeadingRad))
+        }
+
+        val aligned = nearby
+            .filter { it.second <= (PI / 3.0).toFloat() }
+            .sortedWith(
+                compareBy(
+                    { it.second },
+                    { minDistanceToEdge(it.first, x, y) }
+                )
+            )
+        val pool: List<GraphEdge> = when {
+            aligned.isNotEmpty() -> aligned.take(4).map { it.first }
+            nearby.isNotEmpty() -> nearby.sortedBy { it.second }.take(3).map { it.first }
+            else -> {
+                val nearest = graphModel.findNearestEdge(x, y) ?: return
+                particles.clear()
+                repeat(numParticles) {
+                    particles.add(
+                        TopologicalParticle(
+                            nearest.first.id,
+                            nearest.second.coerceIn(0f, 1f),
+                            1f / numParticles
+                        )
+                    )
+                }
+                return
+            }
+        }
+
+        particles.clear()
+        for (i in 0 until numParticles) {
+            val e = pool[i % pool.size]
+            particles.add(TopologicalParticle(e.id, projectProgressOntoEdge(e, x, y), 1f / numParticles))
+        }
+    }
+
     private fun moveParticle(p: TopologicalParticle, distanceM: Float, userHeadingRad: Float) {
         var remainingDist = distanceM
-        var jumps = 0 // chống vô cực
-        
-        while (remainingDist > 0 && jumps < 5) {
-            val edge = edgeMap[p.edgeId] ?: break
-            
-            // Do GraphEdge đã là cạnh có hướng từ source -> target
+        var jumps = 0
+
+        while (remainingDist > 0 && jumps < 6) {
+            tryRealignParticleToHeading(p, userHeadingRad)
+
+            var edge = edgeMap[p.edgeId] ?: break
+            var mismatch = edgeHeadingMismatch(edge, userHeadingRad)
+
+            if (mismatch > PERPENDICULAR_THRESHOLD_RAD) {
+                val xy = particlePosition(p)
+                if (xy != null && snapParticleToNearbyAlignedEdge(p, xy.first, xy.second, userHeadingRad)) {
+                    edge = edgeMap[p.edgeId] ?: break
+                    mismatch = edgeHeadingMismatch(edge, userHeadingRad)
+                }
+            }
+
+            if (mismatch > PERPENDICULAR_THRESHOLD_RAD) {
+                val atDoorMouth = p.progress <= 0.02f || p.progress >= 0.98f
+                remainingDist = advanceAlongDoorTowardHallway(p, edge, remainingDist, userHeadingRad)
+                if (!atDoorMouth) {
+                    // Đang bò trong cạnh cửa: hết bước tại đây, chưa sang HL
+                    remainingDist = 0f
+                    break
+                }
+                // Đã đứng ở miệng cửa từ trước → cho phép sang cạnh hành lang ở bước này
+                jumps++
+                continue
+            }
+
             val diffForward = abs(shortestAngleDeltaRad(userHeadingRad, edge.angleRad))
             val diffBackward = abs(shortestAngleDeltaRad(userHeadingRad, edge.reverseAngleRad))
-            
             val movingForward = diffForward < diffBackward
-            val deltaProgress = remainingDist / edge.distanceMeters
-            
+            val deltaProgress = remainingDist / edge.distanceMeters.coerceAtLeast(0.01f)
+
             if (movingForward) {
                 if (p.progress + deltaProgress <= 1.0f) {
                     p.progress += deltaProgress
@@ -104,12 +165,11 @@ class TopologicalParticleFilter(
                 } else {
                     remainingDist -= (1.0f - p.progress) * edge.distanceMeters
                     p.progress = 1.0f
-                    // ĐỤNG NGÃ 3 (Target Node)
-                    val nextEdge = selectRandomNextEdge(edge.targetNodeId, edge.id)
-                    if (nextEdge == null) { remainingDist = 0f } else {
-                        // GraphEdge mới luôn xuất phát từ targetNodeId
+                    val nextEdge = selectNextEdge(edge.targetNodeId, edge.id, userHeadingRad)
+                    if (nextEdge == null) remainingDist = 0f
+                    else {
                         p.edgeId = nextEdge.id
-                        p.progress = 0.0f
+                        p.progress = 0f
                     }
                 }
             } else {
@@ -118,12 +178,12 @@ class TopologicalParticleFilter(
                     remainingDist = 0f
                 } else {
                     remainingDist -= p.progress * edge.distanceMeters
-                    p.progress = 0.0f
-                    // ĐỤNG NGÃ 3 (Source Node) - Lùi về điểm bắt đầu
-                    val nextEdge = selectRandomNextEdge(edge.sourceNodeId, edge.id)
-                    if (nextEdge == null) { remainingDist = 0f } else {
+                    p.progress = 0f
+                    val nextEdge = selectNextEdge(edge.sourceNodeId, edge.id, userHeadingRad)
+                    if (nextEdge == null) remainingDist = 0f
+                    else {
                         p.edgeId = nextEdge.id
-                        p.progress = 0.0f
+                        p.progress = 0f
                     }
                 }
             }
@@ -131,33 +191,188 @@ class TopologicalParticleFilter(
         }
     }
 
-    /** Nếu đứng giữa ngã 3 (Node), chọn đại 1 hành lang để rẽ vào */
-    private fun selectRandomNextEdge(nodeId: String, currentEdgeId: String): GraphEdge? {
-        // Chỉ lấy cạnh hợp lệ đã qua kiểm tra wall constraints
-        val connected = graphModel.getEdgesFromNode(nodeId).filter { it.id != currentEdgeId }
-        // Tránh tình trạng hạt bị quay ngoắt 180 độ ngay lập tức do chọn lại cạnh ngược hướng (trừ khi ngõ cụt)
-        // Nếu không có cạnh nào khác, nó tự dừng
-        if (connected.isEmpty()) return null
-        return connected[random.nextInt(connected.size)]
+    private fun snapParticleToNearbyAlignedEdge(
+        p: TopologicalParticle,
+        x: Float,
+        y: Float,
+        userHeadingRad: Float,
+        searchRadiusPx: Float = 55f,
+    ): Boolean {
+        // Chỉ xét cạnh nối topology gần (1–2 hop) — không nhảy spatial sang hành lang trong phòng nhỏ
+        val current = edgeMap[p.edgeId] ?: return false
+        val candidates = collectNearbyEdges(current)
+        var best: GraphEdge? = null
+        var bestScore = Float.MAX_VALUE
+        val seen = HashSet<String>()
+        for (e in candidates) {
+            val key = undirectedKey(e)
+            if (!seen.add(key)) continue
+            if (undirectedKey(e) == undirectedKey(current)) continue
+            val dist = minDistanceToEdge(e, x, y)
+            if (dist > searchRadiusPx) continue
+            val m = edgeHeadingMismatch(e, userHeadingRad)
+            if (m > (PI / 2.5).toFloat()) continue
+            val score = m * 90f + dist
+            if (score < bestScore) {
+                bestScore = score
+                best = e
+            }
+        }
+        val chosen = best ?: return false
+        p.edgeId = chosen.id
+        p.progress = projectProgressOntoEdge(chosen, x, y)
+        return true
     }
 
-    /** Bánh xe Roulette: Nhân bản hạt sống khỏe, Tiêu hủy hạt lệch hướng */
+    private fun advanceAlongDoorTowardHallway(
+        p: TopologicalParticle,
+        edge: GraphEdge,
+        remainingDist: Float,
+        userHeadingRad: Float,
+    ): Float {
+        val sourceBest = bestOutboundMismatch(edge.sourceNodeId, edge.id, userHeadingRad)
+        val targetBest = bestOutboundMismatch(edge.targetNodeId, edge.id, userHeadingRad)
+        val goToTarget = targetBest <= sourceBest
+        var left = remainingDist
+
+        // Đã ở miệng cửa → chuyển sang cạnh khớp heading (hành lang), giữ phần bước còn lại
+        if (goToTarget && p.progress >= 0.98f) {
+            val next = selectNextEdge(edge.targetNodeId, edge.id, userHeadingRad) ?: return 0f
+            p.edgeId = next.id
+            p.progress = 0f
+            return left
+        }
+        if (!goToTarget && p.progress <= 0.02f) {
+            val next = selectNextEdge(edge.sourceNodeId, edge.id, userHeadingRad) ?: return 0f
+            p.edgeId = next.id
+            p.progress = 0f
+            return left
+        }
+
+        if (goToTarget) {
+            val need = (1f - p.progress) * edge.distanceMeters
+            if (left < need) {
+                p.progress += left / edge.distanceMeters.coerceAtLeast(0.01f)
+            } else {
+                p.progress = 1f
+            }
+        } else {
+            val need = p.progress * edge.distanceMeters
+            if (left < need) {
+                p.progress -= left / edge.distanceMeters.coerceAtLeast(0.01f)
+            } else {
+                p.progress = 0f
+            }
+        }
+        return 0f
+    }
+
+    private fun bestOutboundMismatch(nodeId: String, excludeEdgeId: String, userHeadingRad: Float): Float {
+        val outs = graphModel.getEdgesFromNode(nodeId).filter {
+            it.id != excludeEdgeId && undirectedKey(it) != edgeMap[excludeEdgeId]?.let { e -> undirectedKey(e) }
+        }
+        if (outs.isEmpty()) return Float.MAX_VALUE
+        return outs.minOf { edgeHeadingMismatch(it, userHeadingRad) }
+    }
+
+    private fun edgeHeadingMismatch(edge: GraphEdge, userHeadingRad: Float): Float {
+        val d1 = abs(shortestAngleDeltaRad(userHeadingRad, edge.angleRad))
+        val d2 = abs(shortestAngleDeltaRad(userHeadingRad, edge.reverseAngleRad))
+        return min(d1, d2)
+    }
+
+    private fun tryRealignParticleToHeading(p: TopologicalParticle, userHeadingRad: Float) {
+        val edge = edgeMap[p.edgeId] ?: return
+        val currentMismatch = edgeHeadingMismatch(edge, userHeadingRad)
+        if (currentMismatch <= PERPENDICULAR_THRESHOLD_RAD) return
+
+        val xy = particlePosition(p) ?: return
+        val candidates = collectNearbyEdges(edge)
+        var best: GraphEdge? = null
+        var bestMismatch = currentMismatch
+        for (c in candidates) {
+            if (undirectedKey(c) == undirectedKey(edge)) continue
+            val m = edgeHeadingMismatch(c, userHeadingRad)
+            if (m + 0.05f < bestMismatch) {
+                bestMismatch = m
+                best = c
+            }
+        }
+        val chosen = best ?: return
+        val shared = listOf(edge.sourceNodeId, edge.targetNodeId)
+        p.edgeId = chosen.id
+        p.progress = when {
+            chosen.sourceNodeId in shared -> 0f
+            chosen.targetNodeId in shared -> 1f
+            else -> projectProgressOntoEdge(chosen, xy.first, xy.second)
+        }
+    }
+
+    private fun collectNearbyEdges(edge: GraphEdge): List<GraphEdge> {
+        val out = LinkedHashMap<String, GraphEdge>()
+        for (n in listOf(edge.sourceNodeId, edge.targetNodeId)) {
+            for (e1 in graphModel.getEdgesFromNode(n)) {
+                out[e1.id] = e1
+                for (e2 in graphModel.getEdgesFromNode(e1.targetNodeId)) out[e2.id] = e2
+                for (e2 in graphModel.getEdgesFromNode(e1.sourceNodeId)) out[e2.id] = e2
+            }
+        }
+        return out.values.toList()
+    }
+
+    private fun particlePosition(p: TopologicalParticle): Pair<Float, Float>? {
+        val edge = edgeMap[p.edgeId] ?: return null
+        return (edge.sourceX + p.progress * (edge.targetX - edge.sourceX)) to
+            (edge.sourceY + p.progress * (edge.targetY - edge.sourceY))
+    }
+
+    private fun selectNextEdge(nodeId: String, currentEdgeId: String, userHeadingRad: Float): GraphEdge? {
+        val currentKey = edgeMap[currentEdgeId]?.let { undirectedKey(it) }
+        val connected = graphModel.getEdgesFromNode(nodeId).filter {
+            it.id != currentEdgeId && undirectedKey(it) != currentKey
+        }
+        if (connected.isEmpty()) return null
+        if (connected.size == 1) return connected[0]
+        val ranked = connected.sortedBy { edgeHeadingMismatch(it, userHeadingRad) }
+        val good = ranked.filter { edgeHeadingMismatch(it, userHeadingRad) <= PERPENDICULAR_THRESHOLD_RAD }
+        val pool = if (good.isNotEmpty()) good else ranked
+        return if (random.nextFloat() < 0.85f || pool.size < 2) pool[0] else pool[1]
+    }
+
+    private fun undirectedKey(edge: GraphEdge): String {
+        val a = edge.sourceNodeId
+        val b = edge.targetNodeId
+        return if (a <= b) "$a|$b" else "$b|$a"
+    }
+
+    private fun minDistanceToEdge(e: GraphEdge, x: Float, y: Float): Float {
+        val dx = e.targetX - e.sourceX
+        val dy = e.targetY - e.sourceY
+        val len2 = dx * dx + dy * dy
+        if (len2 < 1e-3f) return hypot(x - e.sourceX, y - e.sourceY)
+        val t = (((x - e.sourceX) * dx + (y - e.sourceY) * dy) / len2).coerceIn(0f, 1f)
+        return hypot(x - (e.sourceX + t * dx), y - (e.sourceY + t * dy))
+    }
+
+    private fun projectProgressOntoEdge(e: GraphEdge, x: Float, y: Float): Float {
+        val dx = e.targetX - e.sourceX
+        val dy = e.targetY - e.sourceY
+        val len2 = dx * dx + dy * dy
+        if (len2 < 1e-3f) return 0f
+        return (((x - e.sourceX) * dx + (y - e.sourceY) * dy) / len2).coerceIn(0f, 1f)
+    }
+
     private fun resample(totalWeight: Float) {
         if (totalWeight <= 0f) {
-            // Lỗi kỹ thuật ngẫu nhiên: Reset đồng đều không trừng phạt
             for (p in particles) p.weight = 1f / numParticles
             return
         }
-
-        for (p in particles) p.weight /= totalWeight // Chuẩn hóa tổng = 1.0
-
+        for (p in particles) p.weight /= totalWeight
         val newParticles = mutableListOf<TopologicalParticle>()
         val step = 1.0f / numParticles
         var r = random.nextFloat() * step
         var c = particles[0].weight
         var i = 0
-
-        // Thuật toán Rút Mẫu Hệ Thống (Systematic Resampling) -> Tránh hao mòn CPU
         for (m in 0 until numParticles) {
             val u = r + m * step
             while (u > c && i < numParticles - 1) {
@@ -166,7 +381,6 @@ class TopologicalParticleFilter(
             }
             newParticles.add(particles[i].clone())
         }
-        
         particles = newParticles
         for (p in particles) p.weight = 1f / numParticles
     }
@@ -177,35 +391,27 @@ class TopologicalParticleFilter(
         if (delta < -PI) delta += (2 * PI).toFloat()
         return delta
     }
-    
-    /** Tính toán vị trí tịnh tiến trung bình (Mean) của 60 hạt -> Đây là vị trí người dùng */
+
     fun getEstimatedLocation(): Pair<Float, Float>? {
         if (particles.isEmpty()) return null
         var sumX = 0f
         var sumY = 0f
-        var validParticles = 0
-        
+        var sumW = 0f
         for (p in particles) {
             val edge = edgeMap[p.edgeId] ?: continue
-            sumX += edge.sourceX + p.progress * (edge.targetX - edge.sourceX)
-            sumY += edge.sourceY + p.progress * (edge.targetY - edge.sourceY)
-            validParticles++
+            val w = p.weight.coerceAtLeast(1e-4f)
+            sumX += w * (edge.sourceX + p.progress * (edge.targetX - edge.sourceX))
+            sumY += w * (edge.sourceY + p.progress * (edge.targetY - edge.sourceY))
+            sumW += w
         }
-        if (validParticles == 0) return null
-        return Pair(sumX / validParticles, sumY / validParticles)
+        if (sumW <= 0f) return null
+        return Pair(sumX / sumW, sumY / sumW)
     }
 
-    /**
-     * Tìm cạnh (Edge) chiếm ưu thế nhất (nơi đa số các hạt đang ở đó)
-     * Dùng cho thuật toán Corridor Bias (nắn hướng theo hành lang)
-     */
     fun getDominantEdge(): GraphEdge? {
         if (particles.isEmpty()) return null
-        
-        // Đếm số hạt trên mỗi cạnh
         val counts = particles.groupBy { it.edgeId }.mapValues { it.value.size }
-        val dominantEdgeId = counts.maxByOrNull { it.value }?.key ?: return null
-        
-        return edgeMap[dominantEdgeId]
+        val id = counts.maxByOrNull { it.value }?.key ?: return null
+        return edgeMap[id]
     }
 }

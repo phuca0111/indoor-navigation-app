@@ -22,13 +22,24 @@ android {
         create("local") {
             dimension = "env"
             // Bản test nội bộ: điện thoại gọi backend đang chạy trên laptop.
-            buildConfigField("String", "BASE_URL", "\"http://192.168.2.29:5000/api/\"")
+            buildConfigField("String", "BASE_URL", "\"http://192.168.2.21:5000/api/\"")
+            // W8 — cùng Web Client ID với Backend_server/.env (GOOGLE_CLIENT_ID)
+            buildConfigField(
+                "String",
+                "GOOGLE_WEB_CLIENT_ID",
+                "\"755439038142-ifki16317vj5j7qi0erfloa92vq481f8.apps.googleusercontent.com\""
+            )
         }
 
         create("prod") {
             dimension = "env"
             // Bản gửi người khác dùng: gọi backend Render online.
             buildConfigField("String", "BASE_URL", "\"https://indoor-navigation-app-sqiu.onrender.com/api/\"")
+            buildConfigField(
+                "String",
+                "GOOGLE_WEB_CLIENT_ID",
+                "\"755439038142-ifki16317vj5j7qi0erfloa92vq481f8.apps.googleusercontent.com\""
+            )
         }
     }
 
@@ -77,6 +88,14 @@ dependencies {
 
     // ML Kit Barcode
     implementation(libs.com.google.mlkit.barcode.scanning)
+
+    // W8 Google Sign-In
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
+
+    // Outdoor discovery map (OSM tiles — không cần Google Maps API key)
+    implementation(libs.osmdroid.android)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockito.core)

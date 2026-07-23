@@ -1,0 +1,13 @@
+/* Outdoor Discovery tokens — hex chỉ khai báo tại đây (color gate). */
+:root {
+  --outdoor-bg: #0f1419;
+  --outdoor-panel: #1a2332;
+  --outdoor-text: #e8eef5;
+  --outdoor-muted: #8b9bb0;
+  --outdoor-accent: #2d8cff;
+  --outdoor-ok: #3dd68c;
+  --outdoor-warn: #f0b429;
+  --outdoor-border: #2a3548;
+  --outdoor-surface: #121a26;
+  --outdoor-surface-2: #243044;
+}

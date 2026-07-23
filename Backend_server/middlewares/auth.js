@@ -13,38 +13,58 @@ const {
   roleHasAllPermissions
 } = require('../utils/permissions');
 
+async function attachPrincipalFromAuthHeader(req) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+        const err = new Error('Truy cập bị từ chối! Bạn chưa đăng nhập (không có token).');
+        err.status = 401;
+        err.code = 'UNAUTHORIZED';
+        throw err;
+    }
+
+    const token = authHeader.split(' ')[1];
+    const thongTinTrongThe = jwt.verify(token, process.env.JWT_SECRET);
+
+    if (thongTinTrongThe.jti) {
+        const { has: isBlacklisted } = require('../services/tokenBlacklist');
+        if (await isBlacklisted(thongTinTrongThe.jti)) {
+            const err = new Error('Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại.');
+            err.status = 401;
+            err.code = 'TOKEN_REVOKED';
+            throw err;
+        }
+    }
+
+    const principal = await resolveEffectivePrincipal(thongTinTrongThe);
+    req.effectivePrincipal = principal;
+    req.actorContext = ActorContext.fromRequest(req, principal);
+    req.user = principal.toLegacyClaims();
+}
+
 const auth = async (req, res, next) => {
     try {
-        const authHeader = req.headers.authorization;
-
-        if (!authHeader) {
-            return res.status(401).json({ message: 'Truy cập bị từ chối! Bạn chưa đăng nhập (không có token).' });
-        }
-
-        const token = authHeader.split(' ')[1];
-        const thongTinTrongThe = jwt.verify(token, process.env.JWT_SECRET);
-
-        if (thongTinTrongThe.jti) {
-            const { has: isBlacklisted } = require('../services/tokenBlacklist');
-            if (await isBlacklisted(thongTinTrongThe.jti)) {
-                return res.status(401).json({
-                    message: 'Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại.',
-                    code: 'TOKEN_REVOKED'
-                });
-            }
-        }
-
-        const principal = await resolveEffectivePrincipal(thongTinTrongThe);
-        req.effectivePrincipal = principal;
-        req.actorContext = ActorContext.fromRequest(req, principal);
-        req.user = principal.toLegacyClaims();
-
+        await attachPrincipalFromAuthHeader(req);
         next();
     } catch (error) {
         res.status(error.status || 401).json({
             message: error.message || 'Thẻ không hợp lệ hoặc đã hết hạn! Vui lòng đăng nhập lại.',
             code: error.code || 'TOKEN_INVALID'
         });
+    }
+};
+
+/**
+ * Gắn req.user nếu có Bearer token hợp lệ; không có / lỗi token → vẫn next() (public).
+ * Dùng cho Place Registry: guest xem public, MAP_MOD/SUPER xem bản admin (có buildings).
+ */
+const optionalAuth = async (req, res, next) => {
+    try {
+        if (!req.headers.authorization) return next();
+        await attachPrincipalFromAuthHeader(req);
+        return next();
+    } catch (_error) {
+        // Token xấu: coi như guest, không chặn route public
+        return next();
     }
 };
 
@@ -119,6 +139,7 @@ const requireBuildingCreator = requirePermission(P.BUILDINGS_CREATE);
 
 module.exports = {
     auth,
+    optionalAuth,
     requireSuperAdmin,
     requireFinanceAccess,
     requireAdmin,

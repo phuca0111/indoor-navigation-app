@@ -59,16 +59,19 @@ describe('Map Governance P0', () => {
     if (mongoose.connection.readyState !== 0) await mongoose.connection.close();
   });
 
-  test('TC-P0-01 không token → 401', async () => {
+  test('TC-P0-01 không token → 200 (public Registry GĐ2)', async () => {
     const res = await request(app).get(API);
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.places)).toBe(true);
   });
 
-  test('TC-P0-02 ORG_ADMIN → 403', async () => {
+  test('TC-P0-02 ORG_ADMIN → 200 public list (không cần Super)', async () => {
     if (!orgToken) return;
     const res = await request(app).get(API).set('Authorization', `Bearer ${orgToken}`);
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.places)).toBe(true);
   });
+
 
   test('TC-P0-03 meta visibility', async () => {
     const res = await request(app)

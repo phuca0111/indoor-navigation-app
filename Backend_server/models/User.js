@@ -45,7 +45,7 @@ const userSchema = new mongoose.Schema({
     // REGISTERED_USER: tài khoản cá nhân (không thuộc Organization), có Personal Workspace
     role: {
         type: String,
-        enum: ['SUPER_ADMIN', 'FINANCE_ADMIN', 'MARKETING_MANAGER', 'ORG_ADMIN', 'BUILDING_ADMIN', 'REGISTERED_USER'],
+        enum: ['SUPER_ADMIN', 'FINANCE_ADMIN', 'MARKETING_MANAGER', 'ORG_ADMIN', 'BUILDING_ADMIN', 'MAP_MODERATOR', 'REGISTERED_USER'],
         default: 'BUILDING_ADMIN'
     },
 

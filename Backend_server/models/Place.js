@@ -6,6 +6,16 @@
 
 const mongoose = require('mongoose');
 const { PLACE_STATUS_VALUES } = require('../utils/mapVisibility');
+const {
+  PUBLICATION_STATUS_VALUES,
+  OWNER_TYPE_VALUES,
+  VERIFICATION_STATUS_VALUES,
+  PUBLICATION_STATUS,
+  OWNER_TYPE,
+  publicationFromLegacyStatus,
+  legacyStatusFromPublication,
+  deriveOwnerType
+} = require('../utils/placePlatform');
 
 const placeSchema = new mongoose.Schema({
   name: {
@@ -53,10 +63,10 @@ const placeSchema = new mongoose.Schema({
     default: false
   },
 
-  // P4 — workflow xác minh Place
+  // P4 + kiến trúc Place — verification tách khỏi publish
   verification_status: {
     type: String,
-    enum: ['UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED'],
+    enum: VERIFICATION_STATUS_VALUES,
     default: 'UNVERIFIED'
   },
 
@@ -83,10 +93,27 @@ const placeSchema = new mongoose.Schema({
     default: null
   },
 
+  // GĐ1 — ownership kiến trúc (UNCLAIMED | COMMUNITY | ORGANIZATION | SYSTEM)
+  owner_type: {
+    type: String,
+    enum: OWNER_TYPE_VALUES,
+    default: OWNER_TYPE.UNCLAIMED,
+    index: true
+  },
+
+  // Legacy governance: DRAFT | ACTIVE | LOCKED | MERGED
   status: {
     type: String,
     enum: PLACE_STATUS_VALUES,
     default: 'ACTIVE'
+  },
+
+  // GĐ1 — publication kiến trúc (song song legacy status)
+  publication_status: {
+    type: String,
+    enum: PUBLICATION_STATUS_VALUES,
+    default: PUBLICATION_STATUS.DRAFT,
+    index: true
   },
 
   created_by: {
@@ -99,6 +126,13 @@ const placeSchema = new mongoose.Schema({
     type: String,
     default: '',
     maxlength: 1000
+  },
+
+  // GĐ7 — Indoor Workspace đang publish mặc định (Building id)
+  current_published_building_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Building',
+    default: null
   }
 }, {
   timestamps: true
@@ -110,8 +144,9 @@ placeSchema.index({ status: 1, verified: 1 });
 placeSchema.index({ verification_status: 1, status: 1 });
 placeSchema.index({ category: 1 });
 placeSchema.index({ owner_org_id: 1 });
+placeSchema.index({ publication_status: 1, owner_type: 1 });
 
-placeSchema.pre('save', function normalizeAliases() {
+placeSchema.pre('save', function normalizePlacePlatformFields() {
   if (Array.isArray(this.aliases)) {
     this.aliases = [...new Set(
       this.aliases
@@ -119,6 +154,26 @@ placeSchema.pre('save', function normalizeAliases() {
         .filter(Boolean)
     )].slice(0, 30);
   }
+
+  // Đồng bộ 2 chiều tối thiểu: publication ↔ legacy status khi một bên đổi
+  if (this.isModified('publication_status') && !this.isModified('status')) {
+    this.status = legacyStatusFromPublication(this.publication_status);
+  } else if (this.isNew && !this.publication_status) {
+    this.publication_status = publicationFromLegacyStatus(this.status);
+  } else if (this.isModified('status') && !this.isModified('publication_status')) {
+    this.publication_status = publicationFromLegacyStatus(this.status);
+  } else if (this.isNew) {
+    if (!this.publication_status || this.publication_status === PUBLICATION_STATUS.DRAFT) {
+      if (this.status && this.status !== 'DRAFT') {
+        this.publication_status = publicationFromLegacyStatus(this.status);
+      }
+    }
+  }
+
+  this.owner_type = deriveOwnerType({
+    owner_type: this.owner_type,
+    owner_org_id: this.owner_org_id
+  });
 });
 
 module.exports = mongoose.model('Place', placeSchema);
