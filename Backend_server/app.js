@@ -69,8 +69,8 @@ function createApp() {
     res.redirect(302, '/login');
   });
   app.get(['/explore', '/explore/'], (req, res) => {
-    const q = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-    res.redirect(302, '/outdoor' + q);
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.sendFile(path.join(__dirname, 'public', 'explore', 'index.html'));
   });
   app.get(['/org', '/org/', '/org/index.html'], (req, res) => {
     // Org Console entry (LOCKED) — tạm reuse Admin shell đã RBAC theo org
