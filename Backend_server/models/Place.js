@@ -54,12 +54,12 @@ const placeSchema = new mongoose.Schema({
     maxlength: 80
   },
 
-  /** URL-friendly id — Place Platform deep-link */
+  /** URL-friendly id — Place Platform deep-link (sparse unique: không dùng ""). */
   slug: {
     type: String,
-    default: '',
     trim: true,
-    maxlength: 100
+    maxlength: 100,
+    default: undefined
   },
 
   description: {
@@ -183,7 +183,14 @@ placeSchema.index({ verification_status: 1, status: 1 });
 placeSchema.index({ category: 1 });
 placeSchema.index({ owner_org_id: 1 });
 placeSchema.index({ publication_status: 1, owner_type: 1 });
-placeSchema.index({ slug: 1 }, { unique: true, sparse: true });
+placeSchema.index(
+  { slug: 1 },
+  {
+    unique: true,
+    // Tránh E11000 khi nhiều Place không có slug ("" vẫn bị sparse index).
+    partialFilterExpression: { slug: { $exists: true, $type: 'string', $gt: '' } }
+  }
+);
 
 /** Alias cũ PUBLIC/UNLISTED → enum canonical trước khi validate (CI + client cũ). */
 placeSchema.pre('validate', function canonicalizeLegacyPlaceEnums() {
@@ -192,6 +199,13 @@ placeSchema.pre('validate', function canonicalizeLegacyPlaceEnums() {
   }
   if (this.owner_type != null && this.owner_type !== '') {
     this.owner_type = canonicalizeOwnerInput(this.owner_type);
+  }
+  // Sparse unique index: "" vẫn bị index → E11000; bỏ field khi trống.
+  if (this.slug == null || String(this.slug).trim() === '') {
+    this.slug = undefined;
+    if (typeof this.set === 'function') this.set('slug', undefined);
+  } else {
+    this.slug = String(this.slug).trim().toLowerCase();
   }
 });
 
