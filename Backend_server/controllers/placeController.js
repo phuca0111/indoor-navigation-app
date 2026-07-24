@@ -705,7 +705,9 @@ async function getPlacePublic(req, res) {
       has_indoor: indoorBuildings.length > 0,
       indoor_published_count: indoorBuildings.length,
       indoor_buildings: indoorBuildings,
-      indoor_workspaces: indoorBuildings
+      indoor_workspaces: indoorBuildings,
+      /** Alias tương thích Explore / integration (workspaces === indoor published). */
+      workspaces: indoorBuildings
     });
   } catch (error) {
     return res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });

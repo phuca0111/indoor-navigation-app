@@ -252,7 +252,7 @@ html, body {
 .hub-skeleton {
   height: 14px;
   border-radius: 8px;
-  background: linear-gradient(90deg, #eef2f6 25%, #f8fafc 50%, #eef2f6 75%);
+  background: linear-gradient(90deg, #f2f4f7 25%, #f8fafc 50%, #f2f4f7 75%);
   background-size: 200% 100%;
   animation: hubSk 1.2s ease-in-out infinite;
   margin: 8px 0;
@@ -306,8 +306,8 @@ body.hub-theme-dark {
   --hub-panel: #111827;
   --hub-ink: #e5e7eb;
   --hub-muted: #94a3b8;
-  --hub-border: #1f2937;
-  --hub-accent-soft: #134e4a;
+  --hub-border: #1e293b;
+  --hub-accent-soft: #0f766e;
 }
 body.hub-theme-dark .hub-item,
 body.hub-theme-dark .hub-stat,

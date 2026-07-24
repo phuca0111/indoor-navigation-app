@@ -112,7 +112,7 @@
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
     placeGeofence = L.circle([lat, lng], {
       radius,
-      color: '#1a73e8',
+      color: '#2563eb',
       weight: 1,
       fillOpacity: 0.06
     }).addTo(map);
@@ -526,13 +526,13 @@
         if (userCircle) map.removeLayer(userCircle);
         userMarker = L.circleMarker([lat, lng], {
           radius: 8,
-          color: '#1a73e8',
-          fillColor: '#1a73e8',
+          color: '#2563eb',
+          fillColor: '#2563eb',
           fillOpacity: 0.9
         }).addTo(map);
         userCircle = L.circle([lat, lng], {
           radius: GEOFENCE_M,
-          color: '#1a73e8',
+          color: '#2563eb',
           weight: 1,
           fillOpacity: 0.08
         }).addTo(map);
