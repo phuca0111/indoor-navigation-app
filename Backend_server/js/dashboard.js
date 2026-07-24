@@ -2678,41 +2678,57 @@ function renderBuildingsFromCache() {
   const pageItems = list.slice(start, start + PAGE_SIZE);
   tbody.innerHTML = pageItems.map(b => {
     const date = b.updatedAt ? new Date(b.updatedAt).toLocaleDateString('vi-VN') : '-';
-    const desc = b.description ? '<br><small style="color:#888">' + escapeHtml(b.description) + '</small>' : '';
+    const descPlain = (b.description || '').trim();
     const inactive = b.is_active === false;
     const rowStyle = inactive
       ? ' style="opacity:0.72;background:#fafafa;"'
       : (b.quota_locked ? ' style="background:#fff5f5;"' : '');
     const inactiveBadge = inactive ? ' <span class="badge badge-inactive" style="font-size:10px;">Vô hiệu</span>' : '';
     const lockedBadge = b.quota_locked ? ' <span class="badge badge-quota-locked" style="font-size:10px;">Khóa quota</span>' : '';
+    const nameTitle = escapeHtml([b.name, descPlain].filter(Boolean).join(' — '));
+    const nameInner =
+      '<div class="building-name-cell" title="' + nameTitle + '">' +
+        '<span class="building-name-row">' +
+          '<a href="#" class="building-name-link" onclick="event.preventDefault();openBuildingDetail(\'' + b._id + '\')"><strong>' + escapeHtml(b.name) + '</strong></a>' +
+          inactiveBadge + lockedBadge +
+        '</span>' +
+        (descPlain ? '<span class="building-desc-sub">' + escapeHtml(descPlain) + '</span>' : '') +
+      '</div>';
     let actions = '';
     if (inactive) {
       if (canDelete) {
-        actions = '<button type="button" class="btn-edit" onclick="openBuildingDetail(\'' + b._id + '\')" style="margin-right:4px;">Chi tiết</button>' +
-          '<button type="button" class="btn-create" onclick="restoreBuilding(\'' + b._id + '\')" style="background:#27ae60;padding:6px 12px;">Khôi phục</button>';
+        actions =
+          '<button type="button" class="ba-btn ba-btn--detail" onclick="openBuildingDetail(\'' + b._id + '\')">Chi tiết</button>' +
+          '<button type="button" class="ba-btn ba-btn--success" onclick="restoreBuilding(\'' + b._id + '\')">Khôi phục</button>';
       } else {
-        actions = '<button type="button" class="btn-edit" onclick="openBuildingDetail(\'' + b._id + '\')" style="margin-right:4px;">Chi tiết</button>' +
-          '<span style="color:#888;font-size:12px;">Đã vô hiệu</span>';
+        actions =
+          '<button type="button" class="ba-btn ba-btn--detail" onclick="openBuildingDetail(\'' + b._id + '\')">Chi tiết</button>' +
+          '<span class="ba-note">Đã vô hiệu</span>';
       }
     } else if (b.quota_locked) {
-      actions = '<button type="button" class="btn-edit" onclick="openBuildingDetail(\'' + b._id + '\')" style="margin-right:4px;">Chi tiết</button>' +
-        '<span style="color:#c0392b;font-size:12px;">🔒 Bị khóa — chỉ xem / vô hiệu hóa</span>';
+      actions =
+        '<button type="button" class="ba-btn ba-btn--detail" onclick="openBuildingDetail(\'' + b._id + '\')">Chi tiết</button>' +
+        '<span class="ba-note" title="Bị khóa quota">🔒 Khóa</span>';
       if (canDelete) {
-        actions += ' <button class="btn-logout" onclick="deleteBuilding(\'' + b._id + '\')" style="background:#e74c3c;padding:6px 12px;margin-left:6px;">Vô hiệu</button>';
+        actions +=
+          '<button type="button" class="ba-btn ba-btn--danger" onclick="deleteBuilding(\'' + b._id + '\')">Vô hiệu</button>';
       }
     } else {
-      actions = '<button class="btn-edit" onclick="openBuildingDetail(\'' + b._id + '\')" style="margin-right:4px;" title="Xem hồ sơ chi tiết tòa nhà">Chi tiết</button>' +
-        '<button class="btn-edit" onclick="openEditor(\'' + b._id + '\')" style="margin-right:4px;" title="Mở trình soạn bản đồ tầng">Vẽ bản đồ</button>' +
-        '<button class="btn-edit" onclick="openMapVersionModal(\'' + b._id + '\', ' + (b.total_floors || 1) + ')" style="background:#8e44ad;color:white;margin-right:4px;" title="Xem lịch sử phiên bản bản đồ / khôi phục">Phiên bản</button>';
+      actions =
+        '<button type="button" class="ba-btn ba-btn--detail" onclick="openBuildingDetail(\'' + b._id + '\')" title="Xem hồ sơ chi tiết tòa nhà">Chi tiết</button>' +
+        '<button type="button" class="ba-btn ba-btn--map" onclick="openEditor(\'' + b._id + '\')" title="Mở trình soạn bản đồ tầng">Vẽ bản đồ</button>' +
+        '<button type="button" class="ba-btn ba-btn--version" onclick="openMapVersionModal(\'' + b._id + '\', ' + (b.total_floors || 1) + ')" title="Xem lịch sử phiên bản bản đồ / khôi phục">Phiên bản</button>';
       if (canEditMeta) {
-        actions += '<button class="btn-edit" onclick="openEditBuildingModal(\'' + b._id + '\')" style="background:#f39c12;color:white;margin-right:4px;" title="Sửa thông tin tòa nhà">Sửa</button>';
+        actions +=
+          '<button type="button" class="ba-btn ba-btn--edit" onclick="openEditBuildingModal(\'' + b._id + '\')" title="Sửa thông tin tòa nhà">Sửa</button>';
       }
       if (canDelete) {
-        actions += '<button class="btn-logout" onclick="deleteBuilding(\'' + b._id + '\')" style="background:#e74c3c;padding:6px 12px;" title="Vô hiệu hóa tòa nhà (soft delete)">Xóa</button>';
+        actions +=
+          '<button type="button" class="ba-btn ba-btn--danger" onclick="deleteBuilding(\'' + b._id + '\')" title="Vô hiệu hóa tòa nhà (soft delete)">Xóa</button>';
       }
     }
     return '<tr' + rowStyle + '>' +
-      tdEllipsis(b.name, '<a href="#" class="building-name-link" onclick="event.preventDefault();openBuildingDetail(\'' + b._id + '\')"><strong>' + escapeHtml(b.name) + '</strong></a>' + inactiveBadge + lockedBadge + desc) +
+      '<td>' + nameInner + '</td>' +
       tdEllipsis(b.address || '-') +
       '<td style="text-align:center;">' + (b.total_floors || 1) + '</td>' +
       '<td><span class="badge">' + escapeHtml(formatBuildingStatusVi(b.status)) + '</span></td>' +
@@ -6188,7 +6204,7 @@ function renderFinanceInvoicesFromCache(resetPage) {
   const pageItems = rows.slice(start, start + PAGE_SIZE);
   el.innerHTML =
     '<div class="finance-table-wrap finance-table-wrap--borderless"><table class="data-table finance-data-table finance-invoice-table"><thead><tr>' +
-    '<th>Số HĐ</th><th>Org</th><th>Gói</th><th>Tổng</th><th>Status</th><th></th>' +
+    '<th>Số HĐ</th><th>Org</th><th>Gói</th><th>Tổng</th><th>Status</th><th>Thao tác</th>' +
     '</tr></thead><tbody>' +
     pageItems.map((inv) => {
       const oid = inv.organization?._id || inv.organization_id || '';
@@ -6200,21 +6216,24 @@ function renderFinanceInvoicesFromCache(resetPage) {
         || (isPersonal
           ? (inv.metadata?.user_email ? ('Cá nhân · ' + inv.metadata.user_email) : 'Cá nhân')
           : '-');
-      const actions =
-        '<button type="button" class="btn-edit" style="padding:4px 8px;font-size:12px;" onclick="openFinanceInvoicePdf(\'' +
-        String(inv._id) + '\')">PDF</button> ' +
-        (inv.status === 'OPEN' || inv.status === 'DRAFT'
-          ? '<button type="button" class="btn-edit" style="padding:4px 8px;font-size:12px;background:#16a34a;color:#fff;border-color:#16a34a;" onclick="markFinanceInvoicePaid(\'' +
-            String(inv._id) + '\')">Đã thu</button> ' +
-            '<button type="button" class="btn-logout" style="padding:4px 8px;font-size:12px;background:#e74c3c;" onclick="voidFinanceInvoice(\'' +
-            String(inv._id) + '\')">Hủy</button>'
-          : '');
-      return '<tr><td>' + escapeHtml(inv.invoice_number || '') +
-        '</td><td title="' + escapeHtml(String(oid)) + '">' + escapeHtml(oname) +
-        '</td><td>' + escapeHtml(inv.plan || '') +
-        '</td><td>' + formatVnd(inv.total != null ? inv.total : inv.amount) +
-        '</td><td>' + escapeHtml(inv.status || '') +
-        '</td><td>' + actions + '</td></tr>';
+      let actions =
+        '<button type="button" class="fp-btn fp-btn--detail" onclick="openFinanceInvoicePdf(\'' +
+        String(inv._id) + '\')">PDF</button>';
+      if (inv.status === 'OPEN' || inv.status === 'DRAFT') {
+        actions +=
+          ' <button type="button" class="fp-btn fp-btn--success" onclick="markFinanceInvoicePaid(\'' +
+          String(inv._id) + '\')">Đã thu</button>' +
+          ' <button type="button" class="fp-btn fp-btn--danger" onclick="voidFinanceInvoice(\'' +
+          String(inv._id) + '\')">Hủy</button>';
+      }
+      return '<tr>' +
+        '<td title="' + escapeHtml(inv.invoice_number || '') + '">' + escapeHtml(inv.invoice_number || '') + '</td>' +
+        '<td title="' + escapeHtml(oname + (oid ? ' · ' + String(oid) : '')) + '">' + escapeHtml(oname) + '</td>' +
+        '<td>' + escapeHtml(inv.plan || '') + '</td>' +
+        '<td class="fp-amount">' + formatVnd(inv.total != null ? inv.total : inv.amount) + '</td>' +
+        '<td><span class="fp-status">' + escapeHtml(inv.status || '') + '</span></td>' +
+        '<td class="fp-actions">' + actions + '</td>' +
+        '</tr>';
     }).join('') +
     '</tbody></table></div>';
   renderPagination('financeInvoices', rows.length, page);
@@ -6360,7 +6379,7 @@ function renderFinancePaymentsFromCache(resetPage) {
   const pageItems = rows.slice(start, start + PAGE_SIZE);
   el.innerHTML =
     '<div class="finance-table-wrap finance-table-wrap--borderless"><table class="data-table finance-data-table finance-payment-table"><thead><tr>' +
-    '<th>Ngày</th><th>Org</th><th>HĐ</th><th>Method</th><th>Số tiền</th><th>Status</th><th>Ref</th><th></th>' +
+    '<th>Ngày</th><th>Org</th><th>HĐ</th><th>Method</th><th>Số tiền</th><th>Status</th><th>Ref</th><th>Thao tác</th>' +
     '</tr></thead><tbody>' +
     pageItems.map((p) => {
       const isPersonal =
@@ -6372,17 +6391,22 @@ function renderFinancePaymentsFromCache(resetPage) {
           : '-');
       const canRefund = String(p.status || '') === 'SUCCESS' && Number(p.amount) > 0;
       const action = canRefund
-        ? '<button type="button" class="btn-logout" style="padding:4px 8px;font-size:12px;background:#e74c3c;" onclick="refundFinancePayment(\'' +
+        ? '<button type="button" class="fp-btn fp-btn--danger" onclick="refundFinancePayment(\'' +
           String(p._id) + '\')">Hoàn</button>'
-        : '-';
-      return '<tr><td>' + escapeHtml(p.paid_at ? new Date(p.paid_at).toLocaleString('vi-VN') : '-') +
-      '</td><td>' + escapeHtml(orgLabel) +
-      '</td><td>' + escapeHtml(p.invoice_id?.invoice_number || '-') +
-      '</td><td>' + escapeHtml(p.method || '') +
-      '</td><td>' + formatVnd(p.amount) +
-      '</td><td>' + escapeHtml(p.status || '') +
-      '</td><td>' + escapeHtml(p.external_ref || '-') +
-      '</td><td>' + action + '</td></tr>';
+        : '<span class="fp-muted">—</span>';
+      const paidAt = p.paid_at ? new Date(p.paid_at).toLocaleString('vi-VN') : '-';
+      const invNo = p.invoice_id?.invoice_number || '-';
+      const ref = p.external_ref || '-';
+      return '<tr>' +
+        '<td title="' + escapeHtml(paidAt) + '">' + escapeHtml(paidAt) + '</td>' +
+        '<td title="' + escapeHtml(orgLabel) + '">' + escapeHtml(orgLabel) + '</td>' +
+        '<td title="' + escapeHtml(invNo) + '">' + escapeHtml(invNo) + '</td>' +
+        '<td>' + escapeHtml(p.method || '') + '</td>' +
+        '<td class="fp-amount">' + formatVnd(p.amount) + '</td>' +
+        '<td><span class="fp-status">' + escapeHtml(p.status || '') + '</span></td>' +
+        '<td title="' + escapeHtml(ref) + '">' + escapeHtml(ref) + '</td>' +
+        '<td class="fp-actions">' + action + '</td>' +
+        '</tr>';
     }).join('') +
     '</tbody></table></div>';
   renderPagination('financePayments', rows.length, page);
@@ -9857,6 +9881,8 @@ function renderUsersFromCache() {
   const page = window._usersPage || 1;
   const start = (page - 1) * PAGE_SIZE;
   const slice = sorted.slice(start, start + PAGE_SIZE);
+  const meta = document.getElementById('usersMeta');
+  if (meta) meta.textContent = 'Tổng: ' + sorted.length + ' tài khoản';
   renderUsers(slice);
   renderPagination('users', sorted.length, page);
 }
@@ -9892,7 +9918,7 @@ function renderUsers(users) {
   const tbody = document.getElementById('usersList');
   if (!tbody) return;
   if (!users || users.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:#888;">Không có tài khoản.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="analytics-muted">Không có tài khoản.</td></tr>';
     return;
   }
   const ROLE_DISPLAY = {
@@ -9908,25 +9934,7 @@ function renderUsers(users) {
     const isSuperAdmin = u.role === 'SUPER_ADMIN';
     const isSelf = u._id === localStorage.getItem('userId');
     const isAdminSelf = isSuperAdmin && isSelf;
-    let actionBtn = '';
-    if (isAdminSelf) {
-      actionBtn = '<span class="badge badge-inactive" style="cursor:default;">Tự bảo vệ</span>';
-    } else {
-      const isActive = u.is_active;
-      const btnClass = isActive ? 'btn-logout' : 'btn-create';
-      const btnText = isActive ? 'Khóa' : 'Duyệt';
-      const btnTitle = isActive ? 'Khóa tài khoản (không cho đăng nhập)' : 'Mở khóa / duyệt tài khoản';
-      actionBtn = '<button class="' + btnClass + '" onclick="toggleUserActive(\'' + u._id + '\', ' + isActive + ')" style="padding:6px 12px;" title="' + btnTitle + '">' + btnText + '</button>';
-    }
-    let editBtn = '';
-    let pwdBtn = '';
     const canResetPwd = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'ORG_ADMIN';
-    if (!isAdminSelf) {
-      editBtn = '<button class="btn-edit" onclick="openUpdateUserModal(\'' + u._id + '\')" style="font-size:13px;padding:6px 10px;" title="Sửa thông tin tài khoản">Sửa</button>';
-      if (canResetPwd && !isSuperAdmin) {
-        pwdBtn = '<button class="btn-edit" onclick="promptResetUserPassword(\'' + u._id + '\')" style="font-size:12px;padding:6px 8px;background:#8e44ad;color:#fff;" title="Cấp mật khẩu mới cho user">Cấp MK</button>';
-      }
-    }
     let roleClass = 'role-badge building-admin';
     if (isSuperAdmin) roleClass = 'role-badge super-admin';
     else if (u.role === 'ORG_ADMIN') roleClass = 'role-badge org-admin';
@@ -9942,24 +9950,269 @@ function renderUsers(users) {
       statusClass = u.is_active ? 'status-badge active' : 'status-badge inactive';
       statusText = u.is_active ? 'Hoạt động' : 'Chờ duyệt / khóa';
     }
-    if (u.quota_locked && !isAdminSelf) {
-      actionBtn = '<span style="color:#c0392b;font-size:12px;">🔒 Vượt hạn mức gói</span>';
-      editBtn = '';
-      pwdBtn = '';
-    }
     const roleText = ROLE_DISPLAY[u.role] || u.role || '-';
     const orgText = u.role === 'SUPER_ADMIN' ? '—' : getOrgName(u.organization_id);
+    const buildingsText = formatAssignedBuildings(u.assigned_buildings);
+
+    // Thao tác: nút nằm ngang, màu nhẹ
+    let actionsHtml =
+      '<button type="button" class="ua-btn ua-btn--detail" onclick="openUserDetailPage(\'' + u._id + '\')" title="Xem chi tiết tài khoản">Chi tiết</button> ';
+    if (u.quota_locked && !isAdminSelf) {
+      actionsHtml += '<span class="user-action-note" title="Vượt hạn mức gói">🔒 Quota</span>';
+    } else if (isAdminSelf) {
+      actionsHtml += '<span class="user-action-note">Tự bảo vệ</span>';
+    } else {
+      const isActive = u.is_active;
+      const lockLabel = isActive ? 'Khóa' : 'Duyệt';
+      const lockTitle = isActive ? 'Khóa tài khoản (không cho đăng nhập)' : 'Mở khóa / duyệt tài khoản';
+      actionsHtml +=
+        '<button type="button" class="ua-btn ua-btn--edit" onclick="openUpdateUserModal(\'' + u._id + '\')" title="Sửa thông tin tài khoản">Sửa</button> ';
+      if (canResetPwd && !isSuperAdmin) {
+        actionsHtml +=
+          '<button type="button" class="ua-btn ua-btn--pwd" onclick="promptResetUserPassword(\'' + u._id + '\')" title="Cấp mật khẩu mới">Cấp MK</button> ';
+      }
+      if (isActive) {
+        actionsHtml +=
+          '<button type="button" class="ua-btn ua-btn--danger" onclick="toggleUserActive(\'' + u._id + '\', true)" title="' + lockTitle + '">' + lockLabel + '</button>';
+      } else {
+        actionsHtml +=
+          '<button type="button" class="ua-btn ua-btn--success" onclick="toggleUserActive(\'' + u._id + '\', false)" title="' + lockTitle + '">' + lockLabel + '</button>';
+      }
+    }
+
     return '<tr>' +
       tdEllipsis(u.email || '-') +
       tdEllipsis(u.full_name || '-') +
-      '<td>' + escapeHtml(u.phone || '-') + '</td>' +
-      '<td><span class="' + roleClass + '">' + escapeHtml(roleText) + '</span></td>' +
-      '<td><span class="' + statusClass + '">' + statusText + '</span></td>' +
+      tdEllipsis(u.phone || '-') +
+      '<td title="' + escapeHtml(roleText) + '"><span class="' + roleClass + '">' + escapeHtml(roleText) + '</span></td>' +
+      '<td title="' + escapeHtml(statusText) + '"><span class="' + statusClass + '">' + statusText + '</span></td>' +
       tdEllipsis(orgText) +
-      tdEllipsis(formatAssignedBuildings(u.assigned_buildings)) +
-      '<td>' + createdAtStr + '</td>' +
-      '<td class="actions-cell"><div class="user-actions">' + actionBtn + pwdBtn + editBtn + '</div></td></tr>';
+      tdEllipsis(buildingsText) +
+      '<td title="' + escapeHtml(createdAtStr) + '">' + createdAtStr + '</td>' +
+      '<td class="actions-cell" style="white-space:nowrap;">' + actionsHtml + '</td></tr>';
   }).join('');
+}
+
+let _userDetailId = null;
+let _userDetailData = null;
+let _userDetailSubtab = 'overview';
+
+function showUserListView() {
+  const list = document.getElementById('userListView');
+  const page = document.getElementById('userDetailPage');
+  if (list) list.hidden = false;
+  if (page) page.hidden = true;
+}
+
+function showUserDetailPageShell() {
+  const list = document.getElementById('userListView');
+  const page = document.getElementById('userDetailPage');
+  if (list) list.hidden = true;
+  if (page) page.hidden = false;
+}
+
+function closeUserDetailPage() {
+  _userDetailId = null;
+  _userDetailData = null;
+  _userDetailSubtab = 'overview';
+  showUserListView();
+}
+
+function switchUserDetailSubtab(name) {
+  _userDetailSubtab = name || 'overview';
+  document.querySelectorAll('.user-detail-subnav-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.getAttribute('data-user-sub') === _userDetailSubtab);
+  });
+  if (_userDetailData) renderUserDetailPageContent(_userDetailData);
+  else if (_userDetailId) loadUserDetailSubtabBody(_userDetailId, _userDetailSubtab);
+}
+
+async function openUserDetailPage(userId) {
+  _userDetailId = userId;
+  _userDetailData = null;
+  _userDetailSubtab = 'overview';
+  showUserDetailPageShell();
+  document.querySelectorAll('.user-detail-subnav-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.getAttribute('data-user-sub') === 'overview');
+  });
+  const body = document.getElementById('userDetailPageBody');
+  const titleEl = document.getElementById('userDetailPageTitle');
+  if (titleEl) titleEl.textContent = 'Đang tải…';
+  if (body) body.innerHTML = typeof dashUiLoading === 'function'
+    ? dashUiLoading('text', { label: 'Đang tải chi tiết tài khoản…' })
+    : '<p>Đang tải…</p>';
+  try {
+    if (typeof switchTab === 'function') await switchTab('users', { skipHistory: true });
+  } catch (e) { /* ignore */ }
+  try {
+    const res = await apiFetch('/users/' + userId + '/overview');
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (body) {
+        body.innerHTML = typeof dashUiError === 'function'
+          ? dashUiError(d.message || ('HTTP ' + res.status))
+          : '<p style="color:red;">' + escapeHtml(d.message || ('HTTP ' + res.status)) + '</p>';
+      }
+      return;
+    }
+    _userDetailData = d;
+    renderUserDetailPageContent(d);
+  } catch (e) {
+    console.error('openUserDetailPage error:', e);
+    if (body) {
+      body.innerHTML = typeof dashUiError === 'function'
+        ? dashUiError('Lỗi kết nối khi tải chi tiết tài khoản.')
+        : '<p style="color:red;">Lỗi kết nối.</p>';
+    }
+  }
+}
+
+function renderUserDetailPageContent(data) {
+  const u = data.user || {};
+  const counts = data.counts || {};
+  const ROLE_DISPLAY = {
+    SUPER_ADMIN: 'Quản trị hệ thống',
+    FINANCE_ADMIN: 'Quản trị tài chính',
+    MARKETING_MANAGER: 'Quản trị nội dung',
+    ORG_ADMIN: 'Quản trị tổ chức',
+    BUILDING_ADMIN: 'Quản trị tòa nhà',
+    REGISTERED_USER: 'Tài khoản cá nhân'
+  };
+  const titleEl = document.getElementById('userDetailPageTitle');
+  const badgesEl = document.getElementById('userDetailPageBadges');
+  const metaEl = document.getElementById('userDetailPageMeta');
+  if (titleEl) titleEl.textContent = u.full_name || u.email || 'Chi tiết tài khoản';
+  if (badgesEl) {
+    const active = u.is_active !== false;
+    badgesEl.innerHTML =
+      '<span class="status-badge ' + (active ? 'active' : 'inactive') + '">' +
+      (active ? 'Hoạt động' : 'Chờ duyệt / khóa') + '</span>' +
+      '<span class="role-badge">' + escapeHtml(ROLE_DISPLAY[u.role] || u.role || '-') + '</span>';
+  }
+  if (metaEl) {
+    metaEl.innerHTML =
+      '<span>' + escapeHtml(u.email || '') + '</span>' +
+      (u.phone ? ' · <span>' + escapeHtml(u.phone) + '</span>' : '') +
+      (u.organization_id ? ' · <span>Org: ' + escapeHtml(getOrgName(u.organization_id)) + '</span>' : '');
+  }
+  const body = document.getElementById('userDetailPageBody');
+  if (!body) return;
+  if (_userDetailSubtab === 'overview') {
+    body.innerHTML =
+      '<div class="org-detail-overview-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px;">' +
+        '<div class="org-stat-card" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;">Yêu thích</div><strong style="font-size:22px;">' + Number(counts.favorites || 0) + '</strong></div>' +
+        '<div class="org-stat-card" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;">Lịch sử</div><strong style="font-size:22px;">' + Number(counts.history || 0) + '</strong></div>' +
+        '<div class="org-stat-card" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;">Phiên đăng nhập</div><strong style="font-size:22px;">' + Number(counts.sessions || 0) + '</strong></div>' +
+      '</div>' +
+      '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px;">' +
+        '<h4 style="margin:0 0 10px;">Hồ sơ</h4>' +
+        '<p style="margin:4px 0;"><strong>Email:</strong> ' + escapeHtml(u.email || '-') + '</p>' +
+        '<p style="margin:4px 0;"><strong>Họ tên:</strong> ' + escapeHtml(u.full_name || '-') + '</p>' +
+        '<p style="margin:4px 0;"><strong>SĐT:</strong> ' + escapeHtml(u.phone || '-') + '</p>' +
+        '<p style="margin:4px 0;"><strong>Vai trò:</strong> ' + escapeHtml(ROLE_DISPLAY[u.role] || u.role || '-') + '</p>' +
+        '<p style="margin:4px 0;"><strong>Tổ chức:</strong> ' + escapeHtml(u.role === 'SUPER_ADMIN' ? '—' : getOrgName(u.organization_id)) + '</p>' +
+        '<p style="margin:4px 0;"><strong>Tòa nhà:</strong> ' + escapeHtml(formatAssignedBuildings(u.assigned_buildings)) + '</p>' +
+        '<p style="margin:4px 0;"><strong>Ngày tạo:</strong> ' + (u.createdAt ? new Date(u.createdAt).toLocaleString('vi-VN') : '-') + '</p>' +
+        '<p style="margin:4px 0;"><strong>Đăng nhập gần nhất:</strong> ' + (u.last_login ? new Date(u.last_login).toLocaleString('vi-VN') : '-') + '</p>' +
+        '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">' +
+          '<button type="button" class="btn-edit" onclick="openUpdateUserModal(\'' + u._id + '\')">Sửa hồ sơ</button>' +
+          '<button type="button" class="btn-edit" onclick="switchUserDetailSubtab(\'favorites\')">Xem yêu thích</button>' +
+          '<button type="button" class="btn-edit" onclick="switchUserDetailSubtab(\'history\')">Xem lịch sử</button>' +
+          '<button type="button" class="btn-edit" onclick="switchUserDetailSubtab(\'sessions\')">Xem phiên</button>' +
+        '</div>' +
+      '</div>';
+    return;
+  }
+  loadUserDetailSubtabBody(_userDetailId, _userDetailSubtab);
+}
+
+async function loadUserDetailSubtabBody(userId, subtab) {
+  const body = document.getElementById('userDetailPageBody');
+  if (!body || !userId) return;
+  body.innerHTML = typeof dashUiLoading === 'function'
+    ? dashUiLoading('text', { label: 'Đang tải…' })
+    : '<p>Đang tải…</p>';
+  try {
+    if (subtab === 'favorites') {
+      const res = await apiFetch('/users/' + userId + '/favorites');
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        body.innerHTML = '<p style="color:red;">' + escapeHtml(d.message || ('HTTP ' + res.status)) + '</p>';
+        return;
+      }
+      const rows = d.favorites || [];
+      if (!rows.length) {
+        body.innerHTML = '<p style="color:#888;padding:24px;text-align:center;">Chưa có địa điểm yêu thích.</p>';
+        return;
+      }
+      body.innerHTML =
+        '<p style="margin:0 0 10px;color:#64748b;">Tổng: <strong>' + (d.total || rows.length) + '</strong></p>' +
+        '<table class="users-table" style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;">' +
+        '<thead style="background:#34495e;color:#fff;"><tr><th style="padding:10px;text-align:left;">Địa điểm</th><th style="padding:10px;text-align:left;">Danh mục</th><th style="padding:10px;text-align:left;">Ngày lưu</th></tr></thead>' +
+        '<tbody>' + rows.map((r) => {
+          const p = r.place || {};
+          return '<tr><td style="padding:10px;">' + escapeHtml(p.name || String(r.place_id || '-')) +
+            (p.address ? '<div style="font-size:12px;color:#64748b;">' + escapeHtml(p.address) + '</div>' : '') +
+            '</td><td style="padding:10px;">' + escapeHtml(p.category || '-') +
+            '</td><td style="padding:10px;">' + (r.createdAt ? new Date(r.createdAt).toLocaleString('vi-VN') : '-') +
+            '</td></tr>';
+        }).join('') + '</tbody></table>';
+      return;
+    }
+    if (subtab === 'history') {
+      const res = await apiFetch('/users/' + userId + '/history');
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        body.innerHTML = '<p style="color:red;">' + escapeHtml(d.message || ('HTTP ' + res.status)) + '</p>';
+        return;
+      }
+      const rows = d.history || [];
+      if (!rows.length) {
+        body.innerHTML = '<p style="color:#888;padding:24px;text-align:center;">Chưa có lịch sử hoạt động.</p>';
+        return;
+      }
+      body.innerHTML =
+        '<p style="margin:0 0 10px;color:#64748b;">Tổng: <strong>' + (d.total || rows.length) + '</strong></p>' +
+        '<table class="users-table" style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;">' +
+        '<thead style="background:#34495e;color:#fff;"><tr><th style="padding:10px;text-align:left;">Loại</th><th style="padding:10px;text-align:left;">Nhãn</th><th style="padding:10px;text-align:left;">Thời gian</th></tr></thead>' +
+        '<tbody>' + rows.map((r) => (
+          '<tr><td style="padding:10px;">' + escapeHtml(r.type || '-') +
+          '</td><td style="padding:10px;">' + escapeHtml(r.label || String(r.place_id || '-')) +
+          '</td><td style="padding:10px;">' + (r.createdAt ? new Date(r.createdAt).toLocaleString('vi-VN') : '-') +
+          '</td></tr>'
+        )).join('') + '</tbody></table>';
+      return;
+    }
+    if (subtab === 'sessions') {
+      const res = await apiFetch('/users/' + userId + '/sessions');
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        body.innerHTML = '<p style="color:red;">' + escapeHtml(d.message || ('HTTP ' + res.status)) + '</p>';
+        return;
+      }
+      const rows = d.sessions || [];
+      if (!rows.length) {
+        body.innerHTML = '<p style="color:#888;padding:24px;text-align:center;">Không có phiên đăng nhập đang hoạt động.</p>';
+        return;
+      }
+      body.innerHTML =
+        '<p style="margin:0 0 10px;color:#64748b;">Tổng: <strong>' + (d.total || rows.length) + '</strong></p>' +
+        '<table class="users-table" style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;">' +
+        '<thead style="background:#34495e;color:#fff;"><tr><th style="padding:10px;text-align:left;">Thiết bị</th><th style="padding:10px;text-align:left;">IP</th><th style="padding:10px;text-align:left;">Dùng gần nhất</th><th style="padding:10px;text-align:left;">Hết hạn</th></tr></thead>' +
+        '<tbody>' + rows.map((r) => (
+          '<tr><td style="padding:10px;">' + escapeHtml(r.device_name || r.user_agent || '-') +
+          '</td><td style="padding:10px;">' + escapeHtml(r.ip_address || '-') +
+          '</td><td style="padding:10px;">' + (r.last_used_at ? new Date(r.last_used_at).toLocaleString('vi-VN') : '-') +
+          '</td><td style="padding:10px;">' + (r.expires_at ? new Date(r.expires_at).toLocaleString('vi-VN') : '-') +
+          '</td></tr>'
+        )).join('') + '</tbody></table>';
+      return;
+    }
+    body.innerHTML = '<p style="color:#888;">Tab không hợp lệ.</p>';
+  } catch (e) {
+    console.error('loadUserDetailSubtabBody error:', e);
+    body.innerHTML = '<p style="color:red;">Lỗi tải dữ liệu tab.</p>';
+  }
 }
 
 async function toggleUserActive(userId, currentActive) {

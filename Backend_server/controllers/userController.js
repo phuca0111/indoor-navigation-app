@@ -8,6 +8,12 @@ const {
   deactivateUser,
   adminResetPassword: adminResetPasswordUseCase
 } = require('../application/identity/userApplicationService');
+const {
+  getAdminUserOverview,
+  listAdminUserFavorites,
+  listAdminUserHistory,
+  listAdminUserSessions
+} = require('../application/endUser/adminUserDetailApplicationService');
 const { validatePasswordStrength } = require('../utils/passwordPolicy');
 const { validateFullName, normalizeFullName } = require('../utils/fullNamePolicy');
 const { validateProfilePatch } = require('../utils/identityValidation');
@@ -162,6 +168,50 @@ async function adminResetPassword(req, res) {
   }
 }
 
+async function getUserOverview(req, res) {
+  try {
+    return res.status(200).json(
+      await getAdminUserOverview(req.params.userId, req.effectivePrincipal)
+    );
+  } catch (error) {
+    return errorResponse(res, error);
+  }
+}
+
+async function getUserFavorites(req, res) {
+  try {
+    return res.status(200).json(
+      await listAdminUserFavorites(req.params.userId, req.effectivePrincipal, {
+        limit: req.query?.limit
+      })
+    );
+  } catch (error) {
+    return errorResponse(res, error);
+  }
+}
+
+async function getUserHistory(req, res) {
+  try {
+    return res.status(200).json(
+      await listAdminUserHistory(req.params.userId, req.effectivePrincipal, {
+        limit: req.query?.limit
+      })
+    );
+  } catch (error) {
+    return errorResponse(res, error);
+  }
+}
+
+async function getUserSessions(req, res) {
+  try {
+    return res.status(200).json(
+      await listAdminUserSessions(req.params.userId, req.effectivePrincipal)
+    );
+  } catch (error) {
+    return errorResponse(res, error);
+  }
+}
+
 module.exports = {
   getUsers: listUsers,
   listUsers,
@@ -171,5 +221,9 @@ module.exports = {
   getMe,
   updateMe,
   changePassword,
-  adminResetPassword
+  adminResetPassword,
+  getUserOverview,
+  getUserFavorites,
+  getUserHistory,
+  getUserSessions
 };

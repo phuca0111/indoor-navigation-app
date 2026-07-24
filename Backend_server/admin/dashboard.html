@@ -15,8 +15,8 @@
         } catch (e) { /* ignore */ }
       })();
     </script>
-    <link rel="stylesheet" href="css/admin.css?v=20260721navfix1">
-    <link rel="stylesheet" href="css/admin-theme.css?v=20260723mgcui1">
+    <link rel="stylesheet" href="css/admin.css?v=20260725nav1">
+    <link rel="stylesheet" href="css/admin-theme.css?v=20260725fin1">
     <link rel="stylesheet" href="css/admin-tokens.css?v=20260721wq1">
 </head>
 <body class="admin-shell-body">
@@ -54,7 +54,7 @@
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15v-4"/><path d="M12 15V8"/><path d="M16 15v-7"/></svg></span>
                   <span>Tổng quan</span>
                 </span>
-                <span class="admin-nav-chevron" aria-hidden="true">▾</span>
+                <span class="admin-nav-chevron" aria-hidden="true">›</span>
               </button>
               <div class="admin-nav-group-items">
                 <button type="button" class="tab-btn overview-tab-btn active" data-tab="overview" onclick="switchTab('overview')">
@@ -70,7 +70,7 @@
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h18"/><path d="M3 6h18"/><path d="M3 18h18"/></svg></span>
                   <span>Vận hành</span>
                 </span>
-                <span class="admin-nav-chevron" aria-hidden="true">▾</span>
+                <span class="admin-nav-chevron" aria-hidden="true">›</span>
               </button>
               <div class="admin-nav-group-items">
                 <button type="button" class="tab-btn" data-tab="buildings" onclick="switchTab('buildings')">
@@ -94,7 +94,7 @@
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
                   <span id="navCustomersGroupLabel">Khách hàng</span>
                 </span>
-                <span class="admin-nav-chevron" aria-hidden="true">▾</span>
+                <span class="admin-nav-chevron" aria-hidden="true">›</span>
               </button>
               <div class="admin-nav-group-items">
                 <button type="button" class="tab-btn org-admin-only" data-tab="myorg" onclick="switchTab('myorg')" style="display:none;">
@@ -122,7 +122,7 @@
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v18"/><path d="M7 8h7a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h8"/></svg></span>
                   <span>Tài chính</span>
                 </span>
-                <span class="admin-nav-chevron" aria-hidden="true">▾</span>
+                <span class="admin-nav-chevron" aria-hidden="true">›</span>
               </button>
               <div class="admin-nav-group-items">
                 <button type="button" class="tab-btn billing-tab-btn" data-tab="billing" onclick="switchTab('billing')">
@@ -158,7 +158,7 @@
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg></span>
                   <span>Quản trị bản đồ</span>
                 </span>
-                <span class="admin-nav-chevron" aria-hidden="true">▾</span>
+                <span class="admin-nav-chevron" aria-hidden="true">›</span>
               </button>
               <div class="admin-nav-group-items">
                 <button type="button" class="tab-btn super-admin-only places-tab-btn" data-tab="places" onclick="switchTab('places')">
@@ -218,7 +218,7 @@
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg></span>
                   <span>Website</span>
                 </span>
-                <span class="admin-nav-chevron" aria-hidden="true">▾</span>
+                <span class="admin-nav-chevron" aria-hidden="true">›</span>
               </button>
               <div class="admin-nav-group-items">
                 <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="pages" data-permission="platform.cms.manage" onclick="openWebsiteSub('pages')">
@@ -271,7 +271,7 @@
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span>
                   <span>Cá nhân</span>
                 </span>
-                <span class="admin-nav-chevron" aria-hidden="true">▾</span>
+                <span class="admin-nav-chevron" aria-hidden="true">›</span>
               </button>
               <div class="admin-nav-group-items">
                 <button type="button" class="tab-btn" data-tab="profile" data-profile-section="info" onclick="openProfileSectionNav('info')">
@@ -291,15 +291,15 @@
         </div>
 
         <div class="admin-sidebar-footer">
-          <span class="admin-status-dot"></span>
-          <span>Hệ thống đang hoạt động</span>
+          <span class="admin-status-dot" aria-hidden="true"></span>
+          <span class="admin-status-text">Hệ thống đang hoạt động</span>
         </div>
       </aside>
 
       <div class="admin-main">
     <nav class="navbar">
         <div class="admin-navbar-title">
-            <button id="btnOpenSidebar" class="admin-icon-btn admin-menu-toggle" type="button" aria-label="Mở menu">☰</button>
+            <button id="btnOpenSidebar" class="admin-icon-btn admin-menu-toggle" type="button" aria-label="Thu hẹp menu" title="Thu hẹp / mở rộng menu">☰</button>
             <div>
               <h1 id="adminPageTitle">Bảng Điều Khiển</h1>
               <p class="admin-breadcrumb" aria-label="Breadcrumb">
@@ -757,94 +757,115 @@
 
         <!-- ===== TAB: USERS (chỉ Super Admin) ===== -->
         <div id="tab-users" class="tab-content" style="display:none;">
-            <div class="admin-section user-management-section">
-                <div class="user-page-header">
+            <div class="buildings-section user-management-section">
+                <div id="userListView">
+                <div class="section-header">
                     <div>
-                        <h3>👑 Quản Lý Tài Khoản</h3>
-                        <p style="font-size:13px; color:#666; margin-top:4px;">Duyệt tài khoản đăng ký, quản lý trạng thái và phân quyền người dùng.</p>
+                        <h3>Quản lý tài khoản</h3>
+                        <p class="analytics-tab-intro" style="margin:6px 0 0;">Duyệt tài khoản đăng ký, quản lý trạng thái và phân quyền người dùng.</p>
                     </div>
                     <div class="user-page-actions">
-                    <button id="btnAddUser" class="btn-add" onclick="openCreateUserModal()" style="display:none;">+ Thêm Tài Khoản</button>
-                      <button class="btn-edit" onclick="fetchUsers()">Làm mới</button>
+                      <button id="btnAddUser" class="btn-add" onclick="openCreateUserModal()" style="display:none;">+ Thêm tài khoản</button>
                     </div>
                 </div>
 
                 <div class="filter-bar" style="display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin-bottom:10px;">
-  <div class="super-admin-only">
-    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Tổ chức</label>
-    <select id="filterUserOrg" onchange="applyUserFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:150px;">
-      <option value="">Tất cả</option>
-    </select>
-  </div>
-  <div>
-    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Từ khóa</label>
-    <input id="filterUserKeyword" type="text" placeholder="Email / họ tên / SĐT" oninput="applyUserFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:160px;">
-  </div>
-  <div>
-    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Vai trò</label>
-    <select id="filterUserRole" onchange="applyUserFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:130px;">
-      <option value="">Tất cả</option>
-      <option value="SUPER_ADMIN">Quản trị hệ thống</option>
-      <option value="FINANCE_ADMIN">Quản trị tài chính</option>
-      <option value="MARKETING_MANAGER">Quản trị nội dung</option>
-      <option value="ORG_ADMIN">Quản trị tổ chức</option>
-      <option value="BUILDING_ADMIN">Quản trị tòa nhà</option>
-      <option value="REGISTERED_USER">Tài khoản cá nhân</option>
-    </select>
-  </div>
-  <div>
-    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Trạng thái</label>
-    <select id="filterUserStatus" onchange="applyUserFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:160px;">
-      <option value="">Tất cả</option>
-      <option value="active">Đang hoạt động</option>
-      <option value="inactive">Đã khóa / chờ duyệt</option>
-    </select>
-  </div>
-  <div>
-    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Sắp xếp theo</label>
-    <select id="filterUserSortKey" onchange="applyUserSortFromBar()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:130px;">
-      <option value="email">Email</option>
-      <option value="name">Họ tên</option>
-      <option value="phone">Số điện thoại</option>
-      <option value="role">Vai trò</option>
-      <option value="status">Trạng thái</option>
-      <option value="organization">Tổ chức</option>
-      <option value="created">Ngày tạo</option>
-    </select>
-  </div>
-  <div>
-    <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Thứ tự</label>
-    <select id="filterUserSortDir" onchange="applyUserSortFromBar()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:120px;">
-      <option value="asc">Tăng dần ▲</option>
-      <option value="desc">Giảm dần ▼</option>
-    </select>
-  </div>
-  <button onclick="applyUserFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #3498db; background:#3498db; color:white; cursor:pointer;">Lọc</button>
-  <button type="button" class="super-admin-only" onclick="filterPendingAccounts()" style="padding:6px 14px; border-radius:6px; border:1px solid #e67e22; background:#fff7ed; color:#c2410c; cursor:pointer;" title="Tài khoản is_active=false (kể cả Google chờ duyệt) — không nằm ở Hồ sơ đăng ký">Chờ duyệt / khóa</button>
-  <button onclick="clearUserFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #ddd; background:white; cursor:pointer;">Xóa lọc</button>
-</div>
-<p id="usersFilterHint" class="org-detail-hint" style="margin:8px 0 0;">Tài khoản Google chờ duyệt nằm ở đây (Trạng thái = Đã khóa / chờ duyệt), <strong>không</strong> nằm ở tab Hồ sơ đăng ký.</p>
-<div class="users-table-wrapper" style="overflow-x:auto;">
-                    <table class="users-table dash-sort-table" id="usersTable" style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
-                        <thead id="usersTableHead" style="background:#34495e; color:white;">
+                  <div class="super-admin-only">
+                    <label for="filterUserOrg">Tổ chức</label>
+                    <select id="filterUserOrg" onchange="applyUserFilters()">
+                      <option value="">Tất cả</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="filterUserKeyword">Từ khóa</label>
+                    <input id="filterUserKeyword" type="text" placeholder="Email / họ tên / SĐT" oninput="applyUserFilters()">
+                  </div>
+                  <div>
+                    <label for="filterUserRole">Vai trò</label>
+                    <select id="filterUserRole" onchange="applyUserFilters()">
+                      <option value="">Tất cả</option>
+                      <option value="SUPER_ADMIN">Quản trị hệ thống</option>
+                      <option value="FINANCE_ADMIN">Quản trị tài chính</option>
+                      <option value="MARKETING_MANAGER">Quản trị nội dung</option>
+                      <option value="ORG_ADMIN">Quản trị tổ chức</option>
+                      <option value="BUILDING_ADMIN">Quản trị tòa nhà</option>
+                      <option value="REGISTERED_USER">Tài khoản cá nhân</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="filterUserStatus">Trạng thái</label>
+                    <select id="filterUserStatus" onchange="applyUserFilters()">
+                      <option value="">Tất cả</option>
+                      <option value="active">Đang hoạt động</option>
+                      <option value="inactive">Đã khóa / chờ duyệt</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="filterUserSortKey">Sắp xếp</label>
+                    <select id="filterUserSortKey" onchange="applyUserSortFromBar()">
+                      <option value="email">Email</option>
+                      <option value="name">Họ tên</option>
+                      <option value="phone">Số điện thoại</option>
+                      <option value="role">Vai trò</option>
+                      <option value="status">Trạng thái</option>
+                      <option value="organization">Tổ chức</option>
+                      <option value="created">Ngày tạo</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="filterUserSortDir">Thứ tự</label>
+                    <select id="filterUserSortDir" onchange="applyUserSortFromBar()">
+                      <option value="asc">Tăng dần ▲</option>
+                      <option value="desc">Giảm dần ▼</option>
+                    </select>
+                  </div>
+                  <button type="button" class="btn-edit" onclick="applyUserFilters(); fetchUsers();">Làm mới</button>
+                  <button type="button" class="btn-edit super-admin-only users-filter-pending" onclick="filterPendingAccounts()" title="Tài khoản is_active=false (kể cả Google chờ duyệt)">Chờ duyệt / khóa</button>
+                  <button type="button" class="btn-edit" onclick="clearUserFilters()">Xóa lọc</button>
+                  <span id="usersMeta" class="users-meta"></span>
+                </div>
+                <p id="usersFilterHint" class="org-detail-hint users-filter-hint">Tài khoản Google chờ duyệt nằm ở đây (Trạng thái = Đã khóa / chờ duyệt), <strong>không</strong> nằm ở tab Hồ sơ đăng ký.</p>
+
+                <div class="table-wrap">
+                    <table class="buildings-table users-table dash-sort-table" id="usersTable">
+                        <thead id="usersTableHead">
                             <tr>
-                                <th class="org-sortable" data-sort-key="email" title="Sắp xếp theo email" style="padding:12px; text-align:left;">Email <span class="org-sort-indicator" data-for="email" aria-hidden="true"></span></th>
-                                <th class="org-sortable" data-sort-key="name" title="Sắp xếp theo họ tên" style="padding:12px; text-align:left;">Họ Tên <span class="org-sort-indicator" data-for="name" aria-hidden="true"></span></th>
-                                <th class="org-sortable" data-sort-key="phone" title="Sắp xếp theo SĐT" style="padding:12px; text-align:left;">Số Điện Thoại <span class="org-sort-indicator" data-for="phone" aria-hidden="true"></span></th>
-                                <th class="org-sortable" data-sort-key="role" title="Sắp xếp theo vai trò" style="padding:12px; text-align:left;">Vai Trò <span class="org-sort-indicator" data-for="role" aria-hidden="true"></span></th>
-                                <th class="org-sortable" data-sort-key="status" title="Sắp xếp theo trạng thái" style="padding:12px; text-align:left;">Trạng Thái <span class="org-sort-indicator" data-for="status" aria-hidden="true"></span></th>
-                                <th class="org-sortable" data-sort-key="organization" title="Sắp xếp theo tổ chức" style="padding:12px; text-align:left;">Tổ Chức <span class="org-sort-indicator" data-for="organization" aria-hidden="true"></span></th>
-                                <th style="padding:12px; text-align:left;">Tòa Nhà Quản Lý</th>
-                                <th class="org-sortable" data-sort-key="created" title="Sắp xếp theo ngày tạo" style="padding:12px; text-align:left;">Ngày Tạo <span class="org-sort-indicator" data-for="created" aria-hidden="true"></span></th>
-                                <th style="padding:12px; text-align:left;">Thao Tác</th>
+                                <th class="org-sortable" data-sort-key="email" title="Sắp xếp theo email">Email <span class="org-sort-indicator" data-for="email" aria-hidden="true"></span></th>
+                                <th class="org-sortable" data-sort-key="name" title="Sắp xếp theo họ tên">Họ tên <span class="org-sort-indicator" data-for="name" aria-hidden="true"></span></th>
+                                <th class="org-sortable" data-sort-key="phone" title="Sắp xếp theo SĐT">SĐT <span class="org-sort-indicator" data-for="phone" aria-hidden="true"></span></th>
+                                <th class="org-sortable" data-sort-key="role" title="Sắp xếp theo vai trò">Vai trò <span class="org-sort-indicator" data-for="role" aria-hidden="true"></span></th>
+                                <th class="org-sortable" data-sort-key="status" title="Sắp xếp theo trạng thái">Trạng thái <span class="org-sort-indicator" data-for="status" aria-hidden="true"></span></th>
+                                <th class="org-sortable" data-sort-key="organization" title="Sắp xếp theo tổ chức">Tổ chức <span class="org-sort-indicator" data-for="organization" aria-hidden="true"></span></th>
+                                <th>Tòa nhà</th>
+                                <th class="org-sortable" data-sort-key="created" title="Sắp xếp theo ngày tạo">Ngày tạo <span class="org-sort-indicator" data-for="created" aria-hidden="true"></span></th>
+                                <th>Thao tác</th>
                             </tr>
                         </thead>
                         <tbody id="usersList">
-                            <tr><td colspan="9" style="text-align:center;color:#888;">Đang tải...</td></tr>
+                            <tr><td colspan="9" class="analytics-muted">Đang tải...</td></tr>
                         </tbody>
                     </table>
                 </div>
                 <div id="usersPagination" class="table-pagination"></div>
+                </div><!-- /userListView -->
+
+                <div id="userDetailPage" class="org-detail-page" hidden>
+                  <div class="org-detail-hero-header">
+                    <button type="button" class="linkish org-detail-back" onclick="closeUserDetailPage()">← Danh sách tài khoản</button>
+                    <div class="org-detail-hero-title-row">
+                      <h3 id="userDetailPageTitle">Chi tiết tài khoản</h3>
+                      <span id="userDetailPageBadges" class="org-detail-hero-badges"></span>
+                    </div>
+                    <div id="userDetailPageMeta" class="org-detail-hero-meta"></div>
+                  </div>
+                  <nav class="org-detail-subnav" aria-label="Phân mục chi tiết tài khoản">
+                    <button type="button" class="user-detail-subnav-btn org-detail-subnav-btn active" data-user-sub="overview" onclick="switchUserDetailSubtab('overview')">Tổng quan</button>
+                    <button type="button" class="user-detail-subnav-btn org-detail-subnav-btn" data-user-sub="favorites" onclick="switchUserDetailSubtab('favorites')">Yêu thích</button>
+                    <button type="button" class="user-detail-subnav-btn org-detail-subnav-btn" data-user-sub="history" onclick="switchUserDetailSubtab('history')">Lịch sử</button>
+                    <button type="button" class="user-detail-subnav-btn org-detail-subnav-btn" data-user-sub="sessions" onclick="switchUserDetailSubtab('sessions')">Phiên đăng nhập</button>
+                  </nav>
+                  <div id="userDetailPageBody" class="org-detail-page-body"></div>
+                </div>
             </div>
         </div>
 
@@ -2834,10 +2855,10 @@
     <script src="../js/website-cms-router.js?v=20260721wq1"></script>
     <script src="../js/website-cms-media.js?v=20260721wq1"></script>
     <script src="../js/website-cms-audit.js?v=20260721wq1"></script>
-    <script src="../js/admin-shell.js?v=20260717ad33"></script>
+    <script src="../js/admin-shell.js?v=20260724usersfix6"></script>
     <script src="../js/orgListSort.js?v=20260708l"></script>
     <script src="../js/dashboardTableSort.js?v=20260708l"></script>
-    <script src="../js/dashboard.js?v=20260723orghide1"></script>
+    <script src="../js/dashboard.js?v=20260725fin1"></script>
     <script src="../js/map-governance.js?v=20260723mgcui2"></script>
     <script src="../js/website-cms.js?v=20260721audit1"></script>
     <script src="../js/admin-ui.js?v=20260717ad32"></script>

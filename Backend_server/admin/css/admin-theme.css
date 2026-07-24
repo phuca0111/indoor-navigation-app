@@ -441,11 +441,17 @@ body[data-admin-theme="dark"] .modal-content h3 {
 }
 
 body[data-admin-theme="dark"] .admin-sidebar .tab-btn:hover {
-  border-color: #475467;
+  border-color: transparent;
   background: #253044;
 }
 
-body[data-admin-theme="dark"] .admin-sidebar-footer,
+body[data-admin-theme="dark"] .admin-sidebar-footer {
+  border-color: #344054;
+  border-top-color: #344054;
+  background: transparent;
+  color: #98a2b3;
+}
+
 body[data-admin-theme="dark"] .admin-icon-btn,
 body[data-admin-theme="dark"] .admin-user-avatar {
   border-color: #475467;
@@ -868,8 +874,9 @@ body[data-admin-theme="dark"] .admin-theme-icon-light {
   max-height: min(70vh, 760px);
 }
 
-/* Tab Tổ chức: bỏ max-height để không hiện thanh cuộn trong khung bảng */
-#tab-organizations #orgListView > .table-scroll-wrapper {
+/* Tab Tổ chức / Tòa nhà: bỏ max-height — không hiện thanh cuộn trong khung bảng */
+#tab-organizations #orgListView > .table-scroll-wrapper,
+#tab-buildings .table-scroll-wrapper {
   max-height: none;
 }
 
@@ -1312,9 +1319,19 @@ body[data-admin-theme="dark"] .modal-content .org-detail-mini-table th {
 .finance-form-grid select,
 .finance-form-grid textarea,
 .finance-toolbar input,
-.finance-filter-row select,
 .finance-report-toolbar input {
   width: 100%;
+}
+
+/* Filter HĐ / payment: select gọn, không full-width */
+.finance-filter-row select {
+  width: auto;
+  min-width: 180px;
+  max-width: 280px;
+  padding: 8px 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #fff;
 }
 
 .finance-table-wrap {
@@ -1489,14 +1506,39 @@ body[data-admin-theme="dark"] .admin-skeleton-table td {
   }
 }
 
-body[data-admin-theme="dark"] .admin-nav-group-toggle:hover,
+body[data-admin-theme="dark"] .admin-nav-group-toggle:hover {
+  background: #253044;
+  color: var(--admin-primary);
+}
+
 body[data-admin-theme="dark"] .admin-nav-group.is-open > .admin-nav-group-toggle {
-  background: var(--admin-primary-soft);
+  background: #253044;
+  color: #eaecf0;
+}
+
+body[data-admin-theme="dark"] .admin-sidebar .admin-nav-group-items .tab-btn:hover {
+  background: #253044;
   color: var(--admin-primary);
 }
 
 body[data-admin-theme="dark"] .admin-nav-group-items {
   border-left-color: #344054;
+}
+
+/* Mini-rail collapsed — dark mode (YouTube-like) */
+body[data-admin-theme="dark"].admin-sidebar-collapsed .admin-nav-group-items .tab-btn {
+  color: #eaecf0;
+}
+
+body[data-admin-theme="dark"].admin-sidebar-collapsed .admin-nav-group-items .tab-btn:hover,
+body[data-admin-theme="dark"].admin-sidebar-collapsed .admin-nav-group-items .tab-btn:active,
+body[data-admin-theme="dark"].admin-sidebar-collapsed .admin-nav-group-items .tab-btn.active {
+  background: #253044;
+  color: #eaecf0;
+}
+
+body[data-admin-theme="dark"].admin-sidebar-collapsed .admin-sidebar-footer {
+  border-top-color: #344054;
 }
 
 body[data-admin-theme="dark"] .finance-subnav {
@@ -2519,6 +2561,9 @@ body[data-admin-theme="dark"] .ov-growth-axis-note {
 #orgListView[hidden] {
   display: none !important;
 }
+#userListView[hidden] {
+  display: none !important;
+}
 
 .org-detail-page-header {
   display: flex;
@@ -3145,15 +3190,16 @@ body[data-admin-theme="dark"] .overview-revexp-donut-bg {
   stroke: #344054;
 }
 
-/* Tòa nhà — cột thao tác: 5 nút thẳng hàng, không xuống dòng */
+/* Tòa nhà — cột thao tác vừa nút, không chiếm 420px */
 .admin-main #buildingsTable th:last-child,
 .admin-main #buildingsTable td.actions-cell {
-  min-width: 420px;
-  width: 1%;
+  width: 320px;
+  min-width: 320px;
+  max-width: 320px;
   overflow: visible;
   text-overflow: clip;
   white-space: nowrap;
-  padding-right: 16px !important;
+  padding-right: 12px !important;
   vertical-align: middle;
 }
 
@@ -3161,11 +3207,12 @@ body[data-admin-theme="dark"] .overview-revexp-donut-bg {
   display: inline-flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   white-space: nowrap;
 }
 
-.admin-main #buildingsTable .building-actions button {
+.admin-main #buildingsTable .building-actions button,
+.admin-main #buildingsTable .building-actions .ba-btn {
   flex: 0 0 auto;
   white-space: nowrap;
 }
@@ -5117,9 +5164,8 @@ body[data-admin-theme="dark"] .overview-tasks-card {
   }
 }
 
-/* AD37 ? b?ng qu?n tr? tho?ng, kh?ng vi?n khung v? kh?ng l? scrollbar */
+/* AD37 — bảng quản trị thoáng; hiện scrollbar mỏng khi cần */
 #tab-buildings .table-scroll-wrapper,
-#tab-users .users-table-wrapper,
 #tab-organizations .table-scroll-wrapper,
 #tab-registrations .table-scroll-wrapper,
 #tab-billing .finance-table-wrap,
@@ -5132,12 +5178,165 @@ body[data-admin-theme="dark"] .overview-tasks-card {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+  scrollbar-width: thin;
+  -ms-overflow-style: auto;
+}
+
+/* Tab Tòa nhà — fit viewport, ẩn thanh cuộn */
+#tab-buildings .table-scroll-wrapper {
+  width: 100%;
+  max-width: 100%;
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: visible;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
-#tab-buildings .table-scroll-wrapper::-webkit-scrollbar,
-#tab-users .users-table-wrapper::-webkit-scrollbar,
+#tab-buildings #buildingsTable {
+  width: 100% !important;
+  min-width: 0 !important;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+#tab-buildings #buildingsTable th,
+#tab-buildings #buildingsTable td {
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+#tab-buildings #buildingsTable th:nth-child(1),
+#tab-buildings #buildingsTable td:nth-child(1) { width: 22%; } /* Tên */
+#tab-buildings #buildingsTable th:nth-child(2),
+#tab-buildings #buildingsTable td:nth-child(2) { width: 18%; } /* Địa chỉ */
+#tab-buildings #buildingsTable th:nth-child(3),
+#tab-buildings #buildingsTable td:nth-child(3) { width: 7%; }  /* Số tầng */
+#tab-buildings #buildingsTable th:nth-child(4),
+#tab-buildings #buildingsTable td:nth-child(4) { width: 10%; } /* Trạng thái */
+#tab-buildings #buildingsTable th:nth-child(5),
+#tab-buildings #buildingsTable td:nth-child(5) { width: 12%; } /* Tổ chức */
+#tab-buildings #buildingsTable th:nth-child(6),
+#tab-buildings #buildingsTable td:nth-child(6) { width: 8%; }  /* Cập nhật */
+#tab-buildings #buildingsTable th:nth-child(7),
+#tab-buildings #buildingsTable td:nth-child(7),
+#tab-buildings #buildingsTable td.actions-cell {
+  width: 320px;
+  min-width: 320px;
+  max-width: 320px;
+  overflow: visible !important;
+  white-space: nowrap !important;
+}
+
+#tab-buildings #buildingsTable .cell-ellipsis {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tab-buildings #buildingsTable .building-name-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+#tab-buildings #buildingsTable .building-name-cell > a,
+#tab-buildings #buildingsTable .building-name-cell > .building-name-row {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+#tab-buildings #buildingsTable .building-desc-sub {
+  display: block;
+  font-size: 12px;
+  color: #98a2b3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tab-buildings #buildingsTable .ba-btn {
+  display: inline-block;
+  margin: 0;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #475569;
+}
+
+#tab-buildings #buildingsTable .ba-btn--detail {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+#tab-buildings #buildingsTable .ba-btn--map {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+
+#tab-buildings #buildingsTable .ba-btn--version {
+  background: #f5f3ff;
+  border-color: #ddd6fe;
+  color: #6d28d9;
+}
+
+#tab-buildings #buildingsTable .ba-btn--edit {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #c2410c;
+}
+
+#tab-buildings #buildingsTable .ba-btn--danger {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+#tab-buildings #buildingsTable .ba-btn--success {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+
+#tab-buildings #buildingsTable .ba-note {
+  font-size: 11px;
+  color: #667085;
+}
+
+/* Tab Users — dùng table-wrap như Places; giữ selector cũ để không vỡ theme */
+#tab-users .users-table-wrapper,
+#tab-users .table-wrap {
+  overflow-x: auto;
+  overflow-y: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  scrollbar-width: thin;
+  -ms-overflow-style: auto;
+}
+
+#tab-buildings .table-scroll-wrapper::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 #tab-organizations .table-scroll-wrapper::-webkit-scrollbar,
 #tab-registrations .table-scroll-wrapper::-webkit-scrollbar,
 #tab-billing .finance-table-wrap::-webkit-scrollbar,
@@ -5148,8 +5347,21 @@ body[data-admin-theme="dark"] .overview-tasks-card {
   height: 0;
 }
 
+#tab-users .table-wrap::-webkit-scrollbar,
+#tab-users .users-table-wrapper::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+#tab-users .table-wrap::-webkit-scrollbar-thumb,
+#tab-users .users-table-wrapper::-webkit-scrollbar-thumb {
+  background: #c5cdd8;
+  border-radius: 999px;
+}
+
 #tab-buildings #buildingsTable,
 #tab-users .users-table,
+#tab-users #usersTable,
 #tab-organizations #orgOrganizationsTable,
 #tab-registrations .buildings-table,
 #tab-billing .billing-org-table,
@@ -5218,18 +5430,22 @@ body[data-admin-theme="dark"] #tab-logs .logs-table th {
 #finance-panel-invoices .finance-payment-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 #finance-panel-invoices .finance-invoice-table th,
 #finance-panel-invoices .finance-invoice-table td,
 #finance-panel-invoices .finance-payment-table th,
 #finance-panel-invoices .finance-payment-table td {
-  padding: 13px 16px;
+  padding: 10px 12px;
   border: 0;
   border-bottom: 1px solid #f2f4f7;
   line-height: 1.4;
   text-align: left;
   vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #finance-panel-invoices .finance-invoice-table th,
@@ -5249,6 +5465,105 @@ body[data-admin-theme="dark"] #tab-logs .logs-table th {
   border-bottom: 0;
 }
 
+/* Sổ thu tiền — phân bố cột gọn, thao tác không dư trắng */
+#finance-panel-invoices .finance-payment-table th:nth-child(1),
+#finance-panel-invoices .finance-payment-table td:nth-child(1) { width: 15%; } /* Ngày */
+#finance-panel-invoices .finance-payment-table th:nth-child(2),
+#finance-panel-invoices .finance-payment-table td:nth-child(2) { width: 14%; } /* Org */
+#finance-panel-invoices .finance-payment-table th:nth-child(3),
+#finance-panel-invoices .finance-payment-table td:nth-child(3) { width: 22%; } /* HĐ */
+#finance-panel-invoices .finance-payment-table th:nth-child(4),
+#finance-panel-invoices .finance-payment-table td:nth-child(4) { width: 10%; } /* Method */
+#finance-panel-invoices .finance-payment-table th:nth-child(5),
+#finance-panel-invoices .finance-payment-table td:nth-child(5) { width: 11%; } /* Số tiền */
+#finance-panel-invoices .finance-payment-table th:nth-child(6),
+#finance-panel-invoices .finance-payment-table td:nth-child(6) { width: 10%; } /* Status */
+#finance-panel-invoices .finance-payment-table th:nth-child(7),
+#finance-panel-invoices .finance-payment-table td:nth-child(7) { width: 10%; } /* Ref */
+#finance-panel-invoices .finance-payment-table th:nth-child(8),
+#finance-panel-invoices .finance-payment-table td:nth-child(8),
+#finance-panel-invoices .finance-payment-table td.fp-actions {
+  width: 88px;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* Bảng hóa đơn */
+#finance-panel-invoices .finance-invoice-table th:nth-child(1),
+#finance-panel-invoices .finance-invoice-table td:nth-child(1) { width: 22%; }
+#finance-panel-invoices .finance-invoice-table th:nth-child(2),
+#finance-panel-invoices .finance-invoice-table td:nth-child(2) { width: 22%; }
+#finance-panel-invoices .finance-invoice-table th:nth-child(3),
+#finance-panel-invoices .finance-invoice-table td:nth-child(3) { width: 10%; }
+#finance-panel-invoices .finance-invoice-table th:nth-child(4),
+#finance-panel-invoices .finance-invoice-table td:nth-child(4) { width: 12%; }
+#finance-panel-invoices .finance-invoice-table th:nth-child(5),
+#finance-panel-invoices .finance-invoice-table td:nth-child(5) { width: 12%; }
+#finance-panel-invoices .finance-invoice-table th:nth-child(6),
+#finance-panel-invoices .finance-invoice-table td:nth-child(6),
+#finance-panel-invoices .finance-invoice-table td.fp-actions {
+  width: 200px;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+#finance-panel-invoices .fp-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #344054;
+}
+
+#finance-panel-invoices .fp-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f2f4f7;
+  color: #475467;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+#finance-panel-invoices .fp-muted {
+  color: #98a2b3;
+}
+
+#finance-panel-invoices .fp-btn {
+  display: inline-block;
+  margin: 0 2px 0 0;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+#finance-panel-invoices .fp-btn--detail {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+#finance-panel-invoices .fp-btn--success {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+
+#finance-panel-invoices .fp-btn--danger {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+#finance-panel-invoices .fp-btn--detail:hover { background: #dbeafe; }
+#finance-panel-invoices .fp-btn--success:hover { background: #d1fae5; }
+#finance-panel-invoices .fp-btn--danger:hover { background: #fee2e2; }
+
 #finance-panel-invoices .table-pagination {
   margin-top: 10px;
 }
@@ -5260,8 +5575,37 @@ body[data-admin-theme="dark"] #finance-panel-invoices .finance-payment-table td 
   border-bottom-color: #344054;
 }
 
+body[data-admin-theme="dark"] #finance-panel-invoices .fp-amount { color: #eaecf0; }
+body[data-admin-theme="dark"] #finance-panel-invoices .fp-status {
+  background: #253044;
+  color: #d0d5dd;
+}
+body[data-admin-theme="dark"] #finance-panel-invoices .fp-btn--detail {
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(147, 197, 253, 0.35);
+  color: #93c5fd;
+}
+body[data-admin-theme="dark"] #finance-panel-invoices .fp-btn--success {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(110, 231, 183, 0.35);
+  color: #6ee7b7;
+}
+body[data-admin-theme="dark"] #finance-panel-invoices .fp-btn--danger {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(252, 165, 165, 0.35);
+  color: #fca5a5;
+}
+
+body[data-admin-theme="dark"] .finance-filter-row select {
+  border-color: #344054;
+  background: #1f2a37;
+  color: #eaecf0;
+}
+
 #tab-users .users-table th,
 #tab-users .users-table td,
+#tab-users #usersTable th,
+#tab-users #usersTable td,
 #tab-organizations #orgOrganizationsTable th,
 #tab-organizations #orgOrganizationsTable td,
 #tab-registrations .buildings-table th,
@@ -5270,30 +5614,314 @@ body[data-admin-theme="dark"] #finance-panel-invoices .finance-payment-table td 
   line-height: 1.45;
 }
 
-#tab-users .users-table th:nth-child(4),
-#tab-users .users-table td:nth-child(4) {
-  width: 180px;
-  min-width: 168px;
-  overflow: visible;
-  text-overflow: clip;
+/* Users tab — layout giống Place Registry */
+#tab-users .user-management-section,
+#tab-users #userListView {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
-#tab-users .users-table th:nth-child(5),
-#tab-users .users-table td:nth-child(5) {
-  width: 130px;
+
+#tab-users .section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+#tab-users .user-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#tab-users .filter-bar {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+#tab-users .filter-bar > div {
+  min-width: 0;
+}
+
+#tab-users .filter-bar label {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12px;
+  color: #667085;
+}
+
+#tab-users .filter-bar input,
+#tab-users .filter-bar select {
   min-width: 120px;
-  overflow: visible;
-  text-overflow: clip;
+  padding: 6px 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  background: #fff;
+  box-sizing: border-box;
 }
 
-#tab-users .users-table th:nth-child(9),
-#tab-users .users-table td:nth-child(9) {
-  position: static;
-  right: auto;
-  box-shadow: none;
+#tab-users .filter-bar #filterUserKeyword {
+  min-width: 180px;
 }
 
-#tab-users .users-table thead th:nth-child(9) {
+#tab-users .users-meta {
+  font-size: 12px;
+  color: #667085;
+  align-self: center;
+  margin-left: 4px;
+}
+
+#tab-users .users-filter-pending {
+  border-color: #e67e22 !important;
+  background: #fff7ed !important;
+  color: #c2410c !important;
+}
+
+#tab-users .users-filter-hint {
+  margin: 0 0 12px;
+}
+
+#tab-users .table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto; /* không cắt cột Thao tác */
+  -webkit-overflow-scrolling: touch;
+}
+
+#tab-users #usersTable {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+#tab-users #usersTable thead th {
+  background: transparent !important;
+  color: #475467 !important;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border-bottom: 1px solid #f2f4f7;
+  position: sticky;
+  top: 0;
   z-index: 2;
+}
+
+#tab-users #usersTable td {
+  border-bottom: 1px solid #f2f4f7;
+  vertical-align: middle;
+  max-width: none;
+  overflow: hidden;
+}
+
+#tab-users #usersTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/*
+  Cột Thao tác: bề rộng cố định vừa 4 nút — KHÔNG dùng width:1%
+  (trước đó bị overflow-x:hidden cắt mất cột).
+  Email/Họ tên: vừa phải + ellipsis.
+*/
+#tab-users #usersTable th:nth-child(1),
+#tab-users #usersTable td:nth-child(1) { width: 18%; } /* Email */
+#tab-users #usersTable th:nth-child(2),
+#tab-users #usersTable td:nth-child(2) { width: 12%; } /* Họ tên */
+#tab-users #usersTable th:nth-child(3),
+#tab-users #usersTable td:nth-child(3) { width: 9%; }  /* SĐT */
+#tab-users #usersTable th:nth-child(4),
+#tab-users #usersTable td:nth-child(4) { width: 11%; } /* Vai trò */
+#tab-users #usersTable th:nth-child(5),
+#tab-users #usersTable td:nth-child(5) { width: 10%; } /* Trạng thái */
+#tab-users #usersTable th:nth-child(6),
+#tab-users #usersTable td:nth-child(6) { width: 8%; }  /* Tổ chức */
+#tab-users #usersTable th:nth-child(7),
+#tab-users #usersTable td:nth-child(7) { width: 7%; }  /* Tòa nhà */
+#tab-users #usersTable th:nth-child(8),
+#tab-users #usersTable td:nth-child(8) { width: 7%; }  /* Ngày tạo */
+#tab-users #usersTable th:nth-child(9),
+#tab-users #usersTable td:nth-child(9),
+#tab-users #usersTable td.actions-cell {
+  width: 248px;
+  min-width: 248px;
+  max-width: 248px;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  position: static !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-left: 0 !important;
+  padding-left: 10px !important;
+  padding-right: 8px !important;
+}
+
+#tab-users #usersTable .cell-ellipsis {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tab-users #usersTable td.actions-cell .ua-btn,
+#tab-users #usersTable td.actions-cell .btn-edit,
+#tab-users #usersTable td.actions-cell .btn-logout {
+  display: inline-block;
+  margin: 0 4px 0 0;
+  vertical-align: middle;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  padding: 5px 9px;
+  white-space: nowrap;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  box-shadow: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+#tab-users #usersTable td.actions-cell .ua-btn--detail {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+#tab-users #usersTable td.actions-cell .ua-btn--detail:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+#tab-users #usersTable td.actions-cell .ua-btn--edit {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #475569;
+}
+
+#tab-users #usersTable td.actions-cell .ua-btn--edit:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+#tab-users #usersTable td.actions-cell .ua-btn--pwd {
+  background: #f5f3ff;
+  border-color: #ddd6fe;
+  color: #6d28d9;
+}
+
+#tab-users #usersTable td.actions-cell .ua-btn--pwd:hover {
+  background: #ede9fe;
+  border-color: #c4b5fd;
+}
+
+#tab-users #usersTable td.actions-cell .ua-btn--danger {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+#tab-users #usersTable td.actions-cell .ua-btn--danger:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+#tab-users #usersTable td.actions-cell .ua-btn--success {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+
+#tab-users #usersTable td.actions-cell .ua-btn--success:hover {
+  background: #d1fae5;
+  border-color: #6ee7b7;
+}
+
+body[data-admin-theme="dark"] #tab-users #usersTable td.actions-cell .ua-btn--detail {
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(147, 197, 253, 0.35);
+  color: #93c5fd;
+}
+
+body[data-admin-theme="dark"] #tab-users #usersTable td.actions-cell .ua-btn--edit {
+  background: #253044;
+  border-color: #344054;
+  color: #d0d5dd;
+}
+
+body[data-admin-theme="dark"] #tab-users #usersTable td.actions-cell .ua-btn--pwd {
+  background: rgba(139, 92, 246, 0.14);
+  border-color: rgba(196, 181, 253, 0.35);
+  color: #c4b5fd;
+}
+
+body[data-admin-theme="dark"] #tab-users #usersTable td.actions-cell .ua-btn--danger {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(252, 165, 165, 0.35);
+  color: #fca5a5;
+}
+
+body[data-admin-theme="dark"] #tab-users #usersTable td.actions-cell .ua-btn--success {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(110, 231, 183, 0.35);
+  color: #6ee7b7;
+}
+
+#tab-users .user-action-note {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 12px;
+  color: #667085;
+  vertical-align: middle;
+}
+
+#tab-users #userDetailPage {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+#tab-users #userDetailPageBody {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+body[data-admin-theme="dark"] #tab-users #usersTable thead th {
+  color: #98a2b3 !important;
+  border-bottom-color: #344054;
+}
+
+body[data-admin-theme="dark"] #tab-users #usersTable td {
+  border-bottom-color: #344054;
+}
+
+body[data-admin-theme="dark"] #tab-users .filter-bar input,
+body[data-admin-theme="dark"] #tab-users .filter-bar select {
+  border-color: #344054;
+  background: #1f2a37;
+  color: #eaecf0;
+}
+
+body[data-admin-theme="dark"] #tab-users .users-meta,
+body[data-admin-theme="dark"] #tab-users .filter-bar label {
+  color: #98a2b3;
+}
+
+@media (max-width: 1024px) {
+  #tab-users .user-page-actions {
+    width: 100%;
+  }
+
+  #tab-users .user-page-actions .btn-add {
+    flex: 1 1 auto;
+  }
 }
 
 .user-page-header,
