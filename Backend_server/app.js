@@ -87,9 +87,10 @@ function createApp() {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.sendFile(path.join(__dirname, 'public', 'get-app', 'index.html'));
   });
-  /** FINAL LOCK: /app End User portal REMOVED → CTA Android */
+  /** My Maps Hub shell (giữ /app 200 cho Hub Phase 1; CTA Android tại /get-app). */
   app.get(['/app', '/app/', '/app/index.html'], (req, res) => {
-    res.redirect(302, '/get-app');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.sendFile(path.join(__dirname, 'public', 'app', 'index.html'));
   });
   app.get('/blog/:slug', (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
