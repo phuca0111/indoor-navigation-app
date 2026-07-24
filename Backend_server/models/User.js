@@ -108,7 +108,23 @@ const userSchema = new mongoose.Schema({
     preferences: {
         locale: { type: String, default: 'vi', maxlength: 10 },
         timezone: { type: String, default: 'Asia/Ho_Chi_Minh', maxlength: 64 },
-        theme: { type: String, enum: ['system', 'light', 'dark'], default: 'system' }
+        theme: { type: String, enum: ['system', 'light', 'dark'], default: 'system' },
+        /** End User Settings — Privacy */
+        privacy: {
+            show_email: { type: Boolean, default: false },
+            show_activity: { type: Boolean, default: true }
+        },
+        /** End User Settings — Location */
+        location: {
+            share_precise: { type: Boolean, default: true },
+            default_radius_m: { type: Number, default: 1500, min: 100, max: 20000 }
+        },
+        /** Mock Subscription tier label (CREATOR | PROFESSIONAL) khi plan=PRO */
+        subscription_tier: {
+            type: String,
+            default: '',
+            maxlength: 32
+        }
     },
     notification_preferences: {
         email_security: { type: Boolean, default: true },

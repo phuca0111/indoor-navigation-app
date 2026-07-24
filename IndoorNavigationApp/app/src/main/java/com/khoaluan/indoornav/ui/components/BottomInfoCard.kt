@@ -24,20 +24,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.khoaluan.indoornav.ui.i18n.tr
 import com.khoaluan.indoornav.ui.theme.NavBlue
 import com.khoaluan.indoornav.ui.theme.NavLightBlue
 
 /**
  * Card thông tin điều hướng phía dưới màn hình.
- * Hiển thị vị trí hiện tại, điểm đến, tiến độ và nút Quét QR.
  *
- * @param currentLocation  Nhãn vị trí hiện tại (vd: "Hành lang A - Tầng 1")
- * @param destination      Nhãn điểm đến (vd: "Phòng 205 - Tầng 2")
- * @param isSearchingPath  True khi đang tính toán đường đi A* (spinner)
- * @param isNavigating     True khi đang có path điều hướng
- * @param progress         Tiến độ 0f–1f (chỉ hiện khi isNavigating = true)
- * @param distanceMeters   Tổng quãng đường đang điều hướng (mét)
- * @param etaSeconds       ETA ước lượng (giây)
  * @param rerouteCount     Số lần hệ thống đã tự tính lại đường
  * @param isRerouting      True trong lúc hệ thống vừa trigger tính lại đường
  * @param onQrScan         Callback nhấn nút Quét QR
@@ -69,6 +62,14 @@ fun BottomInfoCard(
     pathHasFloorConnector: Boolean = false,
     /** W3 — mở sheet chọn tầng. */
     onOpenFloorPicker: (() -> Unit)? = null,
+    /** #10 — CTA chuyển tầng gợi ý. */
+    suggestedFloorLabel: String? = null,
+    onSwitchSuggestedFloor: (() -> Unit)? = null,
+    /** #11 — Sửa vị trí (giữ đích, quét QR lại). */
+    onRelocalize: (() -> Unit)? = null,
+    showRelocalize: Boolean = false,
+    /** #12 — tính lại đường thủ công. */
+    onRecalculate: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val etaMinutes = (etaSeconds / 60f).coerceAtLeast(0f)
@@ -174,7 +175,7 @@ fun BottomInfoCard(
                                     text = instructionText,
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF1565C0),
+                                    color = Color(0xFF1A73E8),
                                     maxLines = 2,
                                 )
                                 Spacer(modifier.height(4.dp))
@@ -187,7 +188,21 @@ fun BottomInfoCard(
                                     Text(
                                         text = "Lộ trình có đổi tầng · Chọn tầng",
                                         fontSize = 12.sp,
-                                        color = Color(0xFF6A1B9A),
+                                        color = NavBlue,
+                                    )
+                                }
+                            }
+                            if (onSwitchSuggestedFloor != null && !suggestedFloorLabel.isNullOrBlank()) {
+                                Button(
+                                    onClick = onSwitchSuggestedFloor,
+                                    colors = ButtonDefaults.buttonColors(containerColor = NavBlue),
+                                    modifier = Modifier.height(36.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp),
+                                ) {
+                                    Text(
+                                        text = "Chuyển $suggestedFloorLabel",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
                                     )
                                 }
                             }
@@ -226,25 +241,50 @@ fun BottomInfoCard(
                                             imageVector = Icons.Default.Refresh,
                                             contentDescription = null,
                                             modifier = Modifier.size(14.dp),
-                                            tint = Color(0xFF1565C0),
+                                            tint = Color(0xFF1A73E8),
                                         )
                                     },
                                     label = {
                                         Text(
-                                            text = "Đang tính lại lộ trình...",
+                                            text = tr("Đang tính lại lộ trình...", "Recalculating route..."),
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.SemiBold,
-                                            color = Color(0xFF1565C0),
+                                            color = Color(0xFF1A73E8),
                                         )
                                     },
                                     modifier = Modifier.alpha(rerouteAlpha.value),
                                     colors = SuggestionChipDefaults.suggestionChipColors(
                                         containerColor = Color(0xFFE3F2FD),
                                         disabledContainerColor = Color(0xFFE3F2FD),
-                                        disabledLabelColor = Color(0xFF1565C0),
-                                        disabledIconContentColor = Color(0xFF1565C0),
+                                        disabledLabelColor = Color(0xFF1A73E8),
+                                        disabledIconContentColor = Color(0xFF1A73E8),
                                     ),
                                 )
+                            }
+
+                            if (onRecalculate != null) {
+                                Spacer(Modifier.height(6.dp))
+                                TextButton(
+                                    onClick = onRecalculate,
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = NavBlue,
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(tr("Tính lại đường", "Recalculate"), fontSize = 12.sp, color = NavBlue)
+                                }
+                            }
+                            if (showRelocalize && onRelocalize != null) {
+                                TextButton(
+                                    onClick = onRelocalize,
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                ) {
+                                    Text(tr("Sửa vị trí · Quét QR", "Fix location · Scan QR"), fontSize = 12.sp, color = Color(0xFFEF6C00))
+                                }
                             }
                         }
                     }
@@ -255,7 +295,7 @@ fun BottomInfoCard(
                                     text = instructionText,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Medium,
-                                    color = Color(0xFF1565C0),
+                                    color = Color(0xFF1A73E8),
                                     maxLines = 2,
                                 )
                             }
@@ -288,7 +328,7 @@ fun BottomInfoCard(
                                     modifier = Modifier.weight(1f).height(40.dp),
                                     enabled = onPreviewPath != null,
                                 ) {
-                                    Text("Xem đường", fontWeight = FontWeight.SemiBold)
+                                    Text(tr("Xem đường", "Preview"), fontWeight = FontWeight.SemiBold)
                                 }
                                 Button(
                                     onClick = { onStartNavigation?.invoke() },
@@ -298,17 +338,30 @@ fun BottomInfoCard(
                                         && navigationError == null
                                         && distanceMeters > 0f,
                                 ) {
-                                    Text("Bắt đầu", fontWeight = FontWeight.Bold)
+                                    Text(tr("Bắt đầu", "Start"), fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
                     }
                     else -> {
-                        Text(
-                            text = "Nhấn Quét QR để xác định vị trí bắt đầu",
-                            fontSize = 11.sp,
-                            color = Color(0xFF9E9E9E),
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = tr(
+                                "Nhấn Quét QR để xác định vị trí bắt đầu",
+                                "Tap Scan QR to set your start location",
+                            ),
+                                fontSize = 11.sp,
+                                color = Color(0xFF9E9E9E),
+                            )
+                            if (showRelocalize && onRelocalize != null) {
+                                TextButton(
+                                    onClick = onRelocalize,
+                                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                                ) {
+                                    Text(tr("Sửa vị trí · Quét QR", "Fix location · Scan QR"), fontSize = 12.sp, color = Color(0xFFEF6C00))
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -332,7 +385,7 @@ fun BottomInfoCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Search,
-                        contentDescription = "Quét QR",
+                        contentDescription = tr("Quét QR", "Scan QR"),
                         modifier = Modifier.size(24.dp),
                     )
                 }
@@ -349,7 +402,7 @@ fun BottomInfoCard(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
-                            contentDescription = "Hủy điều hướng",
+                            contentDescription = tr("Hủy điều hướng", "Stop navigation"),
                             tint = Color(0xFFE53935),
                             modifier = Modifier.size(18.dp),
                         )

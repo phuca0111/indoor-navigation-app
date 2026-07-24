@@ -17,6 +17,8 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,22 +29,29 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -70,8 +79,15 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.khoaluan.indoornav.data.model.Building
+import com.khoaluan.indoornav.ui.components.PlacePreviewSheet
+import com.khoaluan.indoornav.ui.components.SearchResultPanel
+import com.khoaluan.indoornav.ui.i18n.LocalAppLocale
+import com.khoaluan.indoornav.ui.i18n.PlaceCategoryLabels
+import com.khoaluan.indoornav.ui.i18n.tr
+import com.khoaluan.indoornav.ui.search.SearchFuzzy
 import com.khoaluan.indoornav.ui.viewmodel.BuildingListUiState
 import com.khoaluan.indoornav.ui.viewmodel.MapViewModel
+import com.khoaluan.indoornav.ui.viewmodel.PlaceListUiState
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -105,12 +121,30 @@ fun BuildingListScreen(
     viewModel: MapViewModel,
     onBuildingClick: (String) -> Unit,
     onTestPDR: () -> Unit = {},
+    isLoggedIn: Boolean = false,
+    accountLabel: String? = null,
+    onLoginClick: () -> Unit = {},
+    onLogoutClick: () -> Unit = {},
+    onOpenProfile: () -> Unit = {},
+    pendingPlaceSlug: String? = null,
+    pendingFloor: Int? = null,
+    onPendingPlaceConsumed: () -> Unit = {},
+    onDeepLinkEnterIndoor: (buildingId: String, floor: Int?) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val state by viewModel.buildingListState.collectAsState()
+    val favoriteIds by viewModel.favoritePlaceIds.collectAsState()
+    val followingIds by viewModel.followingPlaceIds.collectAsState()
+    val placeNotice by viewModel.placeNotice.collectAsState()
+    val placeListState by viewModel.placeListState.collectAsState()
     var query by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Building?>(null) }
+    var showPlaceDetail by remember { mutableStateOf(false) }
+    var showSearchResults by remember { mutableStateOf(false) }
+    var showReviewDialog by remember { mutableStateOf(false) }
+    var showReportDialog by remember { mutableStateOf(false) }
     var mapViewRef by remember { mutableStateOf<OsmMapView?>(null) }
     var userPoint by remember { mutableStateOf<GeoPoint?>(null) }
     var userAccuracyM by remember { mutableStateOf(0f) }
@@ -161,13 +195,89 @@ fun BuildingListScreen(
     }
 
     val buildings = (state as? BuildingListUiState.Success)?.buildings.orEmpty()
-    val filtered = remember(buildings, query) {
+    val filtered = remember(buildings, query, category) {
         val q = query.trim()
-        if (q.isEmpty()) buildings
-        else buildings.filter {
-            it.name.contains(q, ignoreCase = true) ||
-                (it.address?.contains(q, ignoreCase = true) == true)
+        val cat = category.trim()
+        val base = buildings.filter { b ->
+            val matchCat = cat.isEmpty() ||
+                (b.category?.contains(cat, ignoreCase = true) == true)
+            matchCat
         }
+        if (q.isEmpty()) base
+        else SearchFuzzy.filterRankedBy(
+            query = q,
+            items = base,
+            nameOf = { listOfNotNull(it.name, it.address, it.category).joinToString(" ") },
+            limit = 40,
+        )
+    }
+    val searchLoading = placeListState is PlaceListUiState.Loading
+
+    fun enterIndoor(building: Building) {
+        val pid = building.placeId
+        when {
+            building.id.startsWith("place:") && !pid.isNullOrBlank() ->
+                viewModel.resolveIndoorBuildingFromPlace(pid, onBuildingClick)
+            else -> onBuildingClick(building.id)
+        }
+    }
+
+    fun sharePlace(building: Building) {
+        val slugOrId = building.placeSlug?.takeIf { it.isNotBlank() }
+            ?: building.placeId
+            ?: building.id
+        val link = "https://indoor-navigation-app-sqiu.onrender.com/outdoor/place/$slugOrId"
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, building.name)
+            putExtra(Intent.EXTRA_TEXT, "${building.name}\n$link")
+        }
+        context.startActivity(Intent.createChooser(send, "Chia sẻ địa điểm"))
+    }
+
+    fun openDirections(building: Building) {
+        val gps = building.gpsLocation ?: return
+        val uri = Uri.parse(
+            "https://www.google.com/maps/dir/?api=1&destination=${gps.lat},${gps.lng}",
+        )
+        context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+    }
+
+    LaunchedEffect(query, category) {
+        kotlinx.coroutines.delay(350)
+        viewModel.fetchPlaces(
+            query = query.trim().ifEmpty { null },
+            category = category.trim().ifEmpty { null },
+        )
+    }
+
+    LaunchedEffect(isLoggedIn) {
+        if (isLoggedIn) viewModel.refreshFollowingPlaces()
+    }
+
+    LaunchedEffect(pendingPlaceSlug, pendingFloor) {
+        val slug = pendingPlaceSlug?.trim().orEmpty()
+        if (slug.isEmpty()) return@LaunchedEffect
+        val floorHint = pendingFloor
+        viewModel.openPlaceDeepLink(slug) { b ->
+            selected = b
+            val g = b.gpsLocation
+            if (g != null && mapViewRef != null) {
+                mapViewRef?.controller?.animateTo(GeoPoint(g.lat, g.lng))
+                mapViewRef?.controller?.setZoom(17.0)
+            }
+            if (floorHint != null && b.hasPublishedIndoor == true && !b.id.startsWith("place:")) {
+                onDeepLinkEnterIndoor(b.id, floorHint)
+            }
+        }
+        onPendingPlaceConsumed()
+    }
+
+    LaunchedEffect(selected?.placeId, selected?.placeSlug) {
+        val key = selected?.placeSlug?.takeIf { it.isNotBlank() }
+            ?: selected?.placeId?.takeIf { it.isNotBlank() }
+            ?: return@LaunchedEffect
+        viewModel.recordPlaceView(key)
     }
 
     LaunchedEffect(Unit) {
@@ -176,7 +286,6 @@ fun BuildingListScreen(
             context.getSharedPreferences("osmdroid", 0),
         )
         Configuration.getInstance().userAgentValue = context.packageName
-        viewModel.fetchPlaces()
         // Chưa có quyền → xin ngay khi vào map
         if (!hasLocationPermission) {
             requestLocationPermission()
@@ -319,6 +428,7 @@ fun BuildingListScreen(
                                 MapEventsOverlay(object : MapEventsReceiver {
                                     override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
                                         selected = null
+                                        showPlaceDetail = false
                                         return true
                                     }
                                     override fun longPressHelper(p: GeoPoint?): Boolean = false
@@ -346,6 +456,7 @@ fun BuildingListScreen(
                             marker.relatedObject = building
                             marker.setOnMarkerClickListener { m, _ ->
                                 selected = m.relatedObject as? Building
+                                showSearchResults = false
                                 true
                             }
                             map.overlays.add(marker)
@@ -368,7 +479,10 @@ fun BuildingListScreen(
             ) {
                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
                     Text(
-                        text = "Cần quyền vị trí để hiện con trỏ GPS trên map.",
+                        text = tr(
+                            "Cần quyền vị trí để hiện con trỏ GPS trên map.",
+                            "Location permission is required to show your GPS marker.",
+                        ),
                         color = Color(0xFFE65100),
                         fontSize = 13.sp,
                     )
@@ -378,11 +492,11 @@ fun BuildingListScreen(
                             onClick = { requestLocationPermission() },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8)),
                         ) {
-                            Text("Cấp quyền")
+                            Text(tr("Cấp quyền", "Allow"))
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         TextButton(onClick = { openAppSettings() }) {
-                            Text("Mở Cài đặt", color = Color(0xFFE65100))
+                            Text(tr("Mở Cài đặt", "Open Settings"), color = Color(0xFFE65100))
                         }
                     }
                 }
@@ -403,10 +517,17 @@ fun BuildingListScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = query,
-                        onValueChange = { query = it },
+                        onValueChange = {
+                            query = it
+                            showSearchResults = it.isNotBlank()
+                            if (it.isBlank()) showSearchResults = false
+                        },
                         modifier = Modifier.weight(1f),
                         placeholder = {
-                            Text(text = "Tìm tòa nhà, địa điểm…", color = Color(0xFF5F6368))
+                            Text(
+                                text = tr("Tìm địa điểm, tòa nhà…", "Search places, buildings…"),
+                                color = Color(0xFF5F6368),
+                            )
                         },
                         singleLine = true,
                         leadingIcon = {
@@ -418,10 +539,13 @@ fun BuildingListScreen(
                         },
                         trailingIcon = {
                             if (query.isNotEmpty()) {
-                                IconButton(onClick = { query = "" }) {
+                                IconButton(onClick = {
+                                    query = ""
+                                    showSearchResults = false
+                                }) {
                                     Icon(
                                         imageVector = Icons.Rounded.Close,
-                                        contentDescription = "Xóa",
+                                        contentDescription = tr("Xóa", "Clear"),
                                     )
                                 }
                             }
@@ -433,14 +557,79 @@ fun BuildingListScreen(
                             unfocusedContainerColor = Color.Transparent,
                         ),
                     )
+                    IconButton(
+                        onClick = {
+                            if (isLoggedIn) onOpenProfile()
+                            else onLoginClick()
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Person,
+                            contentDescription = if (isLoggedIn) {
+                                tr("Tài khoản", "Account")
+                            } else {
+                                tr("Đăng nhập", "Sign in")
+                            },
+                            tint = if (isLoggedIn) Color(0xFF1A73E8) else Color(0xFF5F6368),
+                        )
+                    }
                     IconButton(onClick = onTestPDR) {
                         Icon(
                             imageVector = Icons.Rounded.Build,
-                            contentDescription = "PDR Test",
+                            contentDescription = tr("Thử PDR", "Try PDR"),
                             tint = Color(0xFF5F6368),
                         )
                     }
                 }
+            }
+            if (!isLoggedIn) {
+                Text(
+                    text = tr(
+                        "Khách · chạm biểu tượng người để đăng nhập",
+                        "Guest · tap the person icon to sign in",
+                    ),
+                    fontSize = 11.sp,
+                    color = Color(0xFF5F6368),
+                    modifier = Modifier.padding(start = 16.dp, top = 6.dp),
+                )
+            }
+            val locale = LocalAppLocale.current
+            val categories = PlaceCategoryLabels.filterChips(locale)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                categories.forEach { (value, label) ->
+                    FilterChip(
+                        selected = category == value,
+                        onClick = {
+                            category = value
+                            if (query.isNotBlank()) showSearchResults = true
+                        },
+                        label = { Text(label, fontSize = 12.sp) },
+                    )
+                }
+            }
+
+            if (showSearchResults && query.isNotBlank() && selected == null && !showPlaceDetail) {
+                Spacer(modifier = Modifier.height(8.dp))
+                SearchResultPanel(
+                    query = query.trim(),
+                    results = filtered,
+                    loading = searchLoading,
+                    onSelect = { b ->
+                        selected = b
+                        showSearchResults = false
+                        val g = b.gpsLocation
+                        if (g != null && mapViewRef != null) {
+                            mapViewRef?.controller?.animateTo(GeoPoint(g.lat, g.lng))
+                            mapViewRef?.controller?.setZoom(17.0)
+                        }
+                    },
+                )
             }
         }
 
@@ -477,69 +666,149 @@ fun BuildingListScreen(
         ) {
             Icon(
                 imageVector = Icons.Rounded.LocationOn,
-                contentDescription = "Vị trí của tôi",
+                contentDescription = tr("Vị trí của tôi", "My location"),
             )
         }
 
         val chosen = selected
-        if (chosen != null) {
-            Card(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .background(Color(0xFFE8F0FE), CircleShape),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Place,
-                                contentDescription = null,
-                                tint = Color(0xFF1A73E8),
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = chosen.name,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 17.sp,
-                                color = Color(0xFF202124),
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = chosen.address ?: "Chưa có địa chỉ",
-                                fontSize = 13.sp,
-                                color = Color(0xFF5F6368),
-                                lineHeight = 18.sp,
-                            )
-                        }
-                        IconButton(onClick = { selected = null }) {
-                            Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = "Đóng",
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(
-                        onClick = { onBuildingClick(chosen.id) },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8)),
-                        shape = RoundedCornerShape(24.dp),
-                    ) {
-                        Text(text = "Vào bản đồ trong nhà", fontWeight = FontWeight.SemiBold)
-                    }
-                }
+        LaunchedEffect(chosen?.id, chosen?.placeId) {
+            val pid = chosen?.placeId
+            if (!pid.isNullOrBlank()) {
+                viewModel.refreshFavoriteState(pid)
+                viewModel.recordHistory(
+                    type = "VIEW_PLACE",
+                    placeId = pid,
+                    buildingId = chosen?.id,
+                    label = chosen?.name,
+                )
             }
+        }
+
+        if (chosen != null && !showPlaceDetail) {
+            PlacePreviewSheet(
+                building = chosen,
+                isFavorite = chosen.placeId?.let { it in favoriteIds } == true,
+                isFollowing = chosen.placeId?.let { it in followingIds } == true,
+                notice = placeNotice,
+                isLoggedIn = isLoggedIn,
+                onDismiss = { selected = null },
+                onDirections = { openDirections(chosen) },
+                onToggleFavorite = {
+                    val pid = chosen.placeId ?: return@PlacePreviewSheet
+                    viewModel.toggleFavorite(pid, chosen.name)
+                },
+                onShare = { sharePlace(chosen) },
+                onToggleFollow = {
+                    val pid = chosen.placeId ?: return@PlacePreviewSheet
+                    viewModel.toggleFollowPlace(pid)
+                },
+                onOpenDetail = { showPlaceDetail = true },
+                onEnterIndoor = { enterIndoor(chosen) },
+                onLoginRequired = onLoginClick,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+
+        if (showPlaceDetail && chosen != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(40f)
+                    .background(Color(0xFFF8F9FA)),
+            ) {
+                PlaceDetailScreen(
+                    building = chosen,
+                    isFavorite = chosen.placeId?.let { it in favoriteIds } == true,
+                    isFollowing = chosen.placeId?.let { it in followingIds } == true,
+                    isLoggedIn = isLoggedIn,
+                    onBack = { showPlaceDetail = false },
+                    onDirections = { openDirections(chosen) },
+                    onToggleFavorite = {
+                        val pid = chosen.placeId ?: return@PlaceDetailScreen
+                        viewModel.toggleFavorite(pid, chosen.name)
+                    },
+                    onShare = { sharePlace(chosen) },
+                    onToggleFollow = {
+                        val pid = chosen.placeId ?: return@PlaceDetailScreen
+                        viewModel.toggleFollowPlace(pid)
+                    },
+                    onReview = { showReviewDialog = true },
+                    onReport = { showReportDialog = true },
+                    onEnterIndoor = { enterIndoor(chosen) },
+                    onLoginRequired = onLoginClick,
+                )
+            }
+        }
+
+        if (showReviewDialog && selected?.placeId != null) {
+            var rating by remember { mutableStateOf(5) }
+            var comment by remember { mutableStateOf("") }
+            AlertDialog(
+                onDismissRequest = { showReviewDialog = false },
+                title = { Text(tr("Đánh giá địa điểm", "Rate this place")) },
+                text = {
+                    Column {
+                        Text(tr("Chọn số sao (1–5)", "Choose stars (1–5)"))
+                        Row {
+                            (1..5).forEach { n ->
+                                TextButton(onClick = { rating = n }) {
+                                    Text(if (n <= rating) "★" else "☆", color = Color(0xFFF9AB00))
+                                }
+                            }
+                        }
+                        OutlinedTextField(
+                            value = comment,
+                            onValueChange = { comment = it },
+                            label = { Text(tr("Nhận xét (tuỳ chọn)", "Comment (optional)")) },
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 2,
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.submitPlaceReview(
+                            selected!!.placeId!!,
+                            rating,
+                            comment.trim().ifBlank { null },
+                        )
+                        showReviewDialog = false
+                    }) { Text(tr("Gửi", "Submit")) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showReviewDialog = false }) { Text(tr("Hủy", "Cancel")) }
+                },
+            )
+        }
+        if (showReportDialog && selected?.placeId != null) {
+            val reportReasons = listOf(
+                "WRONG_LOCATION" to tr("Sai vị trí", "Wrong location"),
+                "WRONG_FLOOR" to tr("Sai tầng", "Wrong floor"),
+                "QR_INVALID" to tr("Mã QR lỗi", "Bad QR code"),
+                "ROUTE_ERROR" to tr("Đường đi lỗi", "Route error"),
+                "WRONG_NAME" to tr("Sai tên", "Wrong name"),
+                "SPAM" to tr("Nội dung rác", "Spam"),
+                "DUPLICATE" to tr("Trùng lặp", "Duplicate"),
+                "CLOSED" to tr("Đã đóng cửa", "Closed"),
+            )
+            AlertDialog(
+                onDismissRequest = { showReportDialog = false },
+                title = { Text(tr("Báo cáo địa điểm", "Report place")) },
+                text = { Text(tr("Chọn lý do báo cáo", "Choose a reason")) },
+                confirmButton = {
+                    Column {
+                        reportReasons.forEach { (code, label) ->
+                            TextButton(onClick = {
+                                viewModel.submitPlaceReport(selected!!.placeId!!, code)
+                                showReportDialog = false
+                            }) { Text(label) }
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showReportDialog = false }) { Text(tr("Hủy", "Cancel")) }
+                },
+            )
         }
     }
 

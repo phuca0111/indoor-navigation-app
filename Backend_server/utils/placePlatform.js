@@ -1,6 +1,6 @@
 /**
  * Indoor Mapping Platform — hằng số lifecycle Place / Workspace / Proposal / Validation
- * GĐ1: chuẩn hóa status & ownership (tương thích Place.status legacy ACTIVE/LOCKED/MERGED).
+ * Canonical enums cho Place Platform (Product Roadmap).
  */
 
 const PUBLICATION_STATUS = Object.freeze({
@@ -60,7 +60,45 @@ const MODERATION_ROUTE = Object.freeze({
   ESCALATE: 'ESCALATE'
 });
 
-/** Map legacy Place.status → publication_status kiến trúc. */
+/** End-user Place Report reasons */
+const PLACE_REPORT_REASON = Object.freeze({
+  WRONG_LOCATION: 'WRONG_LOCATION',
+  WRONG_NAME: 'WRONG_NAME',
+  WRONG_FLOOR: 'WRONG_FLOOR',
+  QR_INVALID: 'QR_INVALID',
+  ROUTE_ERROR: 'ROUTE_ERROR',
+  SPAM: 'SPAM',
+  DUPLICATE: 'DUPLICATE',
+  CLOSED: 'CLOSED',
+  OTHER: 'OTHER'
+});
+const PLACE_REPORT_REASON_VALUES = Object.freeze(Object.values(PLACE_REPORT_REASON));
+
+const PLACE_REPORT_STATUS = Object.freeze({
+  OPEN: 'OPEN',
+  RESOLVED: 'RESOLVED',
+  DISMISSED: 'DISMISSED',
+  CLOSED: 'CLOSED'
+});
+const PLACE_REPORT_STATUS_VALUES = Object.freeze(Object.values(PLACE_REPORT_STATUS));
+
+/** Claim org category (Business / School / Hospital / Organization) */
+const CLAIM_CATEGORY = Object.freeze({
+  ORGANIZATION: 'ORGANIZATION',
+  BUSINESS: 'BUSINESS',
+  SCHOOL: 'SCHOOL',
+  HOSPITAL: 'HOSPITAL'
+});
+const CLAIM_CATEGORY_VALUES = Object.freeze(Object.values(CLAIM_CATEGORY));
+
+/** Place Event stub types */
+const PLACE_EVENT_TYPE = Object.freeze({
+  PROMOTION: 'PROMOTION',
+  TEMPORARY_CLOSE: 'TEMPORARY_CLOSE',
+  CONSTRUCTION: 'CONSTRUCTION'
+});
+const PLACE_EVENT_TYPE_VALUES = Object.freeze(Object.values(PLACE_EVENT_TYPE));
+
 function publicationFromLegacyStatus(legacyStatus) {
   const s = String(legacyStatus || '').toUpperCase();
   if (s === 'ACTIVE') return PUBLICATION_STATUS.PUBLISHED;
@@ -69,7 +107,6 @@ function publicationFromLegacyStatus(legacyStatus) {
   return PUBLICATION_STATUS.DRAFT;
 }
 
-/** Map publication_status → legacy status (giữ editor / governance cũ). */
 function legacyStatusFromPublication(publicationStatus) {
   const p = String(publicationStatus || '').toUpperCase();
   if (p === PUBLICATION_STATUS.PUBLISHED) return 'ACTIVE';
@@ -78,13 +115,27 @@ function legacyStatusFromPublication(publicationStatus) {
   return 'DRAFT';
 }
 
-function normalizePublicationStatus(value, fallback = PUBLICATION_STATUS.DRAFT) {
+function canonicalizePublicationInput(value) {
   const v = String(value || '').trim().toUpperCase();
+  if (v === 'PUBLIC') return PUBLICATION_STATUS.PUBLISHED;
+  if (v === 'UNLISTED') return PUBLICATION_STATUS.DRAFT;
+  return v;
+}
+
+function normalizePublicationStatus(value, fallback = PUBLICATION_STATUS.DRAFT) {
+  const v = canonicalizePublicationInput(value);
   return PUBLICATION_STATUS_VALUES.includes(v) ? v : fallback;
 }
 
-function normalizeOwnerType(value, fallback = OWNER_TYPE.UNCLAIMED) {
+function canonicalizeOwnerInput(value) {
   const v = String(value || '').trim().toUpperCase();
+  if (v === 'PLATFORM') return OWNER_TYPE.SYSTEM;
+  if (v === 'PERSONAL') return OWNER_TYPE.COMMUNITY;
+  return v;
+}
+
+function normalizeOwnerType(value, fallback = OWNER_TYPE.UNCLAIMED) {
+  const v = canonicalizeOwnerInput(value);
   return OWNER_TYPE_VALUES.includes(v) ? v : fallback;
 }
 
@@ -93,9 +144,16 @@ function normalizeWorkspaceStatus(value, fallback = WORKSPACE_STATUS.DRAFT) {
   return WORKSPACE_STATUS_VALUES.includes(v) ? v : fallback;
 }
 
-/**
- * Đồng bộ owner_type từ owner_org_id (không ghi đè SYSTEM).
- */
+function normalizeReportReason(value, fallback = PLACE_REPORT_REASON.OTHER) {
+  const v = String(value || '').trim().toUpperCase();
+  return PLACE_REPORT_REASON_VALUES.includes(v) ? v : fallback;
+}
+
+function normalizeClaimCategory(value, fallback = CLAIM_CATEGORY.ORGANIZATION) {
+  const v = String(value || '').trim().toUpperCase();
+  return CLAIM_CATEGORY_VALUES.includes(v) ? v : fallback;
+}
+
 function deriveOwnerType({ owner_type, owner_org_id }) {
   if (owner_type === OWNER_TYPE.SYSTEM) return OWNER_TYPE.SYSTEM;
   if (owner_org_id) return OWNER_TYPE.ORGANIZATION;
@@ -104,9 +162,6 @@ function deriveOwnerType({ owner_type, owner_org_id }) {
   return OWNER_TYPE.UNCLAIMED;
 }
 
-/**
- * Building.status DRAFT|PUBLISHED → gợi ý workspace_status (không đụng DEPRECATED/ARCHIVED/IN_REVIEW).
- */
 function syncWorkspaceStatusFromBuildingStatus(buildingStatus, currentWorkspaceStatus) {
   const cur = normalizeWorkspaceStatus(currentWorkspaceStatus, WORKSPACE_STATUS.DRAFT);
   if (cur === WORKSPACE_STATUS.DEPRECATED || cur === WORKSPACE_STATUS.ARCHIVED || cur === WORKSPACE_STATUS.IN_REVIEW) {
@@ -116,7 +171,6 @@ function syncWorkspaceStatusFromBuildingStatus(buildingStatus, currentWorkspaceS
   return WORKSPACE_STATUS.DRAFT;
 }
 
-/** Place có được list public (Registry) không. */
 function isPlacePubliclyListed(place) {
   if (!place) return false;
   const pub = place.publication_status
@@ -128,11 +182,12 @@ function isPlacePubliclyListed(place) {
   return true;
 }
 
-/** Mongo filter Place public. */
 function placePublicMongoFilter(extra = {}) {
   const publishedClause = {
     $or: [
       { publication_status: PUBLICATION_STATUS.PUBLISHED },
+      // Legacy registry (trước khi canonical PUBLISHED)
+      { publication_status: 'PUBLIC' },
       {
         $and: [
           {
@@ -157,6 +212,37 @@ function placePublicMongoFilter(extra = {}) {
   };
 }
 
+function slugifyPlaceName(name) {
+  const base = String(name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return base || 'place';
+}
+
+async function ensureUniquePlaceSlug(PlaceModel, name, excludeId = null) {
+  const base = slugifyPlaceName(name);
+  let candidate = base;
+  let n = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const filter = { slug: candidate };
+    if (excludeId) filter._id = { $ne: excludeId };
+    const exists = await PlaceModel.exists(filter);
+    if (!exists) return candidate;
+    n += 1;
+    candidate = `${base}-${n}`;
+    if (n > 200) {
+      candidate = `${base}-${Date.now().toString(36)}`;
+      return candidate;
+    }
+  }
+}
+
 module.exports = {
   PUBLICATION_STATUS,
   PUBLICATION_STATUS_VALUES,
@@ -170,13 +256,27 @@ module.exports = {
   PROPOSAL_STATUS_VALUES,
   VALIDATION_RISK,
   MODERATION_ROUTE,
+  PLACE_REPORT_REASON,
+  PLACE_REPORT_REASON_VALUES,
+  PLACE_REPORT_STATUS,
+  PLACE_REPORT_STATUS_VALUES,
+  CLAIM_CATEGORY,
+  CLAIM_CATEGORY_VALUES,
+  PLACE_EVENT_TYPE,
+  PLACE_EVENT_TYPE_VALUES,
   publicationFromLegacyStatus,
   legacyStatusFromPublication,
+  canonicalizePublicationInput,
+  canonicalizeOwnerInput,
   normalizePublicationStatus,
   normalizeOwnerType,
   normalizeWorkspaceStatus,
+  normalizeReportReason,
+  normalizeClaimCategory,
   deriveOwnerType,
   syncWorkspaceStatusFromBuildingStatus,
   isPlacePubliclyListed,
-  placePublicMongoFilter
+  placePublicMongoFilter,
+  slugifyPlaceName,
+  ensureUniquePlaceSlug
 };

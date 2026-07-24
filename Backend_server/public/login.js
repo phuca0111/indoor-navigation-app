@@ -1,11 +1,59 @@
-// login.js (Landing) — POST /api/auth/login → Admin hoặc My Maps (/app)
+// login.js (Landing) — portal theo role (LOCKED: Docs/PORTAL_ARCHITECTURE.md)
 (function () {
     var API_URL = '/api';
 
-    function appHomeForRole(role) {
-        if (role === 'REGISTERED_USER') return '/app';
-        return '/admin/dashboard.html';
+    /** Portal map — End User = Android (/get-app); không còn /app */
+    function portalHomeForRole(role) {
+        var r = String(role || '').toUpperCase();
+        if (r === 'REGISTERED_USER') return '/get-app';
+        if (r === 'ORG_ADMIN' || r === 'BUILDING_ADMIN') return '/org';
+        if (r === 'SUPER_ADMIN' || r === 'FINANCE_ADMIN' || r === 'MARKETING_MANAGER') {
+            return '/admin/dashboard.html';
+        }
+        return '/login';
     }
+
+    function roleAllowedForPath(role, path) {
+        var r = String(role || '').toUpperCase();
+        var p = String(path || '');
+        if (p.indexOf('/get-app') === 0) return r === 'REGISTERED_USER' || r === 'SUPER_ADMIN';
+        if (p.indexOf('/app') === 0) return false; // STOPPED
+        if (p.indexOf('/org') === 0) return r === 'ORG_ADMIN' || r === 'BUILDING_ADMIN' || r === 'SUPER_ADMIN';
+        if (p.indexOf('/admin') === 0) {
+            return r === 'SUPER_ADMIN' || r === 'FINANCE_ADMIN' || r === 'MARKETING_MANAGER'
+                || r === 'ORG_ADMIN' || r === 'BUILDING_ADMIN';
+        }
+        return p.charAt(0) === '/';
+    }
+
+    /** ?next= chỉ khi role được phép; /app luôn bỏ qua → home theo role */
+    function resolvePostLoginUrl(role) {
+        try {
+            var params = new URLSearchParams(window.location.search || '');
+            var next = params.get('next');
+            if (next && next.indexOf('/app') === 0) {
+                return portalHomeForRole(role);
+            }
+            if (next && next.charAt(0) === '/' && next.indexOf('//') !== 0 && next.indexOf('/login') !== 0) {
+                if (roleAllowedForPath(role, next)) return next;
+            }
+        } catch (_) { /* ignore */ }
+        return portalHomeForRole(role);
+    }
+
+    /** fresh=1: xóa session cũ */
+    (function clearStaleIfFresh() {
+        try {
+            var params = new URLSearchParams(window.location.search || '');
+            if (params.get('fresh') === '1') {
+                localStorage.removeItem('token');
+                localStorage.removeItem('refreshToken');
+                localStorage.removeItem('userEmail');
+                localStorage.removeItem('userRole');
+                localStorage.removeItem('userId');
+            }
+        } catch (_) { /* ignore */ }
+    })();
 
     function clearAuthStorage() {
         localStorage.removeItem('token');
@@ -45,18 +93,22 @@
         var err = params.get('error');
         var pending = params.get('pending');
         var reason = params.get('reason') || '';
-        window.history.replaceState({}, '', window.location.pathname);
+        window.history.replaceState({}, '', window.location.pathname + window.location.search);
 
         function googleErrorText(raw) {
             var code = decodeURIComponent(raw || '').trim();
             var map = {
-                ORG_MISSING: 'Tài khoản Google chưa gắn tổ chức. Hệ thống sẽ chuyển sang không gian cá nhân — hãy thử đăng nhập Google lại.',
+                ORG_MISSING: 'Email Google này đã gắn tài khoản tổ chức nhưng thiếu organization. Liên hệ Super Admin.',
                 ORG_NOT_FOUND: 'Tổ chức của tài khoản không còn tồn tại. Liên hệ Super Admin.',
                 ORG_INACTIVE: 'Tổ chức đã bị tạm dừng. Liên hệ Super Admin để kích hoạt lại.',
                 OVER_QUOTA_USER_LOCKED: 'Tài khoản bị khóa do vượt hạn mức gói tổ chức.',
+                USER_INACTIVE: 'Tài khoản đang bị khóa hoặc chờ duyệt.',
+                MEMBER_INACTIVE: 'Tư cách thành viên tổ chức không hoạt động.',
                 disabled: 'Đăng nhập Google chưa được cấu hình.',
                 missing_code: 'Google không trả về mã xác thực. Thử lại.',
-                oauth_failed: 'Đăng nhập Google thất bại. Thử lại.'
+                oauth_failed: 'Đăng nhập Google thất bại. Thử lại.',
+                INVALID_STATE: 'Phiên Google hết hạn (state). Thử đăng nhập lại.',
+                STATE_EXPIRED: 'Phiên Google hết hạn. Thử đăng nhập lại.'
             };
             if (map[code]) return map[code];
             return code ? ('Google: ' + code) : 'Đăng nhập Google thất bại.';
@@ -68,7 +120,7 @@
         }
         if (pending === '1' && !token) {
             showError(reason === 'account_inactive'
-                ? 'Email Google này đã có tài khoản đang bị khóa hoặc chờ Super Admin duyệt. Liên hệ quản trị để kích hoạt, hoặc dùng email khác.'
+                ? 'Email Google này đã có tài khoản đang bị khóa hoặc chờ Super Admin duyệt.'
                 : 'Không thể đăng nhập bằng Google. Liên hệ Super Admin nếu tài khoản đang chờ duyệt.');
             return;
         }
@@ -83,7 +135,25 @@
                     id: params.get('userId') || ''
                 }
             });
-            window.location.replace(appHomeForRole(role));
+            if (!role) {
+                fetch(API_URL + '/users/me', {
+                    headers: { Authorization: 'Bearer ' + token }
+                })
+                    .then(function (r) { return r.json().catch(function () { return {}; }); })
+                    .then(function (data) {
+                        var u = data.user || data || {};
+                        role = u.role || '';
+                        if (role) localStorage.setItem('userRole', role);
+                        if (u.email) localStorage.setItem('userEmail', u.email);
+                        if (u.id || u._id) localStorage.setItem('userId', String(u.id || u._id));
+                        window.location.replace(resolvePostLoginUrl(role));
+                    })
+                    .catch(function () {
+                        window.location.replace('/get-app');
+                    });
+                return;
+            }
+            window.location.replace(resolvePostLoginUrl(role));
         }
     })();
 
@@ -111,7 +181,7 @@
             if (res.ok) {
                 var data = await res.json().catch(function () { return {}; });
                 var role = data.role || (data.user && data.user.role) || localStorage.getItem('userRole') || '';
-                window.location.replace(appHomeForRole(role));
+                window.location.replace(resolvePostLoginUrl(role));
             } else {
                 clearAuthStorage();
             }
@@ -151,7 +221,7 @@
                 if (response.ok && data.token) {
                     applyAuthTokens(data);
                     var role = (data.user && data.user.role) || '';
-                    window.location.replace(appHomeForRole(role));
+                    window.location.replace(resolvePostLoginUrl(role));
                     return;
                 }
                 showError(data.message || ('Đăng nhập thất bại (HTTP ' + response.status + ').'));

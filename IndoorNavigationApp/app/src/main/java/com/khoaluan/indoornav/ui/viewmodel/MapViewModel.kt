@@ -24,6 +24,7 @@ import com.khoaluan.indoornav.navigation.instruction.TurnByTurnEngine
 import com.khoaluan.indoornav.navigation.pdr.PositionConfidenceEngine
 import com.khoaluan.indoornav.navigation.tpf.LocationEngine
 import com.khoaluan.indoornav.navigation.tpf.TopologicalParticle
+import com.khoaluan.indoornav.data.local.IndoorSessionStore
 import com.khoaluan.indoornav.data.local.MapCacheManager
 import com.khoaluan.indoornav.data.local.ParkingManager
 import com.khoaluan.indoornav.data.model.Room
@@ -68,6 +69,8 @@ data class NavigationState(
     val destinationPoiId: Int? = null,
     /** Pin đích khi đã chọn phòng/POI nhưng chưa bấm "Xem đường" (G1). */
     val destinationMarkerPos: Offset? = null,
+    /** Module #11 — điểm bắt đầu sau quét QR (giữ để vẽ pin). */
+    val startAnchorPos: Offset? = null,
     val navigationError: String? = null,
     val rerouteSourceNodeId: String? = null,
     /** W1 — câu chỉ dẫn text hiện tại (null khi chưa navigate / chưa có path). */
@@ -88,6 +91,8 @@ data class NavigationState(
     val floorTransitionHint: String? = null,
     /** W3 — gợi ý đổi sang tầng này (path đang tới connector). */
     val suggestedTargetFloor: Int? = null,
+    /** #10 — trong ~2m connector → UI mở sheet / CTA đổi tầng. */
+    val readyForFloorSwitch: Boolean = false,
     /** W3 — đích cuối cùng trên tầng khác (sau khi đổi tầng tiếp tục A*). */
     val pendingDestFloor: Int? = null,
     val pendingDestNodeId: String? = null,
@@ -107,6 +112,14 @@ sealed interface PlaceListUiState {
     /** Place tồn tại nhưng chưa có Indoor Workspace publish. */
     data class NoIndoor(val placeName: String, val placeId: String) : PlaceListUiState
 }
+
+/** Module #8 — trạng thái chuyển Outdoor → Indoor. */
+sealed interface IndoorEntryUiState {
+    object Idle : IndoorEntryUiState
+    data class Entering(val buildingId: String, val message: String) : IndoorEntryUiState
+    data class Failed(val buildingId: String, val message: String) : IndoorEntryUiState
+}
+
 data class MapCameraState(
     val scale: Float = 1f,
     val offset: Offset = Offset.Zero,
@@ -114,6 +127,8 @@ data class MapCameraState(
 )
 class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val context = application.applicationContext
+    private val indoorSessionStore = IndoorSessionStore(context)
+    private val mapCacheManager = MapCacheManager(context)
     // LocationEngine: bo dinh vi PDR + TPF (nhan du lieu cam bien, tinh toa do)
     private var locationEngine: LocationEngine? = null
     // GraphModel: do thi duong di duoc tao tu MapData (nodes + edges)
@@ -248,9 +263,84 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     val crossFloorRooms: StateFlow<List<CrossFloorRoom>> = _crossFloorRooms.asStateFlow()
 
     data class CrossFloorRoom(val floor: Int, val room: Room)
+
+    private val _indoorEntryState = MutableStateFlow<IndoorEntryUiState>(IndoorEntryUiState.Idle)
+    val indoorEntryState: StateFlow<IndoorEntryUiState> = _indoorEntryState.asStateFlow()
+
+    fun clearIndoorEntryState() {
+        _indoorEntryState.value = IndoorEntryUiState.Idle
+    }
+
+    fun lastFloorFor(buildingId: String): Int = indoorSessionStore.getLastFloor(buildingId)
+
+    /**
+     * Module #8 — vào Indoor: nhớ tầng · load map · preload tầng lân cận · báo Ready qua callback.
+     */
+    fun enterIndoorSession(
+        buildingId: String,
+        totalFloors: Int = 1,
+        preferredFloor: Int? = null,
+        onReady: (buildingId: String) -> Unit = {},
+    ) {
+        if (buildingId.isBlank()) return
+        viewModelScope.launch {
+            val safeTotal = totalFloors.coerceAtLeast(1)
+            val remembered = indoorSessionStore.getLastFloor(buildingId, 0)
+            val startFloor = (preferredFloor ?: remembered).coerceIn(0, safeTotal - 1)
+            _indoorEntryState.value = IndoorEntryUiState.Entering(
+                buildingId = buildingId,
+                message = "Đang tải tầng $startFloor · preload bản đồ…",
+            )
+            fetchMapJob?.cancel()
+            val ok = loadMapInternal(buildingId, startFloor)
+            if (!ok) {
+                _indoorEntryState.value = IndoorEntryUiState.Failed(
+                    buildingId = buildingId,
+                    message = "Không tải được bản đồ tầng $startFloor. Kiểm tra xuất bản trên trình soạn thảo web hoặc mạng.",
+                )
+                return@launch
+            }
+            indoorSessionStore.saveLastFloor(buildingId, startFloor)
+            _indoorEntryState.value = IndoorEntryUiState.Idle
+            onReady(buildingId)
+            preloadAdjacentFloors(buildingId, startFloor, safeTotal)
+        }
+    }
+
+    fun rememberCurrentFloor() {
+        val s = _uiState.value as? MapUiState.Success ?: return
+        indoorSessionStore.saveLastFloor(s.buildingId, s.floorNumber)
+    }
+
+    private fun preloadAdjacentFloors(buildingId: String, currentFloor: Int, totalFloors: Int) {
+        viewModelScope.launch {
+            val neighbors = listOf(currentFloor - 1, currentFloor + 1)
+                .filter { it in 0 until totalFloors }
+            for (f in neighbors) {
+                preloadFloorToCache(buildingId, f)
+            }
+        }
+    }
+
+    private suspend fun preloadFloorToCache(buildingId: String, floor: Int) {
+        if (mapCacheManager.has(buildingId, floor)) return
+        try {
+            val api = RetrofitClient.getApiService()
+            val response = api.getMapByFloor(buildingId, floor)
+            if (response.isSuccessful) {
+                response.body()?.let { mapCacheManager.save(buildingId, it.floorNumber, it) }
+                Log.i("MapViewModel", "Preloaded floor $floor for $buildingId")
+            }
+        } catch (e: Exception) {
+            Log.w("MapViewModel", "Preload floor $floor failed: ${e.message}")
+        }
+    }
+
     fun exitIndoorNavigation() {
+        rememberCurrentFloor()
         clearLocalizationSession()
         cachedOutdoorGpsCourseDeg = null
+        _indoorEntryState.value = IndoorEntryUiState.Idle
         val listState = _buildingListState.value
         if (listState is BuildingListUiState.Success) {
             startGpsGeofencing(listState.buildings)
@@ -289,6 +379,15 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     private val _placeNotice = MutableStateFlow<String?>(null)
     val placeNotice: StateFlow<String?> = _placeNotice.asStateFlow()
     fun clearPlaceNotice() { _placeNotice.value = null }
+
+    /** Favorite/hub trả 401 → MainActivity mở lại Login. */
+    private val _authRequired = MutableStateFlow(false)
+    val authRequired: StateFlow<Boolean> = _authRequired.asStateFlow()
+    fun consumeAuthRequired() { _authRequired.value = false }
+
+    /** placeId → đã yêu thích (Hub sync). */
+    private val _favoritePlaceIds = MutableStateFlow<Set<String>>(emptySet())
+    val favoritePlaceIds: StateFlow<Set<String>> = _favoritePlaceIds.asStateFlow()
     private val _navState = MutableStateFlow(NavigationState())
     val navState: StateFlow<NavigationState> = _navState.asStateFlow()
     private val _qrScanError = MutableStateFlow<String?>(null)
@@ -384,6 +483,8 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                         stopGpsGeofencing()
                         _detectedBuilding.value = null
                     }
+                    // Outdoor parity: gắn Place category/slug + marker Place-only
+                    fetchPlaces()
                 } else {
                     _buildingListState.value = BuildingListUiState.Error("Lỗi: ${response.code()}")
                 }
@@ -394,17 +495,17 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     }
 
     /** GĐ8 — tải Place Registry (song song / thay discovery). */
-    fun fetchPlaces(query: String? = null) {
+    fun fetchPlaces(query: String? = null, category: String? = null) {
         viewModelScope.launch {
             _placeListState.value = PlaceListUiState.Loading
             try {
                 val api = RetrofitClient.getApiService()
-                val places = if (query.isNullOrBlank()) {
-                    val response = api.getPlaces(limit = 50)
+                val cat = category?.trim()?.takeIf { it.isNotEmpty() }
+                val places = if (query.isNullOrBlank() && cat == null) {
+                    val response = api.getPlaces(limit = 80)
                     if (!response.isSuccessful) {
-                        // Place Registry là bổ sung — không chặn list tòa nhà
                         val msg = when (response.code()) {
-                            401, 403 -> "Place Registry chưa public trên server (cần restart Backend GĐ2+)."
+                            401, 403 -> "Place Registry chưa public trên server."
                             else -> "Lỗi Place: ${response.code()}"
                         }
                         _placeListState.value = PlaceListUiState.Error(msg)
@@ -413,11 +514,15 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     response.body()?.places.orEmpty()
                 } else {
                     val response = api.searchPlaces(
-                        com.khoaluan.indoornav.data.api.PlaceSearchBody(q = query, limit = 50)
+                        com.khoaluan.indoornav.data.api.PlaceSearchBody(
+                            q = query?.takeIf { it.isNotBlank() },
+                            category = cat,
+                            limit = 80,
+                        )
                     )
                     if (!response.isSuccessful) {
                         val msg = when (response.code()) {
-                            401, 403 -> "Place Registry chưa public trên server (cần restart Backend GĐ2+)."
+                            401, 403 -> "Place Registry chưa public trên server."
                             else -> "Lỗi Place: ${response.code()}"
                         }
                         _placeListState.value = PlaceListUiState.Error(msg)
@@ -426,8 +531,187 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     response.body()?.places.orEmpty()
                 }
                 _placeListState.value = PlaceListUiState.Success(places)
+                mergePlacesIntoBuildings(places)
             } catch (e: Exception) {
                 _placeListState.value = PlaceListUiState.Error("Lỗi mạng Place: ${e.message}")
+            }
+        }
+    }
+
+    /** Gắn category/slug Place vào Building list (outdoor parity). */
+    private fun mergePlacesIntoBuildings(places: List<com.khoaluan.indoornav.data.api.PlaceDto>) {
+        val current = _buildingListState.value
+        if (current !is BuildingListUiState.Success) return
+        val byId = places.associateBy { it.id }
+        val merged = current.buildings.map { b ->
+            val p = b.placeId?.let { byId[it] } ?: return@map b
+            b.copy(
+                placeSlug = p.slug ?: b.placeSlug,
+                category = p.category ?: b.category,
+                hasPublishedIndoor = p.hasPublishedIndoor,
+            )
+        }
+        // Place chưa có building: thêm marker tạm (id = place:{id})
+        val existingPlaceIds = merged.mapNotNull { it.placeId }.toSet()
+        val extras = places.filter { it.id !in existingPlaceIds && (it.latitude != 0.0 || it.longitude != 0.0) }
+            .map { p ->
+                com.khoaluan.indoornav.data.model.Building(
+                    id = "place:${p.id}",
+                    name = p.name,
+                    address = p.address,
+                    placeId = p.id,
+                    placeSlug = p.slug,
+                    category = p.category,
+                    gpsLocation = com.khoaluan.indoornav.data.model.GPSLocation(p.latitude, p.longitude),
+                    totalFloors = 1,
+                    hasPublishedIndoor = p.hasPublishedIndoor,
+                )
+            }
+        _buildingListState.value = BuildingListUiState.Success(merged + extras)
+    }
+
+    /** Deep-link /outdoor/place/{slug} (alias /app/place) → chọn Place trên map. */
+    fun openPlaceDeepLink(slugOrId: String, onFound: (com.khoaluan.indoornav.data.model.Building) -> Unit) {
+        if (slugOrId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val api = RetrofitClient.getApiService()
+                var place = api.getPlaceBySlugOrId(slugOrId).body()?.place
+                if (place == null) {
+                    place = api.getPlacePublic(slugOrId).body()?.place
+                        ?: api.getPlace(slugOrId).body()?.place
+                }
+                if (place == null) {
+                    _placeNotice.value = "Không tìm thấy Place: $slugOrId"
+                    return@launch
+                }
+                mergePlacesIntoBuildings(listOf(place))
+                val current = _buildingListState.value
+                val building = if (current is BuildingListUiState.Success) {
+                    current.buildings.firstOrNull { it.placeId == place.id }
+                } else null
+                val target = building ?: com.khoaluan.indoornav.data.model.Building(
+                    id = "place:${place.id}",
+                    name = place.name,
+                    address = place.address,
+                    placeId = place.id,
+                    placeSlug = place.slug,
+                    category = place.category,
+                    gpsLocation = com.khoaluan.indoornav.data.model.GPSLocation(place.latitude, place.longitude),
+                    hasPublishedIndoor = place.hasPublishedIndoor,
+                )
+                refreshFavoriteState(place.id)
+                recordHistory("VIEW_PLACE", place.id, null, place.name)
+                recordPlaceView(place.slug ?: place.id)
+                onFound(target)
+            } catch (e: Exception) {
+                _placeNotice.value = "Deep-link lỗi: ${e.message}"
+            }
+        }
+    }
+
+    /** Ghi Place.view_count (Creator analytics). */
+    fun recordPlaceView(slugOrId: String) {
+        if (slugOrId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                RetrofitClient.getApiService().recordPlaceView(slugOrId)
+            } catch (_: Exception) {
+                // fire-and-forget
+            }
+        }
+    }
+
+    private val _followingPlaceIds = MutableStateFlow<Set<String>>(emptySet())
+    val followingPlaceIds: StateFlow<Set<String>> = _followingPlaceIds.asStateFlow()
+
+    /** Sync Hub Community following → Outdoor map chips Follow. */
+    fun refreshFollowingPlaces() {
+        viewModelScope.launch {
+            try {
+                val res = RetrofitClient.getApiService().listFollowing()
+                if (!res.isSuccessful) return@launch
+                val ids = res.body()?.following.orEmpty()
+                    .mapNotNull { it.placeId?.takeIf { id -> id.isNotBlank() } }
+                    .toSet()
+                _followingPlaceIds.value = ids
+            } catch (_: Exception) {
+                // Guest / offline
+            }
+        }
+    }
+
+    fun toggleFollowPlace(placeId: String) {
+        if (placeId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val api = RetrofitClient.getApiService()
+                val currently = placeId in _followingPlaceIds.value
+                if (currently) {
+                    val res = api.unfollowPlace(placeId)
+                    if (res.isSuccessful) {
+                        _followingPlaceIds.update { it - placeId }
+                        _placeNotice.value = "Đã bỏ theo dõi"
+                    } else if (res.code() == 401) {
+                        _authRequired.value = true
+                    } else {
+                        _placeNotice.value = "Không bỏ follow (${res.code()})"
+                    }
+                } else {
+                    val res = api.followPlace(
+                        com.khoaluan.indoornav.data.api.PlaceFollowBody(placeId)
+                    )
+                    if (res.isSuccessful) {
+                        _followingPlaceIds.update { it + placeId }
+                        _placeNotice.value = "Đã theo dõi Place"
+                    } else if (res.code() == 401) {
+                        _authRequired.value = true
+                    } else {
+                        _placeNotice.value = "Không follow được (${res.code()})"
+                    }
+                }
+            } catch (e: Exception) {
+                _placeNotice.value = "Follow lỗi: ${e.message}"
+            }
+        }
+    }
+
+    fun submitPlaceReview(placeId: String, rating: Int, comment: String? = null) {
+        viewModelScope.launch {
+            try {
+                val res = RetrofitClient.getApiService().upsertPlaceReview(
+                    com.khoaluan.indoornav.data.api.PlaceReviewBody(placeId, rating, comment)
+                )
+                if (res.isSuccessful) {
+                    _placeNotice.value = "Đã gửi đánh giá ★$rating"
+                    recordHistory("REVIEW_PLACE", placeId, null, "★$rating")
+                } else if (res.code() == 401) {
+                    _authRequired.value = true
+                } else {
+                    _placeNotice.value = "Review lỗi (${res.code()})"
+                }
+            } catch (e: Exception) {
+                _placeNotice.value = "Review: ${e.message}"
+            }
+        }
+    }
+
+    fun submitPlaceReport(placeId: String, reasonCode: String, detail: String? = null) {
+        viewModelScope.launch {
+            try {
+                val res = RetrofitClient.getApiService().createPlaceReport(
+                    com.khoaluan.indoornav.data.api.PlaceReportBody(placeId, reasonCode, detail)
+                )
+                if (res.isSuccessful) {
+                    _placeNotice.value = "Đã gửi báo cáo"
+                    recordHistory("REPORT_PLACE", placeId, null, reasonCode)
+                } else if (res.code() == 401) {
+                    _authRequired.value = true
+                } else {
+                    _placeNotice.value = "Report lỗi (${res.code()})"
+                }
+            } catch (e: Exception) {
+                _placeNotice.value = "Report: ${e.message}"
             }
         }
     }
@@ -455,12 +739,106 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     )
                     _placeNotice.value =
                         "${place?.name ?: placeId} chưa có bản đồ trong nhà. Hãy đề xuất / tạo workspace trên web."
+                    com.khoaluan.indoornav.ui.error.ErrorCenter.noIndoor(place?.name ?: placeId)
                     return@launch
                 }
                 val buildingId = indoor.first().id
+                recordHistory(
+                    type = "VIEW_INDOOR",
+                    placeId = placeId,
+                    buildingId = buildingId,
+                    label = place?.name
+                )
                 onBuilding(buildingId)
             } catch (e: Exception) {
                 _placeNotice.value = "Lỗi Place: ${e.message}"
+            }
+        }
+    }
+
+    /** Hub — ghi lịch sử (fire-and-forget; bỏ qua nếu chưa login). */
+    fun recordHistory(
+        type: String,
+        placeId: String? = null,
+        buildingId: String? = null,
+        label: String? = null,
+    ) {
+        viewModelScope.launch {
+            try {
+                val api = RetrofitClient.getApiService()
+                api.addHistory(
+                    com.khoaluan.indoornav.data.api.HubHistoryBody(
+                        type = type,
+                        placeId = placeId,
+                        buildingId = buildingId,
+                        label = label,
+                    )
+                )
+            } catch (_: Exception) {
+                // Guest / offline — bỏ qua
+            }
+        }
+    }
+
+    /** Hub — kiểm tra + toggle favorite Place. */
+    fun refreshFavoriteState(placeId: String) {
+        if (placeId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val api = RetrofitClient.getApiService()
+                val res = api.checkFavorite(placeId)
+                if (res.isSuccessful && res.body()?.favorited == true) {
+                    _favoritePlaceIds.update { it + placeId }
+                } else {
+                    _favoritePlaceIds.update { it - placeId }
+                }
+            } catch (_: Exception) { /* guest */ }
+        }
+    }
+
+    fun toggleFavorite(placeId: String, placeName: String? = null) {
+        if (placeId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val session = com.khoaluan.indoornav.data.local.SessionManager(getApplication())
+                session.bindToHttpClient()
+                if (!session.isLoggedIn) {
+                    _placeNotice.value = "Cần đăng nhập để lưu yêu thích"
+                    _authRequired.value = true
+                    return@launch
+                }
+                val api = RetrofitClient.getApiService()
+                val currently = placeId in _favoritePlaceIds.value
+                if (currently) {
+                    val res = api.removeFavorite(placeId)
+                    if (res.isSuccessful) {
+                        _favoritePlaceIds.update { it - placeId }
+                        _placeNotice.value = "Đã bỏ yêu thích"
+                    } else if (res.code() == 401) {
+                        session.clear()
+                        _authRequired.value = true
+                        _placeNotice.value = "Phiên đăng nhập hết hạn — vui lòng đăng nhập lại"
+                    } else {
+                        _placeNotice.value = "Không bỏ lưu được (${res.code()})"
+                    }
+                } else {
+                    val res = api.addFavorite(
+                        com.khoaluan.indoornav.data.api.HubPlaceIdBody(placeId)
+                    )
+                    if (res.isSuccessful) {
+                        _favoritePlaceIds.update { it + placeId }
+                        _placeNotice.value = "Đã thêm yêu thích"
+                        recordHistory("FAVORITE_PLACE", placeId, null, placeName)
+                    } else if (res.code() == 401) {
+                        session.clear()
+                        _authRequired.value = true
+                        _placeNotice.value = "Phiên đăng nhập hết hạn — vui lòng đăng nhập lại"
+                    } else {
+                        _placeNotice.value = "Không lưu được (${res.code()})"
+                    }
+                }
+            } catch (e: Exception) {
+                _placeNotice.value = "Favorite lỗi: ${e.message}"
             }
         }
     }
@@ -474,19 +852,35 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         clearLocalizationSession(clearCrossFloorPending = !preserveCrossFloorPending)
         fetchMapJob?.cancel()
         fetchMapJob = viewModelScope.launch {
-            loadMapInternal(buildingId, floor)
+            loadMapInternal(buildingId, floor, sessionAlreadyCleared = true)
         }
     }
 
     /**
      * Suspend tải map + tạo engine. Dùng chung cho [fetchMap] và [startNavigation] (đổi tầng theo QR).
+     * #8 — ưu tiên cache để vào Indoor nhanh, rồi refresh mạng nền.
      * @return true nếu Success và LocationEngine sẵn sàng
      */
-    private suspend fun loadMapInternal(buildingId: String, floor: Int): Boolean {
+    private suspend fun loadMapInternal(
+        buildingId: String,
+        floor: Int,
+        sessionAlreadyCleared: Boolean = false,
+    ): Boolean {
         stopGpsGeofencing()
-        clearLocalizationSession()
+        if (!sessionAlreadyCleared) {
+            clearLocalizationSession()
+        }
+        val cache = mapCacheManager
+        val cachedHit = cache.load(buildingId, floor)
+        if (cachedHit != null) {
+            Log.i("MapViewModel", "#8 cache-first floor=$floor building=$buildingId")
+            val ok = applyLoadedMap(cachedHit, buildingId)
+            if (ok) {
+                refreshMapFromNetwork(buildingId, floor)
+            }
+            return ok
+        }
         _uiState.value = MapUiState.Loading
-        val cache = MapCacheManager(context)
         try {
             val api = RetrofitClient.getApiService()
             val response = api.getMapByFloor(buildingId, floor)
@@ -498,32 +892,37 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 }
                 _uiState.value = MapUiState.Error("Du lieu trong!")
             } else if (response.code() == 404) {
-                val cached = cache.load(buildingId, floor)
-                if (cached != null) {
-                    Log.i("MapViewModel", "W4 offline cache after 404")
-                    return applyLoadedMap(cached, buildingId)
-                }
                 _uiState.value = MapUiState.Error("Tang $floor chua co ban do.\nHay ve va Publish tu Web Editor.")
             } else {
-                val cached = cache.load(buildingId, floor)
-                if (cached != null) {
-                    Log.i("MapViewModel", "W4 offline cache after HTTP ${response.code()}")
-                    return applyLoadedMap(cached, buildingId)
-                }
                 _uiState.value = MapUiState.Error("Loi ket noi: ${response.code()}")
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e("MapViewModel", "Loi Exception", e)
-            val cached = cache.load(buildingId, floor)
-            if (cached != null) {
-                Log.i("MapViewModel", "W4 offline cache after network error")
-                return applyLoadedMap(cached, buildingId)
-            }
             _uiState.value = MapUiState.Error("Loi mang: ${e.message}")
         }
         return false
+    }
+
+    /** Refresh map từ API sau cache-first; không ghi đè nếu đã localize. */
+    private fun refreshMapFromNetwork(buildingId: String, floor: Int) {
+        viewModelScope.launch {
+            try {
+                val api = RetrofitClient.getApiService()
+                val response = api.getMapByFloor(buildingId, floor)
+                if (!response.isSuccessful) return@launch
+                val body = response.body() ?: return@launch
+                mapCacheManager.save(buildingId, body.floorNumber, body)
+                val s = _uiState.value as? MapUiState.Success ?: return@launch
+                if (s.buildingId != buildingId || s.floorNumber != floor) return@launch
+                if (localizationMapKey != null) return@launch
+                applyLoadedMap(body, buildingId)
+                Log.i("MapViewModel", "#8 network refresh applied floor=$floor")
+            } catch (e: Exception) {
+                Log.w("MapViewModel", "#8 network refresh skipped: ${e.message}")
+            }
+        }
     }
 
     private fun applyLoadedMap(
@@ -538,6 +937,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         }
         val floorNumber = body.floorNumber
         val sessionKey = buildMapSessionKey(buildingId, floorNumber)
+        indoorSessionStore.saveLastFloor(buildingId, floorNumber)
         _uiState.value = MapUiState.Success(mapData, buildingId, floorNumber)
         val gModel = GraphModel(mapData)
         graphModel = gModel
@@ -689,6 +1089,21 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         _qrScanError.value = null
         val trimmedQr = qrCode.trim()
         Log.i("MapViewModel", "QR scan raw=[$qrCode] trimmed=[$trimmedQr]")
+        if (trimmedQr.isEmpty() || trimmedQr.length < 3) {
+            _qrScanError.value = "Mã QR không hợp lệ (quá ngắn)"
+            com.khoaluan.indoornav.ui.error.ErrorCenter.qrInvalid("Mã QR không hợp lệ (quá ngắn)")
+            return
+        }
+        // Soft-validate: từ chối payload rõ ràng không phải mã định vị (URL web thuần, wifi, v.v.)
+        val lower = trimmedQr.lowercase()
+        if (lower.startsWith("WIFI:") || lower.startsWith("BEGIN:VCARD") ||
+            (lower.startsWith("http://") || lower.startsWith("https://")) &&
+            !lower.contains("qr") && !lower.contains("indoor")
+        ) {
+            _qrScanError.value = "Đây không phải mã QR định vị IndoorNav"
+            com.khoaluan.indoornav.ui.error.ErrorCenter.qrInvalid("Đây không phải mã QR định vị IndoorNav")
+            return
+        }
         viewModelScope.launch {
             _isResolvingQr.value = true
             try {
@@ -750,10 +1165,13 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     return ok
                 }
                 fun seedUserPos(x: Float, y: Float) {
+                    val anchor = Offset(x, y)
                     _navState.update {
                         it.copy(
-                            userPos = Offset(x, y),
+                            userPos = anchor,
+                            startAnchorPos = it.startAnchorPos ?: anchor,
                             confidence = maxOf(it.confidence, 0.5f),
+                            navigationError = null,
                         )
                     }
                 }
@@ -1208,11 +1626,18 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 floorTransitionHint = null,
             )
         }
+        val targetFloor = state.suggestedTargetFloor ?: state.pendingDestFloor
         val floorHint = FloorTransitionDetector.approachInstruction(
             activeFloorConnectors,
             traveledMeters = traveled,
-            targetFloor = state.suggestedTargetFloor ?: state.pendingDestFloor,
+            targetFloor = targetFloor,
         )
+        val nextConnector = activeFloorConnectors
+            .firstOrNull { it.atDistanceMeters > traveled - 0.5f }
+        val distToConnector = nextConnector?.let { it.atDistanceMeters - traveled }
+        val readySwitch = targetFloor != null &&
+            distToConnector != null &&
+            distToConnector <= 2f
         val instruction = floorHint ?: g.instructionText
         val eta = estimateEtaSeconds(g.remainingDistanceMeters, state.confidence)
         return state.copy(
@@ -1224,6 +1649,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             hasArrived = false,
             floorTransitionHint = floorHint,
             pathHasFloorConnector = activeFloorConnectors.isNotEmpty(),
+            readyForFloorSwitch = readySwitch,
         )
     }
 
@@ -1232,6 +1658,19 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         if (_navState.value.hasArrived) {
             _navState.value = _navState.value.copy(hasArrived = false)
         }
+    }
+
+    /** #15 History — ghi “Đã điều hướng” khi tới đích. */
+    fun recordNavigationCompleted() {
+        val s = _uiState.value as? MapUiState.Success ?: return
+        val destLabel = _navState.value.destinationNodeId
+            ?: _navState.value.pendingDestNodeId
+            ?: "Đích indoor"
+        recordHistory(
+            type = "NAVIGATE_INDOOR",
+            buildingId = s.buildingId,
+            label = destLabel,
+        )
     }
 
     fun clearNavHint() {
@@ -1250,6 +1689,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         if (nav.rerouteCount >= MAX_REROUTE_ATTEMPTS) {
             Log.w("MapViewModel", "Max reroute attempts (${MAX_REROUTE_ATTEMPTS}) reached. Forcing QR re-scan.")
             _qrScanError.value = "Đã thử tìm đường quá nhiều lần. Vui lòng quét lại mã QR."
+            com.khoaluan.indoornav.ui.error.ErrorCenter.routeFail("Đã thử tìm đường quá nhiều lần. Vui lòng quét lại mã QR.")
             _navState.value = _navState.value.copy(isNavigatingMode = false)
             return
         }
@@ -1372,6 +1812,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         Log.d("MapViewModel", "findNearestNodeIdFromCurrentPosition: userPos=(${"%.1f".format(userPos.x)},${"%.1f".format(userPos.y)}) -> nodeId=$nodeId")
         return nodeId
     }
+    /** Hủy điều hướng cứng (xóa path + localization). */
     fun stopNavigation() {
         locationEngine?.stop()
         localizationMapKey = null
@@ -1380,7 +1821,91 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         activeManeuvers = emptyList()
         activeFloorConnectors = emptyList()
         lastRerouteAtMs = 0L
+        pendingCrossFloor = null
         _navState.value = NavigationState()
+    }
+
+    /** #12 — chỉ xóa route; giữ vị trí QR + pin đích. */
+    fun clearRouteOnly() {
+        activePath = emptyList()
+        activePathEdges = emptyList()
+        activeManeuvers = emptyList()
+        activeFloorConnectors = emptyList()
+        lastRerouteAtMs = 0L
+        pendingCrossFloor = null
+        _navState.update {
+            it.copy(
+                path = null,
+                isNavigatingMode = false,
+                isRerouting = false,
+                totalDistanceMeters = 0f,
+                etaSeconds = 0,
+                remainingDistanceMeters = 0f,
+                routeProgress = 0f,
+                currentInstructionText = null,
+                distanceToNextManeuverMeters = 0f,
+                navigationError = null,
+                pathHasFloorConnector = false,
+                floorTransitionHint = null,
+                readyForFloorSwitch = false,
+                suggestedTargetFloor = null,
+                pendingDestFloor = null,
+                pendingDestNodeId = null,
+                hasArrived = false,
+            )
+        }
+    }
+
+    /** #12 — tính lại đường tới đích đang chọn. */
+    fun recalculateRoute() {
+        val dest = _navState.value.destinationNodeId ?: run {
+            _navState.update { it.copy(navigationError = "Chưa có điểm đến để tính lại") }
+            return
+        }
+        updatePath(dest, force = true)
+    }
+
+    /**
+     * #11 — Sửa vị trí: dừng TPF, giữ đích/start pin, bắt buộc quét QR lại.
+     */
+    fun requestRelocalization() {
+        locationEngine?.stop()
+        localizationMapKey = null
+        activePath = emptyList()
+        activePathEdges = emptyList()
+        activeManeuvers = emptyList()
+        activeFloorConnectors = emptyList()
+        lastRerouteAtMs = 0L
+        _navState.update {
+            it.copy(
+                userPos = null,
+                userHeading = 0f,
+                path = null,
+                confidence = 0f,
+                isTpfActive = false,
+                particles = emptyList(),
+                isNavigatingMode = false,
+                isRerouting = false,
+                currentInstructionText = null,
+                remainingDistanceMeters = 0f,
+                routeProgress = 0f,
+                etaSeconds = 0,
+                totalDistanceMeters = 0f,
+                floorTransitionHint = null,
+                readyForFloorSwitch = false,
+                navHint = "Quét lại QR để đặt vị trí mới",
+            )
+        }
+    }
+
+    /** #10 — chuyển sang tầng gợi ý (giữ pending cross-floor). */
+    fun switchToSuggestedFloor() {
+        val s = _uiState.value as? MapUiState.Success ?: return
+        val target = _navState.value.suggestedTargetFloor
+            ?: _navState.value.pendingDestFloor
+            ?: return
+        indoorSessionStore.saveLastFloor(s.buildingId, target)
+        refreshMap(s.buildingId, target)
     }
     fun saveParkingPosition(note: String?) {
         val state = _uiState.value as? MapUiState.Success ?: return
@@ -1434,6 +1959,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             updatePath(targetNodeId, force = true)
         } else {
             _qrScanError.value = "Khong the dinh tuyen den vi tri xe da luu."
+            com.khoaluan.indoornav.ui.error.ErrorCenter.routeFail("Không thể định tuyến đến vị trí xe đã lưu.")
         }
     }
     private fun findNearestNodeIdFromPos(x: Float, y: Float, gModel: GraphModel): String? {

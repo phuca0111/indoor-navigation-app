@@ -1028,7 +1028,9 @@ async function buildOrgKpi(orgId) {
     countActiveUsersToday(orgFilter),
     getOrgQuotaSnapshot(orgDoc)
   ]);
-  const org = orgDoc ? orgDoc.toObject() : null;
+  const org = orgDoc
+    ? (typeof orgDoc.toObject === 'function' ? orgDoc.toObject() : orgDoc)
+    : null;
   return {
     organization: org
       ? {

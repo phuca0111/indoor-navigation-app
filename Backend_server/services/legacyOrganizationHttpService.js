@@ -411,7 +411,7 @@ async function buildOrgDetailPayload(orgDoc) {
     };
 
     return {
-      organization: orgDoc.toObject(),
+      organization: typeof orgDoc.toObject === 'function' ? orgDoc.toObject() : orgDoc,
       building_count: buildingCount,
       active_building_count: activeBuildingCount,
       user_count: userCount,

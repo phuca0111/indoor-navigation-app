@@ -25,6 +25,11 @@ const placeReviewSchema = new mongoose.Schema({
     default: '',
     maxlength: 2000
   },
+  helpful_count: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   is_active: {
     type: Boolean,
     default: true

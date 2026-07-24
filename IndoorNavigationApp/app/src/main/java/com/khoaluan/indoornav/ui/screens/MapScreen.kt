@@ -53,9 +53,16 @@ import com.khoaluan.indoornav.ui.components.DestinationFocusButton
 import com.khoaluan.indoornav.ui.components.EmptyStateOverlay
 import com.khoaluan.indoornav.ui.components.FloorSelectorSheet
 import com.khoaluan.indoornav.ui.components.HeadingCalibrateBar
+import com.khoaluan.indoornav.ui.components.MapLayerPanel
+import com.khoaluan.indoornav.ui.components.MapLayerVisibility
 import com.khoaluan.indoornav.ui.components.MapView
 import com.khoaluan.indoornav.ui.components.PlaceCardModel
 import com.khoaluan.indoornav.ui.components.PlaceDetailSheet
+import com.khoaluan.indoornav.ui.components.PoiCategory
+import com.khoaluan.indoornav.ui.components.PoiFilterChips
+import com.khoaluan.indoornav.ui.i18n.LocalAppLocale
+import com.khoaluan.indoornav.ui.i18n.tr
+import com.khoaluan.indoornav.ui.i18n.trStatic
 import com.khoaluan.indoornav.ui.search.SearchFuzzy
 import com.khoaluan.indoornav.ui.theme.NavBlue
 import com.khoaluan.indoornav.ui.viewmodel.MapUiState
@@ -145,6 +152,7 @@ fun MapScreen(
             message = "Đã đến nơi",
             duration = SnackbarDuration.Short,
         )
+        viewModel.recordNavigationCompleted()
         viewModel.clearArrivalFlag()
     }
 
@@ -190,7 +198,7 @@ fun MapScreen(
                 modifier = Modifier.padding(bottom = 120.dp),
             )
         },
-        containerColor = Color(0xFFF0F4F8),
+        containerColor = Color(0xFFF8F9FA),
     ) { paddingValues ->
         Box(
             modifier = Modifier
@@ -231,7 +239,7 @@ fun MapScreen(
                             onClick = { viewModel.refreshMap(buildingId, 0) },
                             colors = ButtonDefaults.buttonColors(containerColor = NavBlue),
                         ) {
-                            Text("Thử lại")
+                            Text(tr("Thử lại", "Retry"))
                         }
                     }
                 }
@@ -250,7 +258,17 @@ fun MapScreen(
                     var centerDestTrigger by remember { mutableStateOf(0) }
                     var currentFloor     by remember { mutableStateOf(0) }
                     var showFloorSheet   by remember { mutableStateOf(false) }
+                    var mapLayers by remember { mutableStateOf(MapLayerVisibility()) }
+                    var showLayerPanel by remember { mutableStateOf(false) }
+                    var poiFilter by remember { mutableStateOf<PoiCategory?>(null) }
                     var liveShareOn by remember { mutableStateOf(false) }
+
+                    // #10 — tới connector: tự mở sheet chọn tầng
+                    LaunchedEffect(navState.readyForFloorSwitch) {
+                        if (navState.readyForFloorSwitch && navState.suggestedTargetFloor != null) {
+                            showFloorSheet = true
+                        }
+                    }
                     val liveShareClient = remember { LiveShareClient() }
                     val livePeers by liveShareClient.peers.collectAsState()
                     val clipboard = LocalClipboardManager.current
@@ -351,14 +369,17 @@ fun MapScreen(
                     }
 
                     // Label vị trí hiện tại
-                    val currentLocationLabel = remember(navState.userPos, state.mapData.rooms) {
+                    val locale = LocalAppLocale.current
+                    val scanToLocate = tr("Quét QR để xác định vị trí", "Scan QR to locate yourself")
+                    val locating = tr("Đang xác định...", "Locating...")
+                    val currentLocationLabel = remember(navState.userPos, state.mapData.rooms, locale) {
                         val pos = navState.userPos
-                            ?: return@remember "Quét QR để xác định vị trí"
+                            ?: return@remember scanToLocate
                         state.mapData.rooms.minByOrNull { room ->
                             val dx = (room.x + room.width / 2.0) - pos.x
                             val dy = (room.y + room.height / 2.0) - pos.y
                             dx * dx + dy * dy
-                        }?.name ?: "Đang xác định..."
+                        }?.name ?: locating
                     }
 
                     val navProgress = when {
@@ -392,7 +413,43 @@ fun MapScreen(
                                 mapRotationMode = mapRotationMode,
                                 centerOnUserTrigger = centerTrigger,
                                 centerOnDestinationTrigger = centerDestTrigger,
+                                layers = mapLayers,
+                                poiCategoryFilter = poiFilter,
                             )
+
+                            // #9 POI filter chips
+                            PoiFilterChips(
+                                selected = poiFilter,
+                                onSelect = { poiFilter = it },
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 56.dp)
+                                    .fillMaxWidth(),
+                            )
+
+                            // #9 Layer toggle
+                            FloatingActionButton(
+                                onClick = { showLayerPanel = !showLayerPanel },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 100.dp, end = 12.dp)
+                                    .size(40.dp),
+                                containerColor = Color.White,
+                                contentColor = NavBlue,
+                                elevation = FloatingActionButtonDefaults.elevation(4.dp),
+                            ) {
+                                Text(tr("Lớp", "Layers"), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = NavBlue)
+                            }
+                            if (showLayerPanel) {
+                                MapLayerPanel(
+                                    layers = mapLayers,
+                                    onChange = { mapLayers = it },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(top = 148.dp, end = 12.dp)
+                                        .width(168.dp),
+                                )
+                            }
 
                             // UX fix 1: EmptyStateOverlay
                             EmptyStateOverlay(
@@ -415,7 +472,7 @@ fun MapScreen(
                                 onSearch = { isSearchActive = false },
                                 active = isSearchActive,
                                 onActiveChange = { isSearchActive = it },
-                                placeholder = { Text("Tìm phòng...") },
+                                placeholder = { Text(tr("Tìm phòng...", "Find room...")) },
                                 leadingIcon = {
                                     Icon(Icons.Default.Search, contentDescription = null)
                                 },
@@ -434,7 +491,11 @@ fun MapScreen(
                                                 ttsController.setEnabled(voiceOn)
                                             }) {
                                                 Text(
-                                                    text = if (voiceOn) "Giọng bật" else "Giọng tắt",
+                                                    text = if (voiceOn) {
+                                                        tr("Giọng bật", "Voice on")
+                                                    } else {
+                                                        tr("Giọng tắt", "Voice off")
+                                                    },
                                                     color = NavBlue,
                                                     fontSize = 12.sp,
                                                 )
@@ -443,15 +504,21 @@ fun MapScreen(
                                                 liveShareOn = !liveShareOn
                                                 if (liveShareOn) {
                                                     clipboard.setText(AnnotatedString(shareSessionId))
+                                                    val shareMsg = trStatic(
+                                                        "Chia sẻ bật · mã $shareSessionId (đã copy)",
+                                                        "Sharing on · code $shareSessionId (copied)",
+                                                    )
                                                     mapScope.launch {
-                                                        snackbarHostState.showSnackbar(
-                                                            "Chia sẻ bật · mã $shareSessionId (đã copy)",
-                                                        )
+                                                        snackbarHostState.showSnackbar(shareMsg)
                                                     }
                                                 }
                                             }) {
                                                 Text(
-                                                    text = if (liveShareOn) "Share ${livePeers.size}" else "Share",
+                                                    text = if (liveShareOn) {
+                                                        tr("Chia sẻ ${livePeers.size}", "Share ${livePeers.size}")
+                                                    } else {
+                                                        tr("Chia sẻ", "Share")
+                                                    },
                                                     color = if (liveShareOn) Color(0xFF10B981) else NavBlue,
                                                     fontSize = 12.sp,
                                                 )
@@ -463,6 +530,24 @@ fun MapScreen(
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 13.sp
                                                 )
+                                            }
+                                            TextButton(
+                                                onClick = {
+                                                    val store = com.khoaluan.indoornav.data.local.IndoorFavoritesStore(context)
+                                                    val floors = viewModel.getTotalFloorsForBuilding(buildingId)
+                                                    store.save(
+                                                        com.khoaluan.indoornav.data.local.IndoorFavoritesStore.SavedIndoor(
+                                                            buildingId = buildingId,
+                                                            name = "Indoor $buildingId",
+                                                            totalFloors = floors,
+                                                        ),
+                                                    )
+                                                    mapScope.launch {
+                                                        snackbarHostState.showSnackbar("Đã lưu Indoor vào Favorites")
+                                                    }
+                                                },
+                                            ) {
+                                                Text(tr("Lưu", "Save"), color = Color(0xFFE91E63), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                             }
                                         }
                                     }
@@ -633,7 +718,7 @@ fun MapScreen(
                                     contentColor = Color.White,
                                     elevation = FloatingActionButtonDefaults.elevation(6.dp),
                                 ) {
-                                    Icon(Icons.Default.Search, contentDescription = "Quét QR")
+                                    Icon(Icons.Default.Search, contentDescription = tr("Quét QR", "Scan QR"))
                                 }
                             }
 
@@ -653,7 +738,7 @@ fun MapScreen(
                                             .align(Alignment.BottomCenter)
                                             .padding(start = 16.dp, end = 16.dp, bottom = 72.dp),
                                         icon = { Icon(Icons.Default.LocationOn, contentDescription = null) },
-                                        text = { Text("Lưu xe") },
+                                        text = { Text(tr("Lưu xe", "Save car")) },
                                         containerColor = Color(0xFF10B981),
                                         contentColor = Color.White
                                     )
@@ -672,7 +757,7 @@ fun MapScreen(
                                             onClick = { viewModel.findMyCar() },
                                             modifier = Modifier.weight(1f),
                                             icon = { Icon(Icons.Default.Star, contentDescription = null) },
-                                            text = { Text("Tìm xe") },
+                                            text = { Text(tr("Tìm xe", "Find car")) },
                                             containerColor = Color(0xFFF59E0B),
                                             contentColor = Color.White
                                         )
@@ -685,7 +770,7 @@ fun MapScreen(
                                             containerColor = Color.LightGray,
                                             contentColor = Color.Black
                                         ) {
-                                            Icon(Icons.Default.Close, contentDescription = "Xóa điểm đỗ")
+                                            Icon(Icons.Default.Close, contentDescription = tr("Xóa điểm đỗ", "Clear parking"))
                                         }
                                     }
                                 }
@@ -717,13 +802,35 @@ fun MapScreen(
                                 instructionText   = navState.currentInstructionText,
                                 pathHasFloorConnector = navState.pathHasFloorConnector,
                                 onOpenFloorPicker = { showFloorSheet = true },
+                                suggestedFloorLabel = navState.suggestedTargetFloor?.let { f ->
+                                    if (f == 0) "tầng trệt" else "tầng $f"
+                                },
+                                onSwitchSuggestedFloor = if (navState.readyForFloorSwitch || navState.suggestedTargetFloor != null) {
+                                    {
+                                        viewModel.switchToSuggestedFloor()
+                                        mapScope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                message = "Đã chuyển tầng — quét QR gần connector để tiếp tục.",
+                                                duration = SnackbarDuration.Short,
+                                            )
+                                        }
+                                    }
+                                } else null,
                                 onQrScan          = onScanQR,
                                 onPreviewPath     = { viewModel.previewPath() },
                                 onStartNavigation = { viewModel.startNavigationMode() },
                                 onStopNavigation  = {
-                                    viewModel.stopNavigation()
+                                    viewModel.clearRouteOnly()
                                     selectedRoomId   = null
                                     selectedRoomName = null
+                                },
+                                onRecalculate = if (navState.destinationNodeId != null) {
+                                    { viewModel.recalculateRoute() }
+                                } else null,
+                                showRelocalize = navState.userPos != null || navState.startAnchorPos != null,
+                                onRelocalize = {
+                                    viewModel.requestRelocalization()
+                                    onScanQR()
                                 },
                             )
                         }
@@ -734,6 +841,7 @@ fun MapScreen(
                         FloorSelectorSheet(
                             currentFloor = currentFloor,
                             totalFloors = viewModel.getTotalFloorsForBuilding(buildingId),
+                            lastVisitedFloor = viewModel.lastFloorFor(buildingId),
                             onFloorSelected = { floor ->
                                 currentFloor = floor
                                 val preserve = navState.suggestedTargetFloor == floor ||
@@ -777,30 +885,46 @@ fun MapScreen(
                     if (showLowConfidenceDialog) {
                         AlertDialog(
                             onDismissRequest = { showLowConfidenceDialog = false },
-                            title = { Text("⚠️ Cảnh báo độ chính xác") },
-                            text = { Text("Độ chính xác hiện tại đang thấp. Vị trí xe có thể bị lệch vài mét so với thực tế do cảm biến trôi dạt.\nBạn vẫn muốn lưu vị trí này?") },
+                            title = { Text(tr("⚠️ Cảnh báo độ chính xác", "⚠️ Accuracy warning")) },
+                            text = {
+                                Text(
+                                    tr(
+                                        "Độ chính xác hiện tại đang thấp. Vị trí xe có thể bị lệch vài mét so với thực tế do cảm biến trôi dạt.\nBạn vẫn muốn lưu vị trí này?",
+                                        "Current accuracy is low. The car position may be off by a few meters due to sensor drift.\nSave this position anyway?",
+                                    ),
+                                )
+                            },
                             confirmButton = {
-                                TextButton(onClick = { 
+                                TextButton(onClick = {
                                     showLowConfidenceDialog = false
                                     showNoteDialog = true
-                                }) { Text("Tiếp tục lưu") }
+                                }) { Text(tr("Tiếp tục lưu", "Save anyway")) }
                             },
                             dismissButton = {
-                                TextButton(onClick = { showLowConfidenceDialog = false }) { Text("Hủy") }
-                            }
+                                TextButton(onClick = { showLowConfidenceDialog = false }) {
+                                    Text(tr("Hủy", "Cancel"))
+                                }
+                            },
                         )
                     }
 
                     if (showNoteDialog) {
                         AlertDialog(
                             onDismissRequest = { showNoteDialog = false },
-                            title = { Text("Ghi chú vị trí xe") },
+                            title = { Text(tr("Ghi chú vị trí xe", "Car location note")) },
                             text = {
                                 OutlinedTextField(
                                     value = parkingNote,
                                     onValueChange = { parkingNote = it },
-                                    label = { Text("Ví dụ: Cạnh thang máy cuốn, Cột C3...") },
-                                    singleLine = true
+                                    label = {
+                                        Text(
+                                            tr(
+                                                "Ví dụ: Cạnh thang máy cuốn, Cột C3...",
+                                                "E.g. Near escalator, Column C3...",
+                                            ),
+                                        )
+                                    },
+                                    singleLine = true,
                                 )
                             },
                             confirmButton = {
@@ -808,11 +932,13 @@ fun MapScreen(
                                     viewModel.saveParkingPosition(parkingNote.takeIf { it.isNotBlank() })
                                     showNoteDialog = false
                                     parkingNote = ""
-                                }) { Text("Lưu lại") }
+                                }) { Text(tr("Lưu lại", "Save")) }
                             },
                             dismissButton = {
-                                TextButton(onClick = { showNoteDialog = false }) { Text("Bỏ qua ghi chú") }
-                            }
+                                TextButton(onClick = { showNoteDialog = false }) {
+                                    Text(tr("Bỏ qua ghi chú", "Skip note"))
+                                }
+                            },
                         )
                     }
                 }
@@ -832,7 +958,7 @@ fun MapScreen(
                 IconButton(onClick = onBack) {
                     Icon(
                         Icons.Default.ArrowBack,
-                        contentDescription = "Quay lại",
+                        contentDescription = tr("Quay lại", "Back"),
                         tint = Color(0xFF424242),
                         modifier = Modifier.size(20.dp),
                     )

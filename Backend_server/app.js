@@ -60,16 +60,36 @@ function createApp() {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.sendFile(path.join(__dirname, 'public', 'outdoor', 'index.html'));
   });
+  /** Place deep-link — Outdoor viewer (Landing). Canonical: /outdoor/place/:slug */
+  app.get(['/outdoor/place/:slug', '/app/place/:slug'], (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.sendFile(path.join(__dirname, 'public', 'outdoor', 'index.html'));
+  });
   app.get(['/demo', '/demo/', '/demo/index.html'], (req, res) => {
     res.redirect(302, '/login');
   });
   app.get(['/explore', '/explore/'], (req, res) => {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-    res.sendFile(path.join(__dirname, 'public', 'explore', 'index.html'));
+    const q = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+    res.redirect(302, '/outdoor' + q);
   });
-  app.get(['/app', '/app/', '/app/index.html'], (req, res) => {
+  app.get(['/org', '/org/', '/org/index.html'], (req, res) => {
+    // Org Console entry (LOCKED) — tạm reuse Admin shell đã RBAC theo org
+    res.redirect(302, '/admin/dashboard.html');
+  });
+  app.get(['/admin', '/admin/'], (req, res) => {
+    res.redirect(302, '/admin/dashboard.html');
+  });
+  app.get(['/signup', '/signup/', '/signup/index.html'], (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-    res.sendFile(path.join(__dirname, 'public', 'app', 'index.html'));
+    res.sendFile(path.join(__dirname, 'public', 'signup', 'index.html'));
+  });
+  app.get(['/get-app', '/get-app/', '/get-app/index.html'], (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.sendFile(path.join(__dirname, 'public', 'get-app', 'index.html'));
+  });
+  /** FINAL LOCK: /app End User portal REMOVED → CTA Android */
+  app.get(['/app', '/app/', '/app/index.html'], (req, res) => {
+    res.redirect(302, '/get-app');
   });
   app.get('/blog/:slug', (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');

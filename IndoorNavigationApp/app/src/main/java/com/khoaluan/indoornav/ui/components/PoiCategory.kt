@@ -9,18 +9,21 @@ import java.text.Normalizer
  * - Web Editor [type] tiếng Việt: "WC", "Thang máy", "Cầu thang"…
  * - Web Editor [typeIndex]: 0=WC, 1=Thang máy, 2=Thang cuốn, 3=Cầu thang…
  */
-enum class PoiCategory(val label: String, val color: Color) {
-    TOILET("WC", Color(0xFF0288D1)),
-    STAIRS("Thang bộ", Color(0xFF7B1FA2)),
-    ELEVATOR("Thang máy", Color(0xFF388E3C)),
-    EXIT("Lối ra", Color(0xFFE53935)),
-    FOOD("Ăn uống", Color(0xFFF57C00)),
-    PARKING("Bãi đỗ xe", Color(0xFF2563EB)),
-    MEDICAL("Y tế", Color(0xFFDC2626)),
-    SECURITY("Bảo vệ", Color(0xFF475569)),
-    SAFETY("An toàn", Color(0xFFEF4444)),
-    INFO("Tiện ích", Color(0xFFFFA000)),
-    OTHER("Khác", Color(0xFF78909C));
+enum class PoiCategory(val labelVi: String, val labelEn: String, val color: Color) {
+    TOILET("Nhà vệ sinh", "Restroom", Color(0xFF0288D1)),
+    STAIRS("Thang bộ", "Stairs", Color(0xFFFB8C00)),
+    ELEVATOR("Thang máy", "Elevator", Color(0xFF388E3C)),
+    EXIT("Lối ra", "Exit", Color(0xFFE53935)),
+    FOOD("Ăn uống", "Food", Color(0xFFF57C00)),
+    PARKING("Bãi đỗ xe", "Parking", Color(0xFF2563EB)),
+    MEDICAL("Y tế", "Medical", Color(0xFFDC2626)),
+    SECURITY("Bảo vệ", "Security", Color(0xFF475569)),
+    SAFETY("An toàn", "Safety", Color(0xFFEF4444)),
+    INFO("Tiện ích", "Amenities", Color(0xFFFFA000)),
+    OTHER("Khác", "Other", Color(0xFF78909C));
+
+    val label: String
+        get() = if (com.khoaluan.indoornav.ui.i18n.AppLocaleHolder.isEn()) labelEn else labelVi
 
     companion object {
         /** Khớp thứ tự mảng poiTypes trong WebMapEditor/js/pois.js */

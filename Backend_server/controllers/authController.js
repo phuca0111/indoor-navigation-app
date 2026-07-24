@@ -257,11 +257,18 @@ function googleAuthStart(req, res) {
 async function googleAuthCallback(req, res) {
   try {
     const result = await completeGoogleOAuth(req.query || {}, context(req));
-    if (!result.ok) return res.redirect(`/login#google=0&error=${encodeURIComponent(result.code)}`);
-    return res.redirect(
-      `/login#token=${encodeURIComponent(result.session.token)}` +
-      `&refreshToken=${encodeURIComponent(result.session.refreshToken)}&google=1`
-    );
+    if (!result.ok) {
+      return res.redirect(`/login#google=0&error=${encodeURIComponent(result.code || 'oauth_failed')}`);
+    }
+    const u = result.session.user || {};
+    const q =
+      `/login#google=1` +
+      `&token=${encodeURIComponent(result.session.token)}` +
+      `&refreshToken=${encodeURIComponent(result.session.refreshToken || '')}` +
+      `&role=${encodeURIComponent(u.role || '')}` +
+      `&email=${encodeURIComponent(u.email || '')}` +
+      `&userId=${encodeURIComponent(String(u.id || ''))}`;
+    return res.redirect(q);
   } catch (error) {
     return res.redirect(`/login#google=0&error=${encodeURIComponent(error.code || 'oauth_failed')}`);
   }

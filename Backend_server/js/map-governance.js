@@ -1053,15 +1053,16 @@
         const risk = Math.round((p.risk_score || 0) * 100);
         const rec = p.validation?.recommendation || '—';
         let actions = '—';
-        if (p.status === 'PENDING' || p.status === 'DUPLICATE') {
+        if (['PENDING', 'DUPLICATE', 'SUBMITTED', 'IN_REVIEW', 'DRAFT'].includes(p.status)) {
           actions =
             '<button type="button" class="btn-create" onclick="MapGovernance.approveProposal(\'' + p._id + '\',' +
-            (p.status === 'DUPLICATE' ? 'true' : 'false') + ')">Duyệt</button> ' +
+            (p.status === 'DUPLICATE' || (p.risk === 'HIGH') ? 'true' : 'false') + ')">Duyệt</button> ' +
             '<button type="button" class="btn-logout" onclick="MapGovernance.rejectProposal(\'' + p._id + '\')">Từ chối</button>';
         }
+        const displayName = p.name || p.proposed_name || '—';
         return (
           '<tr>' +
-          '<td><strong>' + escapeHtml(p.name) + '</strong><div style="font-size:11px;color:#667085;">' + escapeHtml(p.category || '') + '</div></td>' +
+          '<td><strong>' + escapeHtml(displayName) + '</strong><div style="font-size:11px;color:#667085;">' + escapeHtml(p.category || '') + '</div></td>' +
           '<td style="font-size:12px;">' + escapeHtml(gps) + '</td>' +
           '<td>' + dup + '%</td>' +
           '<td>' + risk + '%</td>' +

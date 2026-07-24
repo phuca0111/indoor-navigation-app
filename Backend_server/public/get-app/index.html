@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dùng ứng dụng Android | IndoorNav</title>
+  <meta name="description" content="End User dùng IndoorNav trên Android — không còn portal web /app.">
+  <link rel="stylesheet" href="/styles.css?v=20260721c6">
+  <link rel="stylesheet" href="/css/landing-layout.css?v=20260721settings2">
+  <link rel="stylesheet" href="/css/landing-auth.css?v=20260721c6">
+</head>
+<body>
+<header class="header">
+  <div class="container header-inner">
+    <div class="logo">
+      <a href="/" aria-label="IndoorNav — Trang chủ">
+        <span class="logo-icon">📍</span>
+        <span class="logo-text">IndoorNav</span>
+      </a>
+    </div>
+    <nav class="nav">
+      <a href="/">Tổng quan</a>
+      <a href="/pricing">Giá</a>
+      <a href="/contact">Liên hệ</a>
+    </nav>
+    <div class="auth-actions">
+      <a href="/login" class="auth-btn login-btn">Đăng nhập Admin / Org</a>
+    </div>
+  </div>
+</header>
+
+<section class="landing-page-section">
+  <div class="container">
+    <div class="landing-card landing-card--narrow">
+      <h2>Trải nghiệm End User trên Android</h2>
+      <p class="landing-muted">
+        Theo kiến trúc đã khóa: người dùng cuối <strong>không dùng website</strong> để tìm Place,
+        Indoor Map hay Favorites. Toàn bộ nằm trên <strong>ứng dụng Android</strong>
+        (UX kiểu Google Maps — Outdoor ⇄ Indoor).
+      </p>
+      <p class="landing-muted" id="sessionHint" hidden></p>
+      <ul class="landing-muted" style="text-align:left;line-height:1.7;">
+        <li>Tìm Place · Outdoor Map · Indoor · QR · Navigation</li>
+        <li>Favorites · History · Profile · Settings</li>
+        <li>Đăng nhập Google trên App</li>
+      </ul>
+      <p style="margin-top:1.25rem;">
+        <a class="btn btn-primary btn-large btn-block" href="/">Về trang chủ</a>
+      </p>
+      <p class="auth-links" style="margin-top:1rem;">
+        Quản trị hệ thống? <a href="/login?next=/admin"><strong>Đăng nhập Admin</strong></a><br>
+        Tổ chức? <a href="/login?next=/org"><strong>Đăng nhập Org</strong></a><br>
+        Doanh nghiệp mới? <a href="/register">Đăng ký tổ chức</a>
+      </p>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="container">
+    <p>&copy; IndoorNav — Hệ thống bản đồ &amp; dẫn đường trong nhà.</p>
+  </div>
+</footer>
+<script>
+(function () {
+  var email = localStorage.getItem('userEmail');
+  var role = localStorage.getItem('userRole');
+  var el = document.getElementById('sessionHint');
+  if (el && email) {
+    el.hidden = false;
+    el.textContent = 'Đã đăng nhập: ' + email + (role ? ' (' + role + ')' : '') +
+      '. Mở ứng dụng Android và đăng nhập cùng tài khoản Google / email.';
+  }
+})();
+</script>
+</body>
+</html>

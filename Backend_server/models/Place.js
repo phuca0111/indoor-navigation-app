@@ -52,6 +52,28 @@ const placeSchema = new mongoose.Schema({
     maxlength: 80
   },
 
+  /** URL-friendly id — Place Platform deep-link */
+  slug: {
+    type: String,
+    default: '',
+    trim: true,
+    maxlength: 100
+  },
+
+  description: {
+    type: String,
+    default: '',
+    maxlength: 4000
+  },
+
+  /** Geofence circle (m) khi chưa có boundary polygon */
+  radius: {
+    type: Number,
+    default: 80,
+    min: 10,
+    max: 5000
+  },
+
   // GeoJSON Polygon (optional) — { type: 'Polygon', coordinates: [[[lng,lat],...]] }
   boundary: {
     type: mongoose.Schema.Types.Mixed,
@@ -122,6 +144,13 @@ const placeSchema = new mongoose.Schema({
     default: null
   },
 
+  /** Người duyệt publish / verification cuối (Place Platform) */
+  approved_by: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+
   notes: {
     type: String,
     default: '',
@@ -133,18 +162,26 @@ const placeSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Building',
     default: null
+  },
+
+  /** Creator analytics — Place detail / deep-link views */
+  view_count: {
+    type: Number,
+    default: 0,
+    min: 0
   }
 }, {
   timestamps: true
 });
 
-placeSchema.index({ name: 'text', aliases: 'text', address: 'text' });
+placeSchema.index({ name: 'text', aliases: 'text', address: 'text', description: 'text' });
 placeSchema.index({ latitude: 1, longitude: 1 });
 placeSchema.index({ status: 1, verified: 1 });
 placeSchema.index({ verification_status: 1, status: 1 });
 placeSchema.index({ category: 1 });
 placeSchema.index({ owner_org_id: 1 });
 placeSchema.index({ publication_status: 1, owner_type: 1 });
+placeSchema.index({ slug: 1 }, { unique: true, sparse: true });
 
 placeSchema.pre('save', function normalizePlacePlatformFields() {
   if (Array.isArray(this.aliases)) {

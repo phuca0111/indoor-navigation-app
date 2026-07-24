@@ -34,6 +34,8 @@ const routes = {
   workspaces: require('./workspaceRoutes'),
   indoorWorkspaces: require('./indoorWorkspaceRoutes'),
   hub: require('./hubRoutes'),
+  placePlatform: require('./placePlatformRoutes'),
+  creator: require('./creatorRoutes'),
   mapReviews: require('./mapReviewRoutes'),
   placeOwnership: require('./placeOwnershipRoutes'),
   placeMerges: require('./placeMergeRoutes'),
@@ -74,10 +76,14 @@ function mountRoutes(app, middleware = {}) {
   app.use('/api/buildings', routes.buildings);
   app.use('/api/places', routes.places);
   app.use('/api/proposals', routes.proposals);
+  /** Alias Admin Map Governance — UI gọi /place-proposals */
+  app.use('/api/place-proposals', routes.proposals);
   app.use('/api/moderation', routes.moderation);
   app.use('/api/workspaces', routes.workspaces);
   app.use('/api/indoor-workspaces', routes.indoorWorkspaces);
   app.use('/api/hub', routes.hub);
+  app.use('/api/place-platform', routes.placePlatform);
+  app.use('/api/creator', routes.creator);
   app.use('/api/map-reviews', routes.mapReviews);
   app.use('/api/place-ownership', routes.placeOwnership);
   app.use('/api/place-merges', routes.placeMerges);

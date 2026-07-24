@@ -31,6 +31,9 @@ data class MapData(
     @SerializedName("bgX") val bgX: Float = 0f,
     @SerializedName("bgY") val bgY: Float = 0f,
     @SerializedName("bgScale") val bgScale: Float = 1f,
+    /** Scale riêng trục X/Y (Web Editor). 0 = dùng bgScale. */
+    @SerializedName("bgScaleX") val bgScaleX: Float = 0f,
+    @SerializedName("bgScaleY") val bgScaleY: Float = 0f,
     @SerializedName("bgRotation") val bgRotation: Float = 0f,
     /**
      * Góc lệch giữa Bắc địa lý (cảm biến) và trục “lên” của map (độ).
@@ -128,7 +131,9 @@ data class Poi(
     val y: Int,
     val type: String? = null,
     @SerializedName("poi_type") val poiType: String? = null,
-    val typeIndex: Int? = null
+    val typeIndex: Int? = null,
+    /** Kích thước icon POI trên canvas (px map). Null → mặc định 24. */
+    val size: Float? = null,
 )
 
 /**
@@ -157,6 +162,8 @@ fun MapData.sanitized(): MapData = copy(
     bgX = bgX ?: 0f,
     bgY = bgY ?: 0f,
     bgScale = bgScale ?: 1f,
+    bgScaleX = bgScaleX ?: 0f,
+    bgScaleY = bgScaleY ?: 0f,
     bgRotation = bgRotation ?: 0f,
     mapBearingOffset = mapBearingOffset ?: 0f,
 )

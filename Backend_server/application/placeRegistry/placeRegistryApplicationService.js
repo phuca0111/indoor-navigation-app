@@ -1,6 +1,7 @@
 /**
  * GĐ2 — Place Registry Service (public list / get / search).
  */
+const mongoose = require('mongoose');
 const Place = require('../../models/Place');
 const Building = require('../../models/Building');
 const {
@@ -17,11 +18,14 @@ function serializeRegistryPlace(doc, extras = {}) {
   return {
     _id: p._id,
     name: p.name,
+    slug: p.slug || '',
     aliases: p.aliases || [],
     latitude: p.latitude,
     longitude: p.longitude,
+    radius: p.radius != null ? p.radius : 80,
     address: p.address || '',
     category: p.category || '',
+    description: p.description || '',
     publication_status: p.publication_status || null,
     owner_type: p.owner_type || OWNER_TYPE.UNCLAIMED,
     verification_status: p.verification_status || 'UNVERIFIED',
@@ -93,7 +97,13 @@ async function listPublicPlaces({ q, category, limit = 50, skip = 0 } = {}) {
 }
 
 async function getPublicPlace(id) {
-  const place = await Place.findById(id).lean();
+  let place = null;
+  if (mongoose.Types.ObjectId.isValid(String(id))) {
+    place = await Place.findById(id).lean();
+  }
+  if (!place) {
+    place = await Place.findOne({ slug: String(id).trim() }).lean();
+  }
   if (!place || !isPlacePubliclyListed(place)) {
     const err = new Error('Không tìm thấy Place công khai.');
     err.status = 404;

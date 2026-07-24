@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.khoaluan.indoornav.ui.i18n.tr
 import com.khoaluan.indoornav.ui.theme.NavBlue
 
 /** Chip lọc loại POI trên bản đồ. null = hiện tất cả. */
@@ -41,7 +42,7 @@ fun PoiFilterChips(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         filters.forEach { category ->
-            val label = category?.label ?: "Tất cả"
+            val label = category?.label ?: tr("Tất cả", "All")
             val selectedNow = selected == category
             FilterChip(
                 selected = selectedNow,
