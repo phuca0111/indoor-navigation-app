@@ -19,30 +19,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.khoaluan.indoornav.ui.i18n.tr
 import com.khoaluan.indoornav.ui.theme.NavBlue
 import com.khoaluan.indoornav.ui.theme.NavLightBlue
 
 /**
  * Overlay hướng dẫn lần đầu — hiển thị khi chưa quét QR và chưa chọn điểm đến.
- *
- * UX fix: User phải biết phải làm gì khi mở app lần đầu.
- * Rule: "Navigation must be clear" (MAP_UI_SPECIAL_PROMPT)
- *
- * @param visible     Hiện/ẩn overlay (animate fade)
- * @param onQrScan    Callback khi nhấn nút "Quét QR"
- * @param onDismiss   Callback khi nhấn "Bỏ qua" — MapScreen set showEmptyState = false
  */
 @Composable
 fun EmptyStateOverlay(
     visible: Boolean,
     onQrScan: () -> Unit,
-    onDismiss: () -> Unit,   // WHY: thiếu prop này khiến nút "Bỏ qua" không có hiệu lực
+    onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(),
-        exit  = fadeOut(),
+        exit = fadeOut(),
         modifier = modifier,
     ) {
         Box(
@@ -64,7 +58,6 @@ fun EmptyStateOverlay(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    // Icon QR lớn với nền tròn
                     Box(
                         modifier = Modifier
                             .size(72.dp)
@@ -80,37 +73,38 @@ fun EmptyStateOverlay(
                         )
                     }
 
-                    // Tiêu đề
                     Text(
-                        text = "Xác định vị trí của bạn",
+                        text = tr("Xác định vị trí của bạn", "Find your location"),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF212121),
                         textAlign = TextAlign.Center,
                     )
 
-                    // Mô tả
                     Text(
-                        text = "Quét mã QR gần bạn để bắt đầu điều hướng trong tòa nhà",
+                        text = tr(
+                            "Quét mã QR gần bạn để bắt đầu điều hướng trong tòa nhà",
+                            "Scan a nearby QR code to start indoor navigation",
+                        ),
                         fontSize = 13.sp,
                         color = Color(0xFF757575),
                         textAlign = TextAlign.Center,
                         lineHeight = 18.sp,
                     )
 
-                    // Divider mỏng
                     HorizontalDivider(color = Color(0xFFEEEEEE))
 
-                    // Hướng dẫn tìm kiếm
                     Text(
-                        text = "Hoặc dùng ô Tìm phòng phía trên để chọn điểm đến trước",
+                        text = tr(
+                            "Hoặc dùng ô Tìm phòng phía trên để chọn điểm đến trước",
+                            "Or use Find room above to pick a destination first",
+                        ),
                         fontSize = 12.sp,
                         color = Color(0xFF9E9E9E),
                         textAlign = TextAlign.Center,
                         lineHeight = 17.sp,
                     )
 
-                    // Nút Quét QR
                     Button(
                         onClick = onQrScan,
                         modifier = Modifier
@@ -130,18 +124,20 @@ fun EmptyStateOverlay(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "Quét QR ngay",
+                            text = tr("Quét QR ngay", "Scan QR now"),
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
 
-                    // Nút phụ — bỏ qua, gọi onDismiss để MapScreen ẩn overlay
                     TextButton(
                         onClick = onDismiss,
                         colors = ButtonDefaults.textButtonColors(contentColor = NavLightBlue),
                     ) {
-                        Text("Bỏ qua, tôi tự tìm trên bản đồ", fontSize = 12.sp)
+                        Text(
+                            tr("Bỏ qua, tôi tự tìm trên bản đồ", "Skip, I'll explore the map myself"),
+                            fontSize = 12.sp,
+                        )
                     }
                 }
             }

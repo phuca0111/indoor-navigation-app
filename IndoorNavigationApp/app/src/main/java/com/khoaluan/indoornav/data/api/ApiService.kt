@@ -1,9 +1,6 @@
 package com.khoaluan.indoornav.data.api
 
-// ApiService.kt
-// MUC DICH: Dinh nghia tat ca REST API endpoints Retrofit goi den Backend Node.js
-// Ket noi den: RetrofitClient.kt (BASE_URL lay tu BuildConfig theo flavor local/prod)
-// Backend routes: Backend_server/routes/
+// ApiService.kt — REST endpoints → Backend Node.js
 
 import com.khoaluan.indoornav.BuildConfig
 import com.khoaluan.indoornav.data.model.Building
@@ -11,52 +8,142 @@ import com.khoaluan.indoornav.data.model.MapData
 import com.khoaluan.indoornav.data.model.MapResponse
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface ApiService {
 
-    // GET /api/buildings/public - Lay danh sach tat ca toa nha (public, khong can auth)
-// Tra ve: List<Building> -> dung trong MapViewModel.fetchBuildings() de hien thi danh sach toa nha
     @GET("buildings/public")
     suspend fun getBuildings(): Response<List<Building>>
 
-    // GĐ8 — Place Registry
     @GET("places")
     suspend fun getPlaces(
         @Query("q") q: String? = null,
+        @Query("category") category: String? = null,
         @Query("limit") limit: Int = 50,
     ): Response<PlacesListResponse>
 
     @GET("places/{id}")
     suspend fun getPlace(@Path("id") placeId: String): Response<PlaceDetailResponse>
 
+    @GET("places/public/{idOrSlug}")
+    suspend fun getPlacePublic(@Path("idOrSlug") idOrSlug: String): Response<PlaceDetailResponse>
+
+    @GET("place-platform/places/{slugOrId}")
+    suspend fun getPlaceBySlugOrId(@Path("slugOrId") slugOrId: String): Response<PlacePlatformPlaceResponse>
+
+    @POST("place-platform/places/{slugOrId}/view")
+    suspend fun recordPlaceView(@Path("slugOrId") slugOrId: String): Response<SimpleMessageResponse>
+
     @POST("places/search")
     suspend fun searchPlaces(@Body body: PlaceSearchBody): Response<PlaceSearchResponse>
 
-    // GET /api/maps/{buildingId}/{floor}/public - Lay ban do 1 tang cu the
-// Tra ve: MapResponse {mapData, buildingId, floorNumber} -> dung trong MapViewModel.fetchMap()
+    @POST("place-platform/reviews")
+    suspend fun upsertPlaceReview(@Body body: PlaceReviewBody): Response<PlaceReviewResponse>
+
+    @POST("place-platform/reports")
+    suspend fun createPlaceReport(@Body body: PlaceReportBody): Response<PlaceReportResponse>
+
+    @POST("hub/community/follow")
+    suspend fun followPlace(@Body body: PlaceFollowBody): Response<SimpleMessageResponse>
+
+    @DELETE("hub/community/follow/{placeId}")
+    suspend fun unfollowPlace(@Path("placeId") placeId: String): Response<SimpleMessageResponse>
+
+    @GET("hub/community/following")
+    suspend fun listFollowing(): Response<PlaceFollowingResponse>
+
+    @GET("place-platform/reviews/mine")
+    suspend fun myReviews(@Query("limit") limit: Int = 50): Response<PlaceReviewsMineResponse>
+
+    @GET("place-platform/reports/mine")
+    suspend fun myReports(@Query("limit") limit: Int = 50): Response<PlaceReportsMineResponse>
+
+    @GET("hub/proposals")
+    suspend fun listHubProposals(): Response<PlaceProposalsListResponse>
+
+    @POST("place-proposals")
+    suspend fun createPlaceProposal(@Body body: PlaceProposalBody): Response<PlaceProposalCreateResponse>
+
+    @GET("hub/workspaces")
+    suspend fun listHubWorkspaces(): Response<HubWorkspacesResponse>
+
+    @GET("creator/me/stats")
+    suspend fun getCreatorStats(): Response<CreatorStatsResponse>
+
+    @GET("hub/me")
+    suspend fun getHubMe(): Response<HubMeResponse>
+
+    @GET("hub/favorites")
+    suspend fun listFavorites(): Response<HubFavoritesListResponse>
+
+    @GET("hub/favorites/check")
+    suspend fun checkFavorite(@Query("place_id") placeId: String): Response<HubFavoriteCheckResponse>
+
+    @POST("hub/favorites")
+    suspend fun addFavorite(@Body body: HubPlaceIdBody): Response<HubFavoriteMutationResponse>
+
+    @DELETE("hub/favorites/{placeId}")
+    suspend fun removeFavorite(@Path("placeId") placeId: String): Response<HubFavoriteMutationResponse>
+
+    @GET("hub/history")
+    suspend fun listHistory(): Response<HubHistoryListResponse>
+
+    @POST("hub/history")
+    suspend fun addHistory(@Body body: HubHistoryBody): Response<HubHistoryResponse>
+
+    @DELETE("hub/history")
+    suspend fun clearHistory(@Query("type") type: String? = null): Response<HubHistoryClearResponse>
+
+    @GET("hub/settings")
+    suspend fun getHubSettings(): Response<HubSettingsResponse>
+
+    @PUT("hub/settings")
+    suspend fun putHubSettings(@Body body: HubSettingsResponse): Response<HubSettingsResponse>
+
+    @GET("users/me")
+    suspend fun getUserMe(): Response<UserProfileResponse>
+
+    @GET("users/me/sessions")
+    suspend fun listUserSessions(): Response<List<UserSessionDto>>
+
+    @DELETE("users/me/sessions/{sessionId}")
+    suspend fun revokeUserSession(@Path("sessionId") sessionId: String): Response<SimpleOkMessage>
+
+    @GET("notifications")
+    suspend fun listNotifications(
+        @Query("limit") limit: Int = 30,
+        @Query("unread") unread: Boolean? = null,
+    ): Response<NotificationListResponse>
+
+    @GET("notifications/unread-count")
+    suspend fun notificationUnreadCount(): Response<NotificationUnreadResponse>
+
+    @PATCH("notifications/{id}/read")
+    suspend fun markNotificationRead(@Path("id") id: String): Response<SimpleOkMessage>
+
+    @POST("notifications/read-all")
+    suspend fun markAllNotificationsRead(): Response<NotificationUnreadResponse>
+
     @GET("maps/{buildingId}/{floor}/public")
     suspend fun getMapByFloor(
         @Path("buildingId") buildingId: String,
-        @Path("floor") floor: Int
+        @Path("floor") floor: Int,
     ): Response<MapResponse>
 
-    // GET /api/maps/{buildingId}/download — toàn bộ tầng (W3 multi-floor)
     @GET("maps/{buildingId}/download")
     suspend fun getFullBuildingMap(
-        @Path("buildingId") buildingId: String
+        @Path("buildingId") buildingId: String,
     ): Response<BuildingFloorsResponse>
 
-    // GET /api/qr/{qrCode} - Tra cuu thong tin QR code (public endpoint)
-// Backend: qrController.js lookupQr() -> QrCode.findOne({qr_code})
-// Tra ve: QrLookupResponse {qr_code, building_id, floor_number, x, y, node_id, label}
-// Dung trong: MapViewModel.startNavigation() de chuyen tu QR string -> toa do map
     @GET("qr/{qrCode}")
     suspend fun getQrInfo(
-        @Path("qrCode") qrCode: String
+        @Path("qrCode") qrCode: String,
     ): Response<QrLookupResponse>
 
     companion object {
@@ -77,9 +164,6 @@ data class FloorMapDocument(
     val map_data: MapData? = null,
 )
 
-// QR Lookup Response -- matches backend GET /api/qr/:qrCode
-// Backend: qrController.js lookupQr() returns {qr_code, building_id, floor_number, x, y, node_id, label}
-// Used in MapViewModel.startNavigation() to resolve QR code to map position
 data class QrLookupResponse(
     val qr_code: String,
     val building_id: String,
@@ -87,5 +171,5 @@ data class QrLookupResponse(
     val x: Float,
     val y: Float,
     val node_id: String?,
-    val label: String?
+    val label: String?,
 )

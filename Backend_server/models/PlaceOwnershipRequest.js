@@ -56,6 +56,12 @@ const placeOwnershipSchema = new mongoose.Schema({
     default: '',
     maxlength: 1000
   },
+  /** Place Platform — ORGANIZATION | BUSINESS | SCHOOL | HOSPITAL */
+  claim_category: {
+    type: String,
+    enum: ['ORGANIZATION', 'BUSINESS', 'SCHOOL', 'HOSPITAL'],
+    default: 'ORGANIZATION'
+  },
   reject_reason: {
     type: String,
     default: '',

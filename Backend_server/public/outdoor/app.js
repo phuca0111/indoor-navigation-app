@@ -1,9 +1,10 @@
-/**
- * GĐ6 — Outdoor Discovery (Leaflet + OSM tiles + Place Registry API)
+﻿/**
+ * Outdoor Platform — OSM experience (search · filter · cluster · deep-link · Maps CTA)
  */
 (function () {
   const API = '/api/places';
-  const DEFAULT_CENTER = [10.762622, 106.660172]; // HCM
+  const PP = '/api/place-platform';
+  const DEFAULT_CENTER = [10.762622, 106.660172];
   const GEOFENCE_M = 150;
 
   const map = L.map('map').setView(DEFAULT_CENTER, 13);
@@ -12,19 +13,34 @@
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(map);
 
-  const markersLayer = L.layerGroup().addTo(map);
+  const markersLayer = (typeof L.markerClusterGroup === 'function')
+    ? L.markerClusterGroup()
+    : L.layerGroup();
+  map.addLayer(markersLayer);
+
   let places = [];
   let userMarker = null;
   let userCircle = null;
+  let placeGeofence = null;
   let selectedId = null;
+  let searchTimer = null;
 
   const elQ = document.getElementById('q');
+  const elCat = document.getElementById('category');
   const elResults = document.getElementById('results');
   const elDetail = document.getElementById('detail');
   const elStatus = document.getElementById('statusLine');
 
   function setStatus(text) {
     elStatus.textContent = text || '';
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 
   function haversineM(lat1, lng1, lat2, lng2) {
@@ -37,6 +53,18 @@
         Math.cos((lat2 * Math.PI) / 180) *
         Math.sin(dLng / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function syncUrl(place) {
+    try {
+      if (!place) return;
+      const key = place.slug || place._id;
+      if (place.slug) {
+        history.replaceState({}, '', '/outdoor/place/' + encodeURIComponent(place.slug));
+      } else {
+        history.replaceState({}, '', '/outdoor?place=' + encodeURIComponent(String(key)));
+      }
+    } catch (_) { /* ignore */ }
   }
 
   function renderMarkers(list) {
@@ -58,26 +86,44 @@
     (list || []).forEach((p) => {
       const card = document.createElement('button');
       card.type = 'button';
-      card.className = 'place-card' + (selectedId === p._id ? ' active' : '');
+      card.className = 'place-card' + (String(selectedId) === String(p._id) ? ' active' : '');
       const indoor = p.has_published_indoor
-        ? '<span class="badge ok">Có bản đồ trong nhà</span>'
+        ? '<span class="badge ok">Indoor sẵn sàng</span>'
         : '<span class="badge warn">Chưa có Indoor</span>';
-      const dist = p.distance_m != null ? ` · ${p.distance_m}m` : '';
+      const dist = p.distance_m != null ? ' · ' + p.distance_m + 'm' : '';
       card.innerHTML =
-        `<div class="name">${escapeHtml(p.name || '')}</div>` +
-        `<div class="meta">${escapeHtml(p.category || '—')} · ${escapeHtml(p.address || 'Chưa có địa chỉ')}${dist}</div>` +
+        '<div class="name">' + escapeHtml(p.name || '') + '</div>' +
+        '<div class="meta">' + escapeHtml(p.category || '—') + ' · ' +
+        escapeHtml(p.address || 'Chưa có địa chỉ') + dist + '</div>' +
         indoor;
       card.addEventListener('click', () => selectPlace(p, true));
       elResults.appendChild(card);
     });
   }
 
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+  function drawPlaceGeofence(place) {
+    if (placeGeofence) {
+      map.removeLayer(placeGeofence);
+      placeGeofence = null;
+    }
+    const lat = Number(place.latitude);
+    const lng = Number(place.longitude);
+    const radius = Math.max(20, Number(place.radius) || 80);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    placeGeofence = L.circle([lat, lng], {
+      radius,
+      color: '#2563eb',
+      weight: 1,
+      fillOpacity: 0.06
+    }).addTo(map);
+  }
+
+  function mapsDirectionsUrl(place) {
+    const lat = Number(place.latitude);
+    const lng = Number(place.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return 'https://www.google.com/maps/dir/?api=1&destination=' +
+      encodeURIComponent(lat + ',' + lng);
   }
 
   async function selectPlace(p, pan) {
@@ -88,52 +134,357 @@
     }
     elDetail.innerHTML = '<p class="sub">Đang tải chi tiết…</p>';
     try {
+      let place = p;
+      let rooms = [];
+      const key = p.slug || p._id;
+      const ppRes = await fetch(PP + '/places/' + encodeURIComponent(key));
+      if (ppRes.ok) {
+        const pp = await ppRes.json();
+        place = Object.assign({}, p, pp.place || {});
+      }
       const res = await fetch(API + '/' + encodeURIComponent(p._id));
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Lỗi ' + res.status);
-      const place = data.place || p;
-      const rooms = data.indoor_workspaces || [];
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        place = Object.assign({}, place, data.place || {});
+        rooms = data.indoor_workspaces || [];
+      }
+
+      drawPlaceGeofence(place);
+      syncUrl(place);
+
+      const gmaps = mapsDirectionsUrl(place);
       const indoorHtml = rooms.length
-        ? `<p><strong>${rooms.length}</strong> indoor workspace đã publish.</p>` +
-          rooms.map((b) => `<div class="meta">• ${escapeHtml(b.name)} (${escapeHtml(b.workspace_status || b.status || '')})</div>`).join('')
-        : '<p class="sub">Chưa có bản đồ trong nhà — có thể đề xuất / tạo workspace trên hệ thống.</p>';
+        ? '<p><strong>' + rooms.length + '</strong> indoor đã publish.</p>' +
+          rooms.map(function (b) {
+            const bid = b._id || b.id;
+            return '<div class="meta">• ' + escapeHtml(b.name) +
+              ' <a href="/editor/?buildingId=' + encodeURIComponent(String(bid || '')) +
+              '" target="_blank" rel="noopener">Mở</a></div>';
+          }).join('')
+        : '<p class="sub">Chưa có bản đồ trong nhà.</p>';
+
+      const flags = place.community_flags || {};
+      const flagBits = [
+        flags.verified ? 'Verified' : null,
+        flags.official ? 'Official' : null,
+        flags.community ? 'Community' : null,
+        flags.pending ? 'Pending' : null
+      ].filter(Boolean).join(' · ');
+
       elDetail.innerHTML =
-        `<h2>${escapeHtml(place.name || '')}</h2>` +
-        `<div class="meta">${escapeHtml(place.category || '')} · ${escapeHtml(place.owner_type || '')}</div>` +
-        `<div class="meta">${escapeHtml(place.address || '')}</div>` +
-        indoorHtml;
+        '<h2>' + escapeHtml(place.name || '') + '</h2>' +
+        '<div class="meta">' + escapeHtml(place.category || '') +
+        (flagBits ? ' · ' + escapeHtml(flagBits) : '') + '</div>' +
+        '<div class="meta">' + escapeHtml(place.address || '') + '</div>' +
+        (place.description
+          ? '<p class="sub">' + escapeHtml(place.description).slice(0, 280) + '</p>'
+          : '') +
+        indoorHtml +
+        '<div style="display:flex;gap:0.4rem;margin-top:0.6rem;flex-wrap:wrap;">' +
+        '<button type="button" class="secondary" id="btnFav" style="width:auto;">Yêu thích</button>' +
+        '<button type="button" class="secondary" id="btnFollow" style="width:auto;">Follow</button>' +
+        '<button type="button" class="secondary" id="btnReview" style="width:auto;">Đánh giá</button>' +
+        '<button type="button" class="secondary" id="btnReport" style="width:auto;">Báo cáo</button>' +
+        (gmaps
+          ? '<a class="btn-link" id="btnMaps" href="' + gmaps +
+            '" target="_blank" rel="noopener">Đi tới (Google Maps)</a>'
+          : '') +
+        '<button type="button" class="secondary" id="btnCopy" style="width:auto;">Copy link</button>' +
+        '<a href="/get-app" style="font-size:0.8rem;align-self:center;">Android App</a>' +
+        '</div>';
+      wireFavorite(place);
+      wireFollow(place);
+      wireReview(place);
+      wireReport(place);
+      const btnCopy = document.getElementById('btnCopy');
+      if (btnCopy) {
+        btnCopy.onclick = function () {
+          const link = window.location.origin + '/outdoor/place/' +
+            encodeURIComponent(place.slug || place._id);
+          navigator.clipboard.writeText(link).then(function () {
+            setStatus('Đã copy deep-link');
+          }).catch(function () {
+            setStatus(link);
+          });
+        };
+      }
+      recordViewHistory(place);
+      recordPlaceView(place);
     } catch (e) {
-      elDetail.innerHTML = `<p class="sub">${escapeHtml(e.message)}</p>`;
+      elDetail.innerHTML = '<p class="sub">' + escapeHtml(e.message) + '</p>';
     }
   }
 
-  async function loadAll() {
+  function authToken() {
+    return localStorage.getItem('token') || '';
+  }
+
+  function requireAuth(nextPath) {
+    if (authToken()) return true;
+    window.location.href = '/login?next=' +
+      encodeURIComponent(nextPath || ('/outdoor/place/' + (selectedId || '')));
+    return false;
+  }
+
+  /** Creator analytics — Place.view_count (public, không cần login). */
+  function recordPlaceView(place) {
+    const key = (place && (place.slug || place._id)) || '';
+    if (!key) return;
+    fetch(PP + '/places/' + encodeURIComponent(key) + '/view', { method: 'POST' })
+      .catch(function () {});
+  }
+
+  function recordViewHistory(place) {
+    if (!place || !place._id) return;
+    const key = place.slug || place._id;
+    fetch('/api/place-platform/places/' + encodeURIComponent(key) + '/view', {
+      method: 'POST',
+      headers: authToken()
+        ? { Authorization: 'Bearer ' + authToken() }
+        : {}
+    }).catch(function () {});
+    if (!authToken()) return;
+    fetch('/api/hub/history', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + authToken(),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        type: 'VIEW_PLACE',
+        place_id: place._id,
+        label: place.name || ''
+      })
+    }).catch(function () {});
+  }
+
+  function wireFollow(place) {
+    const btn = document.getElementById('btnFollow');
+    if (!btn || !place || !place._id) return;
+    if (!authToken()) {
+      btn.textContent = 'Follow (login)';
+      btn.onclick = function () {
+        requireAuth('/outdoor/place/' + (place.slug || place._id));
+      };
+      return;
+    }
+    let following = false;
+    fetch('/api/hub/community/following', {
+      headers: { Authorization: 'Bearer ' + authToken() }
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        const rows = d.following || [];
+        following = rows.some(function (f) {
+          return String(f.place_id) === String(place._id);
+        });
+        btn.textContent = following ? 'Đang follow' : 'Follow';
+      })
+      .catch(function () {});
+
+    btn.onclick = async function () {
+      btn.disabled = true;
+      try {
+        if (following) {
+          const res = await fetch('/api/hub/community/follow/' + encodeURIComponent(place._id), {
+            method: 'DELETE',
+            headers: { Authorization: 'Bearer ' + authToken() }
+          });
+          if (!res.ok) throw new Error('Không bỏ follow');
+          following = false;
+          setStatus('Đã bỏ theo dõi');
+        } else {
+          const res = await fetch('/api/hub/community/follow', {
+            method: 'POST',
+            headers: {
+              Authorization: 'Bearer ' + authToken(),
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ place_id: place._id })
+          });
+          if (!res.ok) throw new Error('Không follow được');
+          following = true;
+          setStatus('Đã theo dõi Place');
+        }
+        btn.textContent = following ? 'Đang follow' : 'Follow';
+      } catch (e) {
+        setStatus(e.message || 'Lỗi follow');
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  }
+
+  function wireReview(place) {
+    const btn = document.getElementById('btnReview');
+    if (!btn || !place || !place._id) return;
+    btn.onclick = async function () {
+      if (!requireAuth('/outdoor/place/' + (place.slug || place._id))) return;
+      const ratingRaw = window.prompt('Đánh giá Place (1–5 sao):', '5');
+      if (ratingRaw == null) return;
+      const rating = Math.max(1, Math.min(5, parseInt(ratingRaw, 10) || 0));
+      if (!rating) {
+        setStatus('Rating không hợp lệ');
+        return;
+      }
+      const comment = window.prompt('Nhận xét (tuỳ chọn):', '') || '';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/place-platform/reviews', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + authToken(),
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            place_id: place._id,
+            rating: rating,
+            comment: comment.slice(0, 500)
+          })
+        });
+        const data = await res.json().catch(function () { return {}; });
+        if (!res.ok) throw new Error(data.message || 'HTTP ' + res.status);
+        setStatus('Đã gửi đánh giá ★' + rating);
+      } catch (e) {
+        setStatus(e.message || 'Lỗi review');
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  }
+
+  function wireReport(place) {
+    const btn = document.getElementById('btnReport');
+    if (!btn || !place || !place._id) return;
+    btn.onclick = async function () {
+      if (!requireAuth('/outdoor/place/' + (place.slug || place._id))) return;
+      const reason = window.prompt(
+        'Lý do báo cáo:\nWRONG_LOCATION · WRONG_NAME · SPAM · DUPLICATE · CLOSED',
+        'WRONG_LOCATION'
+      );
+      if (!reason) return;
+      const detail = window.prompt('Chi tiết (tuỳ chọn):', '') || '';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/place-platform/reports', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + authToken(),
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            place_id: place._id,
+            reason_code: String(reason).trim().toUpperCase(),
+            detail: detail.slice(0, 500)
+          })
+        });
+        const data = await res.json().catch(function () { return {}; });
+        if (!res.ok) throw new Error(data.message || 'HTTP ' + res.status);
+        setStatus('Đã gửi báo cáo');
+      } catch (e) {
+        setStatus(e.message || 'Lỗi report');
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  }
+
+  function wireFavorite(place) {
+    const btn = document.getElementById('btnFav');
+    if (!btn || !place || !place._id) return;
+    if (!authToken()) {
+      btn.textContent = 'Đăng nhập để lưu';
+      btn.onclick = function () {
+        window.location.href = '/login?next=' +
+          encodeURIComponent('/outdoor/place/' + (place.slug || place._id));
+      };
+      return;
+    }
+    let favorited = false;
+    fetch('/api/hub/favorites/check?place_id=' + encodeURIComponent(place._id), {
+      headers: { Authorization: 'Bearer ' + authToken() }
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        favorited = !!d.favorited;
+        btn.textContent = favorited ? '★ Đã lưu' : '☆ Yêu thích';
+      })
+      .catch(function () {});
+
+    btn.onclick = async function () {
+      btn.disabled = true;
+      try {
+        if (favorited) {
+          const res = await fetch('/api/hub/favorites/' + encodeURIComponent(place._id), {
+            method: 'DELETE',
+            headers: { Authorization: 'Bearer ' + authToken() }
+          });
+          if (!res.ok) throw new Error('Không bỏ lưu');
+          favorited = false;
+          setStatus('Đã bỏ yêu thích');
+        } else {
+          const res = await fetch('/api/hub/favorites', {
+            method: 'POST',
+            headers: {
+              Authorization: 'Bearer ' + authToken(),
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ place_id: place._id })
+          });
+          if (!res.ok) throw new Error('Không lưu được');
+          favorited = true;
+          setStatus('Đã thêm yêu thích');
+        }
+        btn.textContent = favorited ? '★ Đã lưu' : '☆ Yêu thích';
+      } catch (e) {
+        setStatus(e.message || 'Lỗi yêu thích');
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  }
+
+  function filterByCategory(list) {
+    const cat = (elCat && elCat.value || '').trim().toLowerCase();
+    if (!cat) return list;
+    return (list || []).filter(function (p) {
+      return String(p.category || '').toLowerCase().indexOf(cat) !== -1;
+    });
+  }
+
+  async function loadAll(opts) {
     setStatus('Đang tải Place công khai…');
     try {
       const res = await fetch(API + '?limit=100');
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'HTTP ' + res.status);
-      const list = data.places || [];
+      let list = filterByCategory(data.places || []);
       renderMarkers(list);
       renderResults(list);
-      setStatus(`${list.length} Place · click bản đồ hoặc tìm kiếm`);
-      if (list.length) {
-        const withGps = list.filter((p) => p.latitude || p.longitude);
+      setStatus(list.length + ' Place · search / filter / cluster');
+      if (!(opts && opts.skipFit) && list.length) {
+        const withGps = list.filter(function (p) { return p.latitude || p.longitude; });
         if (withGps.length) {
-          const bounds = L.latLngBounds(withGps.map((p) => [p.latitude, p.longitude]));
+          const bounds = L.latLngBounds(withGps.map(function (p) {
+            return [p.latitude, p.longitude];
+          }));
           map.fitBounds(bounds.pad(0.2));
         }
       }
+      return list;
     } catch (e) {
       setStatus('Lỗi tải Place: ' + e.message);
+      return [];
     }
   }
 
   async function search() {
     const q = (elQ.value || '').trim();
+    const cat = (elCat && elCat.value || '').trim();
     setStatus('Đang tìm…');
     try {
-      const body = { q, limit: 50 };
+      const body = { q: q, limit: 50 };
+      if (cat) body.category = cat;
       if (userMarker) {
         const ll = userMarker.getLatLng();
         body.lat = ll.lat;
@@ -150,10 +501,15 @@
       const list = data.places || [];
       renderMarkers(list);
       renderResults(list);
-      setStatus(`Tìm thấy ${list.length} · mode ${data.search_mode || 'text'}`);
+      setStatus('Tìm thấy ' + list.length + ' · mode ' + (data.search_mode || 'text'));
     } catch (e) {
       setStatus('Lỗi tìm: ' + e.message);
     }
+  }
+
+  function scheduleSearch() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(search, 320);
   }
 
   function onGps() {
@@ -163,61 +519,66 @@
     }
     setStatus('Đang lấy GPS…');
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      function (pos) {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         if (userMarker) map.removeLayer(userMarker);
         if (userCircle) map.removeLayer(userCircle);
-        const accent =
-          getComputedStyle(document.documentElement).getPropertyValue('--outdoor-accent').trim() ||
-          'currentColor';
         userMarker = L.circleMarker([lat, lng], {
           radius: 8,
-          color: accent,
-          fillColor: accent,
+          color: '#2563eb',
+          fillColor: '#2563eb',
           fillOpacity: 0.9
         }).addTo(map);
         userCircle = L.circle([lat, lng], {
           radius: GEOFENCE_M,
-          color: accent,
+          color: '#2563eb',
           weight: 1,
           fillOpacity: 0.08
         }).addTo(map);
         map.setView([lat, lng], 16);
-
-        const near = places
-          .map((p) => ({
-            p,
-            d: haversineM(lat, lng, Number(p.latitude), Number(p.longitude))
-          }))
-          .filter((x) => Number.isFinite(x.d) && x.d <= GEOFENCE_M)
-          .sort((a, b) => a.d - b.d);
-
-        if (near.length) {
-          setStatus(`GPS OK · ${near.length} Place trong ${GEOFENCE_M}m`);
-          selectPlace({ ...near[0].p, distance_m: Math.round(near[0].d) }, false);
-        } else {
-          setStatus(`GPS OK · không có Place trong ${GEOFENCE_M}m — thử Tìm gần`);
-        }
+        search();
       },
-      (err) => setStatus('GPS lỗi: ' + err.message),
+      function (err) { setStatus('GPS lỗi: ' + err.message); },
       { enableHighAccuracy: true, timeout: 12000 }
     );
   }
 
-  map.on('click', (e) => {
-    // Click trống: gợi ý tạo proposal (CTA text)
-    elDetail.innerHTML =
-      `<h2>Vị trí đã chọn</h2>` +
-      `<div class="meta">${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}</div>` +
-      `<p class="sub">Muốn thêm Place? Đăng nhập và gửi Proposal (POST /api/proposals).</p>`;
-  });
+  async function openDeepLink() {
+    const pathMatch = window.location.pathname.match(/^\/(?:outdoor|app)\/place\/([^/]+)/i);
+    const params = new URLSearchParams(window.location.search);
+    const key = (pathMatch && pathMatch[1]) || params.get('place') || params.get('slug');
+    if (!key) return;
+    try {
+      const res = await fetch(PP + '/places/' + encodeURIComponent(decodeURIComponent(key)));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Không tìm thấy');
+      const place = data.place;
+      places = [place];
+      renderMarkers(places);
+      renderResults(places);
+      selectPlace(place, true);
+      setStatus('Deep-link: ' + (place.slug || place.name));
+    } catch (e) {
+      setStatus('Deep-link lỗi: ' + e.message);
+    }
+  }
 
   document.getElementById('btnSearch').addEventListener('click', search);
   document.getElementById('btnGps').addEventListener('click', onGps);
-  elQ.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter') search();
+  if (elCat) elCat.addEventListener('change', function () {
+    if ((elQ.value || '').trim()) search();
+    else loadAll({ skipFit: true });
+  });
+  elQ.addEventListener('input', scheduleSearch);
+  elQ.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') {
+      clearTimeout(searchTimer);
+      search();
+    }
   });
 
-  loadAll();
+  loadAll().then(function () {
+    openDeepLink();
+  });
 })();

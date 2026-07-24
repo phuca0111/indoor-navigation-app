@@ -175,8 +175,13 @@ async function reviewPlace(req, res) {
 
 function serializeProposal(doc) {
   const p = typeof doc.toObject === 'function' ? doc.toObject() : doc;
+  const snap = p.validation_snapshot || {};
+  const dup = Number(snap.duplicateScore ?? snap.duplicate_score ?? p.duplicate_score) || 0;
+  const riskScore = Number(snap.riskScore ?? snap.risk_score) ||
+    (p.risk === 'HIGH' ? 0.85 : p.risk === 'MEDIUM' ? 0.5 : 0.15);
   return {
     _id: p._id,
+    name: p.proposed_name || p.name || '',
     proposed_name: p.proposed_name,
     latitude: p.latitude,
     longitude: p.longitude,
@@ -188,10 +193,17 @@ function serializeProposal(doc) {
     risk: p.risk,
     route_hint: p.route_hint,
     validation_snapshot: p.validation_snapshot,
+    validation: snap.recommendation
+      ? { recommendation: snap.recommendation, ...snap }
+      : (p.validation || { recommendation: p.route_hint || '—' }),
+    duplicate_score: dup,
+    risk_score: riskScore,
     resulting_place_id: p.resulting_place_id,
+    place_id: p.resulting_place_id || p.place_id || null,
     reject_reason: p.reject_reason || '',
     escalated: !!p.escalated,
     created_by: p.created_by,
+    submitted_by: p.created_by || p.submitted_by,
     reviewer_id: p.reviewer_id,
     decided_at: p.decided_at,
     createdAt: p.createdAt,
@@ -257,8 +269,23 @@ async function listProposals(req, res) {
     if (mine) {
       filter.created_by = userIdOf(req);
     }
-    if (req.query.status) {
-      filter.status = String(req.query.status).toUpperCase();
+    const statusRaw = String(req.query.status || '').trim().toUpperCase();
+    if (statusRaw === 'QUEUE' || statusRaw === 'PENDING') {
+      // Admin UI: hàng đợi = SUBMITTED + IN_REVIEW (+ legacy PENDING nếu còn)
+      filter.status = {
+        $in: [
+          PROPOSAL_STATUS.SUBMITTED,
+          PROPOSAL_STATUS.IN_REVIEW,
+          PROPOSAL_STATUS.DRAFT,
+          'PENDING',
+          'DUPLICATE'
+        ]
+      };
+    } else if (statusRaw === 'DUPLICATE') {
+      filter.status = { $in: ['DUPLICATE', PROPOSAL_STATUS.IN_REVIEW] };
+      filter.risk = VALIDATION_RISK.HIGH;
+    } else if (statusRaw) {
+      filter.status = statusRaw;
     } else if (!mine) {
       filter.status = { $in: [PROPOSAL_STATUS.SUBMITTED, PROPOSAL_STATUS.IN_REVIEW] };
     }

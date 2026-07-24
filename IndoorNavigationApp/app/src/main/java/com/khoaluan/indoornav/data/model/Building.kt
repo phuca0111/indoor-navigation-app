@@ -13,6 +13,9 @@ data class Building(
     val status: String? = "DRAFT",
     @SerializedName("workspace_status") val workspaceStatus: String? = null,
     @SerializedName("place_id") val placeId: String? = null,
+    /** Place slug (gắn từ Registry khi merge outdoor). */
+    @SerializedName("place_slug") val placeSlug: String? = null,
+    val category: String? = null,
     @SerializedName("gps_location") val gpsLocation: GPSLocation? = null,
     /** Tổng số tầng từ server: tầng hợp lệ 0 .. totalFloors-1 */
     @SerializedName("total_floors") val totalFloors: Int = 1,

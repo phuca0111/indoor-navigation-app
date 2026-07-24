@@ -60,6 +60,11 @@ function createApp() {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.sendFile(path.join(__dirname, 'public', 'outdoor', 'index.html'));
   });
+  /** Place deep-link — Outdoor viewer (Landing). Canonical: /outdoor/place/:slug */
+  app.get(['/outdoor/place/:slug', '/app/place/:slug'], (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.sendFile(path.join(__dirname, 'public', 'outdoor', 'index.html'));
+  });
   app.get(['/demo', '/demo/', '/demo/index.html'], (req, res) => {
     res.redirect(302, '/login');
   });
@@ -67,6 +72,22 @@ function createApp() {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.sendFile(path.join(__dirname, 'public', 'explore', 'index.html'));
   });
+  app.get(['/org', '/org/', '/org/index.html'], (req, res) => {
+    // Org Console entry (LOCKED) — tạm reuse Admin shell đã RBAC theo org
+    res.redirect(302, '/admin/dashboard.html');
+  });
+  app.get(['/admin', '/admin/'], (req, res) => {
+    res.redirect(302, '/admin/dashboard.html');
+  });
+  app.get(['/signup', '/signup/', '/signup/index.html'], (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.sendFile(path.join(__dirname, 'public', 'signup', 'index.html'));
+  });
+  app.get(['/get-app', '/get-app/', '/get-app/index.html'], (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.sendFile(path.join(__dirname, 'public', 'get-app', 'index.html'));
+  });
+  /** My Maps Hub shell (giữ /app 200 cho Hub Phase 1; CTA Android tại /get-app). */
   app.get(['/app', '/app/', '/app/index.html'], (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.sendFile(path.join(__dirname, 'public', 'app', 'index.html'));

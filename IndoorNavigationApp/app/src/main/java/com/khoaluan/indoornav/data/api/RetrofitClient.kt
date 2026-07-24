@@ -17,16 +17,36 @@ object RetrofitClient {
 
     private var retrofit: Retrofit? = null
     @Volatile private var appContext: Context? = null
+    /** Cache đồng bộ — tránh miss SharedPreferences / race apply(). */
+    @Volatile private var cachedAccessToken: String? = null
 
     /** Gọi sớm từ MainActivity để Auth interceptor đọc token. */
     fun init(context: Context) {
         appContext = context.applicationContext
+        if (cachedAccessToken.isNullOrBlank()) {
+            cachedAccessToken = SessionManager(context).accessToken
+        }
         retrofit = null
+    }
+
+    fun setAccessToken(token: String?) {
+        cachedAccessToken = token?.takeIf { it.isNotBlank() }
+    }
+
+    fun currentAccessToken(): String? {
+        val cached = cachedAccessToken
+        if (!cached.isNullOrBlank()) return cached
+        val fromPrefs = appContext?.let { SessionManager(it).accessToken }
+        if (!fromPrefs.isNullOrBlank()) {
+            cachedAccessToken = fromPrefs
+            return fromPrefs
+        }
+        return null
     }
 
     private fun authInterceptor(): Interceptor = Interceptor { chain ->
         val original = chain.request()
-        val token = appContext?.let { SessionManager(it).accessToken }
+        val token = currentAccessToken()
         val req = if (!token.isNullOrBlank()) {
             original.newBuilder()
                 .header("Authorization", "Bearer $token")
@@ -46,7 +66,7 @@ object RetrofitClient {
 
         if (BuildConfig.DEBUG) {
             val logging = HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BODY
+                level = HttpLoggingInterceptor.Level.HEADERS
             }
             builder.addInterceptor(logging)
         }

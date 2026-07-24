@@ -103,15 +103,18 @@ async function countUsage(userId) {
   if (!userId) {
     return { workspaces: 0, buildings: 0, floors: 0, qr: 0 };
   }
-  const [workspaces, buildings, buildingIds] = await Promise.all([
+  const [workspacesLegacy, buildings, buildingIds] = await Promise.all([
     IndoorWorkspace.countDocuments({
       $or: [{ owner_user_id: userId }, { created_by: userId }]
     }),
     Building.countDocuments({
-      owner_user_id: userId,
+      $or: [{ owner_user_id: userId }, { created_by: userId }],
       is_active: { $ne: false }
     }),
-    Building.find({ owner_user_id: userId, is_active: { $ne: false } })
+    Building.find({
+      $or: [{ owner_user_id: userId }, { created_by: userId }],
+      is_active: { $ne: false }
+    })
       .select('_id')
       .lean()
   ]);
@@ -124,20 +127,21 @@ async function countUsage(userId) {
       QrCode.countDocuments({ building_id: { $in: ids } })
     ]);
   }
+  // Demo: workspace ≈ building (GĐ7); cộng legacy nếu lệch
+  const workspaces = Math.max(workspacesLegacy, buildings);
   return { workspaces, buildings, floors, qr };
 }
 
 /**
- * Gate tạo Workspace thêm (Phase 1 ≈ maxBuildings).
+ * Gate tạo Workspace thêm (Phase 1 ≈ maxBuildings / Building count).
  */
 async function assertCanCreateWorkspace(userLike) {
   const limits = limitsFor(userLike);
   if (limits.maxWorkspaces == null) return { ok: true, limits };
-  const used = await IndoorWorkspace.countDocuments({
-    $or: [
-      { owner_user_id: userLike._id || userLike.userId },
-      { created_by: userLike._id || userLike.userId }
-    ]
+  const uid = userLike._id || userLike.userId;
+  const used = await Building.countDocuments({
+    $or: [{ owner_user_id: uid }, { created_by: uid }],
+    is_active: { $ne: false }
   });
   if (used >= limits.maxWorkspaces) {
     return {

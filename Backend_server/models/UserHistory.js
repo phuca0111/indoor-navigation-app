@@ -1,7 +1,16 @@
 // User activity history — My Maps Phase 1
 const mongoose = require('mongoose');
 
-const HISTORY_TYPES = ['VIEW_PLACE', 'VIEW_INDOOR', 'SEARCH', 'OPEN_WORKSPACE', 'OTHER'];
+const HISTORY_TYPES = [
+  'VIEW_PLACE',
+  'VIEW_INDOOR',
+  'SEARCH',
+  'OPEN_WORKSPACE',
+  'FAVORITE_PLACE',
+  'NAVIGATE_PLACE',
+  'NAVIGATE_INDOOR',
+  'OTHER'
+];
 
 const userHistorySchema = new mongoose.Schema({
   user_id: {

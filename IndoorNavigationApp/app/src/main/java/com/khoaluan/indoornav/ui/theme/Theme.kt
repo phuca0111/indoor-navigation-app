@@ -9,50 +9,85 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
-
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
-)
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
+    primary = MapsBlue,
+    onPrimary = MapsWhite,
+    primaryContainer = MapsBlueSoft,
+    onPrimaryContainer = MapsBlueDark,
+    secondary = MapsGrey700,
+    onSecondary = MapsWhite,
+    secondaryContainer = MapsGrey100,
+    onSecondaryContainer = MapsGrey900,
+    tertiary = MapsBlueLight,
+    onTertiary = MapsWhite,
+    background = MapsGrey50,
+    onBackground = MapsGrey900,
+    surface = MapsWhite,
+    onSurface = MapsGrey900,
+    surfaceVariant = MapsGrey100,
+    onSurfaceVariant = MapsGrey700,
+    outline = MapsGrey200,
+    error = MapsDest,
+    onError = MapsWhite,
+)
 
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+private val DarkColorScheme = darkColorScheme(
+    primary = MapsBlueLight,
+    onPrimary = MapsGrey900,
+    primaryContainer = MapsBlueDark,
+    onPrimaryContainer = MapsBlueSoft,
+    secondary = MapsGrey500,
+    onSecondary = MapsGrey900,
+    secondaryContainer = Color(0xFF3C4043),
+    onSecondaryContainer = MapsGrey100,
+    tertiary = MapsBlue,
+    onTertiary = MapsWhite,
+    background = Color(0xFF202124),
+    onBackground = MapsGrey100,
+    surface = Color(0xFF292A2D),
+    onSurface = MapsGrey100,
+    surfaceVariant = Color(0xFF3C4043),
+    onSurfaceVariant = MapsGrey500,
+    outline = Color(0xFF5F6368),
+    error = MapsDest,
+    onError = MapsWhite,
 )
 
 @Composable
 fun IndoorNavigationAppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
-    content: @Composable () -> Unit
+    /** Tắt dynamic color — tránh Material kéo tím từ wallpaper. */
+    dynamicColor: Boolean = false,
+    content: @Composable () -> Unit,
 ) {
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
+    }
+
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as Activity).window
+            window.statusBarColor = colorScheme.surface.toArgb()
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+        }
     }
 
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
-        content = content
+        content = content,
     )
 }

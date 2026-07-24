@@ -1,53 +1,34 @@
 // ============================================
-// Place Registry PHASE 1 — helpers (slug, enums)
+// Place Registry helpers — DELEGATE sang placePlatform (canonical)
+// Giữ export cũ để không breaking import; PUBLIC→PUBLISHED alias.
 // ============================================
 
-const PLACE_OWNER_TYPES = Object.freeze(['PLATFORM', 'ORGANIZATION', 'PERSONAL', 'UNCLAIMED']);
-const PLACE_PUBLICATION_STATUS = Object.freeze(['DRAFT', 'PUBLIC', 'UNLISTED', 'ARCHIVED']);
+const placePlatform = require('./placePlatform');
 
-function slugifyPlaceName(name) {
-  const base = String(name || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/đ/g, 'd')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
-  return base || 'place';
-}
+/** @deprecated dùng OWNER_TYPE từ placePlatform; giữ alias legacy */
+const PLACE_OWNER_TYPES = Object.freeze([
+  'PLATFORM',
+  'ORGANIZATION',
+  'PERSONAL',
+  'UNCLAIMED',
+  'COMMUNITY',
+  'SYSTEM'
+]);
 
-/**
- * Tạo slug unique: name-slug + optional short suffix.
- */
-async function ensureUniquePlaceSlug(Place, name, excludeId = null) {
-  const base = slugifyPlaceName(name);
-  let candidate = base;
-  let n = 0;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const filter = { slug: candidate };
-    if (excludeId) filter._id = { $ne: excludeId };
-    const exists = await Place.exists(filter);
-    if (!exists) return candidate;
-    n += 1;
-    candidate = `${base}-${n}`;
-    if (n > 200) {
-      candidate = `${base}-${Date.now().toString(36)}`;
-      return candidate;
-    }
-  }
-}
+/** @deprecated dùng PUBLICATION_STATUS; giữ PUBLIC/UNLISTED alias query */
+const PLACE_PUBLICATION_STATUS = Object.freeze([
+  'DRAFT',
+  'PUBLIC',
+  'PUBLISHED',
+  'UNLISTED',
+  'PENDING',
+  'ARCHIVED'
+]);
 
-function normalizeOwnerType(value, fallback = 'UNCLAIMED') {
-  const v = String(value || '').trim().toUpperCase();
-  return PLACE_OWNER_TYPES.includes(v) ? v : fallback;
-}
-
-function normalizePublicationStatus(value, fallback = 'PUBLIC') {
-  const v = String(value || '').trim().toUpperCase();
-  return PLACE_PUBLICATION_STATUS.includes(v) ? v : fallback;
-}
+const slugifyPlaceName = placePlatform.slugifyPlaceName;
+const ensureUniquePlaceSlug = placePlatform.ensureUniquePlaceSlug;
+const normalizeOwnerType = placePlatform.normalizeOwnerType;
+const normalizePublicationStatus = placePlatform.normalizePublicationStatus;
 
 function haversineMeters(lat1, lon1, lat2, lon2) {
   const R = 6371000;

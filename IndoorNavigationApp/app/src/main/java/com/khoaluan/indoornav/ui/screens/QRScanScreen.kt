@@ -137,7 +137,7 @@ fun QRScanScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = Color(0xFF00E5FF))
+                    CircularProgressIndicator(color = Color(0xFF1A73E8))
                     Spacer(modifier = Modifier.height(12.dp))
                     Text("Đang xác định vị trí…", color = Color.White, fontSize = 14.sp)
                 }
@@ -148,7 +148,7 @@ fun QRScanScreen(
             onClick = onBack,
             modifier = Modifier.align(Alignment.TopStart).padding(top = 40.dp, start = 16.dp)
         ) {
-            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+            Icon(Icons.Default.ArrowBack, contentDescription = "Quay lại", tint = Color.White)
         }
     }
 
@@ -237,14 +237,14 @@ fun QRScannerOverlay() {
         val top = (height - boxSize) / 2
 
         drawRect(
-            color = Color(0xFF00E5FF),
+            color = Color(0xFF1A73E8),
             topLeft = androidx.compose.ui.geometry.Offset(left, top),
             size = androidx.compose.ui.geometry.Size(boxSize, boxSize),
             style = Stroke(width = 4.dp.toPx())
         )
 
         val cornerLen = 40.dp.toPx()
-        val neonColor = Color(0xFF00E5FF)
+        val neonColor = Color(0xFF1A73E8)
         drawLine(neonColor, Offset(left - 2, top - 2), Offset(left + cornerLen, top - 2), 8f)
         drawLine(neonColor, Offset(left - 2, top - 2), Offset(left - 2, top + cornerLen), 8f)
     }

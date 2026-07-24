@@ -22,7 +22,8 @@ android {
         create("local") {
             dimension = "env"
             // Bản test nội bộ: điện thoại gọi backend đang chạy trên laptop.
-            buildConfigField("String", "BASE_URL", "\"http://192.168.2.21:5000/api/\"")
+            buildConfigField("String", "BASE_URL", "\"http://192.168.2.29:5000/api/\"")
+            manifestPlaceholders["deepLinkHost"] = "192.168.2.29"
             // W8 — cùng Web Client ID với Backend_server/.env (GOOGLE_CLIENT_ID)
             buildConfigField(
                 "String",
@@ -35,6 +36,7 @@ android {
             dimension = "env"
             // Bản gửi người khác dùng: gọi backend Render online.
             buildConfigField("String", "BASE_URL", "\"https://indoor-navigation-app-sqiu.onrender.com/api/\"")
+            manifestPlaceholders["deepLinkHost"] = "indoor-navigation-app-sqiu.onrender.com"
             buildConfigField(
                 "String",
                 "GOOGLE_WEB_CLIENT_ID",

@@ -1,5 +1,5 @@
 /**
- * My Maps Hub API — Phase 1
+ * End User Hub API — Android + Admin (FINAL LOCK: không còn Web My Maps /app)
  * /api/hub/*
  */
 const UserFavorite = require('../models/UserFavorite');
@@ -160,6 +160,24 @@ async function listHistory(req, res) {
   }
 }
 
+// DELETE /api/hub/history — xóa toàn bộ lịch sử user (optional ?type=)
+async function clearHistory(req, res) {
+  try {
+    const filter = { user_id: req.user.userId };
+    const type = String(req.query?.type || '').trim().toUpperCase();
+    if (type && UserHistory.HISTORY_TYPES.includes(type)) {
+      filter.type = type;
+    }
+    const result = await UserHistory.deleteMany(filter);
+    return res.status(200).json({
+      message: 'Đã xóa lịch sử.',
+      deleted: result.deletedCount || 0,
+    });
+  } catch (e) {
+    return res.status(500).json({ message: e.message });
+  }
+}
+
 // POST /api/hub/history
 async function addHistory(req, res) {
   try {
@@ -179,46 +197,126 @@ async function addHistory(req, res) {
   }
 }
 
-// GET /api/hub/workspaces — My Maps list
+// GET /api/hub/workspaces — My Maps list (Building = Workspace GitHub GĐ7 + IndoorWorkspace legacy)
 async function listMyWorkspaces(req, res) {
   try {
-    const filter = {};
+    const uid = req.user.userId;
+    const buildingFilter = {
+      is_active: { $ne: false },
+      $or: [{ owner_user_id: uid }, { created_by: uid }]
+    };
     if (req.user.role === 'SUPER_ADMIN' && req.query.all === '1') {
-      // optional
-    } else if (req.user.role === 'REGISTERED_USER') {
-      filter.owner_user_id = req.user.userId;
-    } else if (req.user.role === 'ORG_ADMIN' || req.user.role === 'BUILDING_ADMIN') {
-      filter.$or = [
-        { owner_user_id: req.user.userId },
-        { created_by: req.user.userId }
-      ];
-    } else {
-      filter.owner_user_id = req.user.userId;
+      delete buildingFilter.$or;
     }
 
-    const rows = await IndoorWorkspace.find(filter).sort({ updatedAt: -1 }).limit(50).lean();
-    const placeIds = [...new Set(rows.map((r) => String(r.place_id)).filter(Boolean))];
-    const buildingIds = [...new Set(rows.map((r) => String(r.building_id)).filter(Boolean))];
-    const [places, buildings] = await Promise.all([
-      placeIds.length
-        ? Place.find({ _id: { $in: placeIds } }).select('name slug address').lean()
-        : [],
-      buildingIds.length
-        ? Building.find({ _id: { $in: buildingIds } }).select('name status visibility total_floors').lean()
-        : []
-    ]);
+    const buildings = await Building.find(buildingFilter)
+      .sort({ updatedAt: -1 })
+      .limit(50)
+      .lean();
+
+    const placeIds = [...new Set(buildings.map((b) => String(b.place_id || '')).filter(Boolean))];
+    const places = placeIds.length
+      ? await Place.find({ _id: { $in: placeIds } }).select('name slug address').lean()
+      : [];
     const pMap = {};
     places.forEach((p) => { pMap[String(p._id)] = p; });
-    const bMap = {};
-    buildings.forEach((b) => { bMap[String(b._id)] = b; });
 
+    // Legacy IndoorWorkspace (nếu còn) — gắn kèm nếu chưa có trong list Building
+    const legacyWs = await IndoorWorkspace.find({
+      $or: [{ owner_user_id: uid }, { created_by: uid }]
+    })
+      .sort({ updatedAt: -1 })
+      .limit(50)
+      .lean();
+    const buildingIdSet = new Set(buildings.map((b) => String(b._id)));
+    const legacyExtra = [];
+    for (const w of legacyWs) {
+      const bid = w.building_id ? String(w.building_id) : '';
+      if (bid && buildingIdSet.has(bid)) continue;
+      legacyExtra.push(serializeWorkspace(w, {
+        place: w.place_id ? pMap[String(w.place_id)] || null : null,
+        building: null
+      }));
+    }
+
+    const fromBuildings = buildings.map((b) => ({
+      workspace_id: b._id,
+      _id: b._id,
+      name: b.name,
+      description: b.description || '',
+      kind: 'COMMUNITY',
+      status: b.workspace_status || b.status || 'DRAFT',
+      workspace_status: b.workspace_status || 'DRAFT',
+      place_id: b.place_id || null,
+      building_id: b._id,
+      organization_id: b.organization_id || null,
+      owner_user_id: b.owner_user_id || null,
+      created_by: b.created_by || null,
+      place: b.place_id ? pMap[String(b.place_id)] || null : null,
+      building: {
+        _id: b._id,
+        name: b.name,
+        status: b.status,
+        visibility: b.visibility,
+        total_floors: b.total_floors,
+        workspace_status: b.workspace_status
+      },
+      source: 'building'
+    }));
+
+    const workspaces = fromBuildings.concat(legacyExtra);
     return res.status(200).json({
-      total: rows.length,
-      workspaces: rows.map((r) => serializeWorkspace(r, {
-        place: pMap[String(r.place_id)] || null,
-        building: bMap[String(r.building_id)] || null
-      }))
+      total: workspaces.length,
+      workspaces
     });
+  } catch (e) {
+    return res.status(500).json({ message: e.message });
+  }
+}
+
+// POST /api/hub/workspaces/:id/submit-community — id = IndoorWorkspace._id hoặc Building._id
+async function submitWorkspaceCommunity(req, res) {
+  try {
+    const id = req.params.id;
+    const uid = String(req.user.userId);
+    let buildingId = null;
+    let placeId = null;
+
+    const ws = await IndoorWorkspace.findById(id).lean();
+    if (ws) {
+      const isOwner =
+        String(ws.owner_user_id || '') === uid ||
+        String(ws.created_by || '') === uid;
+      if (req.user.role !== 'SUPER_ADMIN' && !isOwner) {
+        return res.status(403).json({ message: 'Bạn không sở hữu Workspace này.' });
+      }
+      if (!ws.building_id) {
+        return res.status(400).json({ message: 'Workspace chưa có Building Draft.' });
+      }
+      buildingId = String(ws.building_id);
+      placeId = ws.place_id ? String(ws.place_id) : null;
+    } else {
+      const building = await Building.findById(id).lean();
+      if (!building || building.is_active === false) {
+        return res.status(404).json({ message: 'Không tìm thấy Workspace.' });
+      }
+      const isOwner =
+        String(building.owner_user_id || '') === uid ||
+        String(building.created_by || '') === uid;
+      if (req.user.role !== 'SUPER_ADMIN' && !isOwner) {
+        return res.status(403).json({ message: 'Bạn không sở hữu Workspace này.' });
+      }
+      buildingId = String(building._id);
+      placeId = building.place_id ? String(building.place_id) : null;
+    }
+
+    req.body = {
+      building_id: buildingId,
+      place_id: placeId || undefined,
+      requested_visibility: 'COMMUNITY',
+      note: String(req.body?.note || 'Submit Publish Community từ My Maps').slice(0, 1000)
+    };
+    return createReview(req, res);
   } catch (e) {
     return res.status(500).json({ message: e.message });
   }
@@ -251,35 +349,6 @@ async function listMyProposals(req, res) {
   }
 }
 
-// POST /api/hub/workspaces/:id/submit-community — Submit Publish → Community Queue
-async function submitWorkspaceCommunity(req, res) {
-  try {
-    const ws = await IndoorWorkspace.findById(req.params.id).lean();
-    if (!ws) return res.status(404).json({ message: 'Không tìm thấy Workspace.' });
-
-    const uid = String(req.user.userId);
-    const isOwner =
-      String(ws.owner_user_id || '') === uid ||
-      String(ws.created_by || '') === uid;
-    if (req.user.role !== 'SUPER_ADMIN' && !isOwner) {
-      return res.status(403).json({ message: 'Bạn không sở hữu Workspace này.' });
-    }
-    if (!ws.building_id) {
-      return res.status(400).json({ message: 'Workspace chưa có Building Draft.' });
-    }
-
-    req.body = {
-      building_id: String(ws.building_id),
-      place_id: ws.place_id ? String(ws.place_id) : undefined,
-      requested_visibility: 'COMMUNITY',
-      note: String(req.body?.note || 'Submit Publish Community từ My Maps').slice(0, 1000)
-    };
-    return createReview(req, res);
-  } catch (e) {
-    return res.status(500).json({ message: e.message });
-  }
-}
-
 // GET /api/hub/favorites/check?place_id=
 async function checkFavorite(req, res) {
   try {
@@ -295,6 +364,161 @@ async function checkFavorite(req, res) {
   }
 }
 
+// —— Community Platform surface ——
+
+async function communityDashboard(req, res) {
+  try {
+    const userId = req.user.userId;
+    const placePlatform = require('../application/placePlatform/placePlatformApplicationService');
+    const community = require('../application/community/communityApplicationService');
+    const [proposals, reviews, reports, following, profile] = await Promise.all([
+      placePlatform.listProposalsByUser(userId),
+      placePlatform.listReviewsByUser(userId),
+      placePlatform.listReportsByUser(userId),
+      community.listFollowing(userId),
+      community.getProfile(userId)
+    ]);
+    return res.status(200).json({
+      profile,
+      proposals,
+      reviews,
+      reports,
+      following
+    });
+  } catch (e) {
+    return res.status(e.status || 500).json({ message: e.message });
+  }
+}
+
+async function communityProfile(req, res) {
+  try {
+    const community = require('../application/community/communityApplicationService');
+    const profile = await community.getProfile(req.user.userId);
+    return res.status(200).json({ profile });
+  } catch (e) {
+    return res.status(e.status || 500).json({ message: e.message });
+  }
+}
+
+async function followPlace(req, res) {
+  try {
+    const community = require('../application/community/communityApplicationService');
+    const doc = await community.followPlace(req.user.userId, req.body.place_id);
+    return res.status(200).json({ following: doc });
+  } catch (e) {
+    return res.status(e.status || 500).json({ message: e.message, code: e.code });
+  }
+}
+
+async function unfollowPlace(req, res) {
+  try {
+    const community = require('../application/community/communityApplicationService');
+    await community.unfollowPlace(req.user.userId, req.params.placeId);
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    return res.status(e.status || 500).json({ message: e.message, code: e.code });
+  }
+}
+
+async function listFollowing(req, res) {
+  try {
+    const community = require('../application/community/communityApplicationService');
+    const data = await community.listFollowing(req.user.userId, { limit: req.query.limit });
+    return res.status(200).json(data);
+  } catch (e) {
+    return res.status(e.status || 500).json({ message: e.message });
+  }
+}
+
+const endUser = require('../application/endUser/endUserApplicationService');
+
+async function hubDashboard(req, res) {
+  try {
+    const data = await endUser.getDashboard(req.user.userId, {
+      lat: req.query.lat,
+      lng: req.query.lng
+    });
+    return res.status(200).json(data);
+  } catch (e) {
+    return res.status(e.status || 500).json({ message: e.message, code: e.code });
+  }
+}
+
+async function hubExplore(req, res) {
+  try {
+    const data = await endUser.getExplore(req.user.userId, {
+      q: req.query.q,
+      category: req.query.category,
+      lat: req.query.lat,
+      lng: req.query.lng,
+      limit: req.query.limit
+    });
+    return res.status(200).json(data);
+  } catch (e) {
+    return res.status(e.status || 500).json({ message: e.message, code: e.code });
+  }
+}
+
+async function hubActivities(req, res) {
+  try {
+    const data = await endUser.getActivities(req.user.userId, {
+      type: req.query.type,
+      limit: req.query.limit
+    });
+    return res.status(200).json(data);
+  } catch (e) {
+    return res.status(e.status || 500).json({ message: e.message, code: e.code });
+  }
+}
+
+async function hubSubscription(req, res) {
+  try {
+    const data = await endUser.getSubscription(req.user.userId);
+    return res.status(200).json(data);
+  } catch (e) {
+    return res.status(e.status || 500).json({ message: e.message, code: e.code });
+  }
+}
+
+async function hubUpgradeMock(req, res) {
+  try {
+    const data = await endUser.upgradeMock(
+      req.user.userId,
+      req.body.target_plan || req.body.plan
+    );
+    return res.status(200).json(data);
+  } catch (e) {
+    return res.status(e.status || 500).json({ message: e.message, code: e.code });
+  }
+}
+
+async function hubGetSettings(req, res) {
+  try {
+    const data = await endUser.getSettings(req.user.userId);
+    return res.status(200).json(data);
+  } catch (e) {
+    return res.status(e.status || 500).json({ message: e.message, code: e.code });
+  }
+}
+
+async function hubPutSettings(req, res) {
+  try {
+    const data = await endUser.updateSettings(req.user.userId, req.body || {});
+    return res.status(200).json(data);
+  } catch (e) {
+    return res.status(e.status || 500).json({ message: e.message, code: e.code });
+  }
+}
+
+async function hubCreateWorkspace(req, res) {
+  try {
+    const workspace = await endUser.createWorkspaceForUser(req.user.userId, req.body || {});
+    return res.status(201).json({ workspace });
+  } catch (e) {
+    return res.status(e.status || 500).json({ message: e.message, code: e.code });
+  }
+}
+
 module.exports = {
   hubMe,
   listFavorites,
@@ -302,10 +526,24 @@ module.exports = {
   removeFavorite,
   checkFavorite,
   listHistory,
+  clearHistory,
   addHistory,
   listMyWorkspaces,
   listMyProposals,
   submitWorkspaceCommunity,
+  communityDashboard,
+  communityProfile,
+  followPlace,
+  unfollowPlace,
+  listFollowing,
+  hubDashboard,
+  hubExplore,
+  hubActivities,
+  hubSubscription,
+  hubUpgradeMock,
+  hubGetSettings,
+  hubPutSettings,
+  hubCreateWorkspace,
   displayRole,
   displayRoleLabel
 };

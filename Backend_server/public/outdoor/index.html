@@ -3,10 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Outdoor Discovery — Indoor Mapping Platform</title>
+  <title>Outdoor — Indoor Mapping Platform</title>
   <link rel="stylesheet" href="/css/outdoor-tokens.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <style>
     * { box-sizing: border-box; }
     body {
@@ -29,7 +31,7 @@
     }
     h1 { font-size: 1.1rem; margin: 0; font-weight: 650; }
     .sub { color: var(--outdoor-muted); font-size: 0.8rem; margin: 0; }
-    input, button {
+    input, select, button {
       width: 100%;
       padding: 0.55rem 0.7rem;
       border-radius: 8px;
@@ -46,6 +48,17 @@
     }
     button.secondary { background: var(--outdoor-surface-2); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
+    a.btn-link {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.45rem 0.7rem;
+      border-radius: 8px;
+      background: var(--outdoor-surface-2);
+      color: var(--outdoor-text);
+      text-decoration: none;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
     #results {
       flex: 1;
       overflow: auto;
@@ -93,13 +106,21 @@
 <body>
   <aside>
     <div>
-      <h1>Outdoor Discovery</h1>
-      <p class="sub">OSM + Leaflet · marker từ Place Registry</p>
+      <h1>Outdoor</h1>
+      <p class="sub">OSM · Search · Cluster · <a href="/get-app" style="color:inherit">Android App</a></p>
     </div>
-    <input id="q" type="search" placeholder="Tìm Place (tên, địa chỉ…)" />
+    <input id="q" type="search" placeholder="Autocomplete — tên, địa chỉ…" autocomplete="off" />
+    <select id="category" aria-label="Category">
+      <option value="">Mọi category</option>
+      <option value="mall">Mall</option>
+      <option value="school">School</option>
+      <option value="hospital">Hospital</option>
+      <option value="office">Office</option>
+      <option value="other">Other</option>
+    </select>
     <div style="display:flex; gap:0.4rem;">
       <button type="button" id="btnSearch">Tìm</button>
-      <button type="button" id="btnGps" class="secondary">GPS</button>
+      <button type="button" id="btnGps" class="secondary">Nearby GPS</button>
     </div>
     <div id="statusLine">Đang tải Place…</div>
     <div id="detail"><p class="sub">Chọn marker hoặc kết quả tìm kiếm.</p></div>
@@ -109,6 +130,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/outdoor/app.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="/outdoor/app.js?v=20260724lock1"></script>
 </body>
 </html>

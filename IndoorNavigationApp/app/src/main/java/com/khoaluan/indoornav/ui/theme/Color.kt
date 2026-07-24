@@ -2,16 +2,31 @@ package com.khoaluan.indoornav.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+/**
+ * Palette kiểu Google Maps — xanh Google · trắng · xám.
+ * Không dùng tím / Material default purple.
+ */
+val MapsBlue = Color(0xFF1A73E8)
+val MapsBlueLight = Color(0xFF4285F4)
+val MapsBlueDark = Color(0xFF174EA6)
+val MapsBlueSoft = Color(0xFFE8F0FE)
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+val MapsGrey900 = Color(0xFF202124)
+val MapsGrey700 = Color(0xFF5F6368)
+val MapsGrey500 = Color(0xFF9AA0A6)
+val MapsGrey200 = Color(0xFFE8EAED)
+val MapsGrey100 = Color(0xFFF1F3F4)
+val MapsGrey50 = Color(0xFFF8F9FA)
 
-// Indoor Navigation — màu chủ đạo theo thiết kế
-val NavBlue      = Color(0xFF1565C0)
-val NavLightBlue = Color(0xFF42A5F5)
-val NavBlueDark  = Color(0xFF0D47A1)
-val NavWall      = Color(0xFFB0BEC5)
+val MapsWhite = Color(0xFFFFFFFF)
+val MapsWall = Color(0xFFBDC1C6)
+val MapsRoute = Color(0xFF1A73E8)
+val MapsUserDot = Color(0xFF4285F4)
+val MapsDest = Color(0xFFEA4335)
+val MapsStart = Color(0xFF34A853)
+
+/** Alias tương thích code cũ */
+val NavBlue = MapsBlue
+val NavLightBlue = MapsBlueLight
+val NavBlueDark = MapsBlueDark
+val NavWall = MapsWall

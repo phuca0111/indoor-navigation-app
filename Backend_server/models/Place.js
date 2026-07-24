@@ -14,6 +14,8 @@ const {
   OWNER_TYPE,
   publicationFromLegacyStatus,
   legacyStatusFromPublication,
+  canonicalizePublicationInput,
+  canonicalizeOwnerInput,
   deriveOwnerType
 } = require('../utils/placePlatform');
 
@@ -50,6 +52,28 @@ const placeSchema = new mongoose.Schema({
     type: String,
     default: '',
     maxlength: 80
+  },
+
+  /** URL-friendly id — Place Platform deep-link (sparse unique: không dùng ""). */
+  slug: {
+    type: String,
+    trim: true,
+    maxlength: 100,
+    default: undefined
+  },
+
+  description: {
+    type: String,
+    default: '',
+    maxlength: 4000
+  },
+
+  /** Geofence circle (m) khi chưa có boundary polygon */
+  radius: {
+    type: Number,
+    default: 80,
+    min: 10,
+    max: 5000
   },
 
   // GeoJSON Polygon (optional) — { type: 'Polygon', coordinates: [[[lng,lat],...]] }
@@ -122,6 +146,13 @@ const placeSchema = new mongoose.Schema({
     default: null
   },
 
+  /** Người duyệt publish / verification cuối (Place Platform) */
+  approved_by: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+
   notes: {
     type: String,
     default: '',
@@ -133,18 +164,50 @@ const placeSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Building',
     default: null
+  },
+
+  /** Creator analytics — Place detail / deep-link views */
+  view_count: {
+    type: Number,
+    default: 0,
+    min: 0
   }
 }, {
   timestamps: true
 });
 
-placeSchema.index({ name: 'text', aliases: 'text', address: 'text' });
+placeSchema.index({ name: 'text', aliases: 'text', address: 'text', description: 'text' });
 placeSchema.index({ latitude: 1, longitude: 1 });
 placeSchema.index({ status: 1, verified: 1 });
 placeSchema.index({ verification_status: 1, status: 1 });
 placeSchema.index({ category: 1 });
 placeSchema.index({ owner_org_id: 1 });
 placeSchema.index({ publication_status: 1, owner_type: 1 });
+placeSchema.index(
+  { slug: 1 },
+  {
+    unique: true,
+    // Tránh E11000 khi nhiều Place không có slug ("" vẫn bị sparse index).
+    partialFilterExpression: { slug: { $exists: true, $type: 'string', $gt: '' } }
+  }
+);
+
+/** Alias cũ PUBLIC/UNLISTED → enum canonical trước khi validate (CI + client cũ). */
+placeSchema.pre('validate', function canonicalizeLegacyPlaceEnums() {
+  if (this.publication_status != null && this.publication_status !== '') {
+    this.publication_status = canonicalizePublicationInput(this.publication_status);
+  }
+  if (this.owner_type != null && this.owner_type !== '') {
+    this.owner_type = canonicalizeOwnerInput(this.owner_type);
+  }
+  // Sparse unique index: "" vẫn bị index → E11000; bỏ field khi trống.
+  if (this.slug == null || String(this.slug).trim() === '') {
+    this.slug = undefined;
+    if (typeof this.set === 'function') this.set('slug', undefined);
+  } else {
+    this.slug = String(this.slug).trim().toLowerCase();
+  }
+});
 
 placeSchema.pre('save', function normalizePlacePlatformFields() {
   if (Array.isArray(this.aliases)) {

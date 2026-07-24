@@ -139,7 +139,7 @@ fun CompassButton(
                 text = "N",
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFF1565C0),
+                color = Color(0xFF1A73E8),
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .offset(y = 2.dp),
@@ -151,7 +151,7 @@ fun CompassButton(
             text = "${rotation.roundToInt()}°",
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
-            color = Color(0xFF1565C0),
+            color = Color(0xFF1A73E8),
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)
         )
     }

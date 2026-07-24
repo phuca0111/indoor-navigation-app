@@ -67,7 +67,8 @@ function serializePlace(doc, extras = {}) {
     category: p.category || '',
     boundary: p.boundary || null,
     owner_type: p.owner_type || 'UNCLAIMED',
-    publication_status: p.publication_status || 'PUBLIC',
+    publication_status: p.publication_status || 'PUBLISHED',
+    description: p.description || '',
     verified: !!p.verified,
     verification_status: p.verification_status || (p.verified ? 'VERIFIED' : 'UNVERIFIED'),
     verification_note: p.verification_note || '',
@@ -234,7 +235,7 @@ async function createPlace(req, res) {
         req.body?.owner_type,
         owner_org_id ? 'ORGANIZATION' : 'UNCLAIMED'
       ),
-      publication_status: normalizePublicationStatus(req.body?.publication_status, 'PUBLIC'),
+      publication_status: normalizePublicationStatus(req.body?.publication_status, 'PUBLISHED'),
       verified: !!req.body?.verified,
       verification_status: req.body?.verified ? 'VERIFIED' : 'UNVERIFIED',
       owner_org_id,
@@ -704,7 +705,9 @@ async function getPlacePublic(req, res) {
       has_indoor: indoorBuildings.length > 0,
       indoor_published_count: indoorBuildings.length,
       indoor_buildings: indoorBuildings,
-      indoor_workspaces: indoorBuildings
+      indoor_workspaces: indoorBuildings,
+      /** Alias tương thích Explore / integration (workspaces === indoor published). */
+      workspaces: indoorBuildings
     });
   } catch (error) {
     return res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
