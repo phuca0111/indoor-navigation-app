@@ -14,6 +14,8 @@ const {
   OWNER_TYPE,
   publicationFromLegacyStatus,
   legacyStatusFromPublication,
+  canonicalizePublicationInput,
+  canonicalizeOwnerInput,
   deriveOwnerType
 } = require('../utils/placePlatform');
 
@@ -182,6 +184,16 @@ placeSchema.index({ category: 1 });
 placeSchema.index({ owner_org_id: 1 });
 placeSchema.index({ publication_status: 1, owner_type: 1 });
 placeSchema.index({ slug: 1 }, { unique: true, sparse: true });
+
+/** Alias cũ PUBLIC/UNLISTED → enum canonical trước khi validate (CI + client cũ). */
+placeSchema.pre('validate', function canonicalizeLegacyPlaceEnums() {
+  if (this.publication_status != null && this.publication_status !== '') {
+    this.publication_status = canonicalizePublicationInput(this.publication_status);
+  }
+  if (this.owner_type != null && this.owner_type !== '') {
+    this.owner_type = canonicalizeOwnerInput(this.owner_type);
+  }
+});
 
 placeSchema.pre('save', function normalizePlacePlatformFields() {
   if (Array.isArray(this.aliases)) {
