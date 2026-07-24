@@ -59,7 +59,7 @@ class PublishAndroidContractTest {
         assertEquals(2.0f, mapData.bgScaleX, 0.0001f)
         assertEquals(0.75f, mapData.bgScaleY, 0.0001f)
         assertEquals("MEDICAL", mapData.pois.single().poiType)
-        assertEquals(64f, mapData.pois.single().size ?: 0f, 0.0001f)
+        assertEquals(64f, mapData.pois.single().size, 0.0001f)
 
         val result = AStarPathfinder(GraphModel(mapData)).findPath(startNodeId!!, "3")
         assertNotNull(result)
@@ -93,6 +93,6 @@ class PublishAndroidContractTest {
         val mapData = response.mapData.sanitized()
         assertEquals(2.5f, mapData.bgScaleX, 0.0001f)
         assertEquals(2.5f, mapData.bgScaleY, 0.0001f)
-        assertEquals(24f, mapData.pois.single().size ?: 0f, 0.0001f)
+        assertEquals(24f, mapData.pois.single().size, 0.0001f)
     }
 }
