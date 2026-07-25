@@ -32,20 +32,22 @@
 <section class="landing-page-section">
   <div class="container">
     <div class="landing-card landing-card--narrow">
-      <h2>Trải nghiệm End User trên Android</h2>
+      <h2>Ứng dụng Android</h2>
       <p class="landing-muted">
-        Theo kiến trúc đã khóa: người dùng cuối <strong>không dùng website</strong> để tìm Place,
-        Indoor Map hay Favorites. Toàn bộ nằm trên <strong>ứng dụng Android</strong>
+        Tìm Place, Indoor Map, Favorites và Navigation nằm trên <strong>ứng dụng Android</strong>
         (UX kiểu Google Maps — Outdoor ⇄ Indoor).
       </p>
       <p class="landing-muted" id="sessionHint" hidden></p>
       <ul class="landing-muted" style="text-align:left;line-height:1.7;">
         <li>Tìm Place · Outdoor Map · Indoor · QR · Navigation</li>
         <li>Favorites · History · Profile · Settings</li>
-        <li>Đăng nhập Google trên App</li>
+        <li>Đăng nhập Google / email trên App</li>
       </ul>
+      <p style="margin-top:1.25rem;" id="workspaceCta" hidden>
+        <a class="btn btn-primary btn-large btn-block" href="/admin/dashboard.html">Vào Personal Workspace (vẽ map)</a>
+      </p>
       <p style="margin-top:1.25rem;">
-        <a class="btn btn-primary btn-large btn-block" href="/">Về trang chủ</a>
+        <a class="btn btn-primary btn-large btn-block" href="/" id="homeBtn">Về trang chủ</a>
       </p>
       <p class="auth-links" style="margin-top:1rem;">
         Quản trị hệ thống? <a href="/login?next=/admin"><strong>Đăng nhập Admin</strong></a><br>
@@ -65,11 +67,18 @@
 (function () {
   var email = localStorage.getItem('userEmail');
   var role = localStorage.getItem('userRole');
+  var token = localStorage.getItem('token');
   var el = document.getElementById('sessionHint');
+  var ws = document.getElementById('workspaceCta');
+  var homeBtn = document.getElementById('homeBtn');
   if (el && email) {
     el.hidden = false;
     el.textContent = 'Đã đăng nhập: ' + email + (role ? ' (' + role + ')' : '') +
-      '. Mở ứng dụng Android và đăng nhập cùng tài khoản Google / email.';
+      '. Mở ứng dụng Android và đăng nhập cùng tài khoản — hoặc vào Personal Workspace để vẽ map.';
+  }
+  if (ws && token && String(role || '').toUpperCase() === 'REGISTERED_USER') {
+    ws.hidden = false;
+    if (homeBtn) homeBtn.className = 'btn btn-large btn-block';
   }
 })();
 </script>

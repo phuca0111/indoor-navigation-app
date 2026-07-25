@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
@@ -15,7 +15,7 @@
         } catch (e) { /* ignore */ }
       })();
     </script>
-    <link rel="stylesheet" href="css/admin.css?v=20260725nav1">
+    <link rel="stylesheet" href="css/admin.css?v=20260725fm4">
     <link rel="stylesheet" href="css/admin-theme.css?v=20260725fin1">
     <link rel="stylesheet" href="css/admin-tokens.css?v=20260721wq1">
 </head>
@@ -80,6 +80,10 @@
                 <button type="button" class="tab-btn" data-tab="maps" onclick="switchTab('maps')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h6"/><path d="M8 9h2"/></svg></span>
                   <span>Chi tiết tòa</span>
+                </button>
+                <button type="button" class="tab-btn creator-tab-btn" data-tab="creator" data-permission="creator.stats.read" onclick="switchTab('creator')" title="Thống kê bản đồ và tòa nhà của bạn">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 2 5-6"/><path d="M18 7h-3v3"/></svg></span>
+                  <span>Bản đồ của tôi</span>
                 </button>
                 <button type="button" class="tab-btn logs-tab-btn" data-tab="logs" onclick="switchTab('logs')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h6"/></svg></span>
@@ -585,6 +589,61 @@
             </nav>
             <div id="buildingDetailBody" class="building-detail-body" aria-live="polite">
               <p class="analytics-tab-intro">Chọn một tòa từ tab <button type="button" class="linkish" onclick="switchTab('buildings')">Tòa nhà</button> để xem hồ sơ chi tiết.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== TAB: CREATOR — funnel/stats + Indoor Workspace (module B) ===== -->
+        <div id="tab-creator" class="tab-content creator-tab" style="display:none;">
+          <div class="admin-section creator-tab-section">
+            <div class="section-header analytics-header-row creator-header-row">
+              <div>
+                <h3>Bản đồ của tôi</h3>
+                <p class="analytics-tab-intro">Xem tiến độ tòa nhà bản đồ trong nhà và mức dùng địa điểm của bạn. Chỉnh sửa trong trình soạn bản đồ.</p>
+              </div>
+              <div class="analytics-toolbar creator-toolbar">
+                <a class="btn-create" id="creatorOpenEditorBtn" href="/editor/index.html" target="_blank" rel="noopener">Vẽ bản đồ</a>
+                <button type="button" class="btn-edit" onclick="loadCreatorTab()" title="Làm mới">Làm mới</button>
+              </div>
+            </div>
+
+            <div id="creatorStatsStatus" class="creator-status" aria-live="polite"></div>
+
+            <div class="creator-panel">
+              <h4 class="creator-panel-title">Tiến độ bản đồ</h4>
+              <div id="creatorFunnelCards" class="overview-kpi-grid creator-kpi-grid" aria-label="Tiến độ bản đồ"></div>
+            </div>
+
+            <div class="creator-panel">
+              <h4 class="creator-panel-title">Mức sử dụng</h4>
+              <div id="creatorStatsCards" class="overview-kpi-grid creator-kpi-grid" aria-label="Mức sử dụng"></div>
+              <p id="creatorStatsNote" class="creator-stats-note" hidden></p>
+            </div>
+
+            <div class="creator-panel creator-panel--table">
+              <div class="creator-panel-head">
+                <div>
+                  <h4 class="creator-panel-title">Tòa nhà của tôi</h4>
+                  <p class="analytics-tab-intro creator-panel-intro">Danh sách tòa nhà / không gian bạn sở hữu hoặc tạo.</p>
+                </div>
+                <span id="creatorWorkspaceStatus" class="creator-ws-count" aria-live="polite"></span>
+              </div>
+              <div class="creator-table-wrap">
+                <table class="admin-table creator-ws-table" id="creatorWorkspaceTable">
+                  <thead>
+                    <tr>
+                      <th class="col-name">Tên</th>
+                      <th class="col-status">Trạng thái</th>
+                      <th class="col-place">Địa điểm</th>
+                      <th class="col-actions">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody id="creatorWorkspaceList">
+                    <tr><td colspan="4" class="creator-empty-cell">Chọn mục menu để tải…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div id="creatorWorkspacesPagination" class="table-pagination"></div>
             </div>
           </div>
         </div>
@@ -2564,18 +2623,27 @@
           </select>
         </div>
 
-        <label>Tòa nhà quản lý:</label>
-        <p style="font-size:12px; color:#666; margin-top:4px; margin-bottom:6px;">
-          Giữ <strong>Ctrl</strong> + click để chọn/bỏ chọn từng tòa. Bỏ hết chọn = user không quản lý tòa nào.
-        </p>
-        <input type="text" id="updateUserBuildingSearch" placeholder="Tìm tòa nhà theo tên hoặc địa chỉ..." oninput="filterUserBuildingsSelect('updateUserAssignedBuildings', this.value)" style="width:100%; padding:8px; margin-bottom:6px; border:1px solid #ddd; border-radius:6px; box-sizing:border-box;">
-        <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
-          <button type="button" onclick="clearAssignedBuildingsSelection()" class="btn-edit" style="padding:4px 10px; font-size:12px; background:#ecf0f1; color:#333;">
-            Bỏ chọn tất cả
-          </button>
-          <span id="updateUserBuildingCount" style="font-size:12px; color:#888;"></span>
+        <div id="updateUserOrgGroup" style="display:none;">
+          <label>Tổ chức <span style="color:#e74c3c;">*</span>:</label>
+          <select id="updateUserOrganizationId" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
+            <option value="">Chọn tổ chức...</option>
+          </select>
         </div>
-        <select id="updateUserAssignedBuildings" multiple style="width:100%; min-height:140px;"></select>
+
+        <div id="updateUserBuildingsGroup">
+          <label>Tòa nhà quản lý:</label>
+          <p style="font-size:12px; color:#666; margin-top:4px; margin-bottom:6px;">
+            Giữ <strong>Ctrl</strong> + click để chọn/bỏ chọn từng tòa. Bỏ hết chọn = user không quản lý tòa nào.
+          </p>
+          <input type="text" id="updateUserBuildingSearch" placeholder="Tìm tòa nhà theo tên hoặc địa chỉ..." oninput="filterUserBuildingsSelect('updateUserAssignedBuildings', this.value)" style="width:100%; padding:8px; margin-bottom:6px; border:1px solid #ddd; border-radius:6px; box-sizing:border-box;">
+          <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+            <button type="button" onclick="clearAssignedBuildingsSelection()" class="btn-edit" style="padding:4px 10px; font-size:12px; background:#ecf0f1; color:#333;">
+              Bỏ chọn tất cả
+            </button>
+            <span id="updateUserBuildingCount" style="font-size:12px; color:#888;"></span>
+          </div>
+          <select id="updateUserAssignedBuildings" multiple style="width:100%; min-height:140px;"></select>
+        </div>
 
         <div id="updateUserPasswordGroup" style="margin-top:14px; padding-top:14px; border-top:1px solid #ecf0f1;">
           <label>Cấp lại mật khẩu</label>
@@ -2855,10 +2923,10 @@
     <script src="../js/website-cms-router.js?v=20260721wq1"></script>
     <script src="../js/website-cms-media.js?v=20260721wq1"></script>
     <script src="../js/website-cms-audit.js?v=20260721wq1"></script>
-    <script src="../js/admin-shell.js?v=20260724usersfix6"></script>
+    <script src="../js/admin-shell.js?v=20260725creator3"></script>
     <script src="../js/orgListSort.js?v=20260708l"></script>
     <script src="../js/dashboardTableSort.js?v=20260708l"></script>
-    <script src="../js/dashboard.js?v=20260725fin1"></script>
+    <script src="../js/dashboard.js?v=20260725portal1"></script>
     <script src="../js/map-governance.js?v=20260723mgcui2"></script>
     <script src="../js/website-cms.js?v=20260721audit1"></script>
     <script src="../js/admin-ui.js?v=20260717ad32"></script>

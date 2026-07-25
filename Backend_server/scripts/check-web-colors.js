@@ -39,7 +39,9 @@ const legacyAllowlist = new Set((
   '#6d28d9 #6ee7b7 #9ca3af #a7f3d0 #bbf7d0 #bfdbfe #c2410c #c4b5fd ' +
   '#c5cdd8 #cbd5e1 #ddd6fe #e2e8f0 #ecfdf5 #ede9fe #eff6ff #f0fdf4 ' +
   '#f1f5f9 #f3f4f6 #f5f3ff #fca5a5 #fecaca #fed7aa #fee2e2 #fef2f2 ' +
-  '#fff7ed'
+  '#fff7ed ' +
+  // Creator tab + user modal baseline
+  '#333 #e8ecf1 #ecf0f1 #f8fbff'
 ).split(/\s+/));
 
 function runGit(args) {

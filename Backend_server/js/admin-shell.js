@@ -35,12 +35,20 @@
     openButton?.setAttribute('aria-expanded', String(!next));
     openButton?.setAttribute('aria-label', next ? 'Mở rộng menu' : 'Thu hẹp menu');
     openButton?.setAttribute('title', next ? 'Mở rộng menu' : 'Thu hẹp menu');
-    // Tooltip đầy đủ khi nhãn bị rút gọn (mini-rail YouTube)
+    // Tooltip đầy đủ khi thu gọn (chỉ còn icon)
     tabNav?.querySelectorAll('.tab-btn').forEach((btn) => {
       const label = btn.querySelector('span:not(.admin-menu-icon)')?.textContent?.trim()
         || btn.textContent.trim();
-      if (label) {
-        if (next) btn.setAttribute('title', label);
+      if (!label) return;
+      if (next) {
+        if (btn.dataset.titleExpanded == null) {
+          btn.dataset.titleExpanded = btn.getAttribute('title') || '';
+        }
+        btn.setAttribute('title', label);
+      } else {
+        const original = btn.dataset.titleExpanded;
+        delete btn.dataset.titleExpanded;
+        if (original) btn.setAttribute('title', original);
         else if (btn.getAttribute('title') === label) btn.removeAttribute('title');
       }
     });
