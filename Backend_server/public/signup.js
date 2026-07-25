@@ -1,4 +1,4 @@
-// signup.js — POST /api/auth/public-register → /get-app (Android End User)
+// signup.js — POST /api/auth/public-register → Personal Workspace (Admin dashboard)
 (function () {
   var API = '/api';
 
@@ -80,8 +80,8 @@
           if (data.user.id) localStorage.setItem('userId', data.user.id);
         }
 
-        showOk('Đăng ký thành công — mở hướng dẫn dùng Android App…');
-        window.location.replace('/get-app');
+        showOk('Đăng ký thành công — mở Personal Workspace…');
+        window.location.replace('/admin/dashboard.html');
       } catch (err) {
         showError('Không kết nối được server. Kiểm tra node server.js đã chạy chưa.');
       } finally {

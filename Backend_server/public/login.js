@@ -1,11 +1,11 @@
-// login.js (Landing) — portal theo role (LOCKED: Docs/PORTAL_ARCHITECTURE.md)
+// login.js (Landing) — portal theo role
 (function () {
     var API_URL = '/api';
 
-    /** Portal map — End User = Android (/get-app); không còn /app */
+    /** Personal Workspace (REGISTERED_USER) → Admin dashboard; Org → /org; hệ thống → Admin */
     function portalHomeForRole(role) {
         var r = String(role || '').toUpperCase();
-        if (r === 'REGISTERED_USER') return '/get-app';
+        if (r === 'REGISTERED_USER') return '/admin/dashboard.html';
         if (r === 'ORG_ADMIN' || r === 'BUILDING_ADMIN') return '/org';
         if (r === 'SUPER_ADMIN' || r === 'FINANCE_ADMIN' || r === 'MARKETING_MANAGER') {
             return '/admin/dashboard.html';
@@ -16,12 +16,13 @@
     function roleAllowedForPath(role, path) {
         var r = String(role || '').toUpperCase();
         var p = String(path || '');
-        if (p.indexOf('/get-app') === 0) return r === 'REGISTERED_USER' || r === 'SUPER_ADMIN';
+        // /get-app = trang hướng dẫn Android (mọi role đã login đều xem được)
+        if (p.indexOf('/get-app') === 0) return true;
         if (p.indexOf('/app') === 0) return false; // STOPPED
         if (p.indexOf('/org') === 0) return r === 'ORG_ADMIN' || r === 'BUILDING_ADMIN' || r === 'SUPER_ADMIN';
         if (p.indexOf('/admin') === 0) {
             return r === 'SUPER_ADMIN' || r === 'FINANCE_ADMIN' || r === 'MARKETING_MANAGER'
-                || r === 'ORG_ADMIN' || r === 'BUILDING_ADMIN';
+                || r === 'ORG_ADMIN' || r === 'BUILDING_ADMIN' || r === 'REGISTERED_USER';
         }
         return p.charAt(0) === '/';
     }
@@ -102,7 +103,7 @@
                 ORG_NOT_FOUND: 'Tổ chức của tài khoản không còn tồn tại. Liên hệ Super Admin.',
                 ORG_INACTIVE: 'Tổ chức đã bị tạm dừng. Liên hệ Super Admin để kích hoạt lại.',
                 OVER_QUOTA_USER_LOCKED: 'Tài khoản bị khóa do vượt hạn mức gói tổ chức.',
-                USER_INACTIVE: 'Tài khoản đang bị khóa hoặc chờ duyệt.',
+                USER_INACTIVE: 'Tài khoản Google này đã tồn tại nhưng đang bị khóa (is_active = false). Vào Admin → Tài khoản để mở khóa, hoặc liên hệ Super Admin.',
                 MEMBER_INACTIVE: 'Tư cách thành viên tổ chức không hoạt động.',
                 disabled: 'Đăng nhập Google chưa được cấu hình.',
                 missing_code: 'Google không trả về mã xác thực. Thử lại.',
@@ -120,7 +121,7 @@
         }
         if (pending === '1' && !token) {
             showError(reason === 'account_inactive'
-                ? 'Email Google này đã có tài khoản đang bị khóa hoặc chờ Super Admin duyệt.'
+                ? 'Email Google này đã có tài khoản đang bị khóa. Vào Admin → Tài khoản để mở khóa.'
                 : 'Không thể đăng nhập bằng Google. Liên hệ Super Admin nếu tài khoản đang chờ duyệt.');
             return;
         }
@@ -149,7 +150,7 @@
                         window.location.replace(resolvePostLoginUrl(role));
                     })
                     .catch(function () {
-                        window.location.replace('/get-app');
+                        window.location.replace('/admin/dashboard.html');
                     });
                 return;
             }

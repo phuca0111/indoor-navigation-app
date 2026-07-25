@@ -1,10 +1,10 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Đăng nhập | IndoorNav</title>
-    <meta name="description" content="Đăng nhập IndoorNav — Admin / Tổ chức trên web; End User dùng Android App.">
+    <meta name="description" content="Đăng nhập IndoorNav — Admin và Tổ chức trên web.">
     <link rel="stylesheet" href="/styles.css?v=20260721c6">
     <link rel="stylesheet" href="/css/landing-layout.css?v=20260721settings2">
     <link rel="stylesheet" href="/css/landing-auth.css?v=20260721c6">
@@ -27,7 +27,7 @@
         </nav>
         <div class="auth-actions" id="authActions">
             <a href="/login" class="auth-btn login-btn">Đăng nhập</a>
-            <a href="/get-app" class="auth-btn register-btn">Tải App</a>
+            <a href="/register" class="auth-btn register-btn">Đăng ký tổ chức</a>
         </div>
         <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">☰</button>
     </div>
@@ -38,8 +38,8 @@
         <div class="landing-card landing-card--narrow">
             <h2>Đăng nhập</h2>
             <p class="landing-muted">
-              <strong>Admin / Tổ chức</strong> → sau login vào <code>/admin</code> hoặc <code>/org</code>.<br>
-              <strong>End User</strong> → dùng <strong>Android App</strong> (không còn portal web <code>/app</code>).
+              Dành cho <strong>Quản trị hệ thống</strong> và <strong>Tổ chức</strong>.
+              Sau khi đăng nhập bạn sẽ vào cổng Admin hoặc Tổ chức.
             </p>
 
             <form id="loginForm" class="auth-form" novalidate>
@@ -60,12 +60,6 @@
                     <a href="/admin/forgot-password.html">Quên mật khẩu?</a>
                 </p>
                 <p class="auth-links">
-                    Người dùng cuối?
-                    <a href="/get-app"><strong>Mở hướng dẫn Android App</strong></a>
-                    ·
-                    <a href="/signup">Đăng ký tài khoản (dùng trên App)</a>
-                </p>
-                <p class="auth-links">
                     Doanh nghiệp?
                     <a href="/register">Đăng ký tổ chức (chờ duyệt)</a>
                 </p>
@@ -84,6 +78,6 @@
 </footer>
 
 <script src="/landing.js?v=20260721settings2"></script>
-<script src="/login.js?v=20260724lock1"></script>
+<script src="/login.js?v=20260725portal1"></script>
 </body>
 </html>
