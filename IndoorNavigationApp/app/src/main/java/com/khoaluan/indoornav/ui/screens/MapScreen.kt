@@ -11,6 +11,8 @@ package com.khoaluan.indoornav.ui.screens
 //   - CompassButton / CrosshairButton: nut xoay ban do / canh giua user
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -28,6 +31,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,7 +43,6 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -60,6 +64,7 @@ import com.khoaluan.indoornav.ui.components.PlaceCardModel
 import com.khoaluan.indoornav.ui.components.PlaceDetailSheet
 import com.khoaluan.indoornav.ui.components.PoiCategory
 import com.khoaluan.indoornav.ui.components.PoiFilterChips
+import com.khoaluan.indoornav.ui.components.resolveCategory
 import com.khoaluan.indoornav.ui.i18n.LocalAppLocale
 import com.khoaluan.indoornav.ui.i18n.tr
 import com.khoaluan.indoornav.ui.i18n.trStatic
@@ -333,7 +338,14 @@ fun MapScreen(
                     val isPathPreview = uiFlags.isPathPreview
 
                     // Data class dùng chung cho danh sách tìm kiếm
-                    data class SearchItem(val id: Int, val name: String, val isRoom: Boolean, val floor: Int? = null)
+                    data class SearchItem(
+                        val id: Int,
+                        val name: String,
+                        val isRoom: Boolean,
+                        val floor: Int? = null,
+                        /** GĐ1 POI Platform — keyword phụ: loại POI + mô tả + search_tags */
+                        val keywords: List<String> = emptyList(),
+                    )
 
                     val crossFloorRooms by viewModel.crossFloorRooms.collectAsState()
 
@@ -343,7 +355,21 @@ fun MapScreen(
                             SearchItem(it.id, it.name, true, state.floorNumber)
                         }
                         val poiItems = state.mapData.pois.mapNotNull { poi ->
-                            poi.name?.let { SearchItem(poi.id, it, false, state.floorNumber) }
+                            poi.name?.let { poiName ->
+                                val category = poi.resolveCategory()
+                                SearchItem(
+                                    id = poi.id,
+                                    name = poiName,
+                                    isRoom = false,
+                                    floor = state.floorNumber,
+                                    keywords = buildList {
+                                        add(category.labelVi)
+                                        add(category.labelEn)
+                                        poi.description?.takeIf { it.isNotBlank() }?.let { add(it) }
+                                        poi.searchTags.orEmpty().forEach { add(it) }
+                                    },
+                                )
+                            }
                         }
                         val otherFloor = crossFloorRooms
                             .filter { it.floor != state.floorNumber }
@@ -365,6 +391,7 @@ fun MapScreen(
                             items = searchItems,
                             nameOf = { it.name },
                             limit = 30,
+                            keywordsOf = { it.keywords },
                         )
                     }
 
@@ -405,17 +432,51 @@ fun MapScreen(
                             val mapRotationMode by viewModel.mapRotationMode.collectAsState()
                             val mapNorthOffsetDeg by viewModel.mapNorthOffsetDeg.collectAsState()
 
-                            MapView(
-                                mapData = state.mapData,
-                                selectedRoomId = selectedRoomId,
-                                selectedPoiId = navState.destinationPoiId,
-                                navState = navState,
-                                mapRotationMode = mapRotationMode,
-                                centerOnUserTrigger = centerTrigger,
-                                centerOnDestinationTrigger = centerDestTrigger,
-                                layers = mapLayers,
-                                poiCategoryFilter = poiFilter,
+                            // GĐ3 — fade khi đổi tầng
+                            var floorFadeTrigger by remember { mutableFloatStateOf(1f) }
+                            LaunchedEffect(state.floorNumber) {
+                                floorFadeTrigger = 0.35f
+                                kotlinx.coroutines.delay(40)
+                                floorFadeTrigger = 1f
+                            }
+                            val floorAlpha by animateFloatAsState(
+                                targetValue = floorFadeTrigger,
+                                animationSpec = tween(320),
+                                label = "floorAlpha",
                             )
+
+                            androidx.compose.foundation.layout.Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer { alpha = floorAlpha },
+                            ) {
+                                MapView(
+                                    mapData = state.mapData,
+                                    selectedRoomId = selectedRoomId,
+                                    selectedPoiId = navState.destinationPoiId,
+                                    navState = navState,
+                                    mapRotationMode = mapRotationMode,
+                                    centerOnUserTrigger = centerTrigger,
+                                    centerOnDestinationTrigger = centerDestTrigger,
+                                    layers = mapLayers,
+                                    poiCategoryFilter = poiFilter,
+                                )
+                            }
+
+                            // GĐ3 — banner gợi ý đổi tầng
+                            navState.floorTransitionHint?.takeIf { it.isNotBlank() }?.let { hint ->
+                                Text(
+                                    text = hint,
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .padding(top = 56.dp, start = 16.dp, end = 16.dp)
+                                        .background(Color(0xE01A73E8), RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                            }
 
                             // #9 POI filter chips
                             PoiFilterChips(
@@ -423,7 +484,7 @@ fun MapScreen(
                                 onSelect = { poiFilter = it },
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)
-                                    .padding(top = 56.dp)
+                                    .padding(top = if (navState.floorTransitionHint.isNullOrBlank()) 56.dp else 100.dp)
                                     .fillMaxWidth(),
                             )
 

@@ -22,14 +22,26 @@ function makeError(status, code, message, extra = {}) {
 
 /**
  * Có document Floor cho (building, floor_number) → coi như "có map" (D1).
+ * Name-only stub (version 0, chưa publish, map trống) KHÔNG chặn remove.
  */
+function floorHasMapContent(floorDoc) {
+  if (!floorDoc) return false;
+  if (floorDoc.published_at) return true;
+  if (Number(floorDoc.version) > 0) return true;
+  const md = floorDoc.map_data || {};
+  return ['rooms', 'pois', 'nodes', 'edges', 'walls', 'qr_anchors'].some(
+    (key) => Array.isArray(md[key]) && md[key].length > 0
+  );
+}
+
 async function hasFloorDocument(buildingId, floorNumber) {
   const doc = await Floor.findOne({
     building_id: buildingId,
     floor_number: floorNumber
   })
-    .select('_id version floor_number')
+    .select('_id version floor_number published_at map_data.rooms map_data.pois map_data.nodes map_data.edges map_data.walls map_data.qr_anchors')
     .lean();
+  if (!floorHasMapContent(doc)) return null;
   return doc;
 }
 
@@ -186,5 +198,6 @@ module.exports = {
   applyTotalFloorsChange,
   assertFloorInRange,
   hasFloorDocument,
+  floorHasMapContent,
   clampCreateTotalFloors
 };

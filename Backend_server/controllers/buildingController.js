@@ -1,5 +1,7 @@
 const buildingApplication = require('../application/coreTenant/buildingApplicationService');
 const buildingQueries = require('../application/coreTenant/buildingQueryService');
+const buildingExplorer = require('../application/coreTenant/buildingExplorerApplicationService');
+const indoorSearch = require('../application/coreTenant/indoorSearchApplicationService');
 
 function send(res, result) {
   if (result.headers) {
@@ -31,10 +33,16 @@ function endpoint(useCase) {
 module.exports = {
   getBuildings: endpoint(buildingQueries.listBuildings),
   getBuildingById: endpoint(buildingQueries.getBuilding),
+  /** GĐ2 Building Explorer — public summary trước Enter Indoor */
+  getBuildingExplorer: endpoint(buildingExplorer.getBuildingExplorer),
+  /** GĐ4 Indoor Search — tìm POI trong nhà từ outdoor (public) */
+  searchIndoorPois: endpoint(indoorSearch.searchIndoorPois),
   checkLocation: endpoint(buildingQueries.checkLocation),
   createBuilding: endpoint(buildingApplication.createBuilding),
   updateBuilding: endpoint(buildingApplication.updateBuilding),
   patchBuildingFloors: endpoint(buildingApplication.patchFloors),
+  renameBuildingFloor: endpoint(buildingApplication.renameFloor),
+  duplicateBuildingFloor: endpoint(buildingApplication.duplicateFloor),
   deleteBuilding: endpoint(buildingApplication.deactivateBuilding),
   restoreBuilding: endpoint(buildingApplication.restoreBuilding)
 };

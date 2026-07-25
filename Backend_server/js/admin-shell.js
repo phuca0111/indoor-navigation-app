@@ -13,13 +13,50 @@
   const mobileQuery = window.matchMedia('(max-width: 1024px)');
   const themeStorageKey = 'indoorNavAdminTheme';
   const groupStorageKey = 'indoorNavAdminNavGroups';
+  const collapseStorageKey = 'indoorNavAdminSidebarCollapsed';
 
   if (!body || !sidebar) return;
 
   function setSidebarOpen(open) {
     const nextOpen = Boolean(open) && mobileQuery.matches;
     body.classList.toggle('admin-sidebar-open', nextOpen);
-    openButton?.setAttribute('aria-expanded', String(nextOpen));
+    if (mobileQuery.matches) {
+      openButton?.setAttribute('aria-expanded', String(nextOpen));
+    }
+  }
+
+  function setSidebarCollapsed(collapsed) {
+    if (mobileQuery.matches) {
+      body.classList.remove('admin-sidebar-collapsed');
+      return;
+    }
+    const next = Boolean(collapsed);
+    body.classList.toggle('admin-sidebar-collapsed', next);
+    openButton?.setAttribute('aria-expanded', String(!next));
+    openButton?.setAttribute('aria-label', next ? 'Mở rộng menu' : 'Thu hẹp menu');
+    openButton?.setAttribute('title', next ? 'Mở rộng menu' : 'Thu hẹp menu');
+    // Tooltip đầy đủ khi nhãn bị rút gọn (mini-rail YouTube)
+    tabNav?.querySelectorAll('.tab-btn').forEach((btn) => {
+      const label = btn.querySelector('span:not(.admin-menu-icon)')?.textContent?.trim()
+        || btn.textContent.trim();
+      if (label) {
+        if (next) btn.setAttribute('title', label);
+        else if (btn.getAttribute('title') === label) btn.removeAttribute('title');
+      }
+    });
+    try {
+      localStorage.setItem(collapseStorageKey, next ? '1' : '0');
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  function getInitialCollapsed() {
+    try {
+      return localStorage.getItem(collapseStorageKey) === '1';
+    } catch (_) {
+      return false;
+    }
   }
 
   function applyTheme(theme) {
@@ -154,7 +191,13 @@
 
   openButton?.setAttribute('aria-controls', 'adminSidebar');
   openButton?.setAttribute('aria-expanded', 'false');
-  openButton?.addEventListener('click', () => setSidebarOpen(true));
+  openButton?.addEventListener('click', () => {
+    if (mobileQuery.matches) {
+      setSidebarOpen(!body.classList.contains('admin-sidebar-open'));
+      return;
+    }
+    setSidebarCollapsed(!body.classList.contains('admin-sidebar-collapsed'));
+  });
   closeButton?.addEventListener('click', () => setSidebarOpen(false));
   overlay?.addEventListener('click', () => setSidebarOpen(false));
 
@@ -166,6 +209,12 @@
     const toggle = event.target.closest('.admin-nav-group-toggle');
     if (toggle) {
       const group = toggle.closest('.admin-nav-group');
+      if (body.classList.contains('admin-sidebar-collapsed') && !mobileQuery.matches) {
+        // Đang thu hẹp: bấm nhóm → mở rộng lại rồi mở nhóm
+        setSidebarCollapsed(false);
+        setGroupOpen(group, true);
+        return;
+      }
       setGroupOpen(group, !group?.classList.contains('is-open'));
       return;
     }
@@ -195,13 +244,19 @@
     });
   }
 
-  mobileQuery.addEventListener?.('change', () => setSidebarOpen(false));
+  mobileQuery.addEventListener?.('change', () => {
+    setSidebarOpen(false);
+    if (mobileQuery.matches) body.classList.remove('admin-sidebar-collapsed');
+    else setSidebarCollapsed(getInitialCollapsed());
+  });
   applyTheme(getInitialTheme());
   restoreGroupState();
   syncActiveNavigation();
+  if (!mobileQuery.matches) setSidebarCollapsed(getInitialCollapsed());
 
   window.AdminShell = {
     syncNavGroupVisibility,
-    syncActiveNavigation
+    syncActiveNavigation,
+    setSidebarCollapsed
   };
 })();

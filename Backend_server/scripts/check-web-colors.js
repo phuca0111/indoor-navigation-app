@@ -33,7 +33,13 @@ const legacyAllowlist = new Set((
   '#8b5cf6 #ff0000 #00ff00 ' +
   // Map governance / org modal / landing-article baseline (files đã ship)
   '#8e44ad #4e44ad #d1fae5 #065f46 #059669 #b91c1c #fef3c7 #7f1d1d ' +
-  '#f6f8fb #243244'
+  '#f6f8fb #243244 ' +
+  // Admin endUser detail page (ed70afd) — theme/status badges
+  '#047857 #10b981 #1f2a37 #253044 #34495e #374151 #4b5563 #6b7280 ' +
+  '#6d28d9 #6ee7b7 #9ca3af #a7f3d0 #bbf7d0 #bfdbfe #c2410c #c4b5fd ' +
+  '#c5cdd8 #cbd5e1 #ddd6fe #e2e8f0 #ecfdf5 #ede9fe #eff6ff #f0fdf4 ' +
+  '#f1f5f9 #f3f4f6 #f5f3ff #fca5a5 #fecaca #fed7aa #fee2e2 #fef2f2 ' +
+  '#fff7ed'
 ).split(/\s+/));
 
 function runGit(args) {

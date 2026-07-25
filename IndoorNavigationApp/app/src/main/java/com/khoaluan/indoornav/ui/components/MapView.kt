@@ -1,8 +1,12 @@
 package com.khoaluan.indoornav.ui.components
 
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateOffsetAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -28,6 +32,11 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.delay
+import kotlin.math.ceil
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.TextStyle
@@ -126,6 +135,53 @@ fun MapView(
         animationSpec = tween(durationMillis = 140, easing = LinearEasing),
         label = "UserHeadingInterpolation",
     )
+
+    // GĐ3 — pulse POI focus / destination pin
+    val focusPulse = rememberInfiniteTransition(label = "poi_focus_pulse")
+    val focusPulseScale by focusPulse.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 1.35f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "focusPulseScale",
+    )
+    val focusPulseAlpha by focusPulse.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 0.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "focusPulseAlpha",
+    )
+
+    // GĐ3 — vẽ lộ trình dần khi path mới xuất hiện (preview)
+    var routeReveal by remember { mutableFloatStateOf(1f) }
+    val pathKey = navState.path?.size ?: 0
+    LaunchedEffect(pathKey, navState.destinationNodeId) {
+        if (pathKey <= 1) {
+            routeReveal = 1f
+            return@LaunchedEffect
+        }
+        if (navState.isNavigatingMode) {
+            routeReveal = 1f
+            return@LaunchedEffect
+        }
+        routeReveal = 0f
+        val steps = 18
+        for (i in 1..steps) {
+            routeReveal = i / steps.toFloat()
+            delay(28)
+        }
+        routeReveal = 1f
+    }
+    val routeDrawProgress = if (navState.isNavigatingMode) {
+        max(navState.routeProgress.coerceIn(0f, 1f), 0.05f)
+    } else {
+        routeReveal.coerceIn(0f, 1f)
+    }
 
     val textMeasurer = rememberTextMeasurer()
     val bgPainter = if (!mapData.backgroundImage.isNullOrEmpty()) {
@@ -452,34 +508,40 @@ fun MapView(
                     }
                 }
 
-                // Path
+                // Path — GĐ3: vẽ lộ trình dần + đoạn đã đi sáng hơn khi đang navigate
                 if (layers.path) {
                     val route = navState.path
                     if (route != null && route.size > 1) {
-                        for (i in 0 until route.size - 1) {
+                        val edgeCount = route.size - 1
+                        val visibleEdges = max(1, ceil(edgeCount * routeDrawProgress.toDouble()).toInt())
+                        val traveledEdges = if (navState.isNavigatingMode) {
+                            max(0, ceil(edgeCount * navState.routeProgress.coerceIn(0f, 1f).toDouble()).toInt())
+                        } else 0
+                        for (i in 0 until min(visibleEdges, edgeCount)) {
                             val from = route[i]
                             val to = route[i + 1]
+                            val traveled = i < traveledEdges
                             if (navState.isNavigatingMode) {
                                 drawLine(
-                                    color = Color(0xFF1A73E8).copy(0.3f),
+                                    color = Color(0xFF1A73E8).copy(if (traveled) 0.85f else 0.28f),
                                     start = from,
                                     end = to,
-                                    strokeWidth = 14f / mapScale,
+                                    strokeWidth = (if (traveled) 16f else 12f) / mapScale,
                                     cap = StrokeCap.Round,
                                 )
                                 drawLine(
-                                    color = Color.White,
+                                    color = if (traveled) Color.White else Color.White.copy(0.7f),
                                     start = from,
                                     end = to,
-                                    strokeWidth = 4f / mapScale,
+                                    strokeWidth = (if (traveled) 5f else 3.5f) / mapScale,
                                     cap = StrokeCap.Round,
                                 )
                             } else {
                                 drawLine(
-                                    color = Color(0xFF1A73E8).copy(0.35f),
+                                    color = Color(0xFF1A73E8).copy(0.45f),
                                     start = from,
                                     end = to,
-                                    strokeWidth = 6f / mapScale,
+                                    strokeWidth = 7f / mapScale,
                                     cap = StrokeCap.Round,
                                 )
                             }
@@ -487,10 +549,15 @@ fun MapView(
                     }
                 }
 
-                // Destination pin
+                // Destination pin — GĐ3 pulse
                 val destPos = navState.path?.lastOrNull() ?: navState.destinationMarkerPos
                 destPos?.let { pos ->
                     val pinAlpha = if (navState.isNavigatingMode) 1f else 0.75f
+                    drawCircle(
+                        Color(0xFFFF1744).copy(0.35f * focusPulseAlpha * pinAlpha),
+                        radius = (22f * focusPulseScale) / mapScale,
+                        center = pos,
+                    )
                     drawCircle(Color(0xFFFF1744).copy(0.3f * pinAlpha), radius = 20f / mapScale, center = pos)
                     drawCircle(Color(0xFFFF1744).copy(pinAlpha), radius = 10f / mapScale, center = pos)
                     drawCircle(Color.White.copy(pinAlpha), radius = 5f / mapScale, center = pos)
@@ -515,26 +582,59 @@ fun MapView(
                     drawCircle(Color.White, radius = 3.5f / mapScale, center = start)
                 }
 
-                // POIs
+                // POIs — icon loại + tên luôn hiện (không phụ thuộc zoom)
                 if (layers.pois) {
                     drawPois.forEach { poi ->
+                        val selected = poi.id == selectedPoiId
+                        // Emoji catalog cần đủ px trên màn hình để khớp Editor
+                        val minScreenPx = when (poi.category) {
+                            PoiCategory.ATM -> 48f
+                            PoiCategory.ELEVATOR, PoiCategory.STAIRS -> 46f
+                            else -> 42f
+                        }
+                        val displaySize = max(poi.size * 1.25f, minScreenPx)
+                        val iconSize = displaySize / mapScale
+                        if (selected) {
+                            drawCircle(
+                                Color(0xFFFF1744).copy(focusPulseAlpha),
+                                radius = (displaySize * 0.9f * focusPulseScale) / mapScale,
+                                center = poi.pos,
+                            )
+                        }
                         drawPoiIcon(
                             category = poi.category,
                             center = poi.pos,
-                            iconSize = poi.size / mapScale,
-                            isSelected = poi.id == selectedPoiId,
+                            iconSize = iconSize,
+                            isSelected = selected,
                             textMeasurer = textMeasurer,
                         )
-                        if (mapScale > 0.6f) {
+                        val label = poi.name.ifBlank { poi.category.label }
+                        if (label.isNotBlank()) {
+                            val fontSp = (10f / mapScale).coerceIn(8f / mapScale, 14f / mapScale)
                             val layout = textMeasurer.measure(
-                                poi.name,
-                                TextStyle(fontSize = (9f / mapScale).sp),
+                                label,
+                                TextStyle(
+                                    fontSize = fontSp.sp,
+                                    color = Color(0xFF202124),
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
                             )
+                            val pad = 3f / mapScale
+                            val labelTop = iconSize * 0.55f + 2f / mapScale
                             withTransform({
                                 translate(poi.pos.x, poi.pos.y)
                                 rotate(-effectiveRotation, pivot = Offset.Zero)
-                                translate(-layout.size.width / 2f, 10f / mapScale)
+                                translate(-layout.size.width / 2f, labelTop)
                             }) {
+                                drawRoundRect(
+                                    color = Color.White.copy(0.92f),
+                                    topLeft = Offset(-pad, -pad),
+                                    size = Size(
+                                        layout.size.width + pad * 2,
+                                        layout.size.height + pad * 2,
+                                    ),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f / mapScale),
+                                )
                                 drawText(layout)
                             }
                         }

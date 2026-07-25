@@ -131,9 +131,14 @@ data class Poi(
     val y: Int,
     val type: String? = null,
     @SerializedName("poi_type") val poiType: String? = null,
+    /** Editor camelCase — một số bản publish giữ cả hai field. */
+    @SerializedName("poiType") val poiTypeCamel: String? = null,
     val typeIndex: Int? = null,
     /** Kích thước icon POI trên canvas (px map). Null → mặc định 24. */
     val size: Float? = null,
+    /** GĐ1 POI Platform — metadata phục vụ tìm kiếm (Gson có thể trả null, xem sanitized()). */
+    val description: String? = null,
+    @SerializedName("search_tags") val searchTags: List<String>? = null,
 )
 
 /**

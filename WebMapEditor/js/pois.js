@@ -54,7 +54,9 @@ function createPoi(x, y) {
         typeIndex: 0,       // Index trong mảng poiTypes
         type: poiTypes[0].name,
         poiType: poiTypes[0].key,
-        size: 24
+        size: 24,
+        description: '',
+        search_tags: []
     };
     pois.push(poi);
     if (typeof EditorCore !== 'undefined' && EditorCore.ObjectTransform) {

@@ -24,17 +24,23 @@
         ctx.fillStyle = isSelected ? '#f1c40f' : typeInfo.color;
         ctx.fill();
         ctx.strokeStyle = isSelected ? '#e74c3c' : '#333';
-        ctx.lineWidth = isSelected ? 2 / zoom : 1 / zoom;
+        // Viền dày theo bán kính để khi phóng to size vẫn cân đối.
+        ctx.lineWidth = isSelected
+            ? Math.max(2 / zoom, radius * 0.12)
+            : Math.max(1 / zoom, radius * 0.06);
         ctx.stroke();
 
-        var fontSize = Math.max(8, 12 / zoom);
-        ctx.font = fontSize + 'px Arial';
+        // Icon scale theo radius (slider size) — trước đây cố định 12/zoom
+        // nên chỉ thấy viền phình, glyph vẫn bé.
+        var fontSize = Math.max(10, radius * 1.35);
+        ctx.font = fontSize + 'px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = '#000';
         ctx.fillText(typeInfo.icon, poi.x, poi.y);
 
-        var labelSize = Math.max(7, 9 / zoom);
+        // Nhãn: giữ đọc được trên màn hình, hơi theo size POI khi phóng to.
+        var labelSize = Math.max(7, Math.min(radius * 0.7, Math.max(9 / zoom, radius * 0.45)));
         ctx.font = labelSize + 'px Arial';
         ctx.fillStyle = '#333';
         ctx.textBaseline = 'top';

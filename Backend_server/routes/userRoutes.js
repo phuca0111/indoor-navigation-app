@@ -14,7 +14,11 @@ const {
   getMe,
   updateMe,
   changePassword,
-  adminResetPassword
+  adminResetPassword,
+  getUserOverview,
+  getUserFavorites,
+  getUserHistory,
+  getUserSessions
 } = require('../controllers/userController');
 const { auth, requireAdmin, requirePermission, P } = require('../middlewares/auth');
 const {
@@ -44,6 +48,11 @@ router.use(auth, requireAdmin);
 
 router.get('/', getUsers);
 router.put('/:userId/reset-password', adminResetPassword);
+// Chi tiết per-user (Admin) — đặt trước GET /:userId
+router.get('/:userId/overview', getUserOverview);
+router.get('/:userId/favorites', getUserFavorites);
+router.get('/:userId/history', getUserHistory);
+router.get('/:userId/sessions', getUserSessions);
 router.get('/:userId', getUserById);
 router.put('/:userId', updateUser);
 

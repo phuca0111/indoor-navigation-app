@@ -22,8 +22,8 @@ android {
         create("local") {
             dimension = "env"
             // Bản test nội bộ: điện thoại gọi backend đang chạy trên laptop.
-            buildConfigField("String", "BASE_URL", "\"http://192.168.2.29:5000/api/\"")
-            manifestPlaceholders["deepLinkHost"] = "192.168.2.29"
+            buildConfigField("String", "BASE_URL", "\"http://192.168.2.21:5000/api/\"")
+            manifestPlaceholders["deepLinkHost"] = "192.168.2.21"
             // W8 — cùng Web Client ID với Backend_server/.env (GOOGLE_CLIENT_ID)
             buildConfigField(
                 "String",

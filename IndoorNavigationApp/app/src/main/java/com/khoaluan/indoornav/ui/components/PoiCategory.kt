@@ -4,23 +4,28 @@ import androidx.compose.ui.graphics.Color
 import java.text.Normalizer
 
 /**
- * Loại POI chuẩn hoá từ:
- * - Backend enum: TOILET, STAIRS, ELEVATOR…
- * - Web Editor [type] tiếng Việt: "WC", "Thang máy", "Cầu thang"…
- * - Web Editor [typeIndex]: 0=WC, 1=Thang máy, 2=Thang cuốn, 3=Cầu thang…
+ * Loại POI — màu + emoji khớp `Backend_server/utils/poiCatalog.js`
+ * và `WebMapEditor/js/pois.js` để Editor / App cùng một ngôn ngữ hình ảnh.
  */
-enum class PoiCategory(val labelVi: String, val labelEn: String, val color: Color) {
-    TOILET("Nhà vệ sinh", "Restroom", Color(0xFF0288D1)),
-    STAIRS("Thang bộ", "Stairs", Color(0xFFFB8C00)),
-    ELEVATOR("Thang máy", "Elevator", Color(0xFF388E3C)),
-    EXIT("Lối ra", "Exit", Color(0xFFE53935)),
-    FOOD("Ăn uống", "Food", Color(0xFFF57C00)),
-    PARKING("Bãi đỗ xe", "Parking", Color(0xFF2563EB)),
-    MEDICAL("Y tế", "Medical", Color(0xFFDC2626)),
-    SECURITY("Bảo vệ", "Security", Color(0xFF475569)),
-    SAFETY("An toàn", "Safety", Color(0xFFEF4444)),
-    INFO("Tiện ích", "Amenities", Color(0xFFFFA000)),
-    OTHER("Khác", "Other", Color(0xFF78909C));
+enum class PoiCategory(
+    val labelVi: String,
+    val labelEn: String,
+    val color: Color,
+    /** Cùng emoji catalog / Editor — Android vẽ emoji thay vì glyph tự chế. */
+    val emoji: String,
+) {
+    TOILET("Nhà vệ sinh", "Restroom", Color(0xFF3498DB), "🚻"),
+    STAIRS("Cầu thang", "Stairs", Color(0xFF9B59B6), "🪜"),
+    ELEVATOR("Thang máy", "Elevator", Color(0xFF9B59B6), "🛗"),
+    EXIT("Lối ra", "Exit", Color(0xFFE74C3C), "🚪"),
+    ATM("Máy ATM", "ATM", Color(0xFF27AE60), "🏧"),
+    FOOD("Nhà hàng", "Food", Color(0xFFF97316), "🍽️"),
+    PARKING("Bãi đỗ xe", "Parking", Color(0xFF2563EB), "🅿️"),
+    MEDICAL("Phòng y tế", "Medical", Color(0xFFDC2626), "➕"),
+    SECURITY("Phòng bảo vệ", "Security", Color(0xFF475569), "🛡️"),
+    SAFETY("Bình chữa cháy", "Fire extinguisher", Color(0xFFEF4444), "🧯"),
+    INFO("Quầy thông tin", "Information", Color(0xFF0EA5E9), "ℹ️"),
+    OTHER("Khác", "Other", Color(0xFF95A5A6), "📍");
 
     val label: String
         get() = if (com.khoaluan.indoornav.ui.i18n.AppLocaleHolder.isEn()) labelEn else labelVi
@@ -30,9 +35,9 @@ enum class PoiCategory(val labelVi: String, val labelEn: String, val color: Colo
         private val EDITOR_TYPE_INDEX = listOf(
             TOILET,   // 0 WC
             ELEVATOR, // 1 Thang máy
-            ELEVATOR, // 2 Thang cuốn
+            ELEVATOR, // 2 Thang cuốn → cùng emoji/màu elevator group
             STAIRS,   // 3 Cầu thang
-            INFO,     // 4 ATM
+            ATM,      // 4 Máy ATM
             INFO,     // 5 Quầy lễ tân
             EXIT,     // 6 Lối ra
             OTHER,    // 7 Khác
@@ -47,13 +52,31 @@ enum class PoiCategory(val labelVi: String, val labelEn: String, val color: Colo
             SAFETY,   // 16 Bình chữa cháy
         )
 
-        fun fromRaw(type: String?, typeIndex: Int? = null): PoiCategory {
-            fromTypeString(type)?.let { return it }
+        /**
+         * Không dừng ở OTHER sớm: bản đồ cũ thường có poi_type="OTHER" dù tên/type là "Thang máy".
+         * Thứ tự: key chuẩn (≠ OTHER) → type label → typeIndex → tên POI → OTHER.
+         */
+        fun fromRaw(
+            type: String? = null,
+            typeIndex: Int? = null,
+            poiTypeKey: String? = null,
+            name: String? = null,
+        ): PoiCategory {
+            preferNonOther(fromTypeString(poiTypeKey))?.let { return it }
+            preferNonOther(fromTypeString(type))?.let { return it }
             typeIndex?.let { idx ->
-                if (idx in EDITOR_TYPE_INDEX.indices) return EDITOR_TYPE_INDEX[idx]
+                if (idx in EDITOR_TYPE_INDEX.indices) {
+                    preferNonOther(EDITOR_TYPE_INDEX[idx])?.let { return it }
+                }
             }
+            preferNonOther(fromTypeString(name))?.let { return it }
+            fromTypeString(poiTypeKey)?.let { return it }
+            fromTypeString(type)?.let { return it }
             return OTHER
         }
+
+        private fun preferNonOther(cat: PoiCategory?): PoiCategory? =
+            if (cat != null && cat != OTHER) cat else null
 
         private fun fromTypeString(type: String?): PoiCategory? {
             if (type.isNullOrBlank()) return null
@@ -64,33 +87,42 @@ enum class PoiCategory(val labelVi: String, val labelEn: String, val color: Colo
                 "STAIRS", "STAIR" -> return STAIRS
                 "ELEVATOR", "LIFT", "ESCALATOR" -> return ELEVATOR
                 "EXIT" -> return EXIT
+                "ATM" -> return ATM
                 "FOOD", "CAFE", "RESTAURANT" -> return FOOD
                 "PARKING" -> return PARKING
                 "MEDICAL", "PHARMACY", "FIRST_AID" -> return MEDICAL
                 "SECURITY" -> return SECURITY
                 "FIRE_EXTINGUISHER", "SAFETY" -> return SAFETY
-                "ATM", "INFO", "RECEPTION", "WAITING", "VENDING" -> return INFO
+                "INFO", "RECEPTION", "WAITING", "VENDING" -> return INFO
+                "OTHER", "LOCKER" -> return OTHER
             }
 
-            return when (normalized) {
-                "wc" -> TOILET
-                "restroom", "toilet", "nha ve sinh", "nha vs", "ve sinh" -> TOILET
-                "stairs", "stair", "cau thang", "thang bo" -> STAIRS
-                "elevator", "lift", "thang may", "thang cuon" -> ELEVATOR
-                "exit", "loi ra", "cua ra" -> EXIT
-                "food", "cafe", "an uong", "nha hang", "quan ca phe" -> FOOD
-                "parking", "bai do xe" -> PARKING
-                "medical", "pharmacy", "phong y te", "y te" -> MEDICAL
-                "security", "phong bao ve", "bao ve" -> SECURITY
-                "fire extinguisher", "binh chua chay", "an toan" -> SAFETY
-                "atm", "quay le tan", "le tan", "quay thong tin", "khu vuc cho",
-                "may ban hang", "info", "tien ich" -> INFO
-                "khac", "other" -> OTHER
+            return when {
+                normalized in setOf("wc", "restroom", "toilet", "nha ve sinh", "nha vs", "ve sinh") -> TOILET
+                normalized in setOf("stairs", "stair", "cau thang", "thang bo") -> STAIRS
+                normalized in setOf("elevator", "lift", "thang may", "thang cuon") -> ELEVATOR
+                normalized.startsWith("thang may") || normalized.contains("thang may") -> ELEVATOR
+                normalized.contains("thang cuon") -> ELEVATOR
+                normalized in setOf("exit", "loi ra", "cua ra", "loi thoat") -> EXIT
+                normalized in setOf("atm", "may atm", "cay atm", "rut tien") ||
+                    normalized.contains("atm") -> ATM
+                normalized in setOf("food", "cafe", "an uong", "nha hang", "quan ca phe", "do an") -> FOOD
+                normalized in setOf("parking", "bai do xe") -> PARKING
+                normalized in setOf("medical", "pharmacy", "phong y te", "y te", "nha thuoc") -> MEDICAL
+                normalized in setOf("security", "phong bao ve", "bao ve") -> SECURITY
+                normalized in setOf("fire extinguisher", "binh chua chay", "an toan", "pccc") -> SAFETY
+                normalized in setOf(
+                    "quay le tan", "le tan", "quay thong tin", "khu vuc cho",
+                    "may ban hang", "info", "tien ich", "diem moc",
+                ) -> INFO
+                // Khớp Editor: chưa có loại LOCKER → OTHER (📍), không gán INFO "i"
+                normalized in setOf("tu giu do", "locker", "giu do", "khac", "other") ||
+                    normalized.contains("giu do") ||
+                    normalized.contains("locker") -> OTHER
                 else -> null
             }
         }
 
-        /** Bỏ dấu + lowercase để so khớp "Thang máy" / "Cầu thang" ổn định. */
         private fun normalizeLabel(raw: String): String {
             val noAccent = Normalizer.normalize(raw.trim(), Normalizer.Form.NFD)
                 .replace(Regex("\\p{M}+"), "")
@@ -100,4 +132,9 @@ enum class PoiCategory(val labelVi: String, val labelEn: String, val color: Colo
 }
 
 fun com.khoaluan.indoornav.data.model.Poi.resolveCategory(): PoiCategory =
-    PoiCategory.fromRaw(type ?: poiType, typeIndex)
+    PoiCategory.fromRaw(
+        type = type,
+        typeIndex = typeIndex,
+        poiTypeKey = poiType ?: poiTypeCamel,
+        name = name,
+    )

@@ -7,6 +7,9 @@ const Invoice = require('../models/Invoice');
 const CmsArticle = require('../models/CmsArticle');
 const LandingMedia = require('../models/LandingMedia');
 const { roleHasPermission, P } = require('../utils/permissions');
+const {
+  POI_CATEGORIES, stripDiacritics, poiCategorySearchText, getPoiCategory
+} = require('../utils/poiCatalog');
 const SEARCH_TYPES = [
   'organization', 'building', 'user', 'place', 'floor', 'room', 'poi',
   'invoice', 'article', 'media'
@@ -14,6 +17,16 @@ const SEARCH_TYPES = [
 
 function safeRegex(value) {
   return new RegExp(String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+}
+
+/** Category có label/keyword chứa query (không dấu) — GĐ1 POI Search Tag. */
+function poiCategoryKeysForQuery(query) {
+  const q = stripDiacritics(query);
+  if (!q || q.length < 2) return [];
+  return POI_CATEGORIES
+    .filter((cat) => cat.key !== 'OTHER'
+      && stripDiacritics(poiCategorySearchText(cat.key)).includes(q))
+    .map((cat) => cat.key);
 }
 
 function decodeCursor(cursor) {
@@ -118,9 +131,20 @@ class MongoSearchProvider extends SearchProvider {
     }));
 
     if (allowedTypes.has('room') || allowedTypes.has('poi')) {
+      const poiCategoryKeys = poiCategoryKeysForQuery(query);
+      const queryNorm = stripDiacritics(query);
+      const floorOr = [
+        { 'map_data.rooms.name': regex },
+        { 'map_data.pois.name': regex },
+        { 'map_data.pois.description': regex },
+        { 'map_data.pois.search_tags': regex }
+      ];
+      if (poiCategoryKeys.length) {
+        floorOr.push({ 'map_data.pois.poi_type': { $in: poiCategoryKeys } });
+      }
       tasks.push(Floor.find({
         ...floorScope,
-        $or: [{ 'map_data.rooms.name': regex }, { 'map_data.pois.name': regex }]
+        $or: floorOr
       }).select('building_id floor_number floor_name map_data.rooms map_data.pois').limit(50).lean()
         .then((floors) => floors.flatMap((floor) => {
           const rows = [];
@@ -135,9 +159,14 @@ class MongoSearchProvider extends SearchProvider {
           }
           if (allowedTypes.has('poi')) {
             for (const poi of floor.map_data?.pois || []) {
-              if (regex.test(`${poi.name || ''} ${poi.description || ''}`)) rows.push({
+              const haystack = `${poi.name || ''} ${poi.description || ''} ${(Array.isArray(poi.search_tags) ? poi.search_tags : []).join(' ')}`;
+              const poiTypeKey = String(poi.poi_type || '').toUpperCase();
+              const matched = regex.test(haystack)
+                || (queryNorm.length >= 2 && stripDiacritics(haystack).includes(queryNorm))
+                || (poiCategoryKeys.length > 0 && poiCategoryKeys.includes(poiTypeKey));
+              if (matched) rows.push({
                 type: 'poi', id: `${floor._id}:${poi.id}`, label: poi.name,
-                detail: `${floor.floor_name || `Tầng ${floor.floor_number}`} · ${poi.poi_type || ''}`,
+                detail: `${floor.floor_name || `Tầng ${floor.floor_number}`} · ${getPoiCategory(poiTypeKey)?.label_vi || poi.poi_type || ''}`,
                 tab: 'buildings'
               });
             }
