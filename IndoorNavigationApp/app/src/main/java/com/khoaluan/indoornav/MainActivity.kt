@@ -151,12 +151,18 @@ class MainActivity : ComponentActivity() {
                 var showPDRTest by remember { mutableStateOf(false) }
                 var isScanningQR by remember { mutableStateOf(false) }
 
-                fun openIndoor(buildingId: String, totalFloors: Int = 1, preferredFloor: Int? = null) {
+                fun openIndoor(
+                    buildingId: String,
+                    totalFloors: Int = 1,
+                    preferredFloor: Int? = null,
+                    focusPoiId: Int? = null,
+                ) {
                     if (buildingId.isBlank()) return
                     viewModel.enterIndoorSession(
                         buildingId = buildingId,
                         totalFloors = totalFloors.coerceAtLeast(1),
                         preferredFloor = preferredFloor,
+                        focusPoiId = focusPoiId,
                     ) { id ->
                         currentBuildingId = id
                     }
@@ -370,6 +376,14 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onDeepLinkEnterIndoor = { id, floor ->
                                         openIndoor(id, resolveTotalFloors(id), floor)
+                                    },
+                                    onIndoorSearchEnter = { id, floor, poiId, totalFloors ->
+                                        openIndoor(
+                                            buildingId = id,
+                                            totalFloors = totalFloors,
+                                            preferredFloor = floor,
+                                            focusPoiId = poiId,
+                                        )
                                     },
                                 )
                             }

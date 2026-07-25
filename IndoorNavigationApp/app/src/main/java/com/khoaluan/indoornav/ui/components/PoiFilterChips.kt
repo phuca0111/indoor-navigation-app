@@ -25,6 +25,7 @@ fun PoiFilterChips(
     val filters = listOf<PoiCategory?>(
         null,
         PoiCategory.TOILET,
+        PoiCategory.ATM,
         PoiCategory.ELEVATOR,
         PoiCategory.STAIRS,
         PoiCategory.EXIT,

@@ -344,3 +344,54 @@ data class CreatorStatsDto(
     @SerializedName("rating_count") val ratingCount: Int = 0,
     @SerializedName("rating_avg") val ratingAvg: Double? = null,
 )
+
+/** GĐ2 Building Explorer — GET /buildings/:id/explorer */
+data class BuildingExplorerDto(
+    @SerializedName("building_id") val buildingId: String? = null,
+    val name: String? = null,
+    val address: String? = null,
+    val description: String? = null,
+    val category: String? = null,
+    @SerializedName("place_id") val placeId: String? = null,
+    @SerializedName("place_slug") val placeSlug: String? = null,
+    @SerializedName("place_name") val placeName: String? = null,
+    val verified: Boolean = false,
+    @SerializedName("gps_location") val gpsLocation: com.khoaluan.indoornav.data.model.GPSLocation? = null,
+    @SerializedName("total_floors") val totalFloors: Int = 1,
+    @SerializedName("floors_with_map") val floorsWithMap: Int = 0,
+    @SerializedName("rooms_count") val roomsCount: Int = 0,
+    @SerializedName("pois_count") val poisCount: Int = 0,
+    @SerializedName("rating_avg") val ratingAvg: Double? = null,
+    @SerializedName("rating_count") val ratingCount: Int = 0,
+    val creator: BuildingExplorerCreatorDto? = null,
+    @SerializedName("updated_at") val updatedAt: String? = null,
+    @SerializedName("has_published_indoor") val hasPublishedIndoor: Boolean = false,
+)
+
+data class BuildingExplorerCreatorDto(
+    val id: String? = null,
+    @SerializedName("full_name") val fullName: String? = null,
+)
+
+/** GĐ4 Indoor Search — GET /buildings/indoor-search?q= */
+data class IndoorSearchResponse(
+    val query: String? = null,
+    val total: Int = 0,
+    val results: List<IndoorSearchHitDto> = emptyList(),
+)
+
+data class IndoorSearchHitDto(
+    @SerializedName("building_id") val buildingId: String,
+    @SerializedName("building_name") val buildingName: String? = null,
+    @SerializedName("place_id") val placeId: String? = null,
+    val address: String? = null,
+    @SerializedName("total_floors") val totalFloors: Int = 1,
+    @SerializedName("floor_number") val floorNumber: Int = 0,
+    @SerializedName("floor_name") val floorName: String? = null,
+    @SerializedName("poi_id") val poiId: Int? = null,
+    @SerializedName("poi_name") val poiName: String? = null,
+    @SerializedName("poi_type") val poiType: String? = null,
+    @SerializedName("poi_type_label") val poiTypeLabel: String? = null,
+    val description: String? = null,
+)
+

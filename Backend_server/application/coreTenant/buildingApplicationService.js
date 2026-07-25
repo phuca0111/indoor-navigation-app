@@ -18,10 +18,28 @@ const { resolvePlaceIdForNewBuilding } = require('../../services/placeEnsure');
 const {
   MAX_FLOORS,
   floorRangeList,
-  clampCreateTotalFloors
+  clampCreateTotalFloors,
+  floorHasMapContent,
+  assertFloorInRange
 } = require('../../services/floorLifecycle');
+const { autosaveFingerprint } = require('../../domain/mapLifecyclePolicies');
 const policy = require('./coreTenantPolicy');
 const { runCoreTenantCommand } = require('./runCoreTenantCommand');
+
+const MAP_CONTENT_KEYS = ['rooms', 'pois', 'nodes', 'edges', 'walls', 'qr_anchors'];
+
+function cloneMapPayload(src) {
+  try {
+    return JSON.parse(JSON.stringify(src && typeof src === 'object' ? src : {}));
+  } catch (e) {
+    return {};
+  }
+}
+
+function mapPayloadHasContent(md) {
+  const s = md && typeof md === 'object' ? md : {};
+  return MAP_CONTENT_KEYS.some((k) => Array.isArray(s[k]) && s[k].length > 0);
+}
 
 function fail(status, message, code, details) {
   throw Object.assign(new Error(message), { status, code, details });
@@ -251,7 +269,7 @@ async function updateBuilding(input, options = {}) {
     }
     for (let floor = Number(current.total_floors) - 1; floor >= requested; floor -= 1) {
       const existing = await repository.findFloorAt(current._id, floor, scope);
-      if (existing) {
+      if (floorHasMapContent(existing)) {
         fail(
           409,
           `Không thể giảm xuống ${requested}: tầng ${floor} còn bản đồ (version ${existing.version || '?'}).`,
@@ -302,7 +320,7 @@ async function patchFloors(input, options = {}) {
   }
   if (action === 'remove') {
     const floor = await repository.findFloorAt(current._id, from - 1, scope);
-    if (floor) {
+    if (floorHasMapContent(floor)) {
       fail(409, `Không thể giảm: tầng ${from - 1} còn bản đồ (version ${floor.version || '?'}).`,
         'FLOOR_HAS_MAP', { floor_number: from - 1, version: floor.version || null });
     }
@@ -344,6 +362,193 @@ async function patchFloors(input, options = {}) {
         : `Đã bớt tầng cao nhất. Số tầng hiện tại: ${to}.`,
       building,
       total_floors: to,
+      floors: floorRangeList(to)
+    }
+  };
+}
+
+/**
+ * F2 — Đổi tên tầng (floor_name). Cho phép BUILDING_ADMIN có quyền building.
+ * Body: { floor_name: string }
+ * Upsert Floor stub version=0 nếu tầng chưa có document (không tính là có map).
+ */
+async function renameFloor(input, options = {}) {
+  const scope = await resolveBuildingScope(input.actor, input.params.id);
+  const current = await repository.findBuildingById(input.params.id, scope);
+  if (!current) fail(404, 'Không tìm thấy tòa nhà!');
+  await assertWritable(current, input.actor);
+
+  const floorNumber = Number.parseInt(input.params.floorNumber, 10);
+  if (!Number.isFinite(floorNumber)) {
+    fail(400, 'floorNumber không hợp lệ.', 'FLOOR_INVALID');
+  }
+  try {
+    assertFloorInRange(floorNumber, current.total_floors);
+  } catch (e) {
+    fail(e.status || 400, e.message, e.code || 'FLOOR_OUT_OF_RANGE', {
+      floor_number: e.floor_number,
+      total_floors: e.total_floors
+    });
+  }
+
+  const floorName = String(input.body?.floor_name ?? '').trim();
+  if (!floorName) fail(400, 'Tên tầng không được để trống.', 'FLOOR_NAME_REQUIRED');
+  if (floorName.length > 80) fail(400, 'Tên tầng tối đa 80 ký tự.', 'FLOOR_NAME_TOO_LONG');
+
+  const floor = await runCoreTenantCommand(async (session) => {
+    const updated = await repository.upsertFloorName(
+      current._id,
+      floorNumber,
+      floorName,
+      input.actor?.userId,
+      { session }
+    );
+    await recordMutation({
+      action: 'RENAME_FLOOR',
+      building: current,
+      actor: input.actor,
+      ip: input.ip,
+      details: {
+        message: 'Đổi tên tầng',
+        floor_number: floorNumber,
+        floor_name: floorName
+      },
+      session
+    });
+    return updated;
+  }, options);
+
+  return {
+    status: 200,
+    body: {
+      message: 'Đã đổi tên tầng.',
+      floor: {
+        floor_number: floor.floor_number,
+        floor_name: floor.floor_name,
+        version: floor.version || 0,
+        has_map: floorHasMapContent(floor)
+      }
+    }
+  };
+}
+
+/**
+ * F6 — Nhân bản tầng: thêm tầng đuôi + copy map (published ưu tiên, fallback draft) vào Draft mới.
+ * Body: { source_floor_number } (hoặc params.floorNumber). Kết quả là 1 bản nháp — chưa xuất bản.
+ */
+async function duplicateFloor(input, options = {}) {
+  if (input.actor?.role === 'BUILDING_ADMIN') {
+    fail(403, 'Building Admin không được thêm tầng. Chỉ SUPER_ADMIN / ORG_ADMIN.');
+  }
+  const scope = await resolveBuildingScope(input.actor, input.params.id);
+  const current = await repository.findBuildingById(input.params.id, scope);
+  if (!current) fail(404, 'Không tìm thấy tòa nhà!');
+  await assertWritable(current, input.actor);
+
+  const sourceFloor = Number.parseInt(
+    input.body?.source_floor_number ?? input.params.floorNumber,
+    10
+  );
+  if (!Number.isFinite(sourceFloor)) {
+    fail(400, 'source_floor_number không hợp lệ.', 'FLOOR_INVALID');
+  }
+  try {
+    assertFloorInRange(sourceFloor, current.total_floors);
+  } catch (e) {
+    fail(e.status || 400, e.message, e.code || 'FLOOR_OUT_OF_RANGE', {
+      floor_number: e.floor_number,
+      total_floors: e.total_floors
+    });
+  }
+
+  const from = Number(current.total_floors) || 1;
+  if (from >= MAX_FLOORS) {
+    fail(400, `Số tầng tối đa là ${MAX_FLOORS}.`, 'FLOOR_MAX', { max: MAX_FLOORS });
+  }
+
+  // Nguồn nội dung: ưu tiên bản đã publish, fallback bản nháp.
+  const publishedFloor = await repository.findFloorMapData(current._id, sourceFloor);
+  let payload = null;
+  let sourceName = publishedFloor?.floor_name || '';
+  if (publishedFloor?.map_data && mapPayloadHasContent(publishedFloor.map_data)) {
+    payload = cloneMapPayload(publishedFloor.map_data);
+  } else {
+    const sourceDraft = await repository.findActiveDraft(current._id, sourceFloor);
+    if (sourceDraft?.payload && mapPayloadHasContent(sourceDraft.payload)) {
+      payload = cloneMapPayload(sourceDraft.payload);
+    }
+  }
+  if (!payload) {
+    fail(409, `Tầng ${sourceFloor} chưa có bản đồ để nhân bản.`, 'FLOOR_EMPTY', {
+      floor_number: sourceFloor
+    });
+  }
+
+  // Tầng đích chưa có draft (tầng đuôi mới) — nhưng phòng trường hợp lệch dữ liệu.
+  const newFloorNumber = from;
+  const existingDraft = await repository.findActiveDraft(current._id, newFloorNumber);
+  if (existingDraft) {
+    fail(409, `Tầng đích ${newFloorNumber} đã có bản nháp.`, 'FLOOR_DRAFT_EXISTS', {
+      floor_number: newFloorNumber
+    });
+  }
+
+  if (current.owner_user_id && !current.organization_id) {
+    const owner = await repository.findUserScope(current.owner_user_id);
+    const quota = assertCanAddFloorForUser({ plan: owner?.plan }, current);
+    if (!quota.ok) fail(403, quota.message, quota.code, { usage: quota.usage });
+  }
+
+  const to = from + 1;
+  const baseName = sourceName || (sourceFloor === 0 ? 'Tầng trệt' : `Tầng ${sourceFloor}`);
+  const newName = `${baseName} (bản sao)`.slice(0, 80);
+  const fingerprint = autosaveFingerprint(payload);
+
+  const building = await runCoreTenantCommand(async (session) => {
+    const updated = await repository.updateBuilding(
+      current._id,
+      { total_floors: to },
+      scope,
+      { session }
+    );
+    await repository.upsertFloorName(
+      current._id,
+      newFloorNumber,
+      newName,
+      input.actor?.userId,
+      { session }
+    );
+    await repository.createFloorDraft({
+      buildingId: current._id,
+      floorNumber: newFloorNumber,
+      payload,
+      fingerprint,
+      userId: input.actor?.userId || null
+    }, { session });
+    await recordMutation({
+      action: 'DUPLICATE_FLOOR',
+      building: updated,
+      actor: input.actor,
+      ip: input.ip,
+      details: {
+        message: 'Nhân bản tầng',
+        source_floor_number: sourceFloor,
+        new_floor_number: newFloorNumber,
+        changes: { total_floors: { from, to } }
+      },
+      session
+    });
+    return updated;
+  }, options);
+
+  return {
+    status: 201,
+    body: {
+      message: `Đã nhân bản tầng ${sourceFloor} thành tầng ${newFloorNumber} (bản nháp).`,
+      building,
+      total_floors: to,
+      new_floor_number: newFloorNumber,
+      floor_name: newName,
       floors: floorRangeList(to)
     }
   };
@@ -412,6 +617,11 @@ module.exports = {
   createBuilding,
   updateBuilding,
   patchFloors,
+  renameFloor,
+  duplicateFloor,
   deactivateBuilding,
-  restoreBuilding
+  restoreBuilding,
+  // F6 — helpers thuần cho unit test
+  _cloneMapPayload: cloneMapPayload,
+  _mapPayloadHasContent: mapPayloadHasContent
 };

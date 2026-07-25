@@ -21,6 +21,18 @@ interface ApiService {
     @GET("buildings/public")
     suspend fun getBuildings(): Response<List<Building>>
 
+    /** GĐ2 — tóm tắt tòa nhà (số tầng, POI, đánh giá, creator) trước Enter Indoor */
+    @GET("buildings/{id}/explorer")
+    suspend fun getBuildingExplorer(@Path("id") buildingId: String): Response<BuildingExplorerDto>
+
+    /** GĐ4 — tìm POI trong nhà từ outdoor (vd: ATM → AEON · Tầng 2) */
+    @GET("buildings/indoor-search")
+    suspend fun searchIndoorPois(
+        @Query("q") query: String,
+        @Query("limit") limit: Int = 30,
+        @Query("category") category: String? = null,
+    ): Response<IndoorSearchResponse>
+
     @GET("places")
     suspend fun getPlaces(
         @Query("q") q: String? = null,

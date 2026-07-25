@@ -2,6 +2,7 @@ const Building = require('../models/Building');
 const Organization = require('../models/Organization');
 const User = require('../models/User');
 const Floor = require('../models/Floor');
+const Draft = require('../models/Draft');
 const Place = require('../models/Place');
 
 function dto(value) {
@@ -101,9 +102,63 @@ async function findFloorAt(buildingId, floorNumber, scope, { session } = {}) {
   const building = await findBuildingById(buildingId, scope, { session });
   if (!building) return null;
   return Floor.findOne({ building_id: building._id, floor_number: floorNumber })
-    .select('_id floor_number version published_at')
+    .select('_id floor_number floor_name version published_at map_data.rooms map_data.pois map_data.nodes')
     .session(session || null)
     .lean();
+}
+
+async function upsertFloorName(buildingId, floorNumber, floorName, userId, { session } = {}) {
+  const name = String(floorName || '').trim();
+  return Floor.findOneAndUpdate(
+    { building_id: buildingId, floor_number: floorNumber },
+    {
+      $set: {
+        floor_name: name,
+        last_modified_by: userId || null
+      },
+      $setOnInsert: {
+        building_id: buildingId,
+        floor_number: floorNumber,
+        version: 0,
+        published_at: null
+      }
+    },
+    {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+      session: session || undefined
+    }
+  ).lean();
+}
+
+/** F6 — đọc đủ map_data + tên tầng để nhân bản. */
+async function findFloorMapData(buildingId, floorNumber, { session } = {}) {
+  return Floor.findOne({ building_id: buildingId, floor_number: floorNumber })
+    .select('_id floor_number floor_name version published_at map_data')
+    .session(session || null)
+    .lean();
+}
+
+/** F6 — bản nháp đang hoạt động của tầng nguồn (fallback khi tầng chưa publish). */
+async function findActiveDraft(buildingId, floorNumber, { session } = {}) {
+  return Draft.findOne({ building_id: buildingId, floor_number: floorNumber, deleted_at: null })
+    .session(session || null)
+    .lean();
+}
+
+/** F6 — tạo Draft mới cho tầng đích (đã đảm bảo tầng đích chưa có draft). */
+async function createFloorDraft(input, { session } = {}) {
+  const [created] = await Draft.create([{
+    building_id: input.buildingId,
+    floor_number: input.floorNumber,
+    payload: input.payload,
+    payload_fingerprint: input.fingerprint || '',
+    version: 1,
+    created_by: input.userId || null,
+    updated_by: input.userId || null
+  }], session ? { session } : undefined);
+  return dto(created);
 }
 
 async function findPlaceForAttachment(placeId, { session } = {}) {
@@ -124,5 +179,9 @@ module.exports = {
   createBuilding,
   updateBuilding,
   findFloorAt,
+  upsertFloorName,
+  findFloorMapData,
+  findActiveDraft,
+  createFloorDraft,
   findPlaceForAttachment
 };

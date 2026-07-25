@@ -77,10 +77,17 @@ object SearchFuzzy {
         items: List<T>,
         nameOf: (T) -> String,
         limit: Int = 20,
+        keywordsOf: (T) -> List<String> = { emptyList() },
     ): List<T> {
         if (query.isBlank()) return emptyList()
         return items
-            .map { it to matchScore(query, nameOf(it)) }
+            .map { item ->
+                val nameScore = matchScore(query, nameOf(item))
+                // GĐ1 POI Platform: khớp mô tả/tag/loại POI — trừ 50 để xếp sau khớp tên trực tiếp
+                val keywordScore = keywordsOf(item)
+                    .maxOfOrNull { (matchScore(query, it) - 50).coerceAtLeast(0) } ?: 0
+                item to maxOf(nameScore, keywordScore)
+            }
             .filter { it.second > 0 }
             .sortedByDescending { it.second }
             .take(limit)

@@ -57,7 +57,9 @@ function getMapSnapshot() {
             type: p.type,
             poiType: p.poiType,
             typeIndex: p.typeIndex,
-            size: (typeof normalizePoiSize === 'function') ? normalizePoiSize(p.size) : (p.size || 24)
+            size: (typeof normalizePoiSize === 'function') ? normalizePoiSize(p.size) : (p.size || 24),
+            description: p.description || '',
+            search_tags: Array.isArray(p.search_tags) ? p.search_tags : []
         })),
         cadPoints: (typeof cadPoints !== 'undefined' ? cadPoints : []).map(function (cp) {
             return withLayer(cp, {
@@ -345,7 +347,9 @@ function exportJSON() {
                 type: p.type,
                 poiType: p.poiType,
                 typeIndex: p.typeIndex,
-                size: (typeof normalizePoiSize === 'function') ? normalizePoiSize(p.size) : (p.size || 24)
+                size: (typeof normalizePoiSize === 'function') ? normalizePoiSize(p.size) : (p.size || 24),
+                description: p.description || '',
+                search_tags: Array.isArray(p.search_tags) ? p.search_tags : []
             };
         }),
         cadPoints: (typeof cadPoints !== 'undefined' ? cadPoints : []).map(function (cp) {

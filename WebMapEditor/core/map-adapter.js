@@ -71,7 +71,9 @@
                 type: p.type || 'Điểm mốc',
                 poiType: p.poiType || null,
                 typeIndex: Number.isFinite(Number(p.typeIndex)) ? Number(p.typeIndex) : 0,
-                size: Math.max(12, Math.min(96, Number(p.size) || 24))
+                size: Math.max(12, Math.min(96, Number(p.size) || 24)),
+                description: p.description || '',
+                search_tags: Array.isArray(p.search_tags) ? p.search_tags : []
             };
         });
     }

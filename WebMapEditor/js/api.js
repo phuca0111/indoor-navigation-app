@@ -446,10 +446,15 @@ function rebuildFloorSelect(totalFloors) {
     if (!sel) return;
     const n = Math.max(1, parseInt(totalFloors, 10) || 1);
     const prev = sel.value;
+    // F2: dùng floor_name từ meta nếu có (đổi tên tầng)
+    const metaFloors = {};
+    ((window.editorBuildingMeta && window.editorBuildingMeta.floors) || []).forEach((f) => {
+        if (f && f.floor_name) metaFloors[Number(f.floor_number)] = f.floor_name;
+    });
     let html = '';
     for (let i = 0; i < n; i++) {
-        const label = i === 0 ? 'Tầng trệt' : ('Tầng ' + i);
-        html += '<option value="' + i + '">' + label + '</option>';
+        const label = metaFloors[i] || (i === 0 ? 'Tầng trệt' : ('Tầng ' + i));
+        html += '<option value="' + i + '">' + escapeHtml(label) + '</option>';
     }
     sel.innerHTML = html;
     const preferred = typeof resolvePreferredEditorFloor === 'function'
@@ -1872,7 +1877,9 @@ function buildPublishPayloadInline() {
             type: p.type || 'Điểm mốc',
             poiType: p.poiType || null,
             typeIndex: Number.isFinite(Number(p.typeIndex)) ? Number(p.typeIndex) : 0,
-            size: (typeof normalizePoiSize === 'function') ? normalizePoiSize(p.size) : (p.size || 24)
+            size: (typeof normalizePoiSize === 'function') ? normalizePoiSize(p.size) : (p.size || 24),
+            description: p.description || '',
+            search_tags: Array.isArray(p.search_tags) ? p.search_tags : []
         })),
 
         nodes: pathNodes.filter(n => typeof n === 'object').map(n => ({

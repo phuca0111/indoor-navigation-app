@@ -21,6 +21,8 @@ const P = {
   ORG_USERS_MANAGE: 'org.users.manage',
   BUILDINGS_CREATE: 'buildings.create',
   BUILDINGS_MANAGE: 'buildings.manage',
+  /** Creator dashboard — xem funnel/stats của chính mình */
+  CREATOR_STATS_READ: 'creator.stats.read',
   BUILDING_READ: 'building.read',
   BUILDING_WRITE: 'building.write',
   BUILDING_PUBLISH: 'building.publish',
@@ -75,6 +77,7 @@ const ROLE_PERMISSIONS = {
     P.BILLING_ORG_CHECKOUT,
     P.BUILDINGS_CREATE,
     P.BUILDINGS_MANAGE,
+    P.CREATOR_STATS_READ,
     P.PLATFORM_LOGS_READ,
     P.OVERVIEW_READ,
     P.ANALYTICS_READ,
@@ -99,6 +102,7 @@ const ROLE_PERMISSIONS = {
   ],
   BUILDING_ADMIN: [
     P.BUILDINGS_MANAGE,
+    P.CREATOR_STATS_READ,
     P.OVERVIEW_READ,
     P.ANALYTICS_READ,
     P.BUILDING_READ,
@@ -136,6 +140,7 @@ const ROLE_PERMISSIONS = {
   REGISTERED_USER: [
     P.BUILDINGS_CREATE,
     P.BUILDINGS_MANAGE,
+    P.CREATOR_STATS_READ,
     P.BILLING_PERSONAL,
     P.OVERVIEW_READ,
     P.BUILDING_READ,

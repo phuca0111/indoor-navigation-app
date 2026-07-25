@@ -7,18 +7,28 @@ function buildMapSnapshot(mapData) {
     return buildEditorRoundTripSnapshot(mapData);
 }
 
+/** Đếm phần tử map/draft mà không round-trip snapshot (GET building / Floor Manager). */
+function countMapElements(mapData) {
+    const src = mapData && typeof mapData === 'object' ? mapData : {};
+    return {
+        rooms_count: Array.isArray(src.rooms) ? src.rooms.length : 0,
+        pois_count: Array.isArray(src.pois) ? src.pois.length : 0,
+        nodes_count: Array.isArray(src.nodes) ? src.nodes.length : 0,
+        edges_count: Array.isArray(src.edges) ? src.edges.length : 0,
+        walls_count: Array.isArray(src.walls) ? src.walls.length : 0,
+        qr_count: Array.isArray(src.qr_anchors) ? src.qr_anchors.length : 0
+    };
+}
+
 function summarizeMapForAudit(mapData, version = 0) {
     const snapshot = buildMapSnapshot(mapData) || {};
+    const counts = countMapElements(snapshot);
     const serialized = JSON.stringify(snapshot);
     return {
         version: Number(version) || 0,
-        rooms_count: Array.isArray(snapshot.rooms) ? snapshot.rooms.length : 0,
-        nodes_count: Array.isArray(snapshot.nodes) ? snapshot.nodes.length : 0,
-        edges_count: Array.isArray(snapshot.edges) ? snapshot.edges.length : 0,
-        walls_count: Array.isArray(snapshot.walls) ? snapshot.walls.length : 0,
-        qr_count: Array.isArray(snapshot.qr_anchors) ? snapshot.qr_anchors.length : 0,
+        ...counts,
         snapshot_sha256: crypto.createHash('sha256').update(serialized).digest('hex')
     };
 }
 
-module.exports = { buildMapSnapshot, summarizeMapForAudit };
+module.exports = { buildMapSnapshot, countMapElements, summarizeMapForAudit };

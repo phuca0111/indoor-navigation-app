@@ -228,6 +228,12 @@ async function persistBackgroundFileToStorage(file) {
             }
         }
     });
+    // F4 — cập nhật thumbnail ngay trên tab Dự án → Quản lý tầng
+    if (typeof syncFloorBackgroundThumb === 'function') {
+        syncFloorBackgroundThumb(floor, result.url);
+    } else if (typeof refreshExplorerPanel === 'function') {
+        refreshExplorerPanel();
+    }
     if (typeof showToast === 'function') {
         showToast('Đã lưu ảnh nền lên Storage', 'success');
     }

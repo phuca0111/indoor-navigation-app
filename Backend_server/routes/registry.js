@@ -45,7 +45,8 @@ const routes = {
   eventAdmin: require('./eventAdminRoutes'),
   featureFlags: require('./featureFlagRoutes'),
   health: require('./healthRoutes'),
-  website: require('./websiteRoutes')
+  website: require('./websiteRoutes'),
+  poiCategories: require('./poiCategoryRoutes')
 };
 
 function createV1AliasRouter() {
@@ -119,6 +120,7 @@ function mountRoutes(app, middleware = {}) {
   app.use('/api/admin/events', routes.eventAdmin);
   app.use('/api/search', routes.search);
   app.use('/api/feature-flags', routes.featureFlags);
+  app.use('/api/poi-categories', routes.poiCategories);
   app.use('/api/website', routes.website);
   app.use('/tptp-pay', routes.tptpPay);
 }

@@ -26,8 +26,10 @@ const {
   removeFloor,
   applyTotalFloorsChange,
   floorRangeList,
-  clampCreateTotalFloors
+  clampCreateTotalFloors,
+  floorHasMapContent
 } = require('../services/floorLifecycle');
+const { countMapElements } = require('../utils/mapSnapshot');
 
 function logActivity(data) {
     ActivityLog.create(data).catch(() => {});
@@ -773,12 +775,20 @@ const getBuildingById = async (req, res) => {
             qrTotal
         ] = await Promise.all([
             Floor.find({ building_id: buildingId })
-                .select('floor_number floor_name version published_at last_modified_by map_data.scale_ratio map_data.map_bearing_offset')
+                .select(
+                    'floor_number floor_name version published_at last_modified_by ' +
+                    'map_data.scale_ratio map_data.map_bearing_offset map_data.background_image ' +
+                    'map_data.rooms map_data.pois map_data.nodes map_data.edges map_data.walls map_data.qr_anchors'
+                )
                 .populate('last_modified_by', 'full_name email')
                 .sort({ floor_number: 1 })
                 .lean(),
             Draft.find({ building_id: buildingId })
-                .select('floor_number version updatedAt updated_by')
+                .select(
+                    'floor_number version updatedAt updated_by ' +
+                    'payload.background_image ' +
+                    'payload.rooms payload.pois payload.nodes payload.edges payload.walls payload.qr_anchors'
+                )
                 .populate('updated_by', 'full_name email')
                 .sort({ floor_number: 1 })
                 .lean(),
@@ -842,19 +852,43 @@ const getBuildingById = async (req, res) => {
         const floorByNumber = new Map(
             floorDocs.map((floor) => [Number(floor.floor_number), floor])
         );
+        // F4: chỉ trả URL ảnh nền (http/https hoặc path) — bỏ Base64 để response gọn.
+        const thumbnailUrl = (value) => {
+            const url = String(value || '').trim();
+            if (!url || url.length > 2000) return null;
+            if (/^data:/i.test(url)) return null;
+            return /^(https?:\/\/|\/)/i.test(url) ? url : null;
+        };
         const totalFloors = Math.max(1, Number(building.total_floors) || 1);
         const floors = Array.from({ length: totalFloors }, (_, floorNumber) => {
             const floor = floorByNumber.get(floorNumber) || null;
             const draft = draftByFloor.get(floorNumber) || null;
+            // Ưu tiên map đã publish; nếu chưa có Floor thì lấy stats từ draft (Floor Manager).
+            let statsSource = 'empty';
+            let counts = countMapElements(null);
+            if (floor?.map_data) {
+                counts = countMapElements(floor.map_data);
+                statsSource = 'published';
+            } else if (draft?.payload) {
+                counts = countMapElements(draft.payload);
+                statsSource = 'draft';
+            }
             return {
                 floor_number: floorNumber,
                 floor_name: floor?.floor_name || (floorNumber === 0 ? 'Tầng trệt' : `Tầng ${floorNumber}`),
-                has_map: Boolean(floor),
+                has_map: floorHasMapContent(floor),
                 is_published: Boolean(floor?.published_at),
                 has_draft: Boolean(draft),
                 version: floor?.version || 0,
                 version_count: versionCountByFloor[String(floorNumber)] || 0,
                 qr_count: qrCountByFloor[String(floorNumber)] || 0,
+                rooms_count: counts.rooms_count,
+                pois_count: counts.pois_count,
+                nodes_count: counts.nodes_count,
+                edges_count: counts.edges_count,
+                stats_source: statsSource,
+                background_image: thumbnailUrl(floor?.map_data?.background_image)
+                    || thumbnailUrl(draft?.payload?.background_image),
                 published_at: floor?.published_at || null,
                 draft_updated_at: draft?.updatedAt || null,
                 scale_ratio: floor?.map_data?.scale_ratio ?? null,

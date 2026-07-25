@@ -130,6 +130,9 @@ fun BuildingListScreen(
     pendingFloor: Int? = null,
     onPendingPlaceConsumed: () -> Unit = {},
     onDeepLinkEnterIndoor: (buildingId: String, floor: Int?) -> Unit = { _, _ -> },
+    /** GĐ4 — vào indoor với tầng + focus POI */
+    onIndoorSearchEnter: (buildingId: String, floor: Int, poiId: Int?, totalFloors: Int) -> Unit =
+        { id, _, _, _ -> onBuildingClick(id) },
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -138,6 +141,10 @@ fun BuildingListScreen(
     val followingIds by viewModel.followingPlaceIds.collectAsState()
     val placeNotice by viewModel.placeNotice.collectAsState()
     val placeListState by viewModel.placeListState.collectAsState()
+    val explorer by viewModel.buildingExplorer.collectAsState()
+    val explorerLoading by viewModel.buildingExplorerLoading.collectAsState()
+    val indoorHits by viewModel.indoorSearchHits.collectAsState()
+    val indoorSearchLoading by viewModel.indoorSearchLoading.collectAsState()
     var query by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Building?>(null) }
@@ -249,6 +256,18 @@ fun BuildingListScreen(
             query = query.trim().ifEmpty { null },
             category = category.trim().ifEmpty { null },
         )
+        val q = query.trim()
+        if (q.length >= 2) viewModel.searchIndoorPois(q)
+        else viewModel.clearIndoorSearch()
+    }
+
+    LaunchedEffect(selected?.id) {
+        val id = selected?.id
+        if (id.isNullOrBlank() || id.startsWith("place:")) {
+            viewModel.clearBuildingExplorer()
+        } else {
+            viewModel.fetchBuildingExplorer(id)
+        }
     }
 
     LaunchedEffect(isLoggedIn) {
@@ -620,6 +639,8 @@ fun BuildingListScreen(
                     query = query.trim(),
                     results = filtered,
                     loading = searchLoading,
+                    indoorHits = indoorHits,
+                    indoorLoading = indoorSearchLoading,
                     onSelect = { b ->
                         selected = b
                         showSearchResults = false
@@ -628,6 +649,17 @@ fun BuildingListScreen(
                             mapViewRef?.controller?.animateTo(GeoPoint(g.lat, g.lng))
                             mapViewRef?.controller?.setZoom(17.0)
                         }
+                    },
+                    onSelectIndoor = { hit ->
+                        showSearchResults = false
+                        query = ""
+                        viewModel.clearIndoorSearch()
+                        onIndoorSearchEnter(
+                            hit.buildingId,
+                            hit.floorNumber,
+                            hit.poiId,
+                            hit.totalFloors.coerceAtLeast(1),
+                        )
                     },
                 )
             }
@@ -687,11 +719,15 @@ fun BuildingListScreen(
         if (chosen != null && !showPlaceDetail) {
             PlacePreviewSheet(
                 building = chosen,
+                explorer = explorer,
                 isFavorite = chosen.placeId?.let { it in favoriteIds } == true,
                 isFollowing = chosen.placeId?.let { it in followingIds } == true,
                 notice = placeNotice,
                 isLoggedIn = isLoggedIn,
-                onDismiss = { selected = null },
+                onDismiss = {
+                    selected = null
+                    viewModel.clearBuildingExplorer()
+                },
                 onDirections = { openDirections(chosen) },
                 onToggleFavorite = {
                     val pid = chosen.placeId ?: return@PlacePreviewSheet
@@ -718,6 +754,8 @@ fun BuildingListScreen(
             ) {
                 PlaceDetailScreen(
                     building = chosen,
+                    explorer = explorer,
+                    explorerLoading = explorerLoading,
                     isFavorite = chosen.placeId?.let { it in favoriteIds } == true,
                     isFollowing = chosen.placeId?.let { it in followingIds } == true,
                     isLoggedIn = isLoggedIn,

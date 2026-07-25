@@ -12,6 +12,8 @@ import android.util.Log
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.khoaluan.indoornav.data.api.BuildingExplorerDto
+import com.khoaluan.indoornav.data.api.IndoorSearchHitDto
 import com.khoaluan.indoornav.data.api.RetrofitClient
 import com.khoaluan.indoornav.data.model.MapData
 import com.khoaluan.indoornav.data.model.sanitized
@@ -267,8 +269,73 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _indoorEntryState = MutableStateFlow<IndoorEntryUiState>(IndoorEntryUiState.Idle)
     val indoorEntryState: StateFlow<IndoorEntryUiState> = _indoorEntryState.asStateFlow()
 
+    /** GĐ2 — cache explorer theo buildingId (preview + detail). */
+    private val _buildingExplorer = MutableStateFlow<BuildingExplorerDto?>(null)
+    val buildingExplorer: StateFlow<BuildingExplorerDto?> = _buildingExplorer.asStateFlow()
+    private val _buildingExplorerLoading = MutableStateFlow(false)
+    val buildingExplorerLoading: StateFlow<Boolean> = _buildingExplorerLoading.asStateFlow()
+
+    /** GĐ4 — kết quả tìm POI trong nhà từ outdoor. */
+    private val _indoorSearchHits = MutableStateFlow<List<IndoorSearchHitDto>>(emptyList())
+    val indoorSearchHits: StateFlow<List<IndoorSearchHitDto>> = _indoorSearchHits.asStateFlow()
+    private val _indoorSearchLoading = MutableStateFlow(false)
+    val indoorSearchLoading: StateFlow<Boolean> = _indoorSearchLoading.asStateFlow()
+
+    /** POI cần focus sau khi load map (từ Indoor Search). */
+    private var pendingFocusPoiId: Int? = null
+
     fun clearIndoorEntryState() {
         _indoorEntryState.value = IndoorEntryUiState.Idle
+    }
+
+    fun clearBuildingExplorer() {
+        _buildingExplorer.value = null
+        _buildingExplorerLoading.value = false
+    }
+
+    fun fetchBuildingExplorer(buildingId: String) {
+        if (buildingId.isBlank() || buildingId.startsWith("place:")) {
+            clearBuildingExplorer()
+            return
+        }
+        viewModelScope.launch {
+            _buildingExplorerLoading.value = true
+            try {
+                val res = RetrofitClient.getApiService().getBuildingExplorer(buildingId)
+                _buildingExplorer.value = if (res.isSuccessful) res.body() else null
+            } catch (_: Exception) {
+                _buildingExplorer.value = null
+            } finally {
+                _buildingExplorerLoading.value = false
+            }
+        }
+    }
+
+    fun searchIndoorPois(query: String) {
+        val q = query.trim()
+        if (q.length < 2) {
+            _indoorSearchHits.value = emptyList()
+            _indoorSearchLoading.value = false
+            return
+        }
+        viewModelScope.launch {
+            _indoorSearchLoading.value = true
+            try {
+                val res = RetrofitClient.getApiService().searchIndoorPois(q, limit = 30)
+                _indoorSearchHits.value = if (res.isSuccessful) {
+                    res.body()?.results.orEmpty()
+                } else emptyList()
+            } catch (_: Exception) {
+                _indoorSearchHits.value = emptyList()
+            } finally {
+                _indoorSearchLoading.value = false
+            }
+        }
+    }
+
+    fun clearIndoorSearch() {
+        _indoorSearchHits.value = emptyList()
+        _indoorSearchLoading.value = false
     }
 
     fun lastFloorFor(buildingId: String): Int = indoorSessionStore.getLastFloor(buildingId)
@@ -280,9 +347,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         buildingId: String,
         totalFloors: Int = 1,
         preferredFloor: Int? = null,
+        focusPoiId: Int? = null,
         onReady: (buildingId: String) -> Unit = {},
     ) {
         if (buildingId.isBlank()) return
+        pendingFocusPoiId = focusPoiId
         viewModelScope.launch {
             val safeTotal = totalFloors.coerceAtLeast(1)
             val remembered = indoorSessionStore.getLastFloor(buildingId, 0)
@@ -294,6 +363,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             fetchMapJob?.cancel()
             val ok = loadMapInternal(buildingId, startFloor)
             if (!ok) {
+                pendingFocusPoiId = null
                 _indoorEntryState.value = IndoorEntryUiState.Failed(
                     buildingId = buildingId,
                     message = "Không tải được bản đồ tầng $startFloor. Kiểm tra xuất bản trên trình soạn thảo web hoặc mạng.",
@@ -302,6 +372,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             }
             indoorSessionStore.saveLastFloor(buildingId, startFloor)
             _indoorEntryState.value = IndoorEntryUiState.Idle
+            val poiFocus = pendingFocusPoiId
+            pendingFocusPoiId = null
+            if (poiFocus != null) {
+                setDestinationPoi(poiFocus)
+            }
             onReady(buildingId)
             preloadAdjacentFloors(buildingId, startFloor, safeTotal)
         }

@@ -4,6 +4,14 @@
 
 const roomTypes = ['Văn phòng', 'Nhà vệ sinh', 'Thang máy', 'Cầu thang', 'Sảnh chờ', 'Phòng kỹ thuật', 'Phòng chức năng', 'Khác'];
 
+// GĐ1 POI Platform — key loại POI đang lọc trong danh sách đối tượng (null = tất cả)
+var poiListFilterKey = null;
+
+function setPoiListFilter(key) {
+    poiListFilterKey = key || null;
+    updateObjectList();
+}
+
 function setDefaultWallThickness(px) {
     var v = Math.max(1, Math.min(80, Number(px) || 4));
     window.defaultWallThickness = v;
@@ -1197,7 +1205,27 @@ function showPoiProps(p) {
         '<input type="range" min="12" max="96" step="2" value="' + (typeof normalizePoiSize === 'function' ? normalizePoiSize(p.size) : (p.size || 24)) + '" onchange="updatePoiSize(Number(this.value), this.nextElementSibling)">' +
         '<span class="unit">' + (typeof normalizePoiSize === 'function' ? normalizePoiSize(p.size) : (p.size || 24)) + ' px</span></div>' +
         '</div>' +
+        '<div class="prop-group">' +
+        '<div class="prop-group-title">🔎 Tìm kiếm (Android)</div>' +
+        '<div class="prop-row"><label>Mô tả:</label>' +
+        '<input type="text" value="' + escapeHtmlValue(p.description || '') + '" placeholder="vd: ATM Vietcombank 24/7" onchange="updateObjProp(\'description\', this.value)"></div>' +
+        '<div class="prop-row"><label>Tag:</label>' +
+        '<input type="text" value="' + escapeHtmlValue(Array.isArray(p.search_tags) ? p.search_tags.join(', ') : '') + '" placeholder="vd: atm, rút tiền" onchange="updatePoiSearchTags(this.value)"></div>' +
+        '<p class="hint-text">Tag cách nhau bằng dấu phẩy — người dùng app tìm POI theo tên, mô tả và tag.</p>' +
+        '</div>' +
         '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
+}
+
+/** GĐ1 POI Platform — tag tìm kiếm nhập dạng "a, b, c". */
+function updatePoiSearchTags(value) {
+    if (!selectedObject || selectedObject.type !== 'poi') return;
+    saveState();
+    selectedObject.data.search_tags = String(value || '')
+        .split(',')
+        .map(function (t) { return t.trim().slice(0, 60); })
+        .filter(function (t, idx, arr) { return t && arr.indexOf(t) === idx; })
+        .slice(0, 20);
+    if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
 }
 
 // --- CAD POINT (điểm mốc) ---
@@ -1571,9 +1599,24 @@ function updateObjectList() {
         });
     }
 
+    // GĐ1 POI Platform — lọc POI theo loại khi bản đồ có nhiều POI
+    if (pois.length > 3) {
+        var poiFilterWrap = document.createElement('div');
+        var poiFilterOptions = '<option value="">📍 POI — tất cả (' + pois.length + ')</option>';
+        poiTypes.forEach(function (t) {
+            var count = pois.filter(function (p) { return getPoiTypeInfo(p) === t; }).length;
+            if (!count) return;
+            poiFilterOptions += '<option value="' + t.key + '"' + (poiListFilterKey === t.key ? ' selected' : '') + '>' +
+                t.icon + ' ' + t.name + ' (' + count + ')</option>';
+        });
+        poiFilterWrap.innerHTML = '<select style="width:100%;margin:4px 0;" onchange="setPoiListFilter(this.value)">' + poiFilterOptions + '</select>';
+        objectListDiv.appendChild(poiFilterWrap);
+    }
+
     pois.forEach(function (poi) {
         // Dữ liệu POI cũ có thể thiếu/sai typeIndex, nên fallback để không crash UI.
         var typeInfo = (typeof getPoiTypeInfo === 'function') ? getPoiTypeInfo(poi) : (poiTypes[poi.typeIndex] || poiTypes[0]);
+        if (poiListFilterKey && typeInfo.key !== poiListFilterKey) return;
         var isActive = (selectedObject && selectedObject.type === 'poi' && selectedObject.data === poi);
         addListItem(typeInfo.icon, poi.name, typeInfo.name, typeInfo.color, isActive, function () {
             setEditorSelection('poi', poi);

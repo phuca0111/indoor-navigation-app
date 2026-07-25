@@ -47,6 +47,7 @@ import com.khoaluan.indoornav.data.model.Building
 @Composable
 fun PlacePreviewSheet(
     building: Building,
+    explorer: com.khoaluan.indoornav.data.api.BuildingExplorerDto? = null,
     isFavorite: Boolean,
     isFollowing: Boolean,
     notice: String?,
@@ -110,6 +111,26 @@ fun PlacePreviewSheet(
                             color = Color(0xFF188038),
                             modifier = Modifier.padding(top = 4.dp),
                         )
+                    }
+                    // GĐ2 — strip stats ngắn trên preview
+                    if (explorer != null) {
+                        val bits = buildList {
+                            add(tr("${explorer.totalFloors} tầng", "${explorer.totalFloors} floors"))
+                            if (explorer.poisCount > 0) {
+                                add(tr("${explorer.poisCount} POI", "${explorer.poisCount} POIs"))
+                            }
+                            explorer.ratingAvg?.takeIf { explorer.ratingCount > 0 }?.let {
+                                add("★ %.1f".format(it))
+                            }
+                        }
+                        if (bits.isNotEmpty()) {
+                            Text(
+                                text = bits.joinToString(" · "),
+                                fontSize = 12.sp,
+                                color = Color(0xFF1A73E8),
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
                     }
                 }
                 if (!building.placeId.isNullOrBlank()) {
