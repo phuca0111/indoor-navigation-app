@@ -10,6 +10,8 @@ const Building = require('../models/Building');
 const PlaceProposal = require('../models/PlaceProposal');
 const identity = require('../repositories/identityRepository');
 const { permissionsForRole } = require('../utils/permissions');
+const { syncWorkspaceStatusFromBuildingStatus } = require('../utils/placePlatform');
+const { myBuildingsFilter } = require('../application/creator/creatorApplicationService');
 const { createReview } = require('./mapReviewController');
 
 function displayRole(role) {
@@ -201,17 +203,17 @@ async function addHistory(req, res) {
 async function listMyWorkspaces(req, res) {
   try {
     const uid = req.user.userId;
-    const buildingFilter = {
-      is_active: { $ne: false },
-      $or: [{ owner_user_id: uid }, { created_by: uid }]
-    };
+    // owner/created_by + tòa được gán (BUILDING_ADMIN.member_building_ids)
+    const buildingFilter = myBuildingsFilter(uid, req.user.member_building_ids || []);
     if (req.user.role === 'SUPER_ADMIN' && req.query.all === '1') {
       delete buildingFilter.$or;
     }
 
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+
     const buildings = await Building.find(buildingFilter)
       .sort({ updatedAt: -1 })
-      .limit(50)
+      .limit(limit)
       .lean();
 
     const placeIds = [...new Set(buildings.map((b) => String(b.place_id || '')).filter(Boolean))];
@@ -239,30 +241,35 @@ async function listMyWorkspaces(req, res) {
       }));
     }
 
-    const fromBuildings = buildings.map((b) => ({
-      workspace_id: b._id,
-      _id: b._id,
-      name: b.name,
-      description: b.description || '',
-      kind: 'COMMUNITY',
-      status: b.workspace_status || b.status || 'DRAFT',
-      workspace_status: b.workspace_status || 'DRAFT',
-      place_id: b.place_id || null,
-      building_id: b._id,
-      organization_id: b.organization_id || null,
-      owner_user_id: b.owner_user_id || null,
-      created_by: b.created_by || null,
-      place: b.place_id ? pMap[String(b.place_id)] || null : null,
-      building: {
+    const fromBuildings = buildings.map((b) => {
+      // Building cũ chưa có workspace_status (lean() không áp default) → suy ra từ status
+      // để không hiển thị PUBLISHED thành DRAFT.
+      const wsStatus = syncWorkspaceStatusFromBuildingStatus(b.status, b.workspace_status);
+      return {
+        workspace_id: b._id,
         _id: b._id,
         name: b.name,
-        status: b.status,
-        visibility: b.visibility,
-        total_floors: b.total_floors,
-        workspace_status: b.workspace_status
-      },
-      source: 'building'
-    }));
+        description: b.description || '',
+        kind: 'COMMUNITY',
+        status: wsStatus,
+        workspace_status: wsStatus,
+        place_id: b.place_id || null,
+        building_id: b._id,
+        organization_id: b.organization_id || null,
+        owner_user_id: b.owner_user_id || null,
+        created_by: b.created_by || null,
+        place: b.place_id ? pMap[String(b.place_id)] || null : null,
+        building: {
+          _id: b._id,
+          name: b.name,
+          status: b.status,
+          visibility: b.visibility,
+          total_floors: b.total_floors,
+          workspace_status: b.workspace_status
+        },
+        source: 'building'
+      };
+    });
 
     const workspaces = fromBuildings.concat(legacyExtra);
     return res.status(200).json({

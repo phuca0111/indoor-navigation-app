@@ -10,17 +10,41 @@ const PlaceFollow = require('../../models/PlaceFollow');
 const IndoorWorkspace = require('../../models/IndoorWorkspace');
 const UserHistory = require('../../models/UserHistory');
 
-async function getCreatorStats(userId) {
+/** Chuẩn hóa ID tòa được gán (BUILDING_ADMIN → member_building_ids). */
+function normalizeAssignedBuildingIds(ids) {
+  return [...new Set(
+    (ids || [])
+      .map(String)
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+  )];
+}
+
+/**
+ * Phạm vi «Bản đồ của tôi»:
+ * - sở hữu / tạo (owner_user_id | created_by)
+ * - được gán quản lý (assignedBuildingIds — BUILDING_ADMIN)
+ */
+function myBuildingsFilter(userId, assignedBuildingIds = []) {
+  const or = [{ owner_user_id: userId }, { created_by: userId }];
+  const assigned = normalizeAssignedBuildingIds(assignedBuildingIds);
+  if (assigned.length) {
+    or.push({ _id: { $in: assigned } });
+  }
+  return {
+    is_active: { $ne: false },
+    $or: or
+  };
+}
+
+async function getCreatorStats(userId, { assignedBuildingIds = [] } = {}) {
   if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
     const err = new Error('userId không hợp lệ.');
     err.status = 400;
     throw err;
   }
 
-  const buildings = await Building.find({
-    created_by: userId,
-    is_active: { $ne: false }
-  })
+  // Cùng phạm vi với GET /api/hub/workspaces để KPI khớp danh sách bên dưới.
+  const buildings = await Building.find(myBuildingsFilter(userId, assignedBuildingIds))
     .select('_id place_id name status workspace_status')
     .lean()
     .catch(() => []);
@@ -113,4 +137,8 @@ async function getCreatorStats(userId) {
   };
 }
 
-module.exports = { getCreatorStats };
+module.exports = {
+  getCreatorStats,
+  myBuildingsFilter,
+  normalizeAssignedBuildingIds
+};
