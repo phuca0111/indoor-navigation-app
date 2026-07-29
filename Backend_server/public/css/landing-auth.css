@@ -1,4 +1,4 @@
-/* WL4 — Login / Register forms on Landing */
+/* WL4 — Login / Register forms on Landing (+ premium login helpers) */
 .auth-form label {
     display: block;
     font-size: 13px;
@@ -66,15 +66,20 @@
     color: #007AFF;
 }
 
-.auth-form .error-msg {
+.auth-form .error-msg,
+.error-msg {
     display: none;
     margin-top: 12px;
-    padding: 10px 12px;
-    border-radius: 8px;
-    background: #fef2f2;
     color: #b91c1c;
     font-size: 14px;
     font-weight: 500;
+    min-height: 1.25em;
+}
+
+.auth-form .error-msg {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #fef2f2;
 }
 
 .auth-form .ok-msg {
@@ -103,4 +108,8 @@
 
 .auth-alt-actions .btn {
     text-align: center;
+}
+
+#googleLoginWrap {
+    width: 100%;
 }

@@ -3244,3 +3244,233 @@ body {
   }
 }
 
+/* —— Searchable combobox (tòa nhà / chọn có lọc) —— */
+.admin-combobox {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.admin-combobox-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  font: inherit;
+  background: #fff;
+}
+
+.admin-combobox-input:focus {
+  outline: 2px solid #93c5fd;
+  outline-offset: 1px;
+  border-color: #60a5fa;
+}
+
+.admin-combobox.is-open .admin-combobox-input {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.admin-combobox-list {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #d0d5dd;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+}
+
+.admin-combobox-option {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  color: #1e293b;
+}
+
+.admin-combobox-option:hover,
+.admin-combobox-option.is-active {
+  background: #eff6ff;
+}
+
+.admin-combobox-option.is-empty {
+  color: #64748b;
+  font-style: italic;
+}
+
+.admin-combobox-option.is-clear {
+  color: #475569;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.admin-combobox-option .admin-combobox-meta {
+  display: block;
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.admin-combobox-empty {
+  padding: 10px 12px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+body[data-admin-theme="dark"] .admin-combobox-input {
+  background: #0f172a;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+body[data-admin-theme="dark"] .admin-combobox-list {
+  background: #0f172a;
+  border-color: #334155;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+}
+
+body[data-admin-theme="dark"] .admin-combobox-option {
+  color: #e2e8f0;
+}
+
+body[data-admin-theme="dark"] .admin-combobox-option:hover,
+body[data-admin-theme="dark"] .admin-combobox-option.is-active {
+  background: #1e293b;
+}
+
+
+/* Emergency section — layout gần Tòa nhà / overview */
+.emergency-subnav {
+  display: none !important;
+}
+.emergency-subpanel[hidden] {
+  display: none !important;
+}
+.emergency-section .emergency-lead {
+  margin: 0 0 16px;
+  color: #667085;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 920px;
+}
+.emergency-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .emergency-layout {
+    grid-template-columns: 1fr;
+  }
+}
+.emergency-card {
+  background: #fff;
+  border: 1px solid #eaecf0;
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+.emergency-card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1d2939;
+}
+.emergency-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.emergency-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.emergency-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: #475467;
+}
+.emergency-form input,
+.emergency-form select {
+  padding: 8px 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.emergency-field-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 400;
+  color: #98a2b3;
+  line-height: 1.35;
+}
+.emergency-command-panel {
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  border-radius: 8px;
+}
+.emergency-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.emergency-config-hint {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: #98a2b3;
+  line-height: 1.45;
+}
+.emergency-detail-panel {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  background: #fffbeb;
+}
+body[data-admin-theme="dark"] .emergency-card {
+  background: #0f172a;
+  border-color: #334155;
+}
+body[data-admin-theme="dark"] .emergency-card-title {
+  color: #e2e8f0;
+}
+body[data-admin-theme="dark"] .emergency-lead,
+body[data-admin-theme="dark"] .emergency-config-hint {
+  color: #94a3b8;
+}
+body[data-admin-theme="dark"] .emergency-detail-panel {
+  background: #1e293b;
+  border-color: #92400e;
+}
+
+.seismic-data-subpanel {
+  display: none;
+}
+.seismic-data-subpanel.is-active {
+  display: block;
+}
+.seismic-data-subpanel[hidden] {
+  display: none !important;
+}

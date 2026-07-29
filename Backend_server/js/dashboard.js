@@ -18,7 +18,97 @@ let planCatalogLoading = null;
 let _financeInvoicesCache = [];
 let _financePaymentsCache = [];
 
-const VALID_DASHBOARD_TABS = new Set(['overview', 'buildings', 'maps', 'creator', 'users', 'logs', 'organizations', 'myorg', 'billing', 'plans', 'finance', 'analytics', 'registrations', 'profile', 'website', 'places', 'map-proposals', 'map-wizard', 'map-reviews', 'map-duplicates', 'map-ownership', 'map-merges', 'map-moderation', 'map-stats', 'map-versions', 'map-verify', 'map-community']);
+const VALID_DASHBOARD_TABS = new Set(['overview', 'buildings', 'maps', 'creator', 'users', 'end-users', 'logs', 'emergency', 'organizations', 'myorg', 'billing', 'plans', 'finance', 'analytics', 'registrations', 'profile', 'website', 'map-merges', 'map-stats', 'map-versions', 'map-verify', 'map-community', 'places', 'place-engagement', 'community-contrib', 'place-reports']);
+
+/** Tab cũ đã gom menu → đích mới (giữ deep-link / bookmark). */
+const MAP_GOV_TAB_ALIASES = {
+  'map-merges': 'place-engagement',
+  'map-community': 'community-contrib',
+  'map-proposals': 'community-contrib',
+  'map-wizard': 'places',
+  'map-reviews': 'place-engagement',
+  'map-moderation': 'place-reports',
+  'map-verify': 'place-engagement',
+  'map-stats': 'place-engagement',
+  'map-duplicates': 'places',
+  'map-ownership': 'places',
+  'map-versions': 'buildings'
+};
+
+function resolveMapGovTabAlias(tab) {
+  return MAP_GOV_TAB_ALIASES[tab] || tab;
+}
+
+/** Phạm vi danh sách user: staff (admin nội bộ) | end (REGISTERED_USER) */
+window._userListScope = window._userListScope || 'staff';
+const STAFF_USER_ROLES = ['SUPER_ADMIN', 'FINANCE_ADMIN', 'MARKETING_MANAGER', 'ORG_ADMIN', 'BUILDING_ADMIN'];
+const END_USER_ROLE = 'REGISTERED_USER';
+
+function isEndUserListTab(tab) {
+  return tab === 'end-users';
+}
+
+function usersPanelTab(tab) {
+  return isEndUserListTab(tab) ? 'users' : tab;
+}
+
+function dashboardTabPanelId(tab) {
+  if (tab === 'myorg') return 'tab-organizations';
+  if (tab === 'maps') return 'tab-buildings'; // chi tiết tòa gom vào tab Tòa nhà
+  if (isEndUserListTab(tab)) return 'tab-users';
+  return 'tab-' + tab;
+}
+
+function currentUsersNavTab() {
+  return window._userListScope === 'end' ? 'end-users' : 'users';
+}
+
+function syncUserDetailBackLabel() {
+  const btn = document.getElementById('userDetailBackBtn');
+  if (!btn) return;
+  btn.textContent = window._userListScope === 'end'
+    ? '← Danh sách người dùng'
+    : '← Danh sách tài khoản';
+}
+
+function usersFiltersStorageKey(scope) {
+  return scope === 'end' ? 'endUsersFilters' : 'staffUsersFilters';
+}
+
+function applyUserListScope(scope) {
+  window._userListScope = scope === 'end' ? 'end' : 'staff';
+  const isEnd = window._userListScope === 'end';
+  const titleEl = document.getElementById('userMgmtTitle');
+  const introEl = document.getElementById('userMgmtIntro');
+  const hintEl = document.getElementById('usersFilterHint');
+  const roleWrap = document.getElementById('filterUserRoleWrap');
+  const roleEl = document.getElementById('filterUserRole');
+  const addBtn = document.getElementById('btnAddUser');
+
+  if (titleEl) titleEl.textContent = isEnd ? 'Quản lý người dùng cuối' : 'Quản lý tài khoản nội bộ';
+  if (introEl) {
+    introEl.textContent = isEnd
+      ? 'Người dùng ứng dụng: thiết bị, quyền chia sẻ vị trí khẩn cấp, cảnh cáo và khóa tài khoản.'
+      : 'Quản trị viên và nhân viên nền tảng (không gồm người dùng ứng dụng).';
+  }
+  if (hintEl) {
+    hintEl.innerHTML = isEnd
+      ? 'Chỉ gồm <strong>tài khoản cá nhân</strong> dùng ứng dụng. Tài khoản quản trị / nhân viên nằm ở <strong>Khách hàng → Tài khoản nội bộ</strong>.'
+      : 'Tài khoản quản trị và nhân viên nền tảng. Người dùng ứng dụng nằm ở menu <strong>Người dùng cuối</strong>.';
+  }
+  if (roleWrap) roleWrap.style.display = isEnd ? 'none' : '';
+  if (roleEl) {
+    if (isEnd) {
+      roleEl.value = END_USER_ROLE;
+    } else if (roleEl.value === END_USER_ROLE) {
+      roleEl.value = '';
+    }
+  }
+  if (addBtn) {
+    // Chỉ cho phép tạo nhanh trên danh sách nội bộ
+    if (isEnd) addBtn.style.display = 'none';
+  }
+}
 
 function validatePasswordStrengthClient(password) {
   const errors = [];
@@ -58,7 +148,7 @@ function dashboardTabHref(tab, options) {
   const route = {
     tab,
     websiteSub: tab === 'website'
-      ? (options?.websiteSub || window._activeWebsiteSub || 'pages')
+      ? (options?.websiteSub || window._activeWebsiteSub || 'articles')
       : null
   };
   return window.DashboardRouter?.href(route) ||
@@ -80,9 +170,11 @@ function sanitizeTabForRole(tab, role) {
     return role === 'SUPER_ADMIN' ? 'organizations' : 'buildings';
   }
   if (role === 'BUILDING_ADMIN') {
-    if (tab === 'users' || tab === 'logs' || tab === 'organizations' || tab === 'myorg') return 'buildings';
+    if (tab === 'users' || tab === 'end-users' || tab === 'logs' || tab === 'organizations' || tab === 'myorg') return 'buildings';
   }
   if (role === 'ORG_ADMIN' && tab === 'organizations') return 'myorg';
+  // ORG_ADMIN quản lý nhân viên org qua «Tài khoản nội bộ», không mở danh sách user app
+  if (role === 'ORG_ADMIN' && tab === 'end-users') return 'users';
   if (role !== 'SUPER_ADMIN' && tab === 'registrations') return 'buildings';
   if (role === 'BUILDING_ADMIN' && tab === 'billing') return 'buildings';
   if (role === 'BUILDING_ADMIN' && tab === 'plans') return 'buildings';
@@ -91,10 +183,7 @@ function sanitizeTabForRole(tab, role) {
   if (tab === 'analytics' && role !== 'SUPER_ADMIN') {
     return role === 'ORG_ADMIN' ? 'billing' : 'buildings';
   }
-  if (tab === 'places' && role !== 'SUPER_ADMIN') {
-    return role === 'ORG_ADMIN' ? 'billing' : 'buildings';
-  }
-  if ((tab === 'map-proposals' || tab === 'map-wizard' || tab === 'map-reviews' || tab === 'map-duplicates' || tab === 'map-ownership' || tab === 'map-merges' || tab === 'map-moderation' || tab === 'map-stats' || tab === 'map-versions' || tab === 'map-verify' || tab === 'map-community') && role !== 'SUPER_ADMIN') {
+  if ((tab === 'map-merges' || tab === 'map-stats' || tab === 'map-versions' || tab === 'map-verify' || tab === 'map-community' || tab === 'places' || tab === 'place-engagement' || tab === 'community-contrib' || tab === 'place-reports') && role !== 'SUPER_ADMIN') {
     return role === 'ORG_ADMIN' ? 'billing' : 'buildings';
   }
   if (role === 'BUILDING_ADMIN' && tab === 'analytics') return 'buildings';
@@ -102,7 +191,8 @@ function sanitizeTabForRole(tab, role) {
 }
 
 function resolveDashboardTab(name) {
-  const raw = name && VALID_DASHBOARD_TABS.has(name) ? name : 'overview';
+  const aliased = resolveMapGovTabAlias(name && VALID_DASHBOARD_TABS.has(name) ? name : 'overview');
+  const raw = VALID_DASHBOARD_TABS.has(aliased) ? aliased : 'overview';
   return sanitizeTabForRole(raw, currentUser?.role);
 }
 
@@ -292,7 +382,7 @@ function renderPagination(tabKey, totalItems, currentPage) {
   });
 }
 
-const WIDE_LAYOUT_TABS = new Set(['overview', 'buildings', 'maps', 'creator', 'users', 'logs', 'organizations', 'billing', 'plans', 'finance', 'analytics', 'registrations']);
+const WIDE_LAYOUT_TABS = new Set(['overview', 'buildings', 'maps', 'creator', 'users', 'end-users', 'logs', 'emergency', 'organizations', 'billing', 'plans', 'finance', 'analytics', 'registrations']);
 
 function applyDashboardLayout(tabName) {
   const root = document.querySelector('.dashboard-content');
@@ -358,6 +448,15 @@ function formatBuildingStatusVi(status) {
   if (s === 'PUBLISHED') return 'Đã xuất bản';
   if (s === 'DRAFT') return 'Bản nháp';
   return status || '—';
+}
+
+function formatBuildingVisibilityVi(visibility) {
+  const v = String(visibility || 'PRIVATE').toUpperCase();
+  if (v === 'OFFICIAL') return 'Chính thức';
+  if (v === 'COMMUNITY') return 'Cộng đồng';
+  if (v === 'UNLISTED') return 'Không liệt kê';
+  if (v === 'PRIVATE') return 'Riêng tư';
+  return visibility || '—';
 }
 
 function formatDetailBuildingStatus(b) {
@@ -1348,6 +1447,8 @@ function applyCurrentUserToUI(user) {
   const buildingsTableEl = document.getElementById('buildingsTable');
   if (buildingsTableEl) buildingsTableEl.classList.toggle('hide-org-col', !isSuperAdmin);
 
+  const canManagePlatformUsers = userHasPermission('platform.users.manage');
+  const canManageOrgUsers = userHasPermission('org.users.manage');
   const usersBtns = document.querySelectorAll('.users-tab-btn, button[onclick*="users"]');
   const logsBtn = document.querySelector('.logs-tab-btn, button[onclick*="logs"]');
   const orgTabBtn = document.querySelector('button[onclick*="organizations"]');
@@ -1356,10 +1457,21 @@ function applyCurrentUserToUI(user) {
     if (btn.hasAttribute('data-permission')) return;
     if (btn.classList.contains('org-scope-users')) {
       btn.style.display = isOrgAdmin ? '' : 'none';
-    } else if (btn.classList.contains('super-admin-only')) {
+      return;
+    }
+    if (btn.classList.contains('super-admin-only')) {
       btn.style.display = isSuperAdmin ? '' : 'none';
+      return;
+    }
+    const tab = btn.getAttribute('data-tab') || '';
+    // Người dùng app (end-users): chỉ platform.users.manage (Super Admin)
+    // Tài khoản nội bộ: platform hoặc ORG_ADMIN (org.users.manage)
+    if (tab === 'end-users') {
+      btn.style.display = canManagePlatformUsers ? '' : 'none';
+    } else if (tab === 'users') {
+      btn.style.display = (canManagePlatformUsers || canManageOrgUsers) ? '' : 'none';
     } else {
-      btn.style.display = (userHasPermission('platform.users.manage') || userHasPermission('org.users.manage')) ? '' : 'none';
+      btn.style.display = (canManagePlatformUsers || canManageOrgUsers) ? '' : 'none';
     }
   });
   if (logsBtn && !logsBtn.hasAttribute('data-permission')) {
@@ -1376,7 +1488,7 @@ function applyCurrentUserToUI(user) {
   });
   // Ẩn cả nhóm menu trống với tài khoản cá nhân (Khách hàng / Website / admin finance)
   if (isRegisteredUser) {
-    document.querySelectorAll('.admin-nav-group[data-nav-group="customers"], .admin-nav-group[data-nav-group="website"], .admin-nav-group[data-nav-group="map-governance"]').forEach((g) => {
+    document.querySelectorAll('.admin-nav-group[data-nav-group="map-governance"]').forEach((g) => {
       g.style.display = 'none';
     });
     // Nhóm Tài chính: chỉ hiện mục «Gói & hóa đơn»
@@ -1385,6 +1497,10 @@ function applyCurrentUserToUI(user) {
   } else {
     document.querySelectorAll('.admin-nav-group[data-nav-group="customers"]').forEach((g) => {
       g.style.display = '';
+    });
+    // Nhóm Người dùng cuối chỉ Super Admin (quản lý user app toàn platform)
+    document.querySelectorAll('.admin-nav-group[data-nav-group="end-users"]').forEach((g) => {
+      g.style.display = canManagePlatformUsers ? '' : 'none';
     });
     document.querySelectorAll('.admin-nav-group[data-nav-group="website"]').forEach((g) => {
       g.style.display = canCms ? '' : 'none';
@@ -1455,7 +1571,7 @@ function applyCurrentUserToUI(user) {
   }
   if (currentTab && !isSuperAdmin && !isOrgAdmin) {
     const tabName = currentTab.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
-    if (tabName === 'users' || tabName === 'logs') {
+    if (tabName === 'users' || tabName === 'end-users' || tabName === 'logs') {
       switchTab('buildings');
     }
   }
@@ -1535,7 +1651,7 @@ async function syncCurrentSession(reason, depth) {
       const onclick = currentTab ? (currentTab.getAttribute('onclick') || '') : '';
       const match = onclick.match(/'([^']+)'/);
       const tabName = match ? match[1] : null;
-      if (tabName === 'users' || tabName === 'logs' || tabName === 'organizations' || tabName === 'registrations') {
+      if (tabName === 'users' || tabName === 'end-users' || tabName === 'logs' || tabName === 'organizations' || tabName === 'registrations') {
         switchTab('buildings');
       }
     }
@@ -1624,6 +1740,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   currentUser = await syncCurrentSession('initial-load');
   if (!currentUser) return;
 
+  // Luôn bỏ cache cũ trước khi hydrate — tránh hiện số liệu session trước
+  invalidateDashboardDataCaches();
   await ensurePlanCatalogLoaded(true);
 
   if (currentUser.role === 'SUPER_ADMIN') {
@@ -1645,7 +1763,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     websiteSub: null
   };
   if (initialRoute.tab && VALID_DASHBOARD_TABS.has(initialRoute.tab)) initialTab = initialRoute.tab;
-  if (initialRoute.tab === 'website') window._activeWebsiteSub = initialRoute.websiteSub || 'pages';
+  if (initialRoute.tab === 'website') window._activeWebsiteSub = initialRoute.websiteSub || 'articles';
   initialTab = sanitizeTabForRole(initialTab, currentUser.role);
   if (initialTab === 'website' && !userHasPermission('platform.cms.manage')) initialTab = 'overview';
 
@@ -1660,7 +1778,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       websiteSub: e.state && e.state.websiteSub
     };
     const tab = resolveDashboardTab(route.tab);
-    const websiteSub = route.websiteSub || e.state?.websiteSub || 'pages';
+    const websiteSub = route.websiteSub || e.state?.websiteSub || 'articles';
     if (tab === window._currentDashboardTab && (tab !== 'website' || websiteSub === window._activeWebsiteSub)) return;
     switchTab(tab, { fromPopstate: true, websiteSub });
   });
@@ -1686,8 +1804,11 @@ document.addEventListener('visibilitychange', () => {
 });
 
 window.addEventListener('pageshow', (event) => {
+  // bfcache / back-forward: session + dữ liệu tab hiện tại phải mới
   if (event.persisted) {
     syncCurrentSession('pageshow');
+    invalidateDashboardDataCaches();
+    refreshActiveDashboardTab({ silent: true });
   }
 });
 
@@ -1711,8 +1832,8 @@ async function switchTab(name, options) {
 
   document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-  // 'myorg' (ORG_ADMIN) tái dùng panel #tab-organizations ở chế độ chỉ-chi-tiết
-  const panelId = tab === 'myorg' ? 'tab-organizations' : 'tab-' + tab;
+  // 'myorg' → #tab-organizations; 'end-users' → #tab-users
+  const panelId = dashboardTabPanelId(tab);
   const tabPanel = document.getElementById(panelId);
   if (tabPanel) tabPanel.style.display = 'block';
   syncDashboardNavActive(tab, opts);
@@ -1726,7 +1847,7 @@ async function switchTab(name, options) {
 
   const requestedWebsiteSub = tab === 'website'
     ? (window.WebsiteCmsRouter?.normalize?.(opts.websiteSub || window._activeWebsiteSub) ||
-      opts.websiteSub || window._activeWebsiteSub || 'pages')
+      opts.websiteSub || window._activeWebsiteSub || 'articles')
     : null;
   const routeChanged = prevTab !== tab || (tab === 'website' && requestedWebsiteSub !== prevWebsiteSub);
   if (window._dashboardHistoryReady && !opts.skipHistory && !opts.fromPopstate && routeChanged) {
@@ -1738,19 +1859,23 @@ async function switchTab(name, options) {
 
   stopOverviewAutoRefresh();
   stopAnalyticsAutoRefresh();
+  // Đổi tab: bỏ cache overview để luôn fetch mới khi quay lại Tổng quan
+  if (tab !== 'overview') overviewDashboardCache = null;
   if (tab === 'overview') {
     await refreshOverviewDashboard();
     startOverviewAutoRefresh();
   }
-  if (tab === 'buildings') {
+  if (tab === 'buildings' || tab === 'maps') {
     initBuildingTableSort();
-    await fetchBuildings();
-    restoreBuildingFilters();
-    applyBuildingFilters(false);
-    updateDashSortIndicators('buildingsTable', getBuildingTableSort);
-  }
-  if (tab === 'maps') {
-    await refreshBuildingDetail();
+    if (opts.buildingDetail || (tab === 'maps' && getBuildingDetailId())) {
+      showBuildingDetailPageShell();
+      await refreshBuildingDetail();
+    } else {
+      showBuildingListView();
+      restoreBuildingFilters();
+      await fetchBuildings();
+      updateDashSortIndicators('buildingsTable', getBuildingTableSort);
+    }
   }
   if (tab === 'creator') {
     if (!userHasPermission('creator.stats.read')) {
@@ -1760,13 +1885,35 @@ async function switchTab(name, options) {
     }
     await loadCreatorTab();
   }
-  if (tab === 'users') {
+  if (tab === 'users' || tab === 'end-users') {
+    applyUserListScope(tab === 'end-users' ? 'end' : 'staff');
+    showUserListView();
     restoreUserFilters();
     initUserTableSort();
     await fetchUsers();
     updateDashSortIndicators('usersTable', getUserTableSort);
   }
   if (tab === 'logs') await loadLogs();
+  if (tab === 'emergency') {
+    if (opts.emergencySub) {
+      window._activeEmergencySub = opts.emergencySub;
+      try { localStorage.setItem('indoorNavEmergencySub', opts.emergencySub); } catch (_) { /* ignore */ }
+    } else if (!window._activeEmergencySub) {
+      try { window._activeEmergencySub = localStorage.getItem('indoorNavEmergencySub') || 'incidents'; } catch (_) {
+        window._activeEmergencySub = 'incidents';
+      }
+    }
+    if (!allBuildings.length && typeof fetchBuildings === 'function') {
+      try { await fetchBuildings(); } catch (_) { /* ignore */ }
+    }
+    if (typeof window.EmergencyAdmin?.load === 'function') await window.EmergencyAdmin.load();
+    if (window._activeEmergencySub === 'seismic' || window._activeEmergencySub === 'seismic-data') {
+      if (typeof window.EmergencyAdmin?.loadSeismicOverview === 'function') {
+        await window.EmergencyAdmin.loadSeismicOverview();
+      }
+    }
+    syncDashboardNavActive('emergency', { emergencySub: window._activeEmergencySub || 'incidents' });
+  }
   if (tab === 'profile') {
     await loadProfile();
     focusProfileSection(window._activeProfileSection || opts.profileSection || 'info');
@@ -1854,16 +2001,15 @@ async function switchTab(name, options) {
     }
     window._activeWebsiteSub = requestedWebsiteSub;
     if (typeof WebsiteCms?.load === 'function') {
-      await WebsiteCms.load(window._activeWebsiteSub || 'pages');
+      await WebsiteCms.load(window._activeWebsiteSub || 'articles');
     }
-    syncDashboardNavActive('website', { websiteSub: window._activeWebsiteSub || 'pages' });
+    syncDashboardNavActive('website', { websiteSub: window._activeWebsiteSub || 'articles' });
     if (typeof window.AdminShell?.syncActiveNavigation === 'function') {
       window.AdminShell.syncActiveNavigation();
     }
   }
   if (tab === 'places') {
     if (currentUser?.role !== 'SUPER_ADMIN') {
-      alert('Chỉ Quản trị hệ thống được mở Quản trị bản đồ.');
       await switchTab('overview', { skipHistory: true });
       return;
     }
@@ -1871,107 +2017,35 @@ async function switchTab(name, options) {
       await window.MapGovernance.loadPlaces();
     }
   }
-  if (tab === 'map-proposals') {
+  if (tab === 'community-contrib') {
     if (currentUser?.role !== 'SUPER_ADMIN') {
       await switchTab('overview', { skipHistory: true });
       return;
     }
-    if (typeof window.MapGovernance?.loadProposals === 'function') {
-      await window.MapGovernance.loadProposals();
+    if (typeof window.CommunityContribAdmin?.loadAll === 'function') {
+      await window.CommunityContribAdmin.loadAll();
     }
   }
-  if (tab === 'map-wizard') {
+  if (tab === 'place-reports') {
     if (currentUser?.role !== 'SUPER_ADMIN') {
       await switchTab('overview', { skipHistory: true });
       return;
     }
-    if (typeof window.MapGovernance?.loadWorkspaces === 'function') {
-      await window.MapGovernance.loadWorkspaces();
+    if (typeof window.PlaceReportsAdmin?.loadAll === 'function') {
+      await window.PlaceReportsAdmin.loadAll();
     }
   }
-  if (tab === 'map-reviews') {
+  if (tab === 'place-engagement') {
     if (currentUser?.role !== 'SUPER_ADMIN') {
       await switchTab('overview', { skipHistory: true });
       return;
     }
-    if (typeof window.MapGovernance?.loadReviews === 'function') {
-      await window.MapGovernance.loadReviews();
-    }
-  }
-  if (tab === 'map-duplicates') {
-    if (currentUser?.role !== 'SUPER_ADMIN') {
-      await switchTab('overview', { skipHistory: true });
-      return;
-    }
-    if (typeof window.MapGovernance?.loadDuplicates === 'function') {
-      await window.MapGovernance.loadDuplicates();
-    }
-  }
-  if (tab === 'map-ownership') {
-    if (currentUser?.role !== 'SUPER_ADMIN') {
-      await switchTab('overview', { skipHistory: true });
-      return;
-    }
-    if (typeof window.MapGovernance?.loadOwnership === 'function') {
-      await window.MapGovernance.loadOwnership();
-    }
-  }
-  if (tab === 'map-merges') {
-    if (currentUser?.role !== 'SUPER_ADMIN') {
-      await switchTab('overview', { skipHistory: true });
-      return;
-    }
-    if (typeof window.MapGovernance?.loadMerges === 'function') {
-      await window.MapGovernance.loadMerges();
-    }
-  }
-  if (tab === 'map-moderation') {
-    if (currentUser?.role !== 'SUPER_ADMIN') {
-      await switchTab('overview', { skipHistory: true });
-      return;
-    }
-    if (typeof window.MapGovernance?.loadModeration === 'function') {
-      await window.MapGovernance.loadModeration();
-    }
-  }
-  if (tab === 'map-stats') {
-    if (currentUser?.role !== 'SUPER_ADMIN') {
-      await switchTab('overview', { skipHistory: true });
-      return;
-    }
-    if (typeof window.MapGovernance?.loadMapStats === 'function') {
-      await window.MapGovernance.loadMapStats();
-    }
-  }
-  if (tab === 'map-versions') {
-    if (currentUser?.role !== 'SUPER_ADMIN') {
-      await switchTab('overview', { skipHistory: true });
-      return;
-    }
-    if (typeof window.MapGovernance?.loadMapVersions === 'function') {
-      await window.MapGovernance.loadMapVersions();
-    }
-  }
-  if (tab === 'map-verify') {
-    if (currentUser?.role !== 'SUPER_ADMIN') {
-      await switchTab('overview', { skipHistory: true });
-      return;
-    }
-    if (typeof window.MapGovernance?.loadVerification === 'function') {
-      await window.MapGovernance.loadVerification();
-    }
-  }
-  if (tab === 'map-community') {
-    if (currentUser?.role !== 'SUPER_ADMIN') {
-      await switchTab('overview', { skipHistory: true });
-      return;
-    }
-    if (typeof window.MapGovernance?.loadCommunityHub === 'function') {
-      await window.MapGovernance.loadCommunityHub();
+    if (typeof window.PlaceEngagementAdmin?.loadAll === 'function') {
+      await window.PlaceEngagementAdmin.loadAll();
     }
   }
 
-  const activePanel = document.getElementById(tab === 'myorg' ? 'tab-organizations' : 'tab-' + tab);
+  const activePanel = document.getElementById(dashboardTabPanelId(tab));
   const routeLabel = tab === 'website'
     ? (window.DashboardRouter?.WEBSITE_TITLES?.[window._activeWebsiteSub] || 'Website')
     : (activePanel?.querySelector('h1,h2,h3')?.textContent || tab);
@@ -2003,18 +2077,25 @@ function syncDashboardNavActive(tab, opts) {
     try { financeSub = localStorage.getItem('indoorNavFinanceSubtab') || 'overview'; } catch (_) { financeSub = 'overview'; }
   }
   const profileSection = options.profileSection || window._activeProfileSection || 'info';
-  const websiteSub = options.websiteSub || window._activeWebsiteSub || 'pages';
+  const websiteSub = options.websiteSub || window._activeWebsiteSub || 'articles';
+  let emergencySub = options.emergencySub || window._activeEmergencySub;
+  if (!emergencySub) {
+    try { emergencySub = localStorage.getItem('indoorNavEmergencySub') || 'incidents'; } catch (_) { emergencySub = 'incidents'; }
+  }
 
   document.querySelectorAll('#tabNav .tab-btn').forEach((btn) => {
     const btnTab = resolveNavButtonTab(btn);
+    const navTab = tab === 'maps' ? 'buildings' : tab;
     let active = false;
-    if (btnTab === tab) {
-      if (tab === 'finance') {
+    if (btnTab === navTab) {
+      if (navTab === 'finance') {
         active = (btn.getAttribute('data-finance-sub') || 'overview') === financeSub;
-      } else if (tab === 'profile') {
+      } else if (navTab === 'profile') {
         active = (btn.getAttribute('data-profile-section') || 'info') === profileSection;
-      } else if (tab === 'website') {
-        active = (btn.getAttribute('data-website-sub') || 'pages') === websiteSub;
+      } else if (navTab === 'website') {
+        active = (btn.getAttribute('data-website-sub') || 'articles') === websiteSub;
+      } else if (navTab === 'emergency') {
+        active = (btn.getAttribute('data-emergency-sub') || 'incidents') === emergencySub;
       } else {
         active = true;
       }
@@ -2031,6 +2112,28 @@ async function openFinanceInvoicesNav() {
 async function openFinanceOverviewNav() {
   window._activeFinanceNavSub = 'overview';
   await switchTab('finance', { financeSub: 'overview' });
+}
+
+async function openEmergencySub(sub) {
+  let next = sub === 'create' ? 'incidents' : sub;
+  next = ['incidents', 'seismic', 'seismic-data'].includes(next) ? next : 'incidents';
+  window._activeEmergencySub = next;
+  try { localStorage.setItem('indoorNavEmergencySub', next); } catch (_) { /* ignore */ }
+  if (window._currentDashboardTab === 'emergency') {
+    if (typeof window.EmergencyAdmin?.showEmergencySub === 'function') {
+      window.EmergencyAdmin.showEmergencySub(next);
+    }
+    if ((next === 'seismic' || next === 'seismic-data') &&
+      typeof window.EmergencyAdmin?.loadSeismicOverview === 'function') {
+      await window.EmergencyAdmin.loadSeismicOverview();
+    }
+    if (next === 'incidents' && typeof window.EmergencyAdmin?.loadIncidents === 'function') {
+      await window.EmergencyAdmin.loadIncidents();
+    }
+    syncDashboardNavActive('emergency', { emergencySub: next });
+    return;
+  }
+  await switchTab('emergency', { emergencySub: next });
 }
 
 async function openProfileSectionNav(section) {
@@ -2069,6 +2172,35 @@ function setBuildingDetailId(id) {
   else sessionStorage.removeItem('dashboardBuildingDetailId');
 }
 
+function showBuildingListView() {
+  const list = document.getElementById('buildingListView');
+  const page = document.getElementById('buildingDetailPage');
+  if (list) list.hidden = false;
+  if (page) page.hidden = true;
+}
+
+function showBuildingDetailPageShell() {
+  const list = document.getElementById('buildingListView');
+  const page = document.getElementById('buildingDetailPage');
+  if (list) list.hidden = true;
+  if (page) page.hidden = false;
+}
+
+function closeBuildingDetailPage() {
+  setBuildingDetailId('');
+  _buildingDetailCache = null;
+  _buildingDetailSubtab = 'overview';
+  sessionStorage.setItem('dashboardBuildingDetailSubtab', 'overview');
+  showBuildingListView();
+  // Làm mới danh sách khi quay lại
+  if (typeof fetchBuildings === 'function') {
+    restoreBuildingFilters();
+    fetchBuildings().catch(() => {});
+  }
+}
+
+window.closeBuildingDetailPage = closeBuildingDetailPage;
+
 function switchBuildingDetailSubtab(name) {
   const allowed = new Set(['overview', 'floors', 'versions', 'qr', 'settings']);
   _buildingDetailSubtab = allowed.has(name) ? name : 'overview';
@@ -2079,15 +2211,18 @@ function switchBuildingDetailSubtab(name) {
   if (_buildingDetailCache) renderBuildingDetailProfile(_buildingDetailCache);
 }
 
-/** Mở tab Chi tiết tòa với đúng buildingId (từ danh sách Tòa nhà). */
+/** Mở chi tiết tòa trong tab Tòa nhà (cùng kiểu Chi tiết người dùng). */
 async function openBuildingDetail(id) {
   if (!id) {
-    switchTab('buildings');
+    showBuildingListView();
+    await switchTab('buildings');
     return;
   }
   setBuildingDetailId(id);
   _buildingDetailCache = null;
-  await switchTab('maps');
+  _buildingDetailSubtab = 'overview';
+  sessionStorage.setItem('dashboardBuildingDetailSubtab', 'overview');
+  await switchTab('buildings', { buildingDetail: true });
 }
 
 async function refreshBuildingDetail() {
@@ -2101,17 +2236,17 @@ async function refreshBuildingDetail() {
     if (titleEl) titleEl.textContent = 'Chi tiết tòa nhà';
     if (actionsEl) actionsEl.innerHTML = '';
     const headerStatus = document.getElementById('buildingDetailHeaderStatus');
-    const headerAddress = document.getElementById('buildingDetailHeaderAddress');
-    const headerMeta = document.getElementById('buildingDetailHeaderMeta');
+    const headerMeta = document.getElementById('buildingDetailPageMeta');
     if (headerStatus) headerStatus.innerHTML = '';
-    if (headerAddress) headerAddress.textContent = '';
     if (headerMeta) headerMeta.innerHTML = '';
     const subnav = document.getElementById('buildingDetailSubnav');
     if (subnav) subnav.hidden = true;
+    showBuildingDetailPageShell();
     await renderBuildingDetailPicker(body);
     return;
   }
 
+  showBuildingDetailPageShell();
   body.innerHTML = dashUiLoading('list', { label: 'Đang tải hồ sơ tòa nhà…' });
   if (actionsEl) actionsEl.innerHTML = '';
   if (titleEl) titleEl.textContent = 'Đang tải…';
@@ -2154,7 +2289,7 @@ async function renderBuildingDetailPicker(body) {
   if (!list.length) {
     body.innerHTML = dashUiEmpty({
       title: 'Chưa có tòa nhà',
-      hint: 'Tạo tòa nhà ở tab Tòa nhà trước, rồi mở hồ sơ từ đây.'
+      hint: 'Tạo tòa nhà ở danh sách Tòa nhà trước, rồi bấm Chi tiết.'
     });
     return;
   }
@@ -2225,12 +2360,11 @@ function renderBuildingDetailProfile(b) {
       ? '<span class="resource-status resource-status--published">Đã xuất bản</span>'
       : '<span class="resource-status resource-status--draft">Bản nháp</span>');
   const headerStatus = document.getElementById('buildingDetailHeaderStatus');
-  const headerAddress = document.getElementById('buildingDetailHeaderAddress');
-  const headerMeta = document.getElementById('buildingDetailHeaderMeta');
+  const headerMeta = document.getElementById('buildingDetailPageMeta');
   if (headerStatus) headerStatus.innerHTML = statusBadge;
-  if (headerAddress) headerAddress.textContent = b.address || 'Chưa có địa chỉ';
   if (headerMeta) {
     headerMeta.innerHTML =
+      '<span>' + escapeHtml(b.address || 'Chưa có địa chỉ') + '</span>' +
       '<span>' + escapeHtml(orgName) + '</span>' +
       '<span>ID <code>' + escapeHtml(id) + '</code></span>' +
       '<span>Tạo ' + escapeHtml(formatDateTime(b.createdAt)) + '</span>' +
@@ -2241,6 +2375,7 @@ function renderBuildingDetailProfile(b) {
   document.querySelectorAll('.building-detail-subnav-btn').forEach((button) => {
     button.classList.toggle('active', button.dataset.buildingSub === _buildingDetailSubtab);
   });
+  showBuildingDetailPageShell();
 
   const lockedNote = b.quota_locked
     ? '<div class="building-detail-banner warn">Tòa đang bị khóa quota — chỉ xem / vô hiệu hóa.</div>'
@@ -2266,10 +2401,19 @@ function renderBuildingDetailProfile(b) {
         resourceProperty('Cập nhật', formatDateTime(b.updatedAt)) +
       '</dl></section>';
 
+  const ownerLabel = b.organization_id
+    ? 'Tổ chức · ' + orgName
+    : (b.owner_user_id
+      ? 'Cá nhân · ' + String(b.owner_user_id)
+      : 'Chưa gán chủ sở hữu');
+
   const adminPanel =
     '<section class="resource-panel"><div class="resource-panel-heading"><h4>Quản trị</h4></div>' +
       '<dl class="resource-property-list">' +
         resourceProperty('Tổ chức', orgName) +
+        resourceProperty('Hiển thị', formatBuildingVisibilityVi(b.visibility)) +
+        resourceProperty('Chủ sở hữu', ownerLabel, !b.organization_id && Boolean(b.owner_user_id)) +
+        resourceProperty('Mã Place', b.place_id ? String(b.place_id) : 'Chưa gắn Place', Boolean(b.place_id)) +
         resourceProperty('Quản trị tòa', String(managers.length)) +
         resourceProperty('Người tạo', creator ? (creator.full_name || creator.email || '—') : '—') +
         resourceProperty('Phiên bản', String(summary.version_count || 0)) +
@@ -2565,6 +2709,12 @@ function applyBuildingFilters(resetPage) {
     sortDir: getBuildingTableSort().dir
   }));
   let filtered = allBuildings.slice();
+  // Checkbox «Tòa đã vô hiệu» = chỉ hiện soft-delete (cần API include_inactive)
+  if (includeInactive) {
+    filtered = filtered.filter((b) => b.is_active === false);
+  } else {
+    filtered = filtered.filter((b) => b.is_active !== false);
+  }
   if (orgId) {
     filtered = filtered.filter((b) => {
       const raw = b.organization_id;
@@ -2575,10 +2725,47 @@ function applyBuildingFilters(resetPage) {
     });
   }
   if (keyword) {
-    filtered = filtered.filter(b =>
-      (b.name || '').toLowerCase().includes(keyword) ||
-      (b.address || '').toLowerCase().includes(keyword)
-    );
+    const kw = keyword.toLowerCase();
+    const coordPair = (function parsePair(raw) {
+      const m = String(raw || '').trim().match(/^(-?\d+(?:[.,]\d+)?)\s*[,;\s]+\s*(-?\d+(?:[.,]\d+)?)\s*$/);
+      if (!m) return null;
+      let lat = Number(String(m[1]).replace(',', '.'));
+      let lng = Number(String(m[2]).replace(',', '.'));
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      if (lng >= 8 && lng <= 24 && lat >= 100 && lat <= 120) {
+        const s = lat; lat = lng; lng = s;
+      }
+      return { lat, lng };
+    })(keyword);
+    filtered = filtered.filter((b) => {
+      const gps = b.gps_location || {};
+      const lat = Number(gps.lat);
+      const lng = Number(gps.lng);
+      const hay = [
+        b.name,
+        b.address,
+        b.description,
+        b.status,
+        b._id,
+        b.place_id,
+        b.place_slug,
+        b.category,
+        Number.isFinite(lat) ? String(lat) : '',
+        Number.isFinite(lng) ? String(lng) : '',
+        (Number.isFinite(lat) && Number.isFinite(lng)) ? (lat + ', ' + lng) : ''
+      ].join(' ').toLowerCase();
+      if (hay.includes(kw)) return true;
+      if (coordPair && Number.isFinite(lat) && Number.isFinite(lng)) {
+        const dLat = (lat - coordPair.lat) * Math.PI / 180;
+        const dLng = (lng - coordPair.lng) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) ** 2
+          + Math.cos(lat * Math.PI / 180) * Math.cos(coordPair.lat * Math.PI / 180)
+          * Math.sin(dLng / 2) ** 2;
+        const meters = 2 * 6371000 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return meters <= 400;
+      }
+      return false;
+    });
   }
   if (status) filtered = filtered.filter(b => b.status === status);
   displayedBuildings = filtered;
@@ -2590,7 +2777,7 @@ async function onBuildingIncludeInactiveChange() {
   await fetchBuildings();
 }
 
-function clearBuildingFilters() {
+async function clearBuildingFilters() {
   ['filterBuildingOrg', 'filterBuildingKeyword', 'filterBuildingStatus'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
@@ -2599,7 +2786,7 @@ function clearBuildingFilters() {
   localStorage.removeItem('buildingsFilters');
   saveBuildingTableSort('name', 'asc');
   window._buildingsPage = 1;
-  applyBuildingFilters(false);
+  await fetchBuildings();
 }
 
 function restoreBuildingFilters() {
@@ -2692,16 +2879,22 @@ function renderBuildingsFromCache() {
   const canEditMeta = canManageBuildingMeta();
   const canDelete = canDeleteBuilding();
   if (!list.length) {
+    const includeInactive = document.getElementById('filterBuildingIncludeInactive')?.checked === true;
     const hasFilter = !!(
       document.getElementById('filterBuildingOrg')?.value ||
       (document.getElementById('filterBuildingKeyword')?.value || '').trim() ||
       document.getElementById('filterBuildingStatus')?.value
     );
-    const emptyMsg = hasFilter
-      ? 'Không có tòa nhà khớp bộ lọc hiện tại.'
-      : (canEditMeta
+    let emptyMsg;
+    if (includeInactive && !hasFilter) {
+      emptyMsg = 'Không có tòa nhà nào đang vô hiệu hóa.';
+    } else if (hasFilter || includeInactive) {
+      emptyMsg = 'Không có tòa nhà khớp bộ lọc hiện tại.';
+    } else {
+      emptyMsg = canEditMeta
         ? 'Chưa có tòa nhà nào. Bấm "Thêm Tòa Nhà Mới"!'
-        : 'Chưa có tòa nhà nào được gán cho tài khoản của bạn.');
+        : 'Chưa có tòa nhà nào được gán cho tài khoản của bạn.';
+    }
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#667085;">' + emptyMsg + '</td></tr>';
     renderPagination('buildings', 0, 1);
     return;
@@ -3098,11 +3291,12 @@ function platformJumpOrgPlan(plan) {
 }
 
 function platformJumpUsers(status, role) {
-  switchTab('users');
+  const goEnd = role === END_USER_ROLE || role === 'REGISTERED_USER';
+  switchTab(goEnd ? 'end-users' : 'users');
   const statusEl = document.getElementById('filterUserStatus');
   const roleEl = document.getElementById('filterUserRole');
   if (statusEl && status != null) statusEl.value = status;
-  if (roleEl && role != null) roleEl.value = role;
+  if (roleEl && role != null && !goEnd) roleEl.value = role;
   applyUserFilters();
 }
 
@@ -4087,6 +4281,123 @@ function stopOverviewAutoRefresh() {
 }
 
 /**
+ * Xóa cache client để lần tải sau luôn lấy API mới.
+ * Gọi khi load trang / quay lại tab trình duyệt.
+ */
+function invalidateDashboardDataCaches() {
+  overviewDashboardCache = null;
+  platformStatsCache = null;
+  window._overviewLastRefreshAt = 0;
+}
+
+/**
+ * Tải lại dữ liệu tab đang mở (không đổi route).
+ * @param {{ silent?: boolean }} opts
+ */
+async function refreshActiveDashboardTab(opts) {
+  const silent = !!(opts && opts.silent);
+  const tab = window._currentDashboardTab;
+  if (!tab || !currentUser) return;
+
+  try {
+    if (tab === 'overview') {
+      await loadOverviewDashboard({ force: true, silent: silent });
+      await fetchPlatformStats();
+      return;
+    }
+    if (tab === 'analytics') {
+      await loadAnalyticsTab();
+      return;
+    }
+    if (tab === 'buildings' || tab === 'maps') {
+      if (getBuildingDetailId() && typeof refreshBuildingDetail === 'function') {
+        await refreshBuildingDetail();
+      } else {
+        await fetchBuildings();
+      }
+      return;
+    }
+    if (tab === 'users' || tab === 'end-users') {
+      await fetchUsers();
+      return;
+    }
+    if (tab === 'organizations') {
+      await fetchOrganizations();
+      return;
+    }
+    if (tab === 'myorg' && typeof openMyOrganization === 'function') {
+      await openMyOrganization();
+      return;
+    }
+    if (tab === 'logs' && typeof loadLogs === 'function') {
+      await loadLogs();
+      return;
+    }
+    if (tab === 'registrations' && typeof fetchRegistrations === 'function') {
+      await fetchRegistrations();
+      return;
+    }
+    if (tab === 'finance' && typeof loadFinanceTab === 'function') {
+      await loadFinanceTab();
+      return;
+    }
+    if (tab === 'billing') {
+      if (currentUser?.role === 'ORG_ADMIN' && typeof loadMyBillingTab === 'function') {
+        await loadMyBillingTab();
+      } else if (typeof loadBillingTab === 'function') {
+        const oid = document.getElementById('billingOrgSelect')?.value || _billingTabOrgId;
+        if (oid) await loadBillingTab(oid);
+        else if (typeof showBillingOrgList === 'function') {
+          if (!allOrganizations.length) await fetchOrganizations();
+          showBillingOrgList();
+        }
+      }
+      return;
+    }
+    if (tab === 'plans' && typeof loadPlansTab === 'function') {
+      await loadPlansTab();
+      return;
+    }
+    if (tab === 'creator' && typeof loadCreatorTab === 'function') {
+      await loadCreatorTab();
+      return;
+    }
+    if (tab === 'profile' && typeof loadProfile === 'function') {
+      await loadProfile();
+      return;
+    }
+    if (tab === 'emergency' && typeof window.EmergencyAdmin?.load === 'function') {
+      await window.EmergencyAdmin.load();
+      return;
+    }
+    if (tab === 'website' && typeof WebsiteCms?.load === 'function') {
+      await WebsiteCms.load(window._activeWebsiteSub || 'articles');
+      return;
+    }
+    if (tab === 'places' && typeof window.MapGovernance?.loadPlaces === 'function') {
+      await window.MapGovernance.loadPlaces();
+      return;
+    }
+    if (tab === 'community-contrib' && typeof window.CommunityContribAdmin?.loadAll === 'function') {
+      await window.CommunityContribAdmin.loadAll();
+      return;
+    }
+    if (tab === 'place-reports' && typeof window.PlaceReportsAdmin?.loadAll === 'function') {
+      await window.PlaceReportsAdmin.loadAll();
+      return;
+    }
+    if (tab === 'place-engagement' && typeof window.PlaceEngagementAdmin?.loadAll === 'function') {
+      await window.PlaceEngagementAdmin.loadAll();
+    }
+  } catch (e) {
+    console.warn('refreshActiveDashboardTab:', tab, e);
+  }
+}
+
+window.refreshActiveDashboardTab = refreshActiveDashboardTab;
+window.invalidateDashboardDataCaches = invalidateDashboardDataCaches;
+
+/**
  * Làm mới overview / finance / session sau thanh toán hoặc thao tác đổi dữ liệu.
  * Tab đang mở → reload ngay; tab khác → xóa cache để lần vào lấy dữ liệu mới.
  */
@@ -4139,17 +4450,15 @@ if (typeof window !== 'undefined') {
 }
 if (typeof document !== 'undefined' && !window._overviewVisibilityBound) {
   window._overviewVisibilityBound = true;
+  let _lastVisibilityRefreshAt = 0;
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible'
-      && window._currentDashboardTab === 'overview'
-      && !window._overviewLoading) {
-      loadOverviewDashboard({ force: true, silent: true });
-    }
-    if (document.visibilityState === 'visible'
-      && window._currentDashboardTab === 'analytics'
-      && !_analyticsLoading) {
-      loadAnalyticsTab();
-    }
+    if (document.visibilityState !== 'visible') return;
+    // Tránh spam khi đổi app liên tục — tối thiểu 3s giữa 2 lần
+    const now = Date.now();
+    if (now - _lastVisibilityRefreshAt < 3000) return;
+    _lastVisibilityRefreshAt = now;
+    invalidateDashboardDataCaches();
+    refreshActiveDashboardTab({ silent: true });
   });
 }
 
@@ -7995,13 +8304,14 @@ function jumpToUsers(orgId) {
   const el = document.getElementById('filterUserOrg');
   if (el) el.value = orgId;
   window._usersPage = 1;
-  localStorage.setItem('usersFilters', JSON.stringify({
+  const scope = window._userListScope === 'end' ? 'end' : 'staff';
+  localStorage.setItem(usersFiltersStorageKey(scope), JSON.stringify({
     orgId,
     keyword: document.getElementById('filterUserKeyword')?.value || '',
-    role: document.getElementById('filterUserRole')?.value || '',
+    role: scope === 'end' ? END_USER_ROLE : (document.getElementById('filterUserRole')?.value || ''),
     status: document.getElementById('filterUserStatus')?.value || ''
   }));
-  switchTab('users');
+  switchTab(currentUsersNavTab());
 }
 
 function slugifyFromName(name) {
@@ -9535,7 +9845,7 @@ async function deleteBuilding(id) {
     if (res.ok) {
       const inactiveEl = document.getElementById('filterBuildingIncludeInactive');
       if (inactiveEl) inactiveEl.checked = true;
-      alert('Đã vô hiệu hóa tòa nhà!\n\nDanh sách sẽ hiện cả tòa đã vô hiệu — bấm「Khôi phục」nếu cần bật lại.');
+      alert('Đã vô hiệu hóa tòa nhà!\n\nBật「Tòa đã vô hiệu」để xem danh sách và bấm「Khôi phục」nếu cần bật lại.');
       fetchBuildings();
       fetchPlatformStats();
     }
@@ -9636,6 +9946,9 @@ async function loadMapVersions() {
         : (v.has_full_snapshot
           ? '<button type="button" class="btn-edit" style="background:#e67e22;color:#fff;font-size:12px;padding:4px 8px;" onclick="rollbackMapVersion(' + v.version + ',true)">Khôi phục</button>'
           : '<button type="button" class="btn-edit" style="background:#95a5a6;color:#fff;font-size:12px;padding:4px 8px;" disabled title="Bản cũ không có bản lưu phòng/cửa">Không khôi phục được</button>');
+      const compareBtn = data.length > 1
+        ? ' <button type="button" class="btn-edit" style="font-size:12px;padding:4px 8px;" onclick="compareMapVersion(' + v.version + ')" title="So sánh delta với một phiên bản khác">So sánh</button>'
+        : '';
       return '<tr>' +
         '<td style="text-align:center;"><strong>v' + v.version + '</strong>' + snapHint + (isCurrent ? ' <span style="color:#27ae60;font-size:11px;">(hiện tại)</span>' : '') + '</td>' +
         '<td style="text-align:center;">' + (v.rooms_count || 0) + '</td>' +
@@ -9643,13 +9956,62 @@ async function loadMapVersions() {
         '<td style="text-align:center;">' + (v.edges_count || 0) + '</td>' +
         '<td>' + (v.published_by ? escapeHtml(v.published_by.email) : '-') + '</td>' +
         '<td>' + (v.published_at ? new Date(v.published_at).toLocaleString('vi-VN') : '-') + '</td>' +
-        '<td style="text-align:center;">' + rollbackBtn + '</td>' +
+        '<td style="text-align:center;">' + rollbackBtn + compareBtn + '</td>' +
       '</tr>';
     }).join('');
   } catch (e) {
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:red;">Lỗi tải dữ liệu.</td></tr>';
   }
 }
+
+async function compareMapVersion(toVersion) {
+  const ctx = window._mapVersionContext || {};
+  const buildingId = ctx.buildingId;
+  const floor = document.getElementById('mapVersionFloorSelect')?.value || '0';
+  if (!buildingId) return;
+
+  const answer = prompt('So sánh v' + toVersion + ' với phiên bản nào? (nhập số)', String(Math.max(0, Number(toVersion) - 1)));
+  if (answer === null) return;
+  const fromVersion = parseInt(answer, 10);
+  if (!Number.isFinite(fromVersion)) {
+    alert('Số phiên bản không hợp lệ.');
+    return;
+  }
+
+  const statusEl = document.getElementById('mapVersionStatus');
+  try {
+    const res = await apiFetch(
+      '/map-versions/' + buildingId + '/' + floor + '/compare?from=' + fromVersion + '&to=' + toVersion
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.message || ('HTTP ' + res.status));
+      return;
+    }
+    const summary = data.summary || {};
+    const lines = Object.keys(summary).map(function (kind) {
+      const s = summary[kind];
+      const sign = s.delta > 0 ? '+' : '';
+      return kind + ': ' + s.from + ' → ' + s.to + ' (' + sign + s.delta +
+        ', thêm ' + s.added + ' / bớt ' + s.removed + ')';
+    });
+    const header = 'So sánh v' + fromVersion + ' → v' + toVersion + ' (tầng ' + floor + ')';
+    const note = data.partial_snapshot
+      ? '\n\n⚠️ Một trong hai bản chỉ có snapshot một phần — số liệu phòng/POI có thể thiếu.'
+      : '';
+    if (statusEl) {
+      statusEl.style.display = 'block';
+      statusEl.style.background = '#eef6ff';
+      statusEl.style.color = '#1d4ed8';
+      statusEl.textContent = header + ' · ' + data.total_changes + ' thay đổi';
+    }
+    alert(header + '\n\n' + lines.join('\n') + '\n\nTổng thay đổi: ' + data.total_changes + note);
+  } catch (e) {
+    alert('Lỗi kết nối khi so sánh phiên bản!');
+  }
+}
+
+window.compareMapVersion = compareMapVersion;
 
 async function rollbackMapVersion(version, hasFullSnapshot) {
   const ctx = window._mapVersionContext || {};
@@ -9856,10 +10218,12 @@ async function fetchUsers() {
     seedOrgCacheFromUser(currentUser);
   }
   const tbody = document.getElementById('usersList');
+  const scope = window._userListScope === 'end' ? 'end' : 'staff';
   const keyword = (document.getElementById('filterUserKeyword')?.value || '').trim();
-  const role = document.getElementById('filterUserRole')?.value || '';
+  let role = document.getElementById('filterUserRole')?.value || '';
   const status = document.getElementById('filterUserStatus')?.value || '';
   const orgId = document.getElementById('filterUserOrg')?.value || '';
+  if (scope === 'end') role = END_USER_ROLE;
   const params = new URLSearchParams();
   if (keyword) params.set('search', keyword);
   if (role) params.set('role', role);
@@ -9876,11 +10240,16 @@ async function fetchUsers() {
     const data = await res.json();
     let users = Array.isArray(data) ? data : (data.users || data.data || []);
     if (orgId) users = users.filter(u => String(u.organization_id) === orgId);
+    if (scope === 'end') {
+      users = users.filter((u) => u.role === END_USER_ROLE);
+    } else {
+      users = users.filter((u) => u.role !== END_USER_ROLE);
+    }
     allUsers = users;
-    localStorage.setItem('usersFilters', JSON.stringify({
+    localStorage.setItem(usersFiltersStorageKey(scope), JSON.stringify({
       orgId,
       keyword,
-      role,
+      role: scope === 'end' ? END_USER_ROLE : role,
       status,
       sortKey: getUserTableSort().key,
       sortDir: getUserTableSort().dir
@@ -9906,25 +10275,39 @@ function filterPendingAccounts() {
 }
 
 function clearUserFilters() {
-  ['filterUserOrg', 'filterUserKeyword', 'filterUserRole', 'filterUserStatus'].forEach(id => {
+  const scope = window._userListScope === 'end' ? 'end' : 'staff';
+  ['filterUserOrg', 'filterUserKeyword', 'filterUserStatus'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
-  localStorage.removeItem('usersFilters');
+  const roleEl = document.getElementById('filterUserRole');
+  if (roleEl) roleEl.value = scope === 'end' ? END_USER_ROLE : '';
+  localStorage.removeItem(usersFiltersStorageKey(scope));
   saveUserTableSort('email', 'asc');
   window._usersPage = 1;
   fetchUsers();
 }
 
 function restoreUserFilters() {
+  const scope = window._userListScope === 'end' ? 'end' : 'staff';
   try {
-    const saved = JSON.parse(localStorage.getItem('usersFilters') || '{}');
+    const saved = JSON.parse(localStorage.getItem(usersFiltersStorageKey(scope)) || '{}');
     if (saved.orgId != null) { const el = document.getElementById('filterUserOrg'); if (el) el.value = saved.orgId; }
     if (saved.keyword != null) { const el = document.getElementById('filterUserKeyword'); if (el) el.value = saved.keyword; }
-    if (saved.role != null) { const el = document.getElementById('filterUserRole'); if (el) el.value = saved.role; }
     if (saved.status != null) { const el = document.getElementById('filterUserStatus'); if (el) el.value = saved.status; }
+    const roleEl = document.getElementById('filterUserRole');
+    if (roleEl) {
+      if (scope === 'end') roleEl.value = END_USER_ROLE;
+      else if (saved.role != null && saved.role !== END_USER_ROLE) roleEl.value = saved.role;
+      else roleEl.value = '';
+    }
     if (saved.sortKey) saveUserTableSort(saved.sortKey, saved.sortDir || 'asc');
     else saveUserTableSort('email', 'asc');
-  } catch (e) {}
+  } catch (e) {
+    if (scope === 'end') {
+      const roleEl = document.getElementById('filterUserRole');
+      if (roleEl) roleEl.value = END_USER_ROLE;
+    }
+  }
 }
 
 function getUserTableSort() {
@@ -9935,10 +10318,12 @@ function getUserTableSort() {
 function saveUserTableSort(key, dir) {
   window._userTableSort = { key: key || 'email', dir: dir === 'desc' ? 'desc' : 'asc' };
   try {
-    const saved = JSON.parse(localStorage.getItem('usersFilters') || '{}');
+    const scope = window._userListScope === 'end' ? 'end' : 'staff';
+    const storageKey = usersFiltersStorageKey(scope);
+    const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
     saved.sortKey = window._userTableSort.key;
     saved.sortDir = window._userTableSort.dir;
-    localStorage.setItem('usersFilters', JSON.stringify(saved));
+    localStorage.setItem(storageKey, JSON.stringify(saved));
   } catch (e) {}
 }
 
@@ -10068,7 +10453,7 @@ function renderUsers(users) {
     let actionsHtml =
       '<button type="button" class="ua-btn ua-btn--detail" onclick="openUserDetailPage(\'' + u._id + '\')" title="Xem chi tiết tài khoản">Chi tiết</button> ';
     if (u.quota_locked && !isAdminSelf) {
-      actionsHtml += '<span class="user-action-note" title="Vượt hạn mức gói">🔒 Quota</span>';
+      actionsHtml += '<span class="user-action-note" title="Vượt hạn mức gói">🔒 Vượt hạn mức</span>';
     } else if (isAdminSelf) {
       actionsHtml += '<span class="user-action-note">Tự bảo vệ</span>';
     } else {
@@ -10107,6 +10492,24 @@ let _userDetailId = null;
 let _userDetailData = null;
 let _userDetailSubtab = 'overview';
 
+const USER_HISTORY_TYPE_VI = {
+  VIEW_PLACE: 'Xem địa điểm',
+  VIEW_INDOOR: 'Xem bản đồ trong nhà',
+  SEARCH: 'Tìm kiếm',
+  OPEN_WORKSPACE: 'Mở không gian làm việc',
+  FAVORITE_PLACE: 'Lưu yêu thích',
+  NAVIGATE_PLACE: 'Dẫn đường tới địa điểm',
+  NAVIGATE_INDOOR: 'Dẫn đường trong nhà',
+  OTHER: 'Khác'
+};
+
+const DEVICE_PLATFORM_VI = {
+  android: 'Android',
+  ios: 'iOS',
+  web: 'Trình duyệt web',
+  unknown: 'Không xác định'
+};
+
 function showUserListView() {
   const list = document.getElementById('userListView');
   const page = document.getElementById('userDetailPage');
@@ -10119,6 +10522,7 @@ function showUserDetailPageShell() {
   const page = document.getElementById('userDetailPage');
   if (list) list.hidden = true;
   if (page) page.hidden = false;
+  syncUserDetailBackLabel();
 }
 
 function closeUserDetailPage() {
@@ -10137,23 +10541,20 @@ function switchUserDetailSubtab(name) {
   else if (_userDetailId) loadUserDetailSubtabBody(_userDetailId, _userDetailSubtab);
 }
 
-async function openUserDetailPage(userId) {
-  _userDetailId = userId;
-  _userDetailData = null;
-  _userDetailSubtab = 'overview';
-  showUserDetailPageShell();
-  document.querySelectorAll('.user-detail-subnav-btn').forEach((btn) => {
-    btn.classList.toggle('active', btn.getAttribute('data-user-sub') === 'overview');
-  });
+async function loadUserDetailPageData(userId) {
   const body = document.getElementById('userDetailPageBody');
   const titleEl = document.getElementById('userDetailPageTitle');
+  const subnav = document.getElementById('userDetailSubnav');
+  if (subnav) subnav.hidden = false;
+  document.querySelectorAll('.user-detail-subnav-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.getAttribute('data-user-sub') === (_userDetailSubtab || 'overview'));
+  });
   if (titleEl) titleEl.textContent = 'Đang tải…';
-  if (body) body.innerHTML = typeof dashUiLoading === 'function'
-    ? dashUiLoading('text', { label: 'Đang tải chi tiết tài khoản…' })
-    : '<p>Đang tải…</p>';
-  try {
-    if (typeof switchTab === 'function') await switchTab('users', { skipHistory: true });
-  } catch (e) { /* ignore */ }
+  if (body) {
+    body.innerHTML = typeof dashUiLoading === 'function'
+      ? dashUiLoading('text', { label: 'Đang tải chi tiết người dùng…' })
+      : '<p>Đang tải…</p>';
+  }
   try {
     const res = await apiFetch('/users/' + userId + '/overview');
     const d = await res.json().catch(() => ({}));
@@ -10168,13 +10569,25 @@ async function openUserDetailPage(userId) {
     _userDetailData = d;
     renderUserDetailPageContent(d);
   } catch (e) {
-    console.error('openUserDetailPage error:', e);
+    console.error('loadUserDetailPageData error:', e);
     if (body) {
       body.innerHTML = typeof dashUiError === 'function'
-        ? dashUiError('Lỗi kết nối khi tải chi tiết tài khoản.')
+        ? dashUiError('Lỗi kết nối khi tải chi tiết người dùng.')
         : '<p style="color:red;">Lỗi kết nối.</p>';
     }
   }
+}
+
+async function openUserDetailPage(userId) {
+  if (!userId) {
+    showUserListView();
+    return;
+  }
+  _userDetailId = userId;
+  _userDetailData = null;
+  _userDetailSubtab = 'overview';
+  showUserDetailPageShell();
+  await loadUserDetailPageData(userId);
 }
 
 function renderUserDetailPageContent(data) {
@@ -10191,7 +10604,9 @@ function renderUserDetailPageContent(data) {
   const titleEl = document.getElementById('userDetailPageTitle');
   const badgesEl = document.getElementById('userDetailPageBadges');
   const metaEl = document.getElementById('userDetailPageMeta');
-  if (titleEl) titleEl.textContent = u.full_name || u.email || 'Chi tiết tài khoản';
+  const subnav = document.getElementById('userDetailSubnav');
+  if (subnav) subnav.hidden = false;
+  if (titleEl) titleEl.textContent = u.full_name || u.email || 'Chi tiết người dùng';
   if (badgesEl) {
     const active = u.is_active !== false;
     badgesEl.innerHTML =
@@ -10203,18 +10618,22 @@ function renderUserDetailPageContent(data) {
     metaEl.innerHTML =
       '<span>' + escapeHtml(u.email || '') + '</span>' +
       (u.phone ? ' · <span>' + escapeHtml(u.phone) + '</span>' : '') +
-      (u.organization_id ? ' · <span>Org: ' + escapeHtml(getOrgName(u.organization_id)) + '</span>' : '');
+      (u.organization_id ? ' · <span>Tổ chức: ' + escapeHtml(getOrgName(u.organization_id)) + '</span>' : '');
   }
   const body = document.getElementById('userDetailPageBody');
   if (!body) return;
   if (_userDetailSubtab === 'overview') {
+    const a = data.analytics || {};
+    const consent = a.emergency_location_consent || {};
     body.innerHTML =
       '<div class="org-detail-overview-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px;">' +
         '<div class="org-stat-card" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;">Yêu thích</div><strong style="font-size:22px;">' + Number(counts.favorites || 0) + '</strong></div>' +
         '<div class="org-stat-card" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;">Lịch sử</div><strong style="font-size:22px;">' + Number(counts.history || 0) + '</strong></div>' +
         '<div class="org-stat-card" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;">Phiên đăng nhập</div><strong style="font-size:22px;">' + Number(counts.sessions || 0) + '</strong></div>' +
+        '<div class="org-stat-card" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;">Thiết bị</div><strong style="font-size:22px;">' + Number(counts.devices || 0) + '</strong></div>' +
+        '<div class="org-stat-card" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;">Cảnh cáo</div><strong style="font-size:22px;">' + Number(counts.warnings || 0) + '</strong></div>' +
       '</div>' +
-      '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px;">' +
+      '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:12px;">' +
         '<h4 style="margin:0 0 10px;">Hồ sơ</h4>' +
         '<p style="margin:4px 0;"><strong>Email:</strong> ' + escapeHtml(u.email || '-') + '</p>' +
         '<p style="margin:4px 0;"><strong>Họ tên:</strong> ' + escapeHtml(u.full_name || '-') + '</p>' +
@@ -10224,8 +10643,19 @@ function renderUserDetailPageContent(data) {
         '<p style="margin:4px 0;"><strong>Tòa nhà:</strong> ' + escapeHtml(formatAssignedBuildings(u.assigned_buildings)) + '</p>' +
         '<p style="margin:4px 0;"><strong>Ngày tạo:</strong> ' + (u.createdAt ? new Date(u.createdAt).toLocaleString('vi-VN') : '-') + '</p>' +
         '<p style="margin:4px 0;"><strong>Đăng nhập gần nhất:</strong> ' + (u.last_login ? new Date(u.last_login).toLocaleString('vi-VN') : '-') + '</p>' +
+      '</div>' +
+      '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:12px;">' +
+        '<h4 style="margin:0 0 10px;">Khẩn cấp &amp; uy tín đóng góp</h4>' +
+        '<p style="margin:4px 0;"><strong>Đồng ý chia sẻ vị trí khi khẩn cấp:</strong> ' + (consent.granted ? 'Đã đồng ý' : 'Chưa đồng ý') +
+          (consent.granted_at ? ' · ' + new Date(consent.granted_at).toLocaleString('vi-VN') : '') + '</p>' +
+        '<p style="margin:4px 0;"><strong>Điểm tin cậy đóng góp bản đồ:</strong> ' + Number(a.map_trust_score != null ? a.map_trust_score : 50) +
+          ' (mức ' + Number(a.map_trust_level != null ? a.map_trust_level : 3) + ')</p>' +
+        '<p style="margin:4px 0;"><strong>Chặn đóng góp bản đồ:</strong> ' + (a.map_banned ? ('Có — ' + escapeHtml(a.map_ban_reason || '')) : 'Không') + '</p>' +
+        '<p style="margin:4px 0;"><strong>Lý do khóa tài khoản:</strong> ' + escapeHtml(a.account_ban_reason || '—') + '</p>' +
         '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">' +
           '<button type="button" class="btn-edit" onclick="openUpdateUserModal(\'' + u._id + '\')">Sửa hồ sơ</button>' +
+          '<button type="button" class="btn-edit" onclick="switchUserDetailSubtab(\'devices\')">Xem thiết bị</button>' +
+          '<button type="button" class="btn-edit" onclick="switchUserDetailSubtab(\'moderation\')">Cảnh cáo &amp; khóa</button>' +
           '<button type="button" class="btn-edit" onclick="switchUserDetailSubtab(\'favorites\')">Xem yêu thích</button>' +
           '<button type="button" class="btn-edit" onclick="switchUserDetailSubtab(\'history\')">Xem lịch sử</button>' +
           '<button type="button" class="btn-edit" onclick="switchUserDetailSubtab(\'sessions\')">Xem phiên</button>' +
@@ -10284,9 +10714,9 @@ async function loadUserDetailSubtabBody(userId, subtab) {
       body.innerHTML =
         '<p style="margin:0 0 10px;color:#64748b;">Tổng: <strong>' + (d.total || rows.length) + '</strong></p>' +
         '<table class="users-table" style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;">' +
-        '<thead style="background:#34495e;color:#fff;"><tr><th style="padding:10px;text-align:left;">Loại</th><th style="padding:10px;text-align:left;">Nhãn</th><th style="padding:10px;text-align:left;">Thời gian</th></tr></thead>' +
+        '<thead style="background:#34495e;color:#fff;"><tr><th style="padding:10px;text-align:left;">Hoạt động</th><th style="padding:10px;text-align:left;">Nội dung</th><th style="padding:10px;text-align:left;">Thời gian</th></tr></thead>' +
         '<tbody>' + rows.map((r) => (
-          '<tr><td style="padding:10px;">' + escapeHtml(r.type || '-') +
+          '<tr><td style="padding:10px;">' + escapeHtml(USER_HISTORY_TYPE_VI[r.type] || r.type || '-') +
           '</td><td style="padding:10px;">' + escapeHtml(r.label || String(r.place_id || '-')) +
           '</td><td style="padding:10px;">' + (r.createdAt ? new Date(r.createdAt).toLocaleString('vi-VN') : '-') +
           '</td></tr>'
@@ -10308,7 +10738,7 @@ async function loadUserDetailSubtabBody(userId, subtab) {
       body.innerHTML =
         '<p style="margin:0 0 10px;color:#64748b;">Tổng: <strong>' + (d.total || rows.length) + '</strong></p>' +
         '<table class="users-table" style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;">' +
-        '<thead style="background:#34495e;color:#fff;"><tr><th style="padding:10px;text-align:left;">Thiết bị</th><th style="padding:10px;text-align:left;">IP</th><th style="padding:10px;text-align:left;">Dùng gần nhất</th><th style="padding:10px;text-align:left;">Hết hạn</th></tr></thead>' +
+        '<thead style="background:#34495e;color:#fff;"><tr><th style="padding:10px;text-align:left;">Thiết bị</th><th style="padding:10px;text-align:left;">Địa chỉ IP</th><th style="padding:10px;text-align:left;">Dùng gần nhất</th><th style="padding:10px;text-align:left;">Hết hạn</th></tr></thead>' +
         '<tbody>' + rows.map((r) => (
           '<tr><td style="padding:10px;">' + escapeHtml(r.device_name || r.user_agent || '-') +
           '</td><td style="padding:10px;">' + escapeHtml(r.ip_address || '-') +
@@ -10318,10 +10748,64 @@ async function loadUserDetailSubtabBody(userId, subtab) {
         )).join('') + '</tbody></table>';
       return;
     }
-    body.innerHTML = '<p style="color:#888;">Tab không hợp lệ.</p>';
+    if (subtab === 'devices') {
+      const res = await apiFetch('/users/' + userId + '/devices');
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        body.innerHTML = '<p style="color:red;">' + escapeHtml(d.message || ('HTTP ' + res.status)) + '</p>';
+        return;
+      }
+      const rows = d.devices || [];
+      if (!rows.length) {
+        body.innerHTML = '<p style="color:#888;padding:24px;text-align:center;">Chưa có thiết bị đăng ký.</p>';
+        return;
+      }
+      body.innerHTML =
+        '<p style="margin:0 0 10px;color:#64748b;">Tổng: <strong>' + (d.total || rows.length) + '</strong></p>' +
+        '<table class="users-table" style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;">' +
+        '<thead style="background:#34495e;color:#fff;"><tr><th style="padding:10px;text-align:left;">Tên thiết bị</th><th style="padding:10px;text-align:left;">Nền tảng</th><th style="padding:10px;text-align:left;">Nhận thông báo đẩy</th><th style="padding:10px;text-align:left;">Trạng thái</th><th style="padding:10px;text-align:left;">Hoạt động gần nhất</th></tr></thead>' +
+        '<tbody>' + rows.map((r) => (
+          '<tr><td style="padding:10px;">' + escapeHtml(r.device_name || r.device_id || '-') +
+          '</td><td style="padding:10px;">' + escapeHtml(DEVICE_PLATFORM_VI[r.platform] || r.platform || '-') +
+          '</td><td style="padding:10px;">' + (r.has_fcm_token ? 'Có' : 'Không') +
+          '</td><td style="padding:10px;">' + (r.is_active ? 'Đang dùng' : 'Đã thu hồi') +
+          '</td><td style="padding:10px;">' + (r.last_seen_at ? new Date(r.last_seen_at).toLocaleString('vi-VN') : '-') +
+          '</td></tr>'
+        )).join('') + '</tbody></table>';
+      return;
+    }
+    if (subtab === 'moderation') {
+      const ov = _userDetailData || {};
+      const a = ov.analytics || {};
+      const warnings = (ov.user && ov.user.account_warnings) || [];
+      body.innerHTML =
+        '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:12px;">' +
+          '<h4 style="margin:0 0 10px;">Thao tác tài khoản</h4>' +
+          '<p style="margin:4px 0;color:#64748b;">Cảnh cáo được lưu vào lịch sử. Khóa tài khoản sẽ chặn đăng nhập kèm lý do, không ảnh hưởng điểm tin cậy đóng góp bản đồ.</p>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">' +
+            '<button type="button" class="btn-edit" onclick="adminWarnUser(\'' + userId + '\')">Cảnh cáo</button>' +
+            '<button type="button" class="ua-btn ua-btn--danger" onclick="adminBanUser(\'' + userId + '\')">Khóa tài khoản</button>' +
+            '<button type="button" class="ua-btn ua-btn--success" onclick="adminUnbanUser(\'' + userId + '\')">Mở khóa tài khoản</button>' +
+          '</div>' +
+          '<p style="margin:12px 0 4px;"><strong>Lý do khóa tài khoản:</strong> ' + escapeHtml(a.account_ban_reason || '—') + '</p>' +
+          '<p style="margin:4px 0;"><strong>Chặn đóng góp bản đồ:</strong> ' + (a.map_banned ? ('Có — ' + escapeHtml(a.map_ban_reason || '')) : 'Không') + '</p>' +
+        '</div>' +
+        '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px;">' +
+          '<h4 style="margin:0 0 10px;">Lịch sử cảnh cáo (' + warnings.length + ')</h4>' +
+          (warnings.length
+            ? '<ul style="margin:0;padding-left:18px;">' + warnings.slice().reverse().map((w) =>
+                '<li style="margin:6px 0;">' + escapeHtml(w.reason || '-') +
+                ' <span style="color:#64748b;font-size:12px;">· ' +
+                (w.created_at ? new Date(w.created_at).toLocaleString('vi-VN') : '') + '</span></li>'
+              ).join('') + '</ul>'
+            : '<p style="color:#888;margin:0;">Chưa có cảnh cáo.</p>') +
+        '</div>';
+      return;
+    }
+    body.innerHTML = '<p style="color:#888;">Mục không hợp lệ.</p>';
   } catch (e) {
     console.error('loadUserDetailSubtabBody error:', e);
-    body.innerHTML = '<p style="color:red;">Lỗi tải dữ liệu tab.</p>';
+    body.innerHTML = '<p style="color:red;">Lỗi tải dữ liệu của mục này.</p>';
   }
 }
 
@@ -10337,15 +10821,76 @@ async function toggleUserActive(userId, currentActive) {
     else {
       const d = await res.json(); alert('Lỗi: ' + (d.message || 'Cập nhật thất bại.'));
     }
-  } catch (err) {
-    alert('Lỗi: ' + (err.message || err));
+  } catch (e) {
+    alert('Lỗi kết nối.');
+  }
+}
+
+async function adminWarnUser(userId) {
+  const reason = prompt('Lý do cảnh cáo:');
+  if (!reason || !String(reason).trim()) return;
+  try {
+    const res = await apiFetch('/users/' + userId + '/warnings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: String(reason).trim() })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('Lỗi: ' + (d.message || res.status));
+      return;
+    }
+    alert('Đã ghi cảnh cáo.');
+    if (_userDetailId === userId) openUserDetailPage(userId);
+  } catch (e) {
+    alert('Lỗi kết nối.');
+  }
+}
+
+async function adminBanUser(userId) {
+  const reason = prompt('Lý do khóa tài khoản (bắt buộc):');
+  if (!reason || !String(reason).trim()) return;
+  if (!confirm('Tài khoản sẽ bị khóa và không thể đăng nhập. Tiếp tục?')) return;
+  try {
+    const res = await apiFetch('/users/' + userId + '/ban', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: String(reason).trim() })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('Lỗi: ' + (d.message || res.status));
+      return;
+    }
+    alert(d.message || 'Đã khóa tài khoản.');
+    fetchUsers();
+    if (_userDetailId === userId) openUserDetailPage(userId);
+  } catch (e) {
+    alert('Lỗi kết nối.');
+  }
+}
+
+async function adminUnbanUser(userId) {
+  if (!confirm('Mở khóa tài khoản này?')) return;
+  try {
+    const res = await apiFetch('/users/' + userId + '/unban', { method: 'POST' });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert('Lỗi: ' + (d.message || res.status));
+      return;
+    }
+    alert(d.message || 'Đã mở khóa tài khoản.');
+    fetchUsers();
+    if (_userDetailId === userId) openUserDetailPage(userId);
+  } catch (e) {
+    alert('Lỗi kết nối.');
   }
 }
 
 async function openUpdateUserModal(userId) {
   try {
     const res = await apiFetch('/users/' + userId);
-    if (!res.ok) { alert('Không thể tải chi tiết user!'); return; }
+    if (!res.ok) { alert('Không thể tải chi tiết người dùng!'); return; }
     const user = await res.json();
 
     if (!allBuildings || allBuildings.length === 0) {
@@ -10531,29 +11076,78 @@ const ACTION_LABELS = {
   PASSWORD_RESET_REQUEST: 'Yêu cầu quên mật khẩu',
   PASSWORD_RESET_COMPLETE: 'Đặt lại mật khẩu',
   LOGOUT_ALL: 'Đăng xuất mọi thiết bị',
+  SESSION_REVOKED: 'Thu hồi phiên đăng nhập',
+  EMAIL_VERIFIED: 'Xác minh email',
+  TWO_FACTOR_ENABLED: 'Bật xác thực 2 lớp',
+  TWO_FACTOR_DISABLED: 'Tắt xác thực 2 lớp',
+  UNLOCK_SESSION: 'Mở khóa phiên editor',
   PUBLISH_MAP: 'Xuất bản bản đồ',
+  PUBLISH_MAP_REQUESTED: 'Yêu cầu xuất bản bản đồ',
   LOAD_MAP: 'Tải bản đồ',
   ROLLBACK_MAP: 'Khôi phục phiên bản bản đồ',
   MAP_VERSION_RETENTION: 'Dọn phiên bản bản đồ cũ',
+  SAVE_DRAFT: 'Lưu bản nháp bản đồ',
   CREATE_BUILDING: 'Tạo tòa nhà',
   UPDATE_BUILDING: 'Cập nhật tòa nhà',
   ADD_FLOOR: 'Thêm tầng',
   REMOVE_FLOOR: 'Bớt tầng',
+  RENAME_FLOOR: 'Đổi tên tầng',
+  DUPLICATE_FLOOR: 'Nhân bản tầng',
+  SET_FLOOR_VISIBILITY: 'Đổi hiển thị tầng',
+  REORDER_FLOORS: 'Sắp xếp lại tầng',
   DELETE_BUILDING: 'Xóa tòa nhà',
   DEACTIVATE_BUILDING: 'Vô hiệu hóa tòa nhà',
   ACTIVATE_BUILDING: 'Khôi phục tòa nhà',
+  CREATE_PLACE: 'Tạo địa điểm',
+  UPDATE_PLACE: 'Cập nhật địa điểm',
+  LOCK_PLACE: 'Khóa địa điểm',
+  UNLOCK_PLACE: 'Mở khóa địa điểm',
+  DELETE_PLACE: 'Xóa địa điểm',
+  ATTACH_BUILDING_PLACE: 'Gắn tòa vào địa điểm',
+  DETACH_BUILDING_PLACE: 'Gỡ tòa khỏi địa điểm',
+  UPDATE_BUILDING_VISIBILITY: 'Đổi visibility tòa nhà',
+  PLACE_REVIEW_DEACTIVATE: 'Ẩn đánh giá địa điểm',
+  PLACE_REVIEW_ACTIVATE: 'Hiện lại đánh giá địa điểm',
+  PLACE_FAVORITE_REMOVE: 'Gỡ yêu thích địa điểm',
+  PLACE_PROPOSAL_CREATE: 'Tạo đề xuất địa điểm',
+  PLACE_PROPOSAL_APPROVE: 'Duyệt đề xuất địa điểm',
+  PLACE_PROPOSAL_REJECT: 'Từ chối đề xuất địa điểm',
+  PLACE_VERIFICATION_REQUEST: 'Yêu cầu xác minh Place',
+  PLACE_VERIFICATION_APPROVE: 'Duyệt xác minh Place',
+  PLACE_VERIFICATION_REJECT: 'Từ chối xác minh Place',
+  PLACE_OWNERSHIP_SUBMIT: 'Gửi yêu cầu sở hữu Place',
+  PLACE_OWNERSHIP_APPROVE: 'Duyệt sở hữu Place',
+  PLACE_OWNERSHIP_REJECT: 'Từ chối sở hữu Place',
+  PLACE_SET_OWNER: 'Gán chủ sở hữu Place',
+  PLACE_MERGE_EXECUTE: 'Gộp địa điểm',
+  PLACE_MERGE_APPROVE: 'Duyệt gộp địa điểm',
+  MAP_CONTRIBUTION_CREATE: 'Tạo đóng góp bản đồ',
+  MAP_CONTRIBUTION_APPROVE: 'Duyệt đóng góp bản đồ',
+  MAP_CONTRIBUTION_REJECT: 'Từ chối đóng góp bản đồ',
+  MAP_MODERATION_RESOLVE: 'Xử lý báo cáo kiểm duyệt',
+  MAP_REVIEW_AUTO_APPROVE: 'Tự duyệt map review',
+  MAP_REVIEW_SUBMIT: 'Gửi map review',
+  MAP_REVIEW_APPROVE: 'Duyệt map review',
+  MAP_REVIEW_REJECT: 'Từ chối map review',
+  MAP_REVIEW_MERGE_STUB: 'Merge map review (stub)',
+  MAP_REVIEW_MERGE_ENGINE: 'Merge map review',
+  INDOOR_WORKSPACE_CREATE: 'Tạo workspace indoor',
+  DEVICE_REGISTER: 'Đăng ký thiết bị',
+  DEVICE_REVOKE: 'Thu hồi thiết bị',
   CREATE_USER: 'Tạo tài khoản',
   ADMIN_UPDATE_USER: 'Admin sửa tài khoản',
   ACTIVATE_USER: 'Kích hoạt tài khoản',
   DEACTIVATE_USER: 'Vô hiệu hóa tài khoản',
   DELETE_USER: 'Xóa / khóa tài khoản',
+  WARN_USER: 'Cảnh cáo người dùng',
+  BAN_USER: 'Khóa người dùng',
+  UNBAN_USER: 'Mở khóa người dùng',
   ASSIGN_BUILDING: 'Gán tòa nhà',
   BUILDING_ASSIGN: 'Gán tòa nhà',
   BUILDING_UNASSIGN: 'Bỏ gán tòa nhà',
   BUILDING_ACCESS_DENIED: 'Từ chối truy cập tòa',
   CREATE_QR: 'Tạo mã QR',
   DELETE_QR: 'Xóa mã QR',
-  UNLOCK_SESSION: 'Mở khóa phiên',
   CREATE_ORG: 'Tạo tổ chức',
   APPROVE_ORG_REGISTRATION: 'Duyệt hồ sơ đăng ký',
   REJECT_ORG_REGISTRATION: 'Từ chối hồ sơ đăng ký',
@@ -10562,6 +11156,14 @@ const ACTION_LABELS = {
   DEACTIVATE_ORGANIZATION: 'Tạm dừng tổ chức',
   ACTIVATE_ORGANIZATION: 'Kích hoạt tổ chức',
   ADMIN_RESET_PASSWORD: 'Admin đặt lại mật khẩu',
+  MEMBER_INVITED: 'Mời thành viên',
+  MEMBER_INVITE_REVOKED: 'Thu hồi lời mời',
+  MEMBER_INVITE_ACCEPTED: 'Chấp nhận lời mời',
+  MEMBER_UPDATED: 'Cập nhật thành viên',
+  MEMBER_REMOVED: 'Xóa thành viên',
+  JOIN_ORG_REQUEST: 'Xin gia nhập tổ chức',
+  JOIN_ORG_APPROVE: 'Duyệt gia nhập tổ chức',
+  JOIN_ORG_REJECT: 'Từ chối gia nhập tổ chức',
   CREATE_PLAN: 'Tạo gói dịch vụ',
   UPDATE_PLAN: 'Cập nhật / ngừng bán gói',
   DELETE_PLAN: 'Xóa gói dịch vụ',
@@ -10571,14 +11173,206 @@ const ACTION_LABELS = {
   MARK_INVOICE_PAID: 'Ghi nhận thu hóa đơn',
   CHECKOUT_START: 'Bắt đầu thanh toán gói',
   SUBSCRIPTION_PAYMENT: 'Thanh toán gói thành công',
+  REFUND_PAYMENT: 'Hoàn tiền',
+  PERSONAL_PLAN_UPGRADE: 'Nâng cấp gói cá nhân',
   ACTIVATE_SUBSCRIPTION: 'Kích hoạt / gia hạn gói',
   CANCEL_SUBSCRIPTION: 'Hủy gói đăng ký',
   EXPIRE_SUBSCRIPTION: 'Hết hạn gói',
   CREATE_BILLING_EVENT: 'Ghi sự kiện thanh toán',
   UPDATE_ORG_CONTACT: 'Cập nhật liên hệ tổ chức',
   SET_PUBLISH_PERMIT: 'Cấp quyền xuất bản',
-  CLEAR_PUBLISH_PERMIT: 'Thu hồi quyền xuất bản'
+  CLEAR_PUBLISH_PERMIT: 'Thu hồi quyền xuất bản',
+  EMERGENCY_CONSENT_UPDATE: 'Cập nhật đồng ý khẩn cấp',
+  INCIDENT_CREATE: 'Tạo sự cố',
+  INCIDENT_UPDATE: 'Cập nhật sự cố',
+  INCIDENT_STATUS_CHANGE: 'Đổi trạng thái sự cố',
+  HAZARD_ZONE_CREATE: 'Tạo vùng nguy hiểm',
+  HAZARD_ZONE_UPDATE: 'Cập nhật vùng nguy hiểm',
+  HAZARD_ZONE_ACTIVATE: 'Kích hoạt vùng nguy hiểm',
+  HAZARD_ZONE_DEACTIVATE: 'Tắt vùng nguy hiểm',
+  EMERGENCY_BROADCAST_SEND: 'Gửi broadcast khẩn cấp',
+  EMERGENCY_LOCATION_REPORT: 'Báo cáo vị trí khẩn cấp',
+  EMERGENCY_POSSIBLY_TRAPPED: 'Báo bị kẹt / cần cứu',
+  SEISMIC_EARTHQUAKE_TRIGGER: 'Kích hoạt cảnh báo địa chấn',
+  USGS_EARTHQUAKE_TRIGGER: 'Cảnh báo động đất USGS'
 };
+
+/** Mirror Backend_server/utils/activityLogStreams.js — chip luồng theo role */
+const LOG_STREAM_DEFS = {
+  auth: {
+    label: 'Đăng nhập & bảo mật',
+    actions: [
+      'LOGIN', 'LOGOUT', 'REGISTER', 'UPDATE_PROFILE', 'CHANGE_PASSWORD',
+      'PASSWORD_RESET_REQUEST', 'PASSWORD_RESET_COMPLETE',
+      'LOGOUT_ALL', 'SESSION_REVOKED', 'EMAIL_VERIFIED',
+      'TWO_FACTOR_ENABLED', 'TWO_FACTOR_DISABLED', 'UNLOCK_SESSION',
+      'DEVICE_REGISTER', 'DEVICE_REVOKE', 'EMERGENCY_CONSENT_UPDATE'
+    ]
+  },
+  buildings: {
+    label: 'Tòa & bản đồ',
+    actions: [
+      'CREATE_BUILDING', 'UPDATE_BUILDING', 'DELETE_BUILDING',
+      'DEACTIVATE_BUILDING', 'ACTIVATE_BUILDING',
+      'ADD_FLOOR', 'REMOVE_FLOOR', 'RENAME_FLOOR', 'DUPLICATE_FLOOR',
+      'SET_FLOOR_VISIBILITY', 'REORDER_FLOORS',
+      'UPDATE_BUILDING_VISIBILITY',
+      'ASSIGN_BUILDING', 'BUILDING_ASSIGN', 'BUILDING_UNASSIGN',
+      'BUILDING_ACCESS_DENIED',
+      'CREATE_QR', 'DELETE_QR',
+      'PUBLISH_MAP', 'PUBLISH_MAP_REQUESTED', 'LOAD_MAP', 'ROLLBACK_MAP',
+      'MAP_VERSION_RETENTION', 'SAVE_DRAFT',
+      'INDOOR_WORKSPACE_CREATE'
+    ]
+  },
+  places: {
+    label: 'Place & kiểm duyệt',
+    actions: [
+      'CREATE_PLACE', 'UPDATE_PLACE', 'DELETE_PLACE', 'LOCK_PLACE', 'UNLOCK_PLACE',
+      'ATTACH_BUILDING_PLACE', 'DETACH_BUILDING_PLACE',
+      'PLACE_PROPOSAL_CREATE', 'PLACE_PROPOSAL_APPROVE', 'PLACE_PROPOSAL_REJECT',
+      'PLACE_VERIFICATION_REQUEST', 'PLACE_VERIFICATION_APPROVE', 'PLACE_VERIFICATION_REJECT',
+      'PLACE_OWNERSHIP_SUBMIT', 'PLACE_OWNERSHIP_APPROVE', 'PLACE_OWNERSHIP_REJECT', 'PLACE_SET_OWNER',
+      'PLACE_MERGE_EXECUTE', 'PLACE_MERGE_APPROVE',
+      'PLACE_REVIEW_DEACTIVATE', 'PLACE_REVIEW_ACTIVATE', 'PLACE_FAVORITE_REMOVE',
+      'MAP_CONTRIBUTION_CREATE', 'MAP_CONTRIBUTION_APPROVE', 'MAP_CONTRIBUTION_REJECT',
+      'MAP_MODERATION_RESOLVE',
+      'MAP_REVIEW_AUTO_APPROVE', 'MAP_REVIEW_SUBMIT', 'MAP_REVIEW_APPROVE',
+      'MAP_REVIEW_REJECT', 'MAP_REVIEW_MERGE_STUB', 'MAP_REVIEW_MERGE_ENGINE'
+    ]
+  },
+  people: {
+    label: 'Tài khoản & thành viên',
+    actions: [
+      'CREATE_USER', 'ADMIN_UPDATE_USER', 'ACTIVATE_USER', 'DEACTIVATE_USER', 'DELETE_USER',
+      'WARN_USER', 'BAN_USER', 'UNBAN_USER', 'ADMIN_RESET_PASSWORD',
+      'MEMBER_INVITED', 'MEMBER_INVITE_REVOKED', 'MEMBER_INVITE_ACCEPTED',
+      'MEMBER_UPDATED', 'MEMBER_REMOVED',
+      'JOIN_ORG_REQUEST', 'JOIN_ORG_APPROVE', 'JOIN_ORG_REJECT',
+      'UPDATE_ORGANIZATION', 'DEACTIVATE_ORGANIZATION', 'ACTIVATE_ORGANIZATION',
+      'UPDATE_ORG_CONTACT'
+    ]
+  },
+  billing: {
+    label: 'Gói & thanh toán',
+    actions: [
+      'CREATE_PLAN', 'UPDATE_PLAN', 'DELETE_PLAN',
+      'CREATE_INVOICE', 'UPDATE_INVOICE', 'VOID_INVOICE', 'MARK_INVOICE_PAID',
+      'CHECKOUT_START', 'SUBSCRIPTION_PAYMENT', 'REFUND_PAYMENT',
+      'PERSONAL_PLAN_UPGRADE',
+      'ACTIVATE_SUBSCRIPTION', 'CANCEL_SUBSCRIPTION', 'EXPIRE_SUBSCRIPTION',
+      'CREATE_BILLING_EVENT',
+      'SET_PUBLISH_PERMIT', 'CLEAR_PUBLISH_PERMIT'
+    ]
+  },
+  emergency: {
+    label: 'Khẩn cấp',
+    actions: [
+      'INCIDENT_CREATE', 'INCIDENT_UPDATE', 'INCIDENT_STATUS_CHANGE',
+      'HAZARD_ZONE_CREATE', 'HAZARD_ZONE_UPDATE', 'HAZARD_ZONE_ACTIVATE', 'HAZARD_ZONE_DEACTIVATE',
+      'EMERGENCY_BROADCAST_SEND', 'EMERGENCY_LOCATION_REPORT', 'EMERGENCY_POSSIBLY_TRAPPED',
+      'SEISMIC_EARTHQUAKE_TRIGGER', 'USGS_EARTHQUAKE_TRIGGER'
+    ]
+  },
+  platform: {
+    label: 'Nền tảng',
+    actions: [
+      'CREATE_ORG',
+      'APPROVE_ORG_REGISTRATION', 'REJECT_ORG_REGISTRATION',
+      'SELF_SERVICE_ORG_TRIAL'
+    ]
+  }
+};
+
+const LOG_STREAM_ROLE_ALLOW = {
+  SUPER_ADMIN: ['auth', 'buildings', 'places', 'people', 'billing', 'emergency', 'platform'],
+  ORG_ADMIN: ['auth', 'buildings', 'places', 'people', 'billing', 'emergency'],
+  FINANCE_ADMIN: ['billing']
+};
+
+const LOG_STREAM_ORDER = ['all', 'auth', 'buildings', 'places', 'people', 'billing', 'emergency', 'platform'];
+
+function allowedLogStreamIds(role) {
+  const key = String(role || '').toUpperCase();
+  if (key === 'SUPER_ADMIN') return LOG_STREAM_ROLE_ALLOW.SUPER_ADMIN.slice();
+  return (LOG_STREAM_ROLE_ALLOW[key] || []).slice();
+}
+
+function logStreamChipsForRole(role) {
+  const allowed = allowedLogStreamIds(role);
+  const chips = [{ id: 'all', label: 'Tất cả' }];
+  LOG_STREAM_ORDER.forEach((id) => {
+    if (id === 'all') return;
+    if (allowed.includes(id) && LOG_STREAM_DEFS[id]) {
+      chips.push({ id, label: LOG_STREAM_DEFS[id].label });
+    }
+  });
+  return chips;
+}
+
+function actionsForLogStream(streamId, role) {
+  const id = String(streamId || 'all').toLowerCase() || 'all';
+  const allowed = allowedLogStreamIds(role);
+  if (id === 'all') {
+    return [...new Set(allowed.flatMap((sid) => LOG_STREAM_DEFS[sid]?.actions || []))];
+  }
+  if (!allowed.includes(id) || !LOG_STREAM_DEFS[id]) return [];
+  return LOG_STREAM_DEFS[id].actions.slice();
+}
+
+function getCurrentLogStream() {
+  return window._logsStream || 'all';
+}
+
+function setLogStream(streamId, { reload = true } = {}) {
+  const role = currentUser?.role;
+  const chips = logStreamChipsForRole(role);
+  const allowedIds = new Set(chips.map((c) => c.id));
+  const next = allowedIds.has(streamId) ? streamId : 'all';
+  window._logsStream = next;
+  renderLogsStreamBar();
+  rebuildLogActionFilter();
+  if (reload) resetLogsPageAndLoad();
+}
+
+function renderLogsStreamBar() {
+  const bar = document.getElementById('logsStreamBar');
+  if (!bar) return;
+  const role = currentUser?.role;
+  const chips = logStreamChipsForRole(role);
+  const active = getCurrentLogStream();
+  if (!chips.some((c) => c.id === active)) {
+    window._logsStream = 'all';
+  }
+  const current = getCurrentLogStream();
+  bar.innerHTML = chips.map((chip) => {
+    const isActive = chip.id === current;
+    const style = isActive
+      ? 'padding:7px 14px;border-radius:999px;border:1px solid #2563eb;background:#2563eb;color:#fff;cursor:pointer;font-size:13px;'
+      : 'padding:7px 14px;border-radius:999px;border:1px solid #d1d5db;background:#fff;color:#374151;cursor:pointer;font-size:13px;';
+    return '<button type="button" class="logs-stream-chip" data-stream="' + chip.id + '" style="' + style + '"' +
+      (isActive ? ' aria-current="true"' : '') + '>' + escapeHtml(chip.label) + '</button>';
+  }).join('');
+  bar.querySelectorAll('.logs-stream-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      setLogStream(btn.getAttribute('data-stream'));
+    });
+  });
+}
+
+function rebuildLogActionFilter() {
+  const select = document.getElementById('filterAction');
+  if (!select) return;
+  const prev = select.value;
+  const actions = actionsForLogStream(getCurrentLogStream(), currentUser?.role);
+  let html = '<option value="">Tất cả hành động trong luồng</option>';
+  actions.forEach((action) => {
+    html += '<option value="' + action + '">' + escapeHtml(formatActionLabel(action)) + '</option>';
+  });
+  select.innerHTML = html;
+  if (prev && actions.includes(prev)) select.value = prev;
+  else select.value = '';
+}
 
 const FIELD_LABELS = {
   full_name: 'Họ tên',
@@ -10673,6 +11467,11 @@ function getActionFallbackDetail(action, target) {
     REMOVE_FLOOR: 'Bớt tầng tòa nhà' + name,
     DEACTIVATE_BUILDING: 'Vô hiệu hóa tòa nhà' + name,
     ACTIVATE_BUILDING: 'Khôi phục tòa nhà' + name,
+    LOCK_PLACE: 'Khóa địa điểm' + name,
+    UNLOCK_PLACE: 'Mở khóa địa điểm' + name,
+    CREATE_PLACE: 'Tạo địa điểm' + name,
+    UPDATE_PLACE: 'Cập nhật địa điểm' + name,
+    DELETE_PLACE: 'Xóa địa điểm' + name,
     DELETE_BUILDING: 'Xóa tòa nhà' + name,
     PUBLISH_MAP: 'Xuất bản bản đồ lên server' + name,
     LOAD_MAP: 'Mở bản đồ trên trình soạn' + name,
@@ -10825,18 +11624,27 @@ async function loadLogs() {
 
   if (!tbody) return;
 
+  if (!window._logsStreamBarReady) {
+    if (!window._logsStream) {
+      window._logsStream = currentUser?.role === 'FINANCE_ADMIN' ? 'billing' : 'all';
+    }
+    renderLogsStreamBar();
+    rebuildLogActionFilter();
+    window._logsStreamBarReady = true;
+  }
+
   tbody.innerHTML = dashUiTableLoading(7);
 
   try {
     const page = window._logsPage || 1;
-    let url = '/activity-logs?limit=' + LOGS_PAGE_SIZE + '&page=' + page;
-    if (action) url += `&action=${encodeURIComponent(action)}`;
-    if (email) url += `&email=${encodeURIComponent(email)}`;
-    if (target) url += `&target=${encodeURIComponent(target)}`;
-    if (fromDate) url += `&fromDate=${encodeURIComponent(fromDate)}`;
-    if (toDate) url += `&toDate=${encodeURIComponent(toDate)}`;
-
-    console.log('[Logs] Loading logs with URL:', url);
+    const stream = getCurrentLogStream();
+    let url = '/activity-logs?limit=' + LOGS_PAGE_SIZE + '&page=' + page +
+      '&stream=' + encodeURIComponent(stream);
+    if (action) url += '&action=' + encodeURIComponent(action);
+    if (email) url += '&email=' + encodeURIComponent(email);
+    if (target) url += '&target=' + encodeURIComponent(target);
+    if (fromDate) url += '&fromDate=' + encodeURIComponent(fromDate);
+    if (toDate) url += '&toDate=' + encodeURIComponent(toDate);
 
     const res = await apiFetch(url);
     if (!res.ok) {
@@ -10854,7 +11662,7 @@ async function loadLogs() {
     document.getElementById('logsTotal').textContent = 'Tổng: ' + (data.total || 0) + ' bản ghi';
 
     if (!logs.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;">Chưa có log nào.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;">Chưa có log nào trong luồng này.</td></tr>';
       renderLogsPagination(data.total || 0, page);
       return;
     }
@@ -10862,12 +11670,12 @@ async function loadLogs() {
     tbody.innerHTML = logs.map(l => {
       const time = new Date(l.createdAt).toLocaleString('vi-VN');
       const user = l.user_id || {};
-      const email = user.email || '-';
+      const emailCell = user.email || '-';
       const role = formatRoleLabel(user.role || '-');
       const actionLabel = formatActionLabel(l.action);
       const actionBadgeColor =
-        l.action.startsWith('DELETE') || l.action === 'DEACTIVATE_BUILDING' || l.action === 'DEACTIVATE_USER' || l.action === 'DEACTIVATE_ORGANIZATION' ? '#e74c3c' :
-        l.action.startsWith('CREATE') || l.action === 'ACTIVATE_ORGANIZATION' || l.action === 'ACTIVATE_BUILDING' ? '#27ae60' :
+        l.action.startsWith('DELETE') || l.action === 'DEACTIVATE_BUILDING' || l.action === 'DEACTIVATE_USER' || l.action === 'DEACTIVATE_ORGANIZATION' || l.action === 'LOCK_PLACE' || l.action === 'DELETE_PLACE' ? '#e74c3c' :
+        l.action.startsWith('CREATE') || l.action === 'ACTIVATE_ORGANIZATION' || l.action === 'ACTIVATE_BUILDING' || l.action === 'UNLOCK_PLACE' ? '#27ae60' :
         l.action === 'LOGIN' ? '#3498db' :
         l.action === 'LOGOUT' ? '#e67e22' :
         l.action === 'UPDATE_ORGANIZATION' || l.action === 'ADMIN_RESET_PASSWORD' ? '#8e44ad' :
@@ -10878,7 +11686,7 @@ async function loadLogs() {
 
       return `<tr>
 <td style="font-size:12px;">${time}</td>
-<td>${email}</td>
+<td>${emailCell}</td>
 <td><span class="role-badge" style="font-size:11px;background:#ecf0f1;color:#2c3e50;padding:2px 8px;border-radius:4px;">${role}</span></td>
 <td><span class="badge" style="background:${actionBadgeColor}; font-size:11px;" title="${l.action}">${actionLabel}</span></td>
 <td style="font-size:12px;">${l.target || l.target_id || '-'}</td>

@@ -12,7 +12,7 @@
       articles: 'articles', media: 'media', navigation: 'navigation', seo: 'seo',
       theme: 'theme', settings: 'settings', audit: 'audit', forms: 'forms'
     };
-    return aliases[sub] || 'pages';
+    return aliases[sub] || 'articles';
   }
 
   function route(sub) {

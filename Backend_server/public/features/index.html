@@ -1,155 +1,419 @@
 ﻿<!DOCTYPE html>
-<html lang="vi">
+<html class="scroll-smooth" lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tính năng | IndoorNav</title>
-    <meta name="description" content="Chi tiết Dashboard, Web Map Editor và App Android của hệ thống Indoor Navigation.">
-    <link rel="stylesheet" href="/styles.css?v=20260721c6">
-    <link rel="stylesheet" href="/css/landing-layout.css?v=20260721settings2">
-    <link rel="stylesheet" href="/css/landing-wl1.css?v=20260721c6">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Tính năng | IndoorNav</title>
+<meta name="description" content="Chi tiết Dashboard, Web Map Editor và App Android của hệ thống Indoor Navigation."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&amp;family=Hanken+Grotesk:wght@400;600;700&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,300,0,0&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/css/landing-premium.css?v=20260730f3"/>
+<script id="tailwind-config">
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "outline-variant": "#c7c6ca",
+        "on-error": "#ffffff",
+        "secondary-container": "#4d8efe",
+        "surface-container-high": "#e8e8e5",
+        "secondary-fixed-dim": "#adc6ff",
+        "error-container": "#ffdad6",
+        "deep-charcoal": "#1d1d1f",
+        "surface-bright": "#f9f9f6",
+        "on-primary-fixed": "#1b1b1d",
+        "surface": "#f9f9f6",
+        "outline": "#77767b",
+        "on-secondary-container": "#00285c",
+        "tertiary": "#060200",
+        "surface-dim": "#dadad7",
+        "on-tertiary-fixed-variant": "#643f00",
+        "on-surface": "#1a1c1b",
+        "secondary": "#005ac1",
+        "on-primary-container": "#868587",
+        "surface-container-lowest": "#ffffff",
+        "inverse-primary": "#c8c6c8",
+        "hairline-border": "#d9d5cf",
+        "on-primary-fixed-variant": "#474649",
+        "tertiary-fixed-dim": "#fdba61",
+        "on-surface-variant": "#46464a",
+        "inverse-surface": "#2f312f",
+        "secondary-fixed": "#d8e2ff",
+        "primary-fixed": "#e4e2e4",
+        "tertiary-container": "#2c1900",
+        "primary": "#030304",
+        "primary-fixed-dim": "#c8c6c8",
+        "on-background": "#1a1c1b",
+        "on-primary": "#ffffff",
+        "on-secondary-fixed-variant": "#004494",
+        "on-secondary-fixed": "#001a41",
+        "surface-variant": "#e2e3e0",
+        "surface-container": "#eeeeeb",
+        "surface-container-highest": "#e2e3e0",
+        "surface-tint": "#5f5e60",
+        "on-tertiary-fixed": "#2a1700",
+        "on-tertiary-container": "#b27927",
+        "primary-container": "#1d1d1f",
+        "surface-container-low": "#f4f4f1",
+        "on-error-container": "#93000a",
+        "error": "#ba1a1a",
+        "background": "#f9f9f6",
+        "on-secondary": "#ffffff",
+        "tertiary-fixed": "#ffddb7",
+        "inverse-on-surface": "#f1f1ee",
+        "on-tertiary": "#ffffff",
+        "mist-gray": "#f0f0f2"
+      },
+      borderRadius: {
+        DEFAULT: "0.25rem",
+        lg: "0.5rem",
+        xl: "0.75rem",
+        full: "9999px"
+      },
+      spacing: {
+        "page-margin-mobile": "24px",
+        gutter: "32px",
+        "section-gap-sm": "80px",
+        "component-padding": "1.5rem",
+        "page-margin-desktop": "80px",
+        "section-gap-lg": "160px"
+      },
+      fontFamily: {
+        "body-md": ["Be Vietnam Pro", "sans-serif"],
+        "label-mono": ["JetBrains Mono", "monospace"],
+        "headline-lg-mobile": ["Hanken Grotesk", "sans-serif"],
+        "headline-md": ["Hanken Grotesk", "sans-serif"],
+        "display-hero": ["Hanken Grotesk", "sans-serif"],
+        "body-lg": ["Be Vietnam Pro", "sans-serif"],
+        "headline-lg": ["Hanken Grotesk", "sans-serif"]
+      },
+      fontSize: {
+        "body-md": ["16px", { lineHeight: "24px", fontWeight: "400" }],
+        "label-mono": ["12px", { lineHeight: "16px", letterSpacing: "0.05em", fontWeight: "500" }],
+        "headline-lg-mobile": ["36px", { lineHeight: "42px", fontWeight: "600" }],
+        "headline-md": ["32px", { lineHeight: "40px", fontWeight: "600" }],
+        "display-hero": ["clamp(40px, 7vw, 72px)", { lineHeight: "1.1", letterSpacing: "-0.02em", fontWeight: "700" }],
+        "body-lg": ["20px", { lineHeight: "32px", fontWeight: "400" }],
+        "headline-lg": ["clamp(32px, 4vw, 48px)", { lineHeight: "1.2", letterSpacing: "-0.01em", fontWeight: "600" }]
+      }
+    }
+  }
+};
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle;
+  }
+  .hero-mesh {
+    background: radial-gradient(circle at 50% 50%, rgba(0, 90, 193, 0.03) 0%, rgba(249, 249, 246, 0) 70%);
+  }
+  .reveal-on-scroll {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .reveal-on-scroll.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .transition-premium {
+    transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .hover-scale:hover {
+    transform: scale(0.98);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal-on-scroll {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+  }
+</style>
 </head>
-<body>
-<header class="header">
-    <div class="container header-inner">
-        <div class="logo">
-            <a href="/" aria-label="IndoorNav — Trang chủ">
-                <span class="logo-icon">📝</span>
-                <span class="logo-text">IndoorNav</span>
-            </a>
-        </div>
-        <nav class="nav" id="mainNav">
-            <a href="/">Tổng quan</a>
-            <a href="/explore">Bản đồ</a>
-            <a href="/features">Tính năng</a>
-            <a href="/pricing">Giá</a>
-            <a href="/contact">Liên hệ</a>
-        </nav>
-        <div class="auth-actions" id="authActions">
-            <a href="/login" class="auth-btn login-btn">Đăng nhập</a>
-            <a href="/register" class="auth-btn register-btn org-register-btn">Đăng ký tổ chức</a>
-        </div>
-        <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">☰</button>
+<body class="landing-premium bg-surface text-deep-charcoal font-body-md selection:bg-secondary/20 overflow-x-hidden">
+
+<header class="site-header fixed top-0 left-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-hairline-border/50 h-20 transition-all duration-300">
+  <div class="site-header-inner flex justify-between items-center max-w-7xl mx-auto px-6 md:px-page-margin-desktop h-full">
+    <div class="flex items-center gap-8 md:gap-12 min-w-0">
+      <a class="site-brand font-headline-md text-2xl md:text-headline-md font-bold text-deep-charcoal shrink-0" href="/" aria-label="IndoorNav — Trang chủ"><span class="logo-text">IndoorNav</span></a>
+      <nav class="nav hidden md:flex gap-8" id="mainNav">
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/">Tổng quan</a>
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/explore">Bản đồ</a>
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-secondary font-bold" href="/features" aria-current="page">Tính năng</a>
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/pricing">Giá</a>
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/contact">Liên hệ</a>
+      </nav>
     </div>
+    <div class="flex items-center gap-3 md:gap-4">
+      <div class="auth-actions hidden md:flex items-center gap-3" id="authActions">
+        <a href="/login" class="px-5 py-2 rounded-full font-body-md text-on-surface-variant hover:opacity-70 transition-opacity" id="loginBtn">Đăng nhập</a>
+        <a href="/get-app" class="px-7 py-2.5 bg-deep-charcoal text-on-primary rounded-full font-body-md font-semibold hover-scale transition-premium">Tải App</a>
+      </div>
+      <button type="button" class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">☰</button>
+    </div>
+  </div>
 </header>
 
-<section class="features-page-hero">
-    <div class="container">
-        <h1>Tính năng hệ thống</h1>
-        <p>
-            IndoorNav gồm Dashboard vận hành, Web Map Editor soạn bản đồ,
-            và ứng dụng Android dẫn đường trong nhà.
+<main id="main-content">
+  <section class="relative pt-36 md:pt-40 pb-16 md:pb-24 hero-mesh overflow-hidden">
+    <div class="max-w-7xl mx-auto px-page-margin-mobile md:px-page-margin-desktop text-center relative z-10">
+      <span class="font-label-mono text-label-mono text-secondary tracking-[0.2em] uppercase block mb-6">Tính năng</span>
+      <h1 class="font-display-hero text-display-hero text-primary max-w-4xl mx-auto mb-8">Ba lớp sản phẩm, một hệ thống</h1>
+      <p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl mx-auto mb-12">
+        Dashboard vận hành, Web Map Editor soạn bản đồ, và App Android dẫn đường trong nhà — cùng một nguồn bản đồ đã xuất bản.
+      </p>
+      <div class="flex justify-center items-center gap-4">
+        <div class="h-px w-12 bg-hairline-border"></div>
+        <span class="font-label-mono text-[10px] text-outline uppercase tracking-widest">IndoorNav</span>
+        <div class="h-px w-12 bg-hairline-border"></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="max-w-7xl mx-auto px-page-margin-mobile md:px-page-margin-desktop space-y-20 md:space-y-section-gap-lg pb-20 md:pb-section-gap-lg">
+    <section class="grid grid-cols-12 gap-8 md:gap-gutter items-center reveal-on-scroll" id="dashboard">
+      <div class="col-span-12 lg:col-span-5">
+        <h2 class="font-headline-lg text-headline-lg text-primary mb-6">Dashboard &amp; quản trị tổ chức</h2>
+        <p class="font-body-lg text-body-lg text-on-surface-variant mb-10 leading-relaxed">
+          Lớp vận hành SaaS theo vai trò (Super Admin, Org Admin, Building Admin); quản lý tòa nhà và người dùng trong phạm vi tổ chức.
         </p>
-    </div>
-</section>
-
-<section class="feature-detail" id="dashboard">
-    <div class="container">
-        <div class="feature-detail-inner">
-            <div class="feature-detail-copy">
-                <h2>Dashboard &amp; quản trị tổ chức</h2>
-                <p>
-                    Lớp vận hành SaaS: đăng nhập theo vai trò (Super Admin, Org Admin, Building Admin),
-                    quản lý tòa nhà và người dùng trong phạm vi tổ chức.
-                </p>
-                <ul>
-                    <li>Đăng nhập / quên mật khẩu / đăng xuất đa thiết bị</li>
-                    <li>Tòa nhà, số tầng, trạng thái bản đồ</li>
-                    <li>Gói FREE / PRO / ENTERPRISE và hạn mức</li>
-                    <li>Đăng ký tổ chức &amp; dùng thử self-service</li>
-                </ul>
-                <a href="/login" class="btn btn-primary">Đăng nhập Dashboard</a>
+        <ul class="space-y-6 mb-12">
+          <li class="flex items-start gap-4">
+            <span class="material-symbols-outlined text-secondary" aria-hidden="true">verified_user</span>
+            <div>
+              <p class="font-body-md text-body-md text-primary font-semibold">Phân quyền đa cấp</p>
+              <p class="font-body-md text-body-md text-on-surface-variant">Super Admin, Org Admin và Building Admin theo phạm vi tổ chức / tòa nhà.</p>
             </div>
-            <aside class="feature-detail-panel">
-                <h3>Luồng quản trị</h3>
-                <ol>
-                    <li>Đăng nhập Admin</li>
-                    <li>Chọn / tạo tòa nhà</li>
-                    <li>Mở “Vẽ bản đồ” → Editor</li>
-                    <li>Xuất bản → Android thấy bản mới</li>
-                </ol>
-            </aside>
-        </div>
-    </div>
-</section>
-
-<section class="feature-detail" id="editor">
-    <div class="container">
-        <div class="feature-detail-inner reverse">
-            <div class="feature-detail-copy">
-                <h2>Web Map Editor</h2>
-                <p>
-                    Công cụ soạn bản đồ indoor trên trình duyệt: phòng, tường, đường đi, POI, điểm QR.
-                    Lưu nháp (Draft) tách với xuất bản (Publish) — điện thoại chỉ đọc bản đã publish.
-                </p>
-                <ul>
-                    <li>Autosave nháp lên server (Draft API)</li>
-                    <li>Khóa tầng khi hai người mở cùng lúc (read-only + banner)</li>
-                    <li>Lịch sử phiên bản / rollback (theo Backend)</li>
-                    <li>Ảnh nền calibrate / crop (không gửi Base64 lớn khi lưu server)</li>
-                </ul>
-                <a href="/login" class="btn btn-primary">Mở qua Dashboard</a>
-                <a href="/pricing" class="btn btn-secondary" style="margin-left:8px;">Xem gói</a>
+          </li>
+          <li class="flex items-start gap-4">
+            <span class="material-symbols-outlined text-secondary" aria-hidden="true">devices</span>
+            <div>
+              <p class="font-body-md text-body-md text-primary font-semibold">Đăng nhập đa thiết bị</p>
+              <p class="font-body-md text-body-md text-on-surface-variant">Đăng nhập, quên mật khẩu, đăng xuất phiên trên nhiều thiết bị.</p>
             </div>
-            <aside class="feature-detail-panel">
-                <h3>Draft → Publish</h3>
-                <ol>
-                    <li>Vẽ / chỉnh trên Editor</li>
-                    <li>Lưu nháp (chưa đẩy Android)</li>
-                    <li>Xuất bản khi sẵn sàng</li>
-                    <li>App tải map published</li>
-                </ol>
-            </aside>
-        </div>
-    </div>
-</section>
-
-<section class="feature-detail" id="android">
-    <div class="container">
-        <div class="feature-detail-inner">
-            <div class="feature-detail-copy">
-                <h2>Ứng dụng Android</h2>
-                <p>
-                    Trải nghiệm người dùng cuối: quét QR để neo vị trí, theo dõi chuyển động trong nhà,
-                    và chỉ đường tới phòng / POI theo bản đồ đã xuất bản từ Editor.
-                </p>
-                <ul>
-                    <li>QR Anchor — vị trí tuyệt đối theo tầng</li>
-                    <li>PDR — ước lượng bước &amp; hướng từ cảm biến</li>
-                    <li>TPF — lọc particle giảm nhiễu</li>
-                    <li>A* — đường đi ngắn trên topology</li>
-                </ul>
-                <a href="/contact" class="btn btn-primary">Liên hệ demo</a>
+          </li>
+          <li class="flex items-start gap-4">
+            <span class="material-symbols-outlined text-secondary" aria-hidden="true">layers</span>
+            <div>
+              <p class="font-body-md text-body-md text-primary font-semibold">Gói &amp; hạn mức</p>
+              <p class="font-body-md text-body-md text-on-surface-variant">FREE / PRO / ENTERPRISE; đăng ký tổ chức và dùng thử self-service.</p>
             </div>
-            <aside class="feature-detail-panel">
-                <h3>Trên điện thoại</h3>
-                <ol>
-                    <li>Mở app, chọn tòa / tầng</li>
-                    <li>Quét QR tại lối vào</li>
-                    <li>Chọn điểm đến</li>
-                    <li>Đi theo hướng dẫn trên map</li>
-                </ol>
-            </aside>
+          </li>
+        </ul>
+        <a href="/login" class="inline-flex items-center gap-3 bg-deep-charcoal text-on-primary px-10 py-4 rounded-full font-label-mono text-label-mono uppercase tracking-widest hover:opacity-90 transition-premium">
+          Đăng nhập Dashboard
+          <span class="material-symbols-outlined text-[18px]" aria-hidden="true">arrow_forward</span>
+        </a>
+      </div>
+      <div class="col-span-12 lg:col-span-6 lg:col-start-7">
+        <div class="bg-surface-container-low border border-hairline-border p-8 md:p-10 rounded-[32px] relative overflow-hidden">
+          <div class="mb-8 border-b border-hairline-border pb-6">
+            <h3 class="font-label-mono text-label-mono text-outline uppercase tracking-widest mb-2">Hệ thống quản trị</h3>
+            <p class="font-headline-md text-2xl md:text-headline-md text-primary">Luồng vận hành</p>
+          </div>
+          <ol class="space-y-0 list-none p-0 m-0">
+            <li class="flex items-center gap-6 group">
+              <span class="w-10 h-10 shrink-0 rounded-full bg-white border border-hairline-border flex items-center justify-center font-label-mono text-secondary">01</span>
+              <span class="font-body-md text-body-md text-on-surface-variant">Đăng nhập Admin</span>
+            </li>
+            <div class="w-px h-4 bg-hairline-border ml-5" aria-hidden="true"></div>
+            <li class="flex items-center gap-6 group">
+              <span class="w-10 h-10 shrink-0 rounded-full bg-white border border-hairline-border flex items-center justify-center font-label-mono text-secondary">02</span>
+              <span class="font-body-md text-body-md text-on-surface-variant">Chọn / tạo tòa nhà</span>
+            </li>
+            <div class="w-px h-4 bg-hairline-border ml-5" aria-hidden="true"></div>
+            <li class="flex items-center gap-6 group">
+              <span class="w-10 h-10 shrink-0 rounded-full bg-white border border-hairline-border flex items-center justify-center font-label-mono text-secondary">03</span>
+              <span class="font-body-md text-body-md text-on-surface-variant">Mở “Vẽ bản đồ” → Editor</span>
+            </li>
+            <div class="w-px h-4 bg-hairline-border ml-5" aria-hidden="true"></div>
+            <li class="flex items-center gap-6 group">
+              <span class="w-10 h-10 shrink-0 rounded-full bg-white border border-hairline-border flex items-center justify-center font-label-mono text-secondary">04</span>
+              <span class="font-body-md text-body-md text-on-surface-variant">Xuất bản → Android thấy bản mới</span>
+            </li>
+          </ol>
+          <div class="absolute -bottom-10 -right-10 opacity-20 pointer-events-none" aria-hidden="true">
+            <span class="material-symbols-outlined text-[200px]" style="font-variation-settings: 'wght' 100;">admin_panel_settings</span>
+          </div>
         </div>
-    </div>
-</section>
+      </div>
+    </section>
 
-<section class="features-page-cta">
-    <div class="container">
-        <h2 class="section-title" style="margin-bottom: 16px;">Sẵn sàng dùng thử?</h2>
-        <p class="landing-muted" style="margin-bottom: 24px;">Đăng nhập để bắt đầu dùng thử, hoặc tạo tài khoản nếu chưa có.</p>
-        <a href="/login" class="btn btn-primary btn-large">Dùng thử miễn phí</a>
-        <a href="/login" class="btn btn-secondary btn-large" style="margin-left: 10px;">Đăng nhập</a>
-    </div>
-</section>
+    <section class="reveal-on-scroll" id="editor">
+      <div class="bg-primary p-8 md:p-16 rounded-[32px] md:rounded-[48px] overflow-hidden relative">
+        <div class="grid grid-cols-12 gap-8 md:gap-gutter relative z-10">
+          <div class="col-span-12 lg:col-span-6">
+            <span class="inline-block px-4 py-1 bg-white/10 border border-white/20 rounded-full font-label-mono text-[10px] text-white/80 uppercase tracking-widest mb-6">Editor chuyên nghiệp</span>
+            <h2 class="font-headline-lg text-headline-lg text-white mb-8">Web Map Editor</h2>
+            <p class="font-body-lg text-body-lg text-white/70 mb-12">
+              Soạn tầng, phòng, đường đi, POI, QR trên trình duyệt. Lưu nháp (Draft) tách với xuất bản (Publish) — app chỉ đọc bản đã publish.
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-8 mb-12">
+              <div>
+                <h3 class="font-label-mono text-label-mono text-secondary-fixed mb-2 uppercase">Draft / Publish</h3>
+                <p class="font-body-md text-body-md text-white/60">Nháp an toàn trước khi công khai bản đồ mới.</p>
+              </div>
+              <div>
+                <h3 class="font-label-mono text-label-mono text-secondary-fixed mb-2 uppercase">Khóa tầng</h3>
+                <p class="font-body-md text-body-md text-white/60">Read-only + banner khi hai người mở cùng lúc.</p>
+              </div>
+              <div>
+                <h3 class="font-label-mono text-label-mono text-secondary-fixed mb-2 uppercase">POI / QR / Topology</h3>
+                <p class="font-body-md text-body-md text-white/60">Lưới đường đi và điểm chuyển tầng.</p>
+              </div>
+              <div>
+                <h3 class="font-label-mono text-label-mono text-secondary-fixed mb-2 uppercase">Autosave</h3>
+                <p class="font-body-md text-body-md text-white/60">Lưu nháp lên server (Draft API).</p>
+              </div>
+            </div>
+            <a href="/login" class="inline-block bg-white text-primary px-10 py-4 rounded-full font-label-mono text-label-mono uppercase tracking-widest hover:bg-mist-gray transition-premium">
+              Mở qua Dashboard
+            </a>
+          </div>
+          <div class="col-span-12 lg:col-span-5 lg:col-start-8 flex items-center justify-center">
+            <div class="relative w-full aspect-square max-w-[400px]">
+              <div class="absolute inset-0 bg-secondary/20 rounded-full blur-3xl" aria-hidden="true"></div>
+              <div class="relative z-10 border border-white/10 bg-white/5 backdrop-blur-md rounded-3xl p-6 h-full flex flex-col justify-center items-center text-center">
+                <span class="material-symbols-outlined text-[120px] text-white/20 mb-6" style="font-variation-settings: 'wght' 100;" aria-hidden="true">edit_square</span>
+                <p class="font-body-md text-body-md text-white/80">Draft tách Publish — điện thoại chỉ thấy bản đã xuất bản.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="absolute inset-0 opacity-10 pointer-events-none" style="background-image: radial-gradient(#ffffff 1px, transparent 1px); background-size: 40px 40px;" aria-hidden="true"></div>
+      </div>
+    </section>
 
-<footer class="footer">
-    <div class="container">
-        <p>&copy; 2025 - Hệ thống Bản đồ và Dẫn đường Trong nhà</p>
-        <p>Đồ án/Luận văn tốt nghiệp - Trình độ Đại học</p>
+    <section class="grid grid-cols-12 gap-8 md:gap-gutter items-center reveal-on-scroll" id="android">
+      <div class="col-span-12 lg:col-span-6">
+        <div class="relative rounded-[32px] border border-hairline-border overflow-hidden bg-white shadow-sm">
+          <img
+            class="w-full h-auto object-cover aspect-[4/3]"
+            src="/images/indoornav-landing-hero.png?v=20260730c1"
+            alt="Minh họa dẫn đường trong nhà trên không gian đa tầng"
+            width="1200"
+            height="900"
+            loading="lazy"
+          />
+          <div class="absolute top-6 left-6 flex flex-col gap-2">
+            <div class="bg-white/90 backdrop-blur px-4 py-2 rounded-xl shadow-sm border border-hairline-border flex items-center gap-3">
+              <span class="material-symbols-outlined text-secondary text-[20px]" aria-hidden="true">location_on</span>
+              <span class="font-label-mono text-[10px] uppercase">Phòng họp 3A</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-span-12 lg:col-span-5 lg:col-start-8">
+        <h2 class="font-headline-lg text-headline-lg text-primary mb-6">App Android</h2>
+        <p class="font-body-lg text-body-lg text-on-surface-variant mb-10">
+          Quét QR neo vị trí, theo dõi PDR/TPF trong nhà, tìm đường A* trên bản đồ đã publish.
+        </p>
+        <div class="space-y-10 mb-12">
+          <div class="flex gap-6">
+            <div class="flex-shrink-0 w-12 h-12 rounded-2xl bg-secondary/5 flex items-center justify-center">
+              <span class="material-symbols-outlined text-secondary" aria-hidden="true">qr_code_scanner</span>
+            </div>
+            <div>
+              <h3 class="font-body-md text-body-md text-primary font-bold mb-1">QR Anchor</h3>
+              <p class="font-body-md text-body-md text-on-surface-variant">Neo vị trí tuyệt đối theo tầng bằng một lần quét QR.</p>
+            </div>
+          </div>
+          <div class="flex gap-6">
+            <div class="flex-shrink-0 w-12 h-12 rounded-2xl bg-secondary/5 flex items-center justify-center">
+              <span class="material-symbols-outlined text-secondary" aria-hidden="true">directions_run</span>
+            </div>
+            <div>
+              <h3 class="font-body-md text-body-md text-primary font-bold mb-1">PDR / TPF</h3>
+              <p class="font-body-md text-body-md text-on-surface-variant">Ước lượng bước &amp; hướng từ cảm biến; lọc particle giảm nhiễu.</p>
+            </div>
+          </div>
+          <div class="flex gap-6">
+            <div class="flex-shrink-0 w-12 h-12 rounded-2xl bg-secondary/5 flex items-center justify-center">
+              <span class="material-symbols-outlined text-secondary" aria-hidden="true">alt_route</span>
+            </div>
+            <div>
+              <h3 class="font-body-md text-body-md text-primary font-bold mb-1">A* Pathfinding</h3>
+              <p class="font-body-md text-body-md text-on-surface-variant">Đường đi ngắn trên topology, hỗ trợ đa tầng.</p>
+            </div>
+          </div>
+        </div>
+        <a href="/get-app" class="inline-flex items-center gap-3 bg-deep-charcoal text-on-primary px-10 py-4 rounded-full font-label-mono text-label-mono uppercase tracking-widest hover:opacity-90 transition-premium">
+          Tải App
+          <span class="material-symbols-outlined text-[18px]" aria-hidden="true">download</span>
+        </a>
+      </div>
+    </section>
+  </div>
+
+  <section class="bg-surface-container-highest/30 py-20 md:py-32 border-t border-hairline-border">
+    <div class="max-w-4xl mx-auto px-page-margin-mobile md:px-page-margin-desktop text-center">
+      <h2 class="font-headline-lg text-headline-lg text-primary mb-8">Sẵn sàng trải nghiệm đủ 3 lớp?</h2>
+      <p class="font-body-lg text-body-lg text-on-surface-variant mb-12 max-w-2xl mx-auto">
+        Dùng thử miễn phí trên Dashboard, hoặc xem bảng giá khi tổ chức cần thêm tòa nhà và quyền xuất bản.
+      </p>
+      <div class="flex flex-col sm:flex-row justify-center gap-4 md:gap-6">
+        <a href="/login" class="bg-deep-charcoal text-on-primary px-12 py-5 rounded-full font-label-mono text-label-mono uppercase tracking-widest hover:opacity-90 transition-premium text-center">Dùng thử miễn phí</a>
+        <a href="/pricing" class="border border-hairline-border bg-white text-primary px-12 py-5 rounded-full font-label-mono text-label-mono uppercase tracking-widest hover:bg-mist-gray transition-premium text-center">Xem bảng giá</a>
+      </div>
     </div>
+  </section>
+</main>
+
+<footer class="bg-surface-container-low border-t border-hairline-border w-full py-12 md:py-section-gap-sm">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <a class="site-brand font-headline-md text-2xl font-bold text-primary" href="/"><span class="logo-text">IndoorNav</span></a>
+      <p id="footerCopy" class="footer-copy font-body-md text-body-md text-on-surface-variant">© 2026 IndoorNav. Bảo lưu mọi quyền.</p>
+      <p class="font-body-md text-sm text-outline">Đồ án / Luận văn tốt nghiệp — ngành Công nghệ thông tin</p>
+      <div id="footerContact" aria-label="Thông tin liên hệ"></div>
+    </div>
+    <nav class="footer-links" aria-label="Liên kết chân trang">
+      <a class="font-label-mono text-label-mono text-on-surface-variant hover:underline" href="/contact">Liên hệ</a>
+      <a class="font-label-mono text-label-mono text-on-surface-variant hover:underline" href="/pricing">Giá</a>
+      <a class="font-label-mono text-label-mono text-on-surface-variant hover:underline" href="/features">Tính năng</a>
+      <a class="font-label-mono text-label-mono text-on-surface-variant hover:underline" href="/get-app">Tải App</a>
+    </nav>
+  </div>
 </footer>
 
-<script src="/landing.js?v=20260721settings2"></script>
+<script src="/landing.js?v=20260730legacy1"></script>
+<script>
+(function () {
+  var nav = document.querySelector('.site-header');
+  if (nav) {
+    window.addEventListener('scroll', function () {
+      if (window.scrollY > 20) {
+        nav.classList.add('h-16', 'shadow-sm');
+        nav.classList.remove('h-20');
+      } else {
+        nav.classList.add('h-20');
+        nav.classList.remove('h-16', 'shadow-sm');
+      }
+    }, { passive: true });
+  }
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.querySelectorAll('.reveal-on-scroll').forEach(function (el) {
+      el.classList.add('visible');
+    });
+    return;
+  }
+
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) entry.target.classList.add('visible');
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -80px 0px' });
+
+  document.querySelectorAll('.reveal-on-scroll').forEach(function (el) {
+    observer.observe(el);
+  });
+})();
+</script>
 </body>
 </html>

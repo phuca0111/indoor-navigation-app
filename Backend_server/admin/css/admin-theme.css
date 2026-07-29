@@ -2564,6 +2564,9 @@ body[data-admin-theme="dark"] .ov-growth-axis-note {
 #userListView[hidden] {
   display: none !important;
 }
+#buildingListView[hidden] {
+  display: none !important;
+}
 
 .org-detail-page-header {
   display: flex;
@@ -7100,6 +7103,51 @@ body[data-admin-theme="dark"] .analytics-insight--warning > span { background: r
 /* AD60 ? Website CMS (Landing fixed pages) */
 .website-cms-section { display: grid; gap: 16px; }
 .website-subpanel[hidden] { display: none !important; }
+.website-legacy-notice {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #f5d0a8;
+  background: #fff8f0;
+  color: #7a3e0d;
+}
+.website-legacy-notice strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+.website-legacy-notice p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #8a5520;
+}
+.website-legacy-notice code {
+  font-size: 12px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(122, 62, 13, 0.08);
+}
+.admin-nav-legacy {
+  display: inline-grid;
+  margin-left: auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid #e8c39a;
+  background: #fff4e8;
+  color: #9a5b16;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+.tab-btn.is-website-legacy {
+  opacity: 0.88;
+}
+body.admin-sidebar-collapsed .admin-nav-legacy {
+  display: none;
+}
 .website-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

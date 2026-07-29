@@ -68,6 +68,10 @@ function createApp() {
   app.get(['/demo', '/demo/', '/demo/index.html'], (req, res) => {
     res.redirect(302, '/login');
   });
+  /** Public org-register landing đã bỏ — hướng doanh nghiệp qua Liên hệ */
+  app.get(['/register', '/register/', '/register/index.html', '/org-register.html', '/org-register'], (req, res) => {
+    res.redirect(302, '/contact');
+  });
   app.get(['/explore', '/explore/'], (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.sendFile(path.join(__dirname, 'public', 'explore', 'index.html'));
@@ -92,9 +96,13 @@ function createApp() {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.sendFile(path.join(__dirname, 'public', 'app', 'index.html'));
   });
-  app.get('/blog/:slug', (req, res) => {
+  app.get(['/blog', '/blog/'], (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.sendFile(path.join(__dirname, 'public', 'blog', 'index.html'));
+  });
+  app.get('/blog/:slug', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.sendFile(path.join(__dirname, 'public', 'blog', 'article.html'));
   });
   app.use('/admin', noCacheHTML, express.static(path.join(__dirname, 'admin'), {
     setHeaders: (res, filepath) => {

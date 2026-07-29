@@ -15,8 +15,8 @@
         } catch (e) { /* ignore */ }
       })();
     </script>
-    <link rel="stylesheet" href="css/admin.css?v=20260725fm4">
-    <link rel="stylesheet" href="css/admin-theme.css?v=20260725fin1">
+    <link rel="stylesheet" href="css/admin.css?v=20260729emergency3">
+    <link rel="stylesheet" href="css/admin-theme.css?v=20260730legacy1">
     <link rel="stylesheet" href="css/admin-tokens.css?v=20260721wq1">
 </head>
 <body class="admin-shell-body">
@@ -77,10 +77,6 @@
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18"/><path d="M5 21V8l7-4 7 4v13"/><path d="M9 21v-6h6v6"/></svg></span>
                   <span>Tòa nhà</span>
                 </button>
-                <button type="button" class="tab-btn" data-tab="maps" onclick="switchTab('maps')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h6"/><path d="M8 9h2"/></svg></span>
-                  <span>Chi tiết tòa</span>
-                </button>
                 <button type="button" class="tab-btn creator-tab-btn" data-tab="creator" data-permission="creator.stats.read" onclick="switchTab('creator')" title="Thống kê bản đồ và tòa nhà của bạn">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 2 5-6"/><path d="M18 7h-3v3"/></svg></span>
                   <span>Bản đồ của tôi</span>
@@ -88,6 +84,30 @@
                 <button type="button" class="tab-btn logs-tab-btn" data-tab="logs" onclick="switchTab('logs')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h6"/></svg></span>
                   <span>Nhật ký hệ thống</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="admin-nav-group is-open" data-nav-group="emergency">
+              <button type="button" class="admin-nav-group-toggle" aria-expanded="true">
+                <span class="admin-nav-group-label">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span>
+                  <span>Khẩn cấp</span>
+                </span>
+                <span class="admin-nav-chevron" aria-hidden="true">›</span>
+              </button>
+              <div class="admin-nav-group-items">
+                <button type="button" class="tab-btn emergency-tab-btn" data-tab="emergency" data-emergency-sub="incidents" data-permission="emergency.command.read" onclick="openEmergencySub('incidents')" title="Tạo và quản lý sự cố khẩn cấp">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg></span>
+                  <span>Sự cố</span>
+                </button>
+                <button type="button" class="tab-btn emergency-tab-btn" data-tab="emergency" data-emergency-sub="seismic" data-permission="emergency.command.read" onclick="openEmergencySub('seismic')" title="Sự cố động đất &amp; thao tác khoanh / kết thúc">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12h4l3-9 4 18 3-9h6"/></svg></span>
+                  <span>Động đất</span>
+                </button>
+                <button type="button" class="tab-btn emergency-tab-btn" data-tab="emergency" data-emergency-sub="seismic-data" data-permission="emergency.command.read" onclick="openEmergencySub('seismic-data')" title="Thống kê user &amp; báo cáo rung 24h">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 2 5-6"/><path d="M18 7h-3v3"/></svg></span>
+                  <span>Dữ liệu cảm biến</span>
                 </button>
               </div>
             </div>
@@ -111,11 +131,28 @@
                 </button>
                 <button type="button" class="tab-btn users-tab-btn" data-tab="users" onclick="switchTab('users')" style="display:none;">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
-                  <span>Tài khoản</span>
+                  <span>Tài khoản nội bộ</span>
                 </button>
                 <button type="button" class="tab-btn super-admin-only" data-tab="registrations" data-permission="platform.registrations.manage" onclick="switchTab('registrations')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg></span>
                   <span>Hồ sơ đăng ký</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Người dùng cuối (app) — tách khỏi tài khoản admin/staff -->
+            <div class="admin-nav-group is-open" data-nav-group="end-users">
+              <button type="button" class="admin-nav-group-toggle" aria-expanded="true">
+                <span class="admin-nav-group-label">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                  <span>Người dùng cuối</span>
+                </span>
+                <span class="admin-nav-chevron" aria-hidden="true">›</span>
+              </button>
+              <div class="admin-nav-group-items">
+                <button type="button" class="tab-btn users-tab-btn" data-tab="end-users" onclick="switchTab('end-users')" style="display:none;">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+                  <span>Danh sách người dùng</span>
                 </button>
               </div>
             </div>
@@ -156,7 +193,7 @@
               </div>
             </div>
 
-            <div class="admin-nav-group is-open super-admin-only" data-nav-group="map-governance">
+            <div class="admin-nav-group is-open" data-nav-group="map-governance">
               <button type="button" class="admin-nav-group-toggle" aria-expanded="true">
                 <span class="admin-nav-group-label">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg></span>
@@ -167,51 +204,19 @@
               <div class="admin-nav-group-items">
                 <button type="button" class="tab-btn super-admin-only places-tab-btn" data-tab="places" onclick="switchTab('places')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s7-4.5 7-11a7 7 0 1 0-14 0c0 6.5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></span>
-                  <span>Địa điểm</span>
+                  <span>Địa điểm (Place)</span>
                 </button>
-                <button type="button" class="tab-btn super-admin-only map-proposals-tab-btn" data-tab="map-proposals" onclick="switchTab('map-proposals')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/></svg></span>
-                  <span>Đề xuất Place</span>
+                <button type="button" class="tab-btn super-admin-only community-contrib-tab-btn" data-tab="community-contrib" onclick="switchTab('community-contrib')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+                  <span>Đóng góp cộng đồng</span>
                 </button>
-                <button type="button" class="tab-btn super-admin-only map-wizard-tab-btn" data-tab="map-wizard" onclick="switchTab('map-wizard')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2 6h6l-5 4 2 6-5-4-5 4 2-6-5-4h6z"/></svg></span>
-                  <span>Tạo bản đồ trong nhà</span>
+                <button type="button" class="tab-btn super-admin-only place-reports-tab-btn" data-tab="place-reports" onclick="switchTab('place-reports')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span>
+                  <span>Báo cáo địa điểm</span>
                 </button>
-                <button type="button" class="tab-btn super-admin-only map-reviews-tab-btn" data-tab="map-reviews" onclick="switchTab('map-reviews')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
-                  <span>Bản đồ chờ duyệt</span>
-                </button>
-                <button type="button" class="tab-btn super-admin-only map-duplicates-tab-btn" data-tab="map-duplicates" onclick="switchTab('map-duplicates')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>
-                  <span>Bản đồ trùng</span>
-                </button>
-                <button type="button" class="tab-btn super-admin-only map-ownership-tab-btn" data-tab="map-ownership" onclick="switchTab('map-ownership')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 4v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V7z"/></svg></span>
-                  <span>Quyền sở hữu</span>
-                </button>
-                <button type="button" class="tab-btn super-admin-only map-merges-tab-btn" data-tab="map-merges" onclick="switchTab('map-merges')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg></span>
-                  <span>Yêu cầu gộp</span>
-                </button>
-                <button type="button" class="tab-btn super-admin-only map-moderation-tab-btn" data-tab="map-moderation" onclick="switchTab('map-moderation')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
-                  <span>Kiểm duyệt</span>
-                </button>
-                <button type="button" class="tab-btn super-admin-only map-stats-tab-btn" data-tab="map-stats" onclick="switchTab('map-stats')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15v-4"/><path d="M12 15V8"/><path d="M16 15v-7"/></svg></span>
-                  <span>Thống kê</span>
-                </button>
-                <button type="button" class="tab-btn super-admin-only map-versions-tab-btn" data-tab="map-versions" onclick="switchTab('map-versions')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/></svg></span>
-                  <span>Phiên bản bản đồ</span>
-                </button>
-                <button type="button" class="tab-btn super-admin-only map-verify-tab-btn" data-tab="map-verify" onclick="switchTab('map-verify')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></span>
-                  <span>Xác minh</span>
-                </button>
-                <button type="button" class="tab-btn super-admin-only map-community-tab-btn" data-tab="map-community" onclick="switchTab('map-community')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/></svg></span>
-                  <span>Cộng đồng</span>
+                <button type="button" class="tab-btn super-admin-only place-engagement-tab-btn" data-tab="place-engagement" onclick="switchTab('place-engagement')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 17.3l-6.2 3.7 1.6-7L2 9.2l7.1-.6L12 2l2.9 6.6 7.1.6-5.4 4.8 1.6 7z"/></svg></span>
+                  <span>Đánh giá &amp; Yêu thích</span>
                 </button>
               </div>
             </div>
@@ -225,38 +230,22 @@
                 <span class="admin-nav-chevron" aria-hidden="true">›</span>
               </button>
               <div class="admin-nav-group-items">
-                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="pages" data-permission="platform.cms.manage" onclick="openWebsiteSub('pages')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>
-                  <span>Landing Pages</span>
-                </button>
                 <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="articles" data-permission="platform.cms.manage" onclick="openWebsiteSub('articles')">
                   <span class="admin-menu-icon" aria-hidden="true">📰</span>
                   <span>Blog &amp; News</span>
-                </button>
-                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.cms.manage" data-tab="website" data-website-sub="banner" onclick="openWebsiteSub('banner')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 15l5-4 4 3 3-2 6 5"/></svg></span>
-                  <span>Banner &amp; Hero</span>
-                </button>
-                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.cms.manage" data-tab="website" data-website-sub="navigation" onclick="openWebsiteSub('navigation')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg></span>
-                  <span>Navigation</span>
-                </button>
-                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.cms.manage" data-tab="website" data-website-sub="media" onclick="openWebsiteSub('media')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10.5" r="1.5"/><path d="M21 16l-5-5-8 8"/></svg></span>
-                  <span>Media</span>
                 </button>
                 <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.contacts.manage" data-tab="website" data-website-sub="forms" onclick="openWebsiteSub('forms')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/></svg></span>
                   <span>Liên hệ</span>
                   <span id="websiteContactBadge" class="admin-nav-badge" hidden>0</span>
                 </button>
+                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.cms.manage" data-tab="website" data-website-sub="media" onclick="openWebsiteSub('media')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10.5" r="1.5"/><path d="M21 16l-5-5-8 8"/></svg></span>
+                  <span>Media</span>
+                </button>
                 <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.cms.manage" data-tab="website" data-website-sub="seo" onclick="openWebsiteSub('seo')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
                   <span>SEO</span>
-                </button>
-                <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.cms.manage" data-tab="website" data-website-sub="theme" onclick="openWebsiteSub('theme')">
-                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 9 9h-9V3z"/><path d="M19 5l-2 2"/></svg></span>
-                  <span>Theme</span>
                 </button>
                 <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.cms.manage" data-tab="website" data-website-sub="settings" onclick="openWebsiteSub('settings')">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c0 .7.4 1.3 1 1.5H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span>
@@ -265,6 +254,26 @@
                 <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.cms.manage" data-tab="website" data-website-sub="audit" onclick="openWebsiteSub('audit')">
                   <span class="admin-menu-icon" aria-hidden="true">🧾</span>
                   <span>Nhật ký CMS</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only website-tab-btn is-website-legacy" data-tab="website" data-website-sub="pages" data-permission="platform.cms.manage" onclick="openWebsiteSub('pages')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>
+                  <span>Landing Pages</span>
+                  <span class="admin-nav-legacy" title="Chưa khớp Landing Aura">Legacy</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only website-tab-btn is-website-legacy" data-permission="platform.cms.manage" data-tab="website" data-website-sub="banner" onclick="openWebsiteSub('banner')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 15l5-4 4 3 3-2 6 5"/></svg></span>
+                  <span>Banner &amp; Hero</span>
+                  <span class="admin-nav-legacy" title="Chưa khớp Landing Aura">Legacy</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only website-tab-btn is-website-legacy" data-permission="platform.cms.manage" data-tab="website" data-website-sub="navigation" onclick="openWebsiteSub('navigation')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg></span>
+                  <span>Navigation</span>
+                  <span class="admin-nav-legacy" title="Menu Aura giữ HTML tĩnh">Legacy</span>
+                </button>
+                <button type="button" class="tab-btn super-admin-only website-tab-btn is-website-legacy" data-permission="platform.cms.manage" data-tab="website" data-website-sub="theme" onclick="openWebsiteSub('theme')">
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 9 9h-9V3z"/><path d="M19 5l-2 2"/></svg></span>
+                  <span>Theme</span>
+                  <span class="admin-nav-legacy" title="Chưa khớp Landing Aura">Legacy</span>
                 </button>
               </div>
             </div>
@@ -565,33 +574,8 @@
           </div>
         </div>
 
-        <!-- ===== TAB: MAPS — profile chi tiết tòa nhà ===== -->
-        <div id="tab-maps" class="tab-content" style="display:none;">
-          <div class="buildings-section building-detail-section">
-            <div class="section-header building-detail-header">
-              <div class="building-detail-header-main">
-                <button type="button" class="linkish building-detail-back" onclick="switchTab('buildings')">← Danh sách tòa nhà</button>
-                <div class="building-detail-title-row">
-                  <h3 id="buildingDetailTitle">Chi tiết tòa nhà</h3>
-                  <span id="buildingDetailHeaderStatus"></span>
-                </div>
-                <p id="buildingDetailHeaderAddress" class="building-detail-header-address"></p>
-                <div id="buildingDetailHeaderMeta" class="building-detail-header-meta"></div>
-              </div>
-              <div id="buildingDetailActions" class="building-detail-actions" aria-live="polite"></div>
-            </div>
-            <nav id="buildingDetailSubnav" class="building-detail-subnav" aria-label="Phân mục chi tiết tòa nhà" hidden>
-              <button type="button" class="building-detail-subnav-btn active" data-building-sub="overview" onclick="switchBuildingDetailSubtab('overview')">Tổng quan</button>
-              <button type="button" class="building-detail-subnav-btn" data-building-sub="floors" onclick="switchBuildingDetailSubtab('floors')">Tầng</button>
-              <button type="button" class="building-detail-subnav-btn" data-building-sub="versions" onclick="switchBuildingDetailSubtab('versions')">Phiên bản</button>
-              <button type="button" class="building-detail-subnav-btn" data-building-sub="qr" onclick="switchBuildingDetailSubtab('qr')">Mã QR</button>
-              <button type="button" class="building-detail-subnav-btn" data-building-sub="settings" onclick="switchBuildingDetailSubtab('settings')">Cài đặt</button>
-            </nav>
-            <div id="buildingDetailBody" class="building-detail-body" aria-live="polite">
-              <p class="analytics-tab-intro">Chọn một tòa từ tab <button type="button" class="linkish" onclick="switchTab('buildings')">Tòa nhà</button> để xem hồ sơ chi tiết.</p>
-            </div>
-          </div>
-        </div>
+        <!-- ===== TAB: MAPS — legacy alias (chi tiết tòa gom vào tab Tòa nhà) ===== -->
+        <div id="tab-maps" class="tab-content" style="display:none;" hidden aria-hidden="true"></div>
 
         <!-- ===== TAB: CREATOR — funnel/stats + Indoor Workspace (module B) ===== -->
         <div id="tab-creator" class="tab-content creator-tab" style="display:none;">
@@ -651,6 +635,7 @@
         <!-- ===== TAB: BUILDINGS ===== -->
         <div id="tab-buildings" class="tab-content" style="display:none;">
             <div class="buildings-section">
+                <div id="buildingListView">
                 <div class="section-header">
                     <h3>🏢 Danh Sách Tòa Nhà</h3>
                     <div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -754,7 +739,7 @@
                   </div>
                   <div>
                     <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Từ khóa</label>
-                    <input id="filterBuildingKeyword" type="text" placeholder="Tên / địa chỉ" oninput="applyBuildingFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:160px;">
+                    <input id="filterBuildingKeyword" type="text" placeholder="Tên / địa chỉ / GPS / mô tả…" oninput="applyBuildingFilters()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:200px;">
                   </div>
                   <div>
                     <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Trạng thái</label>
@@ -784,12 +769,12 @@
                   </div>
                   <div class="building-restore-filter" style="display:none;">
                     <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Hiển thị</label>
-                    <label style="display:flex; align-items:center; gap:6px; padding:6px 10px; border-radius:6px; border:1px solid #ddd; background:#fff; cursor:pointer; min-height:34px;">
+                    <label style="display:flex; align-items:center; gap:6px; padding:6px 10px; border-radius:6px; border:1px solid #ddd; background:#fff; cursor:pointer; min-height:34px;" title="Chỉ liệt kê tòa đã vô hiệu hóa (soft delete)">
                       <input id="filterBuildingIncludeInactive" type="checkbox" onchange="onBuildingIncludeInactiveChange()" style="cursor:pointer;">
-                      <span style="font-size:13px;">Tòa đã vô hiệu</span>
+                      <span style="font-size:13px;">Chỉ tòa đã vô hiệu</span>
                     </label>
                   </div>
-                  <button type="button" onclick="applyBuildingFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #3498db; background:#3498db; color:white; cursor:pointer;">Lọc</button>
+                  <button type="button" onclick="fetchBuildings()" style="padding:6px 14px; border-radius:6px; border:1px solid #3498db; background:#3498db; color:white; cursor:pointer;">Lọc</button>
                   <button type="button" onclick="clearBuildingFilters()" style="padding:6px 14px; border-radius:6px; border:1px solid #ddd; background:white; cursor:pointer;">Xóa lọc</button>
                 </div>
                 <div class="table-scroll-wrapper">
@@ -811,6 +796,27 @@
                 </table>
                 </div>
                 <div id="buildingsPagination" class="table-pagination"></div>
+                </div><!-- /buildingListView -->
+
+                <div id="buildingDetailPage" class="org-detail-page" hidden>
+                  <div class="org-detail-hero-header">
+                    <button type="button" class="linkish org-detail-back" id="buildingDetailBackBtn" onclick="closeBuildingDetailPage()">← Danh sách tòa nhà</button>
+                    <div class="org-detail-hero-title-row">
+                      <h3 id="buildingDetailTitle">Chi tiết tòa nhà</h3>
+                      <span id="buildingDetailHeaderStatus" class="org-detail-hero-badges"></span>
+                    </div>
+                    <div id="buildingDetailPageMeta" class="org-detail-hero-meta"></div>
+                    <div id="buildingDetailActions" class="org-detail-page-actions" aria-live="polite"></div>
+                  </div>
+                  <nav id="buildingDetailSubnav" class="org-detail-subnav" aria-label="Phân mục chi tiết tòa nhà" hidden>
+                    <button type="button" class="building-detail-subnav-btn org-detail-subnav-btn active" data-building-sub="overview" onclick="switchBuildingDetailSubtab('overview')">Tổng quan</button>
+                    <button type="button" class="building-detail-subnav-btn org-detail-subnav-btn" data-building-sub="floors" onclick="switchBuildingDetailSubtab('floors')">Tầng</button>
+                    <button type="button" class="building-detail-subnav-btn org-detail-subnav-btn" data-building-sub="versions" onclick="switchBuildingDetailSubtab('versions')">Phiên bản</button>
+                    <button type="button" class="building-detail-subnav-btn org-detail-subnav-btn" data-building-sub="qr" onclick="switchBuildingDetailSubtab('qr')">Mã QR</button>
+                    <button type="button" class="building-detail-subnav-btn org-detail-subnav-btn" data-building-sub="settings" onclick="switchBuildingDetailSubtab('settings')">Cài đặt</button>
+                  </nav>
+                  <div id="buildingDetailBody" class="org-detail-page-body" aria-live="polite"></div>
+                </div>
             </div>
         </div>
 
@@ -820,8 +826,8 @@
                 <div id="userListView">
                 <div class="section-header">
                     <div>
-                        <h3>Quản lý tài khoản</h3>
-                        <p class="analytics-tab-intro" style="margin:6px 0 0;">Duyệt tài khoản đăng ký, quản lý trạng thái và phân quyền người dùng.</p>
+                        <h3 id="userMgmtTitle">Quản lý tài khoản nội bộ</h3>
+                        <p id="userMgmtIntro" class="analytics-tab-intro" style="margin:6px 0 0;">Quản trị viên / staff nền tảng (không gồm người dùng app).</p>
                     </div>
                     <div class="user-page-actions">
                       <button id="btnAddUser" class="btn-add" onclick="openCreateUserModal()" style="display:none;">+ Thêm tài khoản</button>
@@ -839,16 +845,16 @@
                     <label for="filterUserKeyword">Từ khóa</label>
                     <input id="filterUserKeyword" type="text" placeholder="Email / họ tên / SĐT" oninput="applyUserFilters()">
                   </div>
-                  <div>
+                  <div id="filterUserRoleWrap">
                     <label for="filterUserRole">Vai trò</label>
                     <select id="filterUserRole" onchange="applyUserFilters()">
-                      <option value="">Tất cả</option>
+                      <option value="">Tất cả vai trò nội bộ</option>
                       <option value="SUPER_ADMIN">Quản trị hệ thống</option>
                       <option value="FINANCE_ADMIN">Quản trị tài chính</option>
                       <option value="MARKETING_MANAGER">Quản trị nội dung</option>
+                      <option value="MAP_MODERATOR">Kiểm duyệt bản đồ</option>
                       <option value="ORG_ADMIN">Quản trị tổ chức</option>
                       <option value="BUILDING_ADMIN">Quản trị tòa nhà</option>
-                      <option value="REGISTERED_USER">Tài khoản cá nhân</option>
                     </select>
                   </div>
                   <div>
@@ -883,7 +889,7 @@
                   <button type="button" class="btn-edit" onclick="clearUserFilters()">Xóa lọc</button>
                   <span id="usersMeta" class="users-meta"></span>
                 </div>
-                <p id="usersFilterHint" class="org-detail-hint users-filter-hint">Tài khoản Google chờ duyệt nằm ở đây (Trạng thái = Đã khóa / chờ duyệt), <strong>không</strong> nằm ở tab Hồ sơ đăng ký.</p>
+                <p id="usersFilterHint" class="org-detail-hint users-filter-hint">Tài khoản nội bộ (admin/staff). Người dùng app nằm ở menu <strong>Người dùng cuối</strong>.</p>
 
                 <div class="table-wrap">
                     <table class="buildings-table users-table dash-sort-table" id="usersTable">
@@ -910,18 +916,20 @@
 
                 <div id="userDetailPage" class="org-detail-page" hidden>
                   <div class="org-detail-hero-header">
-                    <button type="button" class="linkish org-detail-back" onclick="closeUserDetailPage()">← Danh sách tài khoản</button>
+                    <button type="button" class="linkish org-detail-back" id="userDetailBackBtn" onclick="closeUserDetailPage()">← Danh sách tài khoản</button>
                     <div class="org-detail-hero-title-row">
-                      <h3 id="userDetailPageTitle">Chi tiết tài khoản</h3>
+                      <h3 id="userDetailPageTitle">Chi tiết người dùng</h3>
                       <span id="userDetailPageBadges" class="org-detail-hero-badges"></span>
                     </div>
                     <div id="userDetailPageMeta" class="org-detail-hero-meta"></div>
                   </div>
-                  <nav class="org-detail-subnav" aria-label="Phân mục chi tiết tài khoản">
+                  <nav id="userDetailSubnav" class="org-detail-subnav" aria-label="Phân mục chi tiết người dùng">
                     <button type="button" class="user-detail-subnav-btn org-detail-subnav-btn active" data-user-sub="overview" onclick="switchUserDetailSubtab('overview')">Tổng quan</button>
                     <button type="button" class="user-detail-subnav-btn org-detail-subnav-btn" data-user-sub="favorites" onclick="switchUserDetailSubtab('favorites')">Yêu thích</button>
                     <button type="button" class="user-detail-subnav-btn org-detail-subnav-btn" data-user-sub="history" onclick="switchUserDetailSubtab('history')">Lịch sử</button>
                     <button type="button" class="user-detail-subnav-btn org-detail-subnav-btn" data-user-sub="sessions" onclick="switchUserDetailSubtab('sessions')">Phiên đăng nhập</button>
+                    <button type="button" class="user-detail-subnav-btn org-detail-subnav-btn" data-user-sub="devices" onclick="switchUserDetailSubtab('devices')">Thiết bị</button>
+                    <button type="button" class="user-detail-subnav-btn org-detail-subnav-btn" data-user-sub="moderation" onclick="switchUserDetailSubtab('moderation')">Cảnh cáo &amp; khóa</button>
                   </nav>
                   <div id="userDetailPageBody" class="org-detail-page-body"></div>
                 </div>
@@ -1256,7 +1264,7 @@
     <div class="filter-bar" style="display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin-bottom:10px;">
       <div>
         <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Từ khóa</label>
-        <input id="filterPlaceKeyword" type="text" placeholder="Tên / alias / địa chỉ" oninput="MapGovernance.loadPlaces()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:180px;">
+        <input id="filterPlaceKeyword" type="text" placeholder="Tên / alias / địa chỉ / GPS / slug…" oninput="MapGovernance.loadPlaces()" style="padding:6px 10px; border-radius:6px; border:1px solid #ddd; min-width:220px;">
       </div>
       <div>
         <label style="font-size:12px; color:#666; display:block; margin-bottom:2px;">Trạng thái</label>
@@ -1309,6 +1317,26 @@
         <tbody id="placesList">
           <tr><td colspan="8">Chọn tab để tải…</td></tr>
         </tbody>
+      </table>
+    </div>
+
+    <h4 style="margin:18px 0 6px;">Hàng đợi xác minh Place</h4>
+    <p class="analytics-tab-intro" style="margin:0 0 8px;">Place đang <code>PENDING</code> xác minh.</p>
+    <div style="margin-bottom:8px;">
+      <button type="button" class="btn-edit" onclick="MapGovernance.loadVerification()">Làm mới hàng đợi XM</button>
+    </div>
+    <div class="table-wrap">
+      <table class="buildings-table">
+        <thead>
+          <tr>
+            <th>Tên</th>
+            <th>Trạng thái XM</th>
+            <th>Ghi chú</th>
+            <th>GPS</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="mapVerifyList"><tr><td colspan="5">Chọn tab để tải…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1427,7 +1455,239 @@
   </div>
 </div>
 
-<!-- ===== TAB: Bản đồ chờ duyệt (P1) ===== -->
+<!-- ===== TAB: Đóng góp cộng đồng (chỉ đề xuất OUTDOOR/INDOOR) ===== -->
+<div id="tab-community-contrib" class="tab-content" style="display:none;">
+  <div class="buildings-section">
+    <div class="section-header">
+      <div>
+        <h3>Đóng góp cộng đồng</h3>
+        <p class="analytics-tab-intro" style="margin:6px 0 0;">
+          Đề xuất cho <strong>map ngoài trời</strong> và <strong>map trong nhà</strong>
+          (vd. thêm WC, sửa vị trí) → Duyệt / Từ chối.
+          <strong>Không phải Editor</strong>. Báo cáo địa điểm nằm tab riêng.
+        </p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn-add" onclick="CommunityContribAdmin.openCreateContrib()">+ Đề xuất thử</button>
+        <button type="button" class="btn-edit" onclick="CommunityContribAdmin.loadAll()">Làm mới</button>
+      </div>
+    </div>
+
+    <div class="filter-bar" style="display:flex;gap:12px;margin-bottom:10px;align-items:flex-end;flex-wrap:wrap;">
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">Map</label>
+        <select id="ccFilterMapScope" onchange="CommunityContribAdmin.loadContributions()" style="padding:6px 10px;border-radius:6px;border:1px solid #ddd;">
+          <option value="">Tất cả</option>
+          <option value="OUTDOOR">Ngoài trời</option>
+          <option value="INDOOR">Trong nhà</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">Trạng thái</label>
+        <select id="ccFilterContribStatus" onchange="CommunityContribAdmin.loadContributions()" style="padding:6px 10px;border-radius:6px;border:1px solid #ddd;">
+          <option value="PENDING" selected>Chờ duyệt</option>
+          <option value="APPROVED">Đã duyệt</option>
+          <option value="REJECTED">Từ chối</option>
+          <option value="ALL">Tất cả</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">Loại</label>
+        <select id="ccFilterContribType" onchange="CommunityContribAdmin.loadContributions()" style="padding:6px 10px;border-radius:6px;border:1px solid #ddd;">
+          <option value="">Tất cả</option>
+          <option value="ADD_POI">Thêm POI</option>
+          <option value="FIX_LOCATION">Sửa vị trí</option>
+          <option value="FIX_INFO">Sửa thông tin</option>
+          <option value="OTHER">Khác</option>
+        </select>
+      </div>
+      <span id="ccContribMeta" style="font-size:12px;color:#667085;align-self:center;"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="buildings-table">
+        <thead>
+          <tr>
+            <th>Đề xuất</th>
+            <th>Map</th>
+            <th>Loại</th>
+            <th>Đối tượng</th>
+            <th>Tọa độ</th>
+            <th>Trạng thái</th>
+            <th>Gửi lúc</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="ccContribList"><tr><td colspan="8">Chọn tab để tải…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: Báo cáo địa điểm (PlaceReport — outdoor / Android) ===== -->
+<div id="tab-place-reports" class="tab-content" style="display:none;">
+  <div class="buildings-section">
+    <div class="section-header">
+      <div>
+        <h3>Báo cáo địa điểm</h3>
+        <p class="analytics-tab-intro" style="margin:6px 0 0;">
+          Báo cáo từ <strong>outdoor Place</strong> và <strong>phòng/POI trong nhà</strong>
+          (<code>place-platform/reports</code> · <code>indoor-places/reports</code>)</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn-edit" onclick="PlaceReportsAdmin.loadAll()">Làm mới</button>
+      </div>
+    </div>
+    <div class="filter-bar" style="display:flex;gap:12px;margin-bottom:10px;align-items:flex-end;flex-wrap:wrap;">
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">Phạm vi</label>
+        <select id="prFilterScope" onchange="PlaceReportsAdmin.loadReports()" style="padding:6px 10px;border-radius:6px;border:1px solid #ddd;">
+          <option value="ALL" selected>Tất cả</option>
+          <option value="OUTDOOR">Ngoài trời</option>
+          <option value="INDOOR">Trong nhà</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">Trạng thái</label>
+        <select id="prFilterStatus" onchange="PlaceReportsAdmin.loadReports()" style="padding:6px 10px;border-radius:6px;border:1px solid #ddd;">
+          <option value="OPEN" selected>Đang mở</option>
+          <option value="RESOLVED">Đã xử lý</option>
+          <option value="DISMISSED">Bỏ qua</option>
+          <option value="ALL">Tất cả</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">Lý do</label>
+        <select id="prFilterReason" onchange="PlaceReportsAdmin.loadReports()" style="padding:6px 10px;border-radius:6px;border:1px solid #ddd;">
+          <option value="">Tất cả</option>
+          <option value="WRONG_LOCATION">Sai vị trí</option>
+          <option value="WRONG_NAME">Sai tên</option>
+          <option value="DUPLICATE">Trùng</option>
+          <option value="SPAM">Spam</option>
+          <option value="CLOSED">Đã đóng cửa</option>
+          <option value="OTHER">Khác</option>
+        </select>
+      </div>
+      <span id="prReportMeta" style="font-size:12px;color:#667085;align-self:center;"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="buildings-table">
+        <thead>
+          <tr>
+            <th>Địa điểm / Phòng</th>
+            <th>Phạm vi</th>
+            <th>Lý do</th>
+            <th>Chi tiết</th>
+            <th>Người gửi</th>
+            <th>Gửi lúc</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="prReportList"><tr><td colspan="7">Chọn tab để tải…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: Đánh giá & Yêu thích theo Place ===== -->
+<div id="tab-place-engagement" class="tab-content" style="display:none;">
+  <div class="buildings-section">
+    <div class="section-header">
+      <div>
+        <h3>Đánh giá &amp; Yêu thích</h3>
+        <p class="analytics-tab-intro" style="margin:6px 0 0;">Quản lý star review và danh sách yêu thích (ngoài trời / trong nhà). Ẩn review = soft delete (<code>is_active=false</code>). Dùng <strong>Kích hoạt</strong> để hiện lại.</p>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button type="button" class="btn-edit" onclick="PlaceEngagementAdmin.clearPlace()">Bỏ chọn place</button>
+        <button type="button" class="btn-edit" onclick="PlaceEngagementAdmin.loadAll()">Làm mới</button>
+      </div>
+    </div>
+
+    <div class="filter-bar" style="display:flex; gap:12px; margin-bottom:14px; align-items:flex-end; flex-wrap:wrap;">
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">Phạm vi</label>
+        <select id="peFilterScope" onchange="PlaceEngagementAdmin.onScopeChange()" style="padding:8px 10px;border-radius:6px;border:1px solid #ddd;">
+          <option value="OUTDOOR">Ngoài trời</option>
+          <option value="INDOOR" selected>Trong nhà</option>
+        </select>
+      </div>
+      <div id="pePlaceSearchWrap" style="position:relative; min-width:260px; flex:1; display:none;">
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">Tìm địa điểm</label>
+        <input id="pePlaceKeyword" type="search" placeholder="Tên / slug…" autocomplete="off"
+          oninput="PlaceEngagementAdmin.onPlaceKeywordInput()"
+          style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid #ddd;">
+        <div id="pePlaceSuggest" hidden style="position:absolute;z-index:20;left:0;right:0;top:100%;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,.12);max-height:240px;overflow:auto;margin-top:4px;"></div>
+      </div>
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">Lọc comment</label>
+        <input id="peReviewKeyword" type="search" placeholder="Từ khóa trong đánh giá…"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();PlaceEngagementAdmin.loadReviews();}"
+          style="padding:8px 10px;border-radius:6px;border:1px solid #ddd;min-width:180px;">
+      </div>
+      <label style="font-size:13px;display:flex;align-items:center;gap:6px;margin-bottom:8px;cursor:pointer;">
+        <input type="checkbox" id="peIncludeInactive" onchange="PlaceEngagementAdmin.loadReviews()"> Hiện cả đã ẩn
+      </label>
+      <button type="button" class="btn-edit" onclick="PlaceEngagementAdmin.loadReviews()">Lọc review</button>
+    </div>
+    <p id="peSelectedPlace" style="font-size:13px;color:#475467;margin:0 0 12px;"></p>
+
+    <h4 style="margin:8px 0 6px;">Đánh giá sao</h4>
+    <p id="peReviewsMeta" style="font-size:12px;color:#667085;margin:0 0 8px;"></p>
+    <div class="table-wrap" style="margin-bottom:22px;">
+      <table class="buildings-table">
+        <thead>
+          <tr>
+            <th>Địa điểm</th>
+            <th>Người dùng</th>
+            <th>Sao</th>
+            <th>Nhận xét</th>
+            <th>Trạng thái</th>
+            <th>Cập nhật</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="peReviewsList"><tr><td colspan="7">Chọn tab để tải…</td></tr></tbody>
+      </table>
+    </div>
+
+    <h4 style="margin:8px 0 6px;">Yêu thích</h4>
+    <p id="peFavoritesMeta" style="font-size:12px;color:#667085;margin:0 0 8px;"></p>
+    <div class="table-wrap">
+      <table class="buildings-table">
+        <thead>
+          <tr>
+            <th>Địa điểm</th>
+            <th>Người dùng</th>
+            <th>Email</th>
+            <th>Lưu lúc</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="peFavoritesList"><tr><td colspan="5">Chọn tab để tải…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<style>
+  .pe-suggest-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    width: 100%;
+    padding: 8px 12px;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+  }
+  .pe-suggest-item:hover { background: #f8fafc; }
+  .pe-suggest-item span { font-size: 11px; color: #667085; }
+  .pe-suggest-empty { padding: 10px 12px; font-size: 13px; color: #667085; }
+</style>
+
+<!-- ===== TAB: Bản đồ chờ duyệt + bản đồ cộng đồng đã public ===== -->
 <div id="tab-map-reviews" class="tab-content" style="display:none;">
   <div class="buildings-section">
     <div class="section-header">
@@ -1437,7 +1697,7 @@
       </div>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <button type="button" class="btn-add" onclick="MapGovernance.openSubmitReview()">+ Gửi duyệt</button>
-        <button type="button" class="btn-edit" onclick="MapGovernance.loadReviews()">Làm mới</button>
+        <button type="button" class="btn-edit" onclick="MapGovernance.loadReviews(); MapGovernance.loadCommunityHub();">Làm mới</button>
       </div>
     </div>
     <div class="filter-bar" style="display:flex; gap:8px; margin-bottom:10px; align-items:flex-end;">
@@ -1453,7 +1713,7 @@
       </div>
       <span id="reviewsMeta" style="font-size:12px;color:#667085;"></span>
     </div>
-    <div class="table-wrap">
+    <div class="table-wrap" style="margin-bottom:22px;">
       <table class="buildings-table">
         <thead>
           <tr>
@@ -1468,21 +1728,42 @@
         <tbody id="mapReviewsList"><tr><td colspan="6">Chọn tab để tải…</td></tr></tbody>
       </table>
     </div>
+
+    <h4 style="margin:8px 0 6px;">Bản đồ cộng đồng đã public</h4>
+    <p class="analytics-tab-intro" style="margin:0 0 8px;">Building <code>PUBLISHED</code> + <code>COMMUNITY</code>/<code>OFFICIAL</code> (chỉ xem).</p>
+    <div id="mapCommunityMeta" class="mgc-meta"></div>
+    <div class="table-wrap mgc-table-wrap">
+      <table class="buildings-table mgc-table mgc-table--community">
+        <thead>
+          <tr>
+            <th>Tòa nhà</th>
+            <th>Visibility</th>
+            <th>Địa chỉ</th>
+            <th>Place</th>
+          </tr>
+        </thead>
+        <tbody id="mapCommunityList"><tr><td colspan="4">Chọn tab để tải…</td></tr></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
-<!-- ===== TAB: Bản đồ trùng (P1) ===== -->
+<!-- ===== TAB: Place trùng & Gộp ===== -->
 <div id="tab-map-duplicates" class="tab-content" style="display:none;">
   <div class="buildings-section">
     <div class="section-header">
       <div>
-        <h3>Bản đồ trùng</h3>
-        <p class="analytics-tab-intro" style="margin:6px 0 0;">Quét cặp địa điểm có độ giống ≥ ngưỡng (mặc định 95%). Dựa trên tên/alias + GPS.</p>
+        <h3>Place trùng &amp; Gộp</h3>
+        <p class="analytics-tab-intro" style="margin:6px 0 0;">Quét cặp <strong>địa điểm (Place)</strong> giống nhau theo tên/alias + GPS, rồi tạo / duyệt yêu cầu gộp. Không phải quét nhiều bản đồ indoor cùng một Place.</p>
       </div>
-      <button type="button" class="btn-edit" onclick="MapGovernance.loadDuplicates()">Quét lại</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn-edit" onclick="MapGovernance.loadDuplicates()">Quét lại</button>
+        <button type="button" class="btn-add" onclick="MapGovernance.openMergeCreate()">+ Tạo / gộp ngay</button>
+        <button type="button" class="btn-edit" onclick="MapGovernance.loadMerges()">Làm mới hàng đợi gộp</button>
+      </div>
     </div>
     <p id="duplicatesMeta" style="font-size:12px;color:#667085;"></p>
-    <div class="table-wrap">
+    <div class="table-wrap" style="margin-bottom:22px;">
       <table class="buildings-table">
         <thead>
           <tr>
@@ -1495,6 +1776,36 @@
           </tr>
         </thead>
         <tbody id="mapDuplicatesList"><tr><td colspan="6">Chọn tab để tải…</td></tr></tbody>
+      </table>
+    </div>
+
+    <h4 style="margin:8px 0 6px;">Hàng đợi gộp Place</h4>
+    <p class="analytics-tab-intro" style="margin:0 0 8px;">Gộp Place nguồn → đích: chuyển tòa nhà, gộp alias/GPS/chủ. Nguồn thành MERGED.</p>
+    <div class="filter-bar" style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-end;">
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">Trạng thái</label>
+        <select id="filterMergeStatus" onchange="MapGovernance.loadMerges()" style="padding:6px 10px;border-radius:6px;border:1px solid #ddd;">
+          <option value="PENDING">Chờ duyệt</option>
+          <option value="COMPLETED">Đã gộp</option>
+          <option value="REJECTED">Từ chối</option>
+          <option value="ALL">Tất cả</option>
+        </select>
+      </div>
+      <span id="mergesMeta" style="font-size:12px;color:#667085;"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="buildings-table">
+        <thead>
+          <tr>
+            <th>Nguồn</th>
+            <th>Đích</th>
+            <th>Độ giống</th>
+            <th>Trạng thái</th>
+            <th>Kết quả</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="mapMergesList"><tr><td colspan="6">Chọn tab để tải…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1551,48 +1862,8 @@
   </div>
 </div>
 
-<!-- ===== TAB: Yêu cầu gộp (P2) ===== -->
-<div id="tab-map-merges" class="tab-content" style="display:none;">
-  <div class="buildings-section">
-    <div class="section-header">
-      <div>
-        <h3>Yêu cầu gộp địa điểm</h3>
-        <p class="analytics-tab-intro" style="margin:6px 0 0;">Gộp Place nguồn → đích: chuyển tòa nhà, gộp alias/GPS/chủ. Nguồn thành MERGED.</p>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button type="button" class="btn-add" onclick="MapGovernance.openMergeCreate()">+ Tạo / gộp ngay</button>
-        <button type="button" class="btn-edit" onclick="MapGovernance.loadMerges()">Làm mới</button>
-      </div>
-    </div>
-    <div class="filter-bar" style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-end;">
-      <div>
-        <label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">Trạng thái</label>
-        <select id="filterMergeStatus" onchange="MapGovernance.loadMerges()" style="padding:6px 10px;border-radius:6px;border:1px solid #ddd;">
-          <option value="PENDING">Chờ duyệt</option>
-          <option value="COMPLETED">Đã gộp</option>
-          <option value="REJECTED">Từ chối</option>
-          <option value="ALL">Tất cả</option>
-        </select>
-      </div>
-      <span id="mergesMeta" style="font-size:12px;color:#667085;"></span>
-    </div>
-    <div class="table-wrap">
-      <table class="buildings-table">
-        <thead>
-          <tr>
-            <th>Nguồn</th>
-            <th>Đích</th>
-            <th>Độ giống</th>
-            <th>Trạng thái</th>
-            <th>Kết quả</th>
-            <th>Thao tác</th>
-          </tr>
-        </thead>
-        <tbody id="mapMergesList"><tr><td colspan="6">Chọn tab để tải…</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-</div>
+<!-- Legacy panels kept for deep-link redirect (không còn trên menu) -->
+<div id="tab-map-merges" class="tab-content" style="display:none;" hidden aria-hidden="true"></div>
 
 <!-- ===== TAB: Kiểm duyệt (P3) ===== -->
 <div id="tab-map-moderation" class="tab-content" style="display:none;">
@@ -1633,108 +1904,28 @@
   </div>
 </div>
 
-<!-- ===== TAB: Thống kê MGC (P3) ===== -->
-<div id="tab-map-stats" class="tab-content" style="display:none;">
-  <div class="buildings-section">
-    <div class="section-header">
-      <h3>Thống kê Quản trị bản đồ</h3>
-      <button type="button" class="btn-edit" onclick="MapGovernance.loadMapStats()">Làm mới</button>
-    </div>
-    <div id="mapStatsBox" class="org-overview-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;"></div>
-  </div>
-</div>
-
-<!-- ===== TAB: Phiên bản bản đồ (P4) ===== -->
-<div id="tab-map-versions" class="tab-content" style="display:none;">
-  <div class="buildings-section">
-    <div class="section-header">
-      <h3>Version Manager — Phiên bản bản đồ</h3>
-      <button type="button" class="btn-edit" onclick="MapGovernance.loadMapVersions()">Làm mới</button>
-    </div>
-    <p class="analytics-tab-intro">Chọn tòa nhà để xem lịch sử phiên bản / rollback (API <code>/api/map-versions</code>).</p>
-    <div class="admin-filter-row mgc-toolbar">
-      <input id="mapVersionBuildingFilter" type="search" placeholder="Lọc tên tòa…" oninput="MapGovernance.filterVersionBuildings()">
-    </div>
-    <div class="table-wrap mgc-table-wrap">
-      <table class="buildings-table mgc-table mgc-table--versions">
-        <thead>
-          <tr>
-            <th>Tòa nhà</th>
-            <th>Trạng thái</th>
-            <th>Visibility</th>
-            <th>Tầng</th>
-            <th>Place</th>
-            <th>Thao tác</th>
-          </tr>
-        </thead>
-        <tbody id="mapVersionsBuildingList"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<!-- ===== TAB: Xác minh Place (P4) ===== -->
-<div id="tab-map-verify" class="tab-content" style="display:none;">
-  <div class="buildings-section">
-    <div class="section-header">
-      <h3>Xác minh địa điểm</h3>
-      <button type="button" class="btn-edit" onclick="MapGovernance.loadVerification()">Làm mới</button>
-    </div>
-    <p class="analytics-tab-intro">Hàng đợi Place <code>PENDING</code> — duyệt hoặc từ chối xác minh.</p>
-    <div class="table-wrap mgc-table-wrap">
-      <table class="buildings-table mgc-table mgc-table--verify">
-        <thead>
-          <tr>
-            <th>Tên</th>
-            <th>Trạng thái XM</th>
-            <th>Ghi chú</th>
-            <th>GPS</th>
-            <th>Thao tác</th>
-          </tr>
-        </thead>
-        <tbody id="mapVerifyList"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<!-- ===== TAB: Cộng đồng (P4) ===== -->
-<div id="tab-map-community" class="tab-content" style="display:none;">
-  <div class="buildings-section">
-    <div class="section-header">
-      <h3>Bản đồ cộng đồng</h3>
-      <button type="button" class="btn-edit" onclick="MapGovernance.loadCommunityHub()">Làm mới</button>
-    </div>
-    <p class="analytics-tab-intro">Building <code>PUBLISHED</code> + <code>COMMUNITY</code>/<code>OFFICIAL</code> (cùng filter public API).</p>
-    <div id="mapCommunityMeta" class="mgc-meta"></div>
-    <div class="table-wrap mgc-table-wrap">
-      <table class="buildings-table mgc-table mgc-table--community">
-        <thead>
-          <tr>
-            <th>Tòa nhà</th>
-            <th>Visibility</th>
-            <th>Địa chỉ</th>
-            <th>Place</th>
-          </tr>
-        </thead>
-        <tbody id="mapCommunityList"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
+<!-- Legacy panels — URL cũ được redirect; không còn trên menu -->
+<div id="tab-map-stats" class="tab-content" style="display:none;" hidden aria-hidden="true"></div>
+<div id="tab-map-versions" class="tab-content" style="display:none;" hidden aria-hidden="true"></div>
+<div id="tab-map-verify" class="tab-content" style="display:none;" hidden aria-hidden="true"></div>
+<div id="tab-map-community" class="tab-content" style="display:none;" hidden aria-hidden="true"></div>
 
 <!-- ===== TAB: WEBSITE CMS (Landing — Super only) ===== -->
 <div id="tab-website" class="tab-content" style="display:none;">
   <div class="admin-section website-cms-section">
     <div class="section-header analytics-header-row">
       <div>
-        <h3 id="websiteCmsTitle">Website</h3>
-        <p class="analytics-tab-intro" id="websiteCmsIntro">Quản lý Landing cố định (5 trang) – không phải CMS kiểu WordPress.</p>
+        <h3 id="websiteCmsTitle">Blog &amp; News</h3>
+        <p class="analytics-tab-intro" id="websiteCmsIntro">Blog, Liên hệ, SEO, Media và Cài đặt Website — dùng cho Landing Aura.</p>
       </div>
       <div class="analytics-toolbar" id="websiteCmsToolbar"></div>
     </div>
 
-    <div id="website-panel-pages" class="website-subpanel is-active" data-website-panel="pages">
+    <div id="website-panel-pages" class="website-subpanel" data-website-panel="pages" hidden>
+      <div class="website-legacy-notice" role="note">
+        <strong>Legacy — chưa khớp Landing Aura</strong>
+        <p>Editor section này gắn layout cũ (<code>.hero</code>, <code>.why</code>…). Trên trang public Aura gần như không áp dụng. Sửa nội dung marketing bằng HTML/Stitch hoặc Blog.</p>
+      </div>
       <div id="websitePagesList" class="website-pages-list"></div>
       <div id="websitePageEditor" class="website-page-editor" hidden>
         <div class="website-editor-top">
@@ -1762,7 +1953,7 @@
       </div>
     </div>
 
-    <div id="website-panel-articles" class="website-subpanel" data-website-panel="articles" hidden>
+    <div id="website-panel-articles" class="website-subpanel is-active" data-website-panel="articles">
       <form id="cmsArticleForm" class="website-form-grid" onsubmit="return WebsiteCms.saveArticle(event)">
         <input id="caId" type="hidden">
         <div><label>Loại</label><select id="caType"><option value="BLOG">Blog</option><option value="NEWS">News</option></select></div>
@@ -1787,6 +1978,10 @@
     </div>
 
     <div id="website-panel-banner" class="website-subpanel" data-website-panel="banner" hidden>
+      <div class="website-legacy-notice" role="note">
+        <strong>Legacy — chưa khớp Landing Aura</strong>
+        <p>Banner/Hero CMS tìm class <code>.hero</code> của layout cũ. Trang chủ Aura dùng HTML tĩnh + ảnh <code>/images/indoornav-landing-hero.png</code> — lưu ở đây không đổi hero public.</p>
+      </div>
       <form id="websiteBannerForm" class="website-form-grid" onsubmit="return WebsiteCms.saveBanner(event)">
         <div><label>Tiêu đề Banner</label><input id="wbTitle" type="text"></div>
         <div class="span-2"><label>Mô tả Hero</label><textarea id="wbSubtitle" rows="3"></textarea></div>
@@ -1817,6 +2012,10 @@
     </div>
 
     <div id="website-panel-navigation" class="website-subpanel" data-website-panel="navigation" hidden>
+      <div class="website-legacy-notice" role="note">
+        <strong>Legacy — menu Aura giữ HTML tĩnh</strong>
+        <p>Trên trang <code>landing-premium</code>, CMS Navigation <strong>không ghi đè</strong> <code>#mainNav</code> (tránh phá class Tailwind). Muốn đổi menu: sửa HTML các trang public.</p>
+      </div>
       <div class="website-panel-actions">
         <button type="button" class="btn-edit" onclick="WebsiteCms.addNavItem()">+ Thêm mục</button>
         <button type="button" class="btn-create" onclick="WebsiteCms.saveNavigation()">Lưu thứ tự menu</button>
@@ -1909,6 +2108,10 @@
     </div>
 
     <div id="website-panel-theme" class="website-subpanel" data-website-panel="theme" hidden>
+      <div class="website-legacy-notice" role="note">
+        <strong>Legacy — chưa khớp Landing Aura</strong>
+        <p>Theme CMS (màu/font/radius) dành cho CSS layout cũ. Landing Aura dùng token Tailwind + <code>landing-premium.css</code> — public không áp theme này.</p>
+      </div>
       <form id="websiteThemeForm" class="website-form-grid" onsubmit="return WebsiteCms.saveTheme(event)">
         <div><label>Primary Color</label><input id="wtPrimary" type="color"></div>
         <div><label>Secondary Color</label><input id="wtSecondary" type="color"></div>
@@ -2155,6 +2358,181 @@
   </div>
 </div>
 
+<!-- ===== TAB: EMERGENCY (Phase 3 MVP) ===== -->
+        <div id="tab-emergency" class="tab-content emergency-page" style="display:none;">
+          <div class="admin-section emergency-section">
+            <div class="section-header">
+              <h3 id="emergencyPageTitle">Trung tâm điều khiển khẩn cấp</h3>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button type="button" id="btnEmergencyRefresh" class="btn-add">Làm mới</button>
+                <button type="button" id="btnSeismicRefresh" class="btn-edit" style="display:none;">Làm mới cảm biến</button>
+              </div>
+            </div>
+
+            <!-- Sub: sự cố -->
+            <div class="emergency-subpanel is-active" id="emergency-panel-incidents" data-emergency-panel="incidents">
+              <p class="emergency-lead">Tạo sự cố thủ công, khoanh vùng nguy hiểm, kích hoạt và gửi cảnh báo sơ tán.</p>
+
+              <div class="emergency-card" id="emergencyTrappedCard" style="margin-bottom:16px;border-color:#fecaca;background:#fff7f7;">
+                <div class="emergency-card-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+                  <h4 class="emergency-card-title" style="color:#b91c1c;margin:0;">
+                    Có thể mắc kẹt
+                    <span id="emergencyTrappedCount" class="badge" style="background:#b91c1c;color:#fff;margin-left:6px;">0</span>
+                  </h4>
+                  <button type="button" class="btn-edit btn-sm" id="btnRefreshTrapped" style="padding:4px 10px;">Làm mới</button>
+                </div>
+                <p class="emergency-config-hint" style="margin:0 0 10px;">
+                  Chỉ liệt kê khi <strong>cả hai</strong>: (1) đang trong vùng nguy hiểm
+                  (hazard ACTIVE / động đất gần tòa), và (2) <strong>không di chuyển ≥ 15 phút</strong>.
+                  Người ngồi yên ngoài vùng <em>không</em> bị gắn cờ (tránh spam).
+                </p>
+                <div class="table-scroll-wrapper">
+                  <table class="data-table buildings-table" style="width:100%;">
+                    <thead>
+                      <tr>
+                        <th>User</th><th>Email</th><th>Sự cố</th><th>Tòa / tầng</th><th>Đứng yên</th><th>GPS cuối</th><th>Cập nhật</th><th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="emergencyTrappedBody">
+                      <tr><td colspan="8" style="color:#888;">Chưa có ai gắn cờ mắc kẹt.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="emergency-layout">
+                <div class="emergency-card emergency-card--form">
+                  <h4 class="emergency-card-title">Tạo sự cố mới</h4>
+                  <form id="emergencyCreateForm" class="emergency-form">
+                    <label>Loại sự cố
+                      <select id="emergencyCreateType" required>
+                        <option value="FIRE">Cháy</option>
+                        <option value="FLOOD">Ngập lụt</option>
+                        <option value="GAS">Rò khí / khí độc</option>
+                        <option value="EARTHQUAKE">Động đất</option>
+                        <option value="OTHER">Khác</option>
+                      </select>
+                    </label>
+                    <label>Tiêu đề <input type="text" id="emergencyCreateTitle" placeholder="Ví dụ: Cháy tầng 3 / Động đất tòa A" maxlength="200"></label>
+                    <label>Tòa nhà (tùy chọn)
+                      <div class="admin-combobox" id="emergencyBuildingCombobox">
+                        <input type="hidden" id="emergencyCreateBuilding" value="">
+                        <input
+                          type="search"
+                          id="emergencyBuildingSearch"
+                          class="admin-combobox-input"
+                          placeholder="Tên, địa chỉ hoặc tọa độ (vd. 10.76, 106.66)…"
+                          autocomplete="off"
+                          role="combobox"
+                          aria-autocomplete="list"
+                          aria-expanded="false"
+                          aria-controls="emergencyBuildingList"
+                          aria-haspopup="listbox"
+                        >
+                        <ul id="emergencyBuildingList" class="admin-combobox-list" role="listbox" hidden></ul>
+                      </div>
+                      <small class="emergency-field-hint">Có thể tìm theo tên, địa chỉ/vị trí, hoặc dán tọa độ lat,lng.</small>
+                    </label>
+                    <button type="submit" class="btn-add">Tạo bản nháp</button>
+                  </form>
+                </div>
+                <div class="emergency-card emergency-card--table">
+                  <div class="emergency-card-head">
+                    <h4 class="emergency-card-title">Tất cả sự cố khẩn cấp</h4>
+                  </div>
+                  <div id="emergencyCommandPanel" class="emergency-command-panel" style="display:none;"></div>
+                  <div class="table-scroll-wrapper">
+                    <table class="data-table buildings-table" style="width:100%;">
+                      <thead>
+                        <tr>
+                          <th>Tiêu đề</th><th>Loại</th><th>Trạng thái</th><th>Tòa nhà</th><th>Cập nhật</th><th>Thao tác</th>
+                        </tr>
+                      </thead>
+                      <tbody id="emergencyIncidentsBody"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sub: Động đất — chỉ sự cố + KPI -->
+            <div class="emergency-subpanel" id="emergency-panel-seismic" data-emergency-panel="seismic" hidden>
+              <p class="emergency-lead">Theo dõi sự cố EARTHQUAKE (tự kích hoạt từ mạng cảm biến). Khoanh / kết thúc tại đây. Xem chi tiết user &amp; báo cáo ở tab <strong>Dữ liệu cảm biến</strong>.</p>
+              <div id="seismicKpiGrid" class="overview-kpi-grid emergency-kpi-grid" aria-label="Thống kê động đất 24h"></div>
+              <p id="seismicConfigText" class="emergency-config-hint"></p>
+              <div class="emergency-card">
+                <div class="emergency-card-head">
+                  <h4 class="emergency-card-title">Sự cố EARTHQUAKE gần đây</h4>
+                </div>
+                <div class="table-scroll-wrapper">
+                  <table class="data-table buildings-table" style="width:100%;">
+                    <thead>
+                      <tr>
+                        <th>Tiêu đề</th><th>Trạng thái</th><th>Tòa nhà</th><th>Đóng góp</th><th>Ảnh hưởng</th><th>Kích hoạt</th><th>Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody id="seismicIncidentsBody">
+                      <tr><td colspan="7" style="color:#888;">Chưa có dữ liệu.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div id="seismicIncidentDetail" class="emergency-detail-panel" style="display:none;"></div>
+              </div>
+            </div>
+
+            <!-- Sub: Dữ liệu cảm biến — tab nhỏ giống Thu–Chi -->
+            <div class="emergency-subpanel" id="emergency-panel-seismic-data" data-emergency-panel="seismic-data" hidden>
+              <p class="emergency-lead">Theo dõi tín hiệu rung cộng đồng: tổng quan + nhật ký báo cáo, và danh sách user 24h tách riêng khi dữ liệu nhiều.</p>
+              <nav id="seismicDataSubNav" class="finance-subnav" aria-label="Phân mục dữ liệu cảm biến">
+                <button type="button" class="finance-subnav-btn active" data-seismic-data-sub="overview" onclick="window.EmergencyAdmin.switchSeismicDataSub('overview')">Tổng quan &amp; báo cáo</button>
+                <button type="button" class="finance-subnav-btn" data-seismic-data-sub="users" onclick="window.EmergencyAdmin.switchSeismicDataSub('users')">User 24h</button>
+              </nav>
+
+              <div class="seismic-data-subpanel is-active" id="seismic-data-panel-overview" data-seismic-data-panel="overview">
+                <p class="emergency-config-hint" style="margin-top:0;">Theo 24 giờ gần nhất · phạm vi tòa bạn quản lý</p>
+                <div id="seismicDataKpiGrid" class="overview-kpi-grid emergency-kpi-grid" aria-label="KPI dữ liệu cảm biến"></div>
+                <div class="emergency-card">
+                  <div class="emergency-card-head">
+                    <h4 class="emergency-card-title">Báo cáo rung gần đây</h4>
+                  </div>
+                  <div class="table-scroll-wrapper">
+                    <table class="data-table buildings-table" style="width:100%;">
+                      <thead>
+                        <tr>
+                          <th>Thời gian</th><th>User</th><th>Tòa</th><th>Thiết bị</th><th>Peak</th><th>STA/LTA</th><th>Nguồn</th><th>Sự cố</th>
+                        </tr>
+                      </thead>
+                      <tbody id="seismicReportsBody">
+                        <tr><td colspan="8" style="color:#888;">Chưa có báo cáo.</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div class="seismic-data-subpanel" id="seismic-data-panel-users" data-seismic-data-panel="users" hidden>
+                <div class="emergency-card">
+                  <div class="emergency-card-head">
+                    <h4 class="emergency-card-title">User gửi cảm biến trong 24 giờ</h4>
+                  </div>
+                  <div class="table-scroll-wrapper">
+                    <table class="data-table buildings-table" style="width:100%;">
+                      <thead>
+                        <tr>
+                          <th>User</th><th>Email</th><th>Báo cáo</th><th>Thiết bị</th><th>Tòa</th><th>Peak max</th><th>STA/LTA</th><th>Gần nhất</th><th>Sự cố</th>
+                        </tr>
+                      </thead>
+                      <tbody id="seismicUsersBody">
+                        <tr><td colspan="9" style="color:#888;">Chưa có user gửi cảm biến trong 24h.</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
 <!-- ===== TAB: LOGS (Super Admin + Org Admin) ===== -->
         <div id="tab-logs" class="tab-content logs-page" style="display:none;">
           <div class="admin-section logs-section">
@@ -2163,62 +2541,13 @@
               <button class="btn-add" onclick="loadLogs()">Làm mới</button>
             </div>
 
+            <div id="logsStreamBar" class="logs-stream-bar" style="margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap;" role="tablist" aria-label="Luồng nhật ký"></div>
+
             <div class="logs-filter-bar" style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
               <div>
                 <label style="font-size:13px; color:#666; margin-bottom:4px; display:block;">Hành động</label>
                 <select id="filterAction" onchange="resetLogsPageAndLoad()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd; min-width:220px;">
-                  <option value="">Tất cả hành động</option>
-                  <option value="LOGIN">Đang nháp</option>
-                  <option value="LOGOUT">Đăng xuất</option>
-                  <option value="REGISTER">Đăng ký công khai</option>
-                  <option value="UPDATE_PROFILE">Cập nhật hồ sơ</option>
-                  <option value="CHANGE_PASSWORD">Đổi mật khẩu</option>
-                  <option value="PASSWORD_RESET_REQUEST">Yêu cầu quên mật khẩu</option>
-                  <option value="PASSWORD_RESET_COMPLETE">Đặt lại mật khẩu</option>
-                  <option value="LOGOUT_ALL">Đăng xuất mọi thiết bị</option>
-                  <option value="CREATE_BUILDING">Tạo tòa nhà</option>
-                  <option value="UPDATE_BUILDING">Cập nhật tòa nhà</option>
-                  <option value="ADD_FLOOR">Thêm tầng</option>
-                  <option value="REMOVE_FLOOR">Bớt tầng</option>
-                  <option value="DELETE_BUILDING">Xóa tòa nhà (cũ)</option>
-                  <option value="DEACTIVATE_BUILDING">Vô hiệu hóa tòa nhà</option>
-                  <option value="PUBLISH_MAP">Xuất bản bản đồ</option>
-                  <option value="LOAD_MAP">Tải bản đồ</option>
-                  <option value="CREATE_USER">Tạo tài khoản</option>
-                  <option value="ADMIN_UPDATE_USER">Admin sửa tài khoản</option>
-                  <option value="ACTIVATE_USER">Kích hoạt tài khoản</option>
-                  <option value="DEACTIVATE_USER">Vô hiệu hóa tài khoản</option>
-                  <option value="BUILDING_ACCESS_DENIED">Từ chối truy cập tòa</option>
-                  <option value="BUILDING_ASSIGN">Gán tòa nhà</option>
-                  <option value="BUILDING_UNASSIGN">Bỏ gán tòa nhà</option>
-                  <option value="CREATE_QR">Tạo mã QR</option>
-                  <option value="DELETE_QR">Xóa mã QR</option>
-                  <option value="CREATE_ORG">Tạo tổ chức</option>
-                  <option value="APPROVE_ORG_REGISTRATION">Duyệt hồ sơ đăng ký</option>
-                  <option value="REJECT_ORG_REGISTRATION">Từ chối hồ sơ đăng ký</option>
-                  <option value="SELF_SERVICE_ORG_TRIAL">Trial tự động (self-service)</option>
-                  <option value="UPDATE_ORGANIZATION">Cập nhật tổ chức</option>
-                  <option value="DEACTIVATE_ORGANIZATION">Tạm dừng tổ chức</option>
-                  <option value="ACTIVATE_ORGANIZATION">Kích hoạt tổ chức</option>
-                  <option value="ADMIN_RESET_PASSWORD">Admin đặt lại mật khẩu</option>
-                  <option value="ROLLBACK_MAP">Khôi phục phiên bản bản đồ</option>
-                  <option value="DELETE_USER">Xóa / khóa tài khoản (cũ)</option>
-                  <option value="UNLOCK_SESSION">Mở khóa phiên editor</option>
-                  <option value="CREATE_PLAN">Tạo gói dịch vụ</option>
-                  <option value="UPDATE_PLAN">Cập nhật / ngừng bán gói</option>
-                  <option value="DELETE_PLAN">Xóa gói dịch vụ</option>
-                  <option value="CREATE_INVOICE">Tạo hóa đơn</option>
-                  <option value="VOID_INVOICE">Hủy hóa đơn</option>
-                  <option value="MARK_INVOICE_PAID">Ghi nhận thu hóa đơn</option>
-                  <option value="CHECKOUT_START">Bắt đầu thanh toán gói</option>
-                  <option value="SUBSCRIPTION_PAYMENT">Thanh toán gói thành công</option>
-                  <option value="ACTIVATE_SUBSCRIPTION">Kích hoạt / gia hạn gói</option>
-                  <option value="CANCEL_SUBSCRIPTION">Hủy gói đăng ký</option>
-                  <option value="EXPIRE_SUBSCRIPTION">Hết hạn gói</option>
-                  <option value="CREATE_BILLING_EVENT">Ghi sự kiện billing</option>
-                  <option value="UPDATE_ORG_CONTACT">Cập nhật liên hệ tổ chức</option>
-                  <option value="SET_PUBLISH_PERMIT">Cấp quyền xuất bản</option>
-                  <option value="CLEAR_PUBLISH_PERMIT">Thu hồi quyền xuất bản</option>
+                  <option value="">Tất cả hành động trong luồng</option>
                 </select>
               </div>
 
@@ -2561,6 +2890,7 @@
           <select id="createUserRole">
             <option value="BUILDING_ADMIN" selected>Quản trị tòa nhà</option>
             <option value="ORG_ADMIN">Quản trị tổ chức</option>
+            <option value="MAP_MODERATOR">Kiểm duyệt bản đồ</option>
             <option value="SUPER_ADMIN">Quản trị hệ thống</option>
             <option value="FINANCE_ADMIN">Quản trị tài chính</option>
             <option value="MARKETING_MANAGER">Quản trị nội dung</option>
@@ -2617,6 +2947,7 @@
           <select id="updateUserRole">
             <option value="BUILDING_ADMIN">Quản trị tòa nhà</option>
             <option value="ORG_ADMIN">Quản trị tổ chức</option>
+            <option value="MAP_MODERATOR">Kiểm duyệt bản đồ</option>
             <option value="SUPER_ADMIN">Quản trị hệ thống</option>
             <option value="FINANCE_ADMIN">Quản trị tài chính</option>
             <option value="MARKETING_MANAGER">Quản trị nội dung</option>
@@ -2916,19 +3247,23 @@
       </div>
     </div>
 
-    <script src="../js/dashboard-router.js?v=20260721wq1"></script>
+    <script src="../js/dashboard-router.js?v=20260730legacy1"></script>
     <script src="../js/dashboard-session.js?v=20260721wq1"></script>
     <script src="../js/dashboard-accessibility.js?v=20260721wq1"></script>
     <script src="../js/website-cms-api.js?v=20260721wq1"></script>
-    <script src="../js/website-cms-router.js?v=20260721wq1"></script>
+    <script src="../js/website-cms-router.js?v=20260730legacy1"></script>
     <script src="../js/website-cms-media.js?v=20260721wq1"></script>
     <script src="../js/website-cms-audit.js?v=20260721wq1"></script>
     <script src="../js/admin-shell.js?v=20260725creator3"></script>
     <script src="../js/orgListSort.js?v=20260708l"></script>
     <script src="../js/dashboardTableSort.js?v=20260708l"></script>
-    <script src="../js/dashboard.js?v=20260725portal1"></script>
-    <script src="../js/map-governance.js?v=20260723mgcui2"></script>
-    <script src="../js/website-cms.js?v=20260721audit1"></script>
+    <script src="../js/dashboard.js?v=20260730legacy1"></script>
+    <script src="../js/emergency-admin.js?v=20260729seismic12"></script>
+    <script src="../js/map-governance.js?v=20260729unlock1"></script>
+    <script src="../js/place-engagement-admin.js?v=20260729pe2"></script>
+    <script src="../js/community-contrib-admin.js?v=20260729cc2"></script>
+    <script src="../js/place-reports-admin.js?v=20260729pr2"></script>
+    <script src="../js/website-cms.js?v=20260730legacy1"></script>
     <script src="../js/admin-ui.js?v=20260717ad32"></script>
 
     <!-- Place modal (Map Governance P0) -->

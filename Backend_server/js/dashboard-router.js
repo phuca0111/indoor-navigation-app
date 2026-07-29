@@ -22,13 +22,13 @@
   });
 
   const WEBSITE_TITLES = Object.freeze({
-    pages: 'Landing Pages',
+    pages: 'Landing Pages (Legacy)',
     articles: 'Blog & News',
-    banner: 'Banner & Hero',
+    banner: 'Banner & Hero (Legacy)',
     media: 'Media',
-    navigation: 'Navigation',
+    navigation: 'Navigation (Legacy)',
     seo: 'SEO',
-    theme: 'Theme',
+    theme: 'Theme (Legacy)',
     settings: 'Cài đặt Website',
     audit: 'Nhật ký CMS',
     forms: 'Liên hệ'

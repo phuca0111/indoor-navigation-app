@@ -1,40 +1,57 @@
-/* WL0 — contact form */
-.contact-section { padding: 60px 0 40px; }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-@media (max-width: 700px) { .form-grid { grid-template-columns: 1fr; } }
-label { display: block; font-size: 13px; color: #374151; margin: 10px 0 6px; }
-input, textarea {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    box-sizing: border-box;
-    font-family: inherit;
+/* Premium contact — chips + understated inputs; contact.js vẫn dùng #contactForm */
+.form-input-understated {
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  border-bottom: 1px solid #d9d5cf;
+  background: transparent;
+  border-radius: 0;
+  transition: border-color 0.3s ease;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 16px;
+  color: #1d1d1f;
 }
-textarea { min-height: 120px; resize: vertical; }
-.contact-actions { margin-top: 18px; display: flex; gap: 12px; flex-wrap: wrap; }
-.contact-note { color: #6b7280; margin-top: 14px; font-size: 14px; }
-.status { margin-top: 12px; font-weight: 600; }
-
-.contact-request-type {
-  margin: 16px 0 8px;
-  padding: 14px;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
+.form-input-understated:focus {
+  outline: none;
+  box-shadow: none;
+  border-color: #005ac1;
 }
-.contact-request-type legend {
-  padding: 0 6px;
-  color: #111827;
-  font-size: 14px;
-  font-weight: 700;
-}
-.contact-request-type label {
+.request-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin: 6px 14px 6px 0;
-  color: #374151;
-  font-size: 13px;
-  font-weight: 500;
+  padding: 0.5rem 1.25rem;
+  border-radius: 9999px;
+  border: 1px solid #d9d5cf;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #1d1d1f;
+  background: #fff;
 }
-.contact-request-type input { width: auto; }
+.request-chip:hover {
+  border-color: #1d1d1f;
+}
+.request-chip.chip-active {
+  background-color: #1d1d1f;
+  color: #ffffff;
+  border-color: #1d1d1f;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.status {
+  margin-top: 4px;
+  font-weight: 600;
+  min-height: 1.4em;
+}
+.status.is-error { color: #b91c1c; }
+.status.is-ok { color: #047857; }
