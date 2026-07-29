@@ -1,84 +1,384 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html class="scroll-smooth" lang="vi">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dùng ứng dụng Android | IndoorNav</title>
-  <meta name="description" content="End User dùng IndoorNav trên Android — không còn portal web /app.">
-  <link rel="stylesheet" href="/styles.css?v=20260721c6">
-  <link rel="stylesheet" href="/css/landing-layout.css?v=20260721settings2">
-  <link rel="stylesheet" href="/css/landing-auth.css?v=20260721c6">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link rel="icon" href="/images/indoornav-favicon.png" type="image/png" sizes="32x32"/>
+<link rel="icon" href="/images/indoornav-favicon-48.png" type="image/png" sizes="48x48"/>
+<link rel="apple-touch-icon" href="/images/indoornav-apple-touch.png"/>
+
+<title>Tải ứng dụng Android | IndoorNav</title>
+<meta name="description" content="Tải IndoorNav (bản đồ &amp; dẫn đường trong nhà) và TPTPbank (ví / ngân hàng ảo thanh toán QR)."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&amp;family=Hanken+Grotesk:wght@400;600;700&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,300,0,0&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/css/landing-premium.css?v=20260730getapp1"/>
+<script id="tailwind-config">
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "outline-variant": "#c7c6ca",
+        "on-error": "#ffffff",
+        "secondary-container": "#4d8efe",
+        "surface-container-high": "#e8e8e5",
+        "secondary-fixed-dim": "#adc6ff",
+        "error-container": "#ffdad6",
+        "deep-charcoal": "#1d1d1f",
+        "surface-bright": "#f9f9f6",
+        "on-primary-fixed": "#1b1b1d",
+        "surface": "#f9f9f6",
+        "outline": "#77767b",
+        "on-secondary-container": "#00285c",
+        "tertiary": "#060200",
+        "surface-dim": "#dadad7",
+        "on-tertiary-fixed-variant": "#643f00",
+        "on-surface": "#1a1c1b",
+        "secondary": "#005ac1",
+        "on-primary-container": "#868587",
+        "surface-container-lowest": "#ffffff",
+        "inverse-primary": "#c8c6c8",
+        "hairline-border": "#d9d5cf",
+        "on-primary-fixed-variant": "#474649",
+        "tertiary-fixed-dim": "#fdba61",
+        "on-surface-variant": "#46464a",
+        "inverse-surface": "#2f312f",
+        "secondary-fixed": "#d8e2ff",
+        "primary-fixed": "#e4e2e4",
+        "tertiary-container": "#2c1900",
+        "primary": "#030304",
+        "primary-fixed-dim": "#c8c6c8",
+        "on-background": "#1a1c1b",
+        "on-primary": "#ffffff",
+        "on-secondary-fixed-variant": "#004494",
+        "on-secondary-fixed": "#001a41",
+        "surface-variant": "#e2e3e0",
+        "surface-container": "#eeeeeb",
+        "surface-container-highest": "#e2e3e0",
+        "surface-tint": "#5f5e60",
+        "on-tertiary-fixed": "#2a1700",
+        "on-tertiary-container": "#b27927",
+        "primary-container": "#1d1d1f",
+        "surface-container-low": "#f4f4f1",
+        "on-error-container": "#93000a",
+        "error": "#ba1a1a",
+        "background": "#f9f9f6",
+        "on-secondary": "#ffffff",
+        "tertiary-fixed": "#ffddb7",
+        "inverse-on-surface": "#f1f1ee",
+        "on-tertiary": "#ffffff",
+        "mist-gray": "#f0f0f2"
+      },
+      borderRadius: {
+        DEFAULT: "0.25rem",
+        lg: "0.5rem",
+        xl: "0.75rem",
+        full: "9999px"
+      },
+      spacing: {
+        "page-margin-mobile": "24px",
+        gutter: "32px",
+        "section-gap-sm": "80px",
+        "component-padding": "1.5rem",
+        "page-margin-desktop": "80px",
+        "section-gap-lg": "160px"
+      },
+      fontFamily: {
+        "body-md": ["Be Vietnam Pro", "sans-serif"],
+        "label-mono": ["JetBrains Mono", "monospace"],
+        "headline-lg-mobile": ["Hanken Grotesk", "sans-serif"],
+        "headline-md": ["Hanken Grotesk", "sans-serif"],
+        "display-hero": ["Hanken Grotesk", "sans-serif"],
+        "body-lg": ["Be Vietnam Pro", "sans-serif"],
+        "headline-lg": ["Hanken Grotesk", "sans-serif"]
+      },
+      fontSize: {
+        "body-md": ["16px", { lineHeight: "24px", fontWeight: "400" }],
+        "label-mono": ["12px", { lineHeight: "16px", letterSpacing: "0.05em", fontWeight: "500" }],
+        "headline-lg-mobile": ["36px", { lineHeight: "42px", fontWeight: "600" }],
+        "headline-lg": ["48px", { lineHeight: "56px", letterSpacing: "-0.01em", fontWeight: "600" }],
+        "body-lg": ["20px", { lineHeight: "32px", fontWeight: "400" }],
+        "headline-md": ["32px", { lineHeight: "40px", fontWeight: "600" }],
+        "display-hero": ["48px", { lineHeight: "56px", letterSpacing: "-0.02em", fontWeight: "700" }]
+      }
+    }
+  }
+};
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  }
+  .reveal-on-scroll {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .reveal-on-scroll.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .transition-premium {
+    transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .hover-scale:hover { transform: scale(0.98); }
+  @media (min-width: 768px) {
+    .font-display-hero.text-display-hero {
+      font-size: 64px;
+      line-height: 72px;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal-on-scroll { opacity: 1; transform: none; transition: none; }
+  }
+</style>
 </head>
-<body>
-<header class="header">
-  <div class="container header-inner">
-    <div class="logo">
-      <a href="/" aria-label="IndoorNav — Trang chủ">
-        <span class="logo-icon">📍</span>
-        <span class="logo-text">IndoorNav</span>
-      </a>
+<body class="landing-premium bg-background text-on-surface font-body-md overflow-x-hidden selection:bg-secondary/20">
+
+<header class="site-header fixed top-0 left-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-hairline-border/50 h-20 transition-all duration-300">
+  <div class="site-header-inner flex justify-between items-center max-w-7xl mx-auto px-6 md:px-page-margin-desktop h-full">
+    <div class="flex items-center gap-8 md:gap-12 min-w-0">
+      <a class="site-brand font-headline-md text-2xl md:text-headline-md font-bold text-deep-charcoal shrink-0" href="/" aria-label="IndoorNav — Trang chủ"><img class="site-brand-logo-img site-brand-logo-default" src="/images/indoornav-logo.png" srcset="/images/indoornav-logo.png 1x, /images/indoornav-logo@2x.png 2x" width="32" height="32" alt="" decoding="async"><span class="logo-text">IndoorNav</span></a>
+      <nav class="nav hidden md:flex gap-8" id="mainNav">
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/">Tổng quan</a>
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/explore">Bản đồ</a>
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/features">Tính năng</a>
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/pricing">Giá</a>
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/contact">Liên hệ</a>
+      </nav>
     </div>
-    <nav class="nav">
-      <a href="/">Tổng quan</a>
-      <a href="/pricing">Giá</a>
-      <a href="/contact">Liên hệ</a>
-    </nav>
-    <div class="auth-actions">
-      <a href="/login" class="auth-btn login-btn">Đăng nhập Admin / Org</a>
+    <div class="flex items-center gap-3 md:gap-4">
+      <div class="auth-actions hidden md:flex items-center gap-3" id="authActions">
+        <a href="/login" class="px-5 py-2 rounded-full font-body-md text-on-surface-variant hover:opacity-70 transition-opacity" id="loginBtn">Đăng nhập</a>
+        <a href="/get-app" class="px-7 py-2.5 bg-deep-charcoal text-on-primary rounded-full font-body-md font-semibold hover-scale transition-premium" aria-current="page">Tải App</a>
+      </div>
+      <button type="button" class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">☰</button>
     </div>
   </div>
 </header>
 
-<section class="landing-page-section">
-  <div class="container">
-    <div class="landing-card landing-card--narrow">
-      <h2>Ứng dụng Android</h2>
-      <p class="landing-muted">
-        Tìm Place, Indoor Map, Favorites và Navigation nằm trên <strong>ứng dụng Android</strong>
-        (UX kiểu Google Maps — Outdoor ⇄ Indoor).
-      </p>
-      <p class="landing-muted" id="sessionHint" hidden></p>
-      <ul class="landing-muted" style="text-align:left;line-height:1.7;">
-        <li>Tìm Place · Outdoor Map · Indoor · QR · Navigation</li>
-        <li>Favorites · History · Profile · Settings</li>
-        <li>Đăng nhập Google / email trên App</li>
-      </ul>
-      <p style="margin-top:1.25rem;" id="workspaceCta" hidden>
-        <a class="btn btn-primary btn-large btn-block" href="/admin/dashboard.html">Vào Personal Workspace (vẽ map)</a>
-      </p>
-      <p style="margin-top:1.25rem;">
-        <a class="btn btn-primary btn-large btn-block" href="/" id="homeBtn">Về trang chủ</a>
-      </p>
-      <p class="auth-links" style="margin-top:1rem;">
-        Quản trị hệ thống? <a href="/login?next=/admin"><strong>Đăng nhập Admin</strong></a><br>
-        Tổ chức? <a href="/login?next=/org"><strong>Đăng nhập Org</strong></a><br>
-        Doanh nghiệp mới? <a href="/contact">Liên hệ tư vấn</a>
-      </p>
+<main id="main-content">
+  <!-- HERO -->
+  <section class="relative pt-32 md:pt-40 pb-16 md:pb-24 px-page-margin-mobile md:px-page-margin-desktop max-w-7xl mx-auto">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+      <div>
+        <div class="inline-flex items-center px-4 py-1.5 rounded-full bg-mist-gray border border-hairline-border mb-8">
+          <span class="font-label-mono text-label-mono uppercase tracking-widest text-secondary">Android</span>
+        </div>
+        <h1 class="font-display-hero text-display-hero text-deep-charcoal mb-6 leading-tight">
+          Hai ứng dụng.<br class="hidden sm:block"/> Một trải nghiệm.
+        </h1>
+        <p class="font-body-lg text-body-lg text-on-surface-variant max-w-lg mb-10">
+          Tải <strong class="text-deep-charcoal font-semibold">IndoorNav</strong> để dẫn đường trong nhà, và <strong class="text-deep-charcoal font-semibold">TPTPbank</strong> để thanh toán QR demo khi nâng cấp dịch vụ.
+        </p>
+        <p class="font-body-md text-body-md text-on-surface-variant mb-8" id="sessionHint" hidden></p>
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 sm:gap-6">
+          <a href="#apps" class="bg-deep-charcoal text-white px-8 py-4 rounded-full font-body-md font-semibold text-center hover:opacity-90 transition-premium hover-scale">
+            Chọn ứng dụng để tải
+          </a>
+          <a href="/" class="inline-flex items-center justify-center gap-2 text-deep-charcoal font-body-md font-semibold group px-4 py-3">
+            Về trang chủ
+            <span class="material-symbols-outlined text-[20px] group-hover:translate-x-1 transition-transform" aria-hidden="true">arrow_forward</span>
+          </a>
+        </div>
+      </div>
+      <div class="relative rounded-[28px] overflow-hidden bg-surface-container-low border border-hairline-border">
+        <img
+          class="w-full h-auto object-contain"
+          src="/images/get-app-hero-pair.png?v=20260730simple1"
+          alt="Hai ứng dụng Android: IndoorNav và TPTPbank"
+          width="1200"
+          height="800"
+          loading="eager"
+          decoding="async"
+        />
+      </div>
     </div>
-  </div>
-</section>
+  </section>
 
-<footer class="footer">
-  <div class="container">
-    <p>&copy; IndoorNav — Hệ thống bản đồ &amp; dẫn đường trong nhà.</p>
+  <!-- DOWNLOAD 2 APPS -->
+  <section id="apps" class="py-16 md:py-section-gap-sm px-page-margin-mobile md:px-page-margin-desktop max-w-7xl mx-auto border-t border-hairline-border">
+    <div class="text-center max-w-3xl mx-auto mb-12 md:mb-16 reveal-on-scroll">
+      <h2 class="font-headline-lg text-headline-lg text-deep-charcoal mb-4">Tải ứng dụng bạn cần.</h2>
+      <p class="font-body-md text-body-md text-on-surface-variant">Cài cả hai nếu bạn vừa dùng bản đồ vừa thanh toán qua ví demo.</p>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+      <!-- IndoorNav -->
+      <article class="reveal-on-scroll bg-surface-container-lowest border border-hairline-border rounded-[28px] p-8 md:p-10 flex flex-col">
+        <div class="flex items-center gap-4 mb-6">
+          <img class="w-14 h-14 rounded-2xl" src="/images/indoornav-logo.png" srcset="/images/indoornav-logo.png 1x, /images/indoornav-logo@2x.png 2x" width="56" height="56" alt="" decoding="async"/>
+          <div>
+            <h3 class="font-headline-md text-2xl text-deep-charcoal font-bold">IndoorNav</h3>
+            <p class="font-body-md text-sm text-on-surface-variant">Bản đồ &amp; dẫn đường trong nhà</p>
+          </div>
+        </div>
+        <ul class="space-y-3 mb-8 flex-1 font-body-md text-body-md text-on-surface-variant">
+          <li class="flex gap-3"><span class="material-symbols-outlined text-secondary text-[20px]" aria-hidden="true">map</span> Place · Outdoor ⇄ Indoor · QR · Navigation</li>
+          <li class="flex gap-3"><span class="material-symbols-outlined text-secondary text-[20px]" aria-hidden="true">favorite</span> Favorites · History · Profile · Settings</li>
+          <li class="flex gap-3"><span class="material-symbols-outlined text-secondary text-[20px]" aria-hidden="true">login</span> Đăng nhập Google / email trên App</li>
+        </ul>
+        <a id="btnDownloadIndoorNav" href="/downloads/IndoorNav.apk" download="IndoorNav.apk" class="inline-flex items-center justify-center gap-2 bg-deep-charcoal text-white px-7 py-3.5 rounded-full font-body-md font-semibold hover:opacity-90 transition-premium text-center">
+          <span class="material-symbols-outlined text-[18px]" aria-hidden="true">download</span>
+          Tải IndoorNav
+        </a>
+        <p class="mt-3 font-label-mono text-[10px] uppercase tracking-wider text-outline">APK Android · bản demo local</p>
+      </article>
+
+      <!-- TPTPbank -->
+      <article class="reveal-on-scroll bg-surface-container-lowest border border-hairline-border rounded-[28px] p-8 md:p-10 flex flex-col">
+        <div class="flex items-center gap-4 mb-6">
+          <img class="w-14 h-14 rounded-2xl" src="/images/tptpbank-logo.png" srcset="/images/tptpbank-logo.png 1x, /images/tptpbank-logo@2x.png 2x" width="56" height="56" alt="" decoding="async"/>
+          <div>
+            <h3 class="font-headline-md text-2xl text-deep-charcoal font-bold">TPTPbank</h3>
+            <p class="font-body-md text-sm text-on-surface-variant">Ngân hàng ảo · ví thanh toán QR</p>
+          </div>
+        </div>
+        <ul class="space-y-3 mb-8 flex-1 font-body-md text-body-md text-on-surface-variant">
+          <li class="flex gap-3"><span class="material-symbols-outlined text-secondary text-[20px]" aria-hidden="true">account_balance_wallet</span> Đăng nhập ví · xem số dư demo</li>
+          <li class="flex gap-3"><span class="material-symbols-outlined text-secondary text-[20px]" aria-hidden="true">qr_code_scanner</span> Quét QR · xác nhận thanh toán</li>
+          <li class="flex gap-3"><span class="material-symbols-outlined text-secondary text-[20px]" aria-hidden="true">link</span> Sandbox demo — dùng cùng IndoorNav</li>
+        </ul>
+        <a id="btnDownloadTptpBank" href="/downloads/TPTPbank.apk" download="TPTPbank.apk" class="inline-flex items-center justify-center gap-2 bg-deep-charcoal text-white px-7 py-3.5 rounded-full font-body-md font-semibold hover:opacity-90 transition-premium text-center">
+          <span class="material-symbols-outlined text-[18px]" aria-hidden="true">download</span>
+          Tải TPTPbank
+        </a>
+        <p class="mt-3 font-label-mono text-[10px] uppercase tracking-wider text-outline">APK Android · bản demo local</p>
+      </article>
+    </div>
+    <p id="workspaceCta" class="mt-10 text-center reveal-on-scroll" hidden>
+      <a class="inline-flex items-center gap-2 border border-hairline-border bg-white text-deep-charcoal px-8 py-3.5 rounded-full font-body-md font-semibold hover:bg-mist-gray transition-premium" href="/admin/dashboard.html">
+        Vào Personal Workspace (vẽ map)
+        <span class="material-symbols-outlined text-[18px]" aria-hidden="true">arrow_forward</span>
+      </a>
+    </p>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="py-16 md:py-section-gap-sm px-page-margin-mobile md:px-page-margin-desktop max-w-7xl mx-auto border-t border-hairline-border">
+    <div class="text-center max-w-3xl mx-auto mb-12 md:mb-16 reveal-on-scroll">
+      <h2 class="font-headline-lg text-headline-lg text-deep-charcoal mb-4">Mọi thứ người dùng cần trên app.</h2>
+      <p class="font-body-md text-body-md text-on-surface-variant">Từ bản đồ trong nhà đến thanh toán demo — cùng hệ IndoorNav.</p>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-gutter">
+      <div class="reveal-on-scroll p-6 md:p-8 space-y-4 rounded-3xl hover:bg-white transition-colors">
+        <div class="w-12 h-12 rounded-2xl bg-secondary/10 flex items-center justify-center text-secondary">
+          <span class="material-symbols-outlined text-3xl" aria-hidden="true">map</span>
+        </div>
+        <h3 class="font-headline-md text-xl md:text-2xl text-deep-charcoal">Place · Navigation</h3>
+        <p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">Outdoor ⇄ Indoor với QR Anchor, PDR/TPF và A* trên bản đồ đã publish.</p>
+      </div>
+      <div class="reveal-on-scroll p-6 md:p-8 space-y-4 rounded-3xl hover:bg-white transition-colors">
+        <div class="w-12 h-12 rounded-2xl bg-secondary/10 flex items-center justify-center text-secondary">
+          <span class="material-symbols-outlined text-3xl" aria-hidden="true">payments</span>
+        </div>
+        <h3 class="font-headline-md text-xl md:text-2xl text-deep-charcoal">TPTPbank · QR Pay</h3>
+        <p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">Ví sandbox quét QR để xác nhận thanh toán gói / dịch vụ IndoorNav.</p>
+      </div>
+      <div class="reveal-on-scroll p-6 md:p-8 space-y-4 rounded-3xl hover:bg-white transition-colors">
+        <div class="w-12 h-12 rounded-2xl bg-secondary/10 flex items-center justify-center text-secondary">
+          <span class="material-symbols-outlined text-3xl" aria-hidden="true">person</span>
+        </div>
+        <h3 class="font-headline-md text-xl md:text-2xl text-deep-charcoal">Đăng nhập App</h3>
+        <p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">Google / email trên IndoorNav; tài khoản ví riêng trên TPTPbank.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ADMIN -->
+  <section class="py-16 md:py-section-gap-sm px-page-margin-mobile md:px-page-margin-desktop max-w-7xl mx-auto">
+    <div class="reveal-on-scroll bg-surface-container-low rounded-[32px] p-8 md:p-16 border border-hairline-border relative overflow-hidden">
+      <div class="absolute top-0 right-0 w-64 h-64 bg-secondary/5 blur-[80px] -mr-32 -mt-32 pointer-events-none" aria-hidden="true"></div>
+      <div class="max-w-2xl relative z-10">
+        <h2 class="font-headline-lg text-headline-lg text-deep-charcoal mb-6">Bạn quản trị hệ thống?</h2>
+        <p class="font-body-md text-body-md text-on-surface-variant mb-10">
+          Dashboard và Web Map Editor chạy trên web. End-user dùng hai app Android ở trên.
+        </p>
+        <div class="flex flex-wrap gap-6 md:gap-8 items-center">
+          <a class="font-label-mono text-label-mono uppercase tracking-widest text-secondary hover:opacity-70 transition-opacity inline-flex items-center gap-2" href="/login?next=/admin">
+            Đăng nhập Admin
+            <span class="material-symbols-outlined text-[18px]" aria-hidden="true">launch</span>
+          </a>
+          <a class="font-label-mono text-label-mono uppercase tracking-widest text-secondary hover:opacity-70 transition-opacity inline-flex items-center gap-2" href="/login?next=/org">
+            Đăng nhập Org
+            <span class="material-symbols-outlined text-[18px]" aria-hidden="true">business</span>
+          </a>
+          <a class="font-label-mono text-label-mono uppercase tracking-widest text-secondary hover:opacity-70 transition-opacity inline-flex items-center gap-2" href="/contact">
+            Liên hệ tư vấn
+            <span class="material-symbols-outlined text-[18px]" aria-hidden="true">mail</span>
+          </a>
+        </div>
+        <div class="mt-10 pt-8 border-t border-hairline-border/50">
+          <p class="font-label-mono text-[11px] text-outline uppercase tracking-wider">
+            Personal Workspace và chỉnh sửa bản đồ thực hiện trên Web Dashboard.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="bg-surface-container-low border-t border-hairline-border w-full py-12 md:py-section-gap-sm">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <a class="site-brand font-headline-md text-2xl font-bold text-primary" href="/"><img class="site-brand-logo-img site-brand-logo-default" src="/images/indoornav-logo.png" srcset="/images/indoornav-logo.png 1x, /images/indoornav-logo@2x.png 2x" width="32" height="32" alt="" decoding="async"><span class="logo-text">IndoorNav</span></a>
+      <p id="footerCopy" class="footer-copy font-body-md text-body-md text-on-surface-variant">© 2026 IndoorNav. Bảo lưu mọi quyền.</p>
+      <p class="font-body-md text-sm text-outline">Đồ án / Luận văn tốt nghiệp — ngành Công nghệ thông tin</p>
+      <div id="footerContact" role="group" aria-label="Thông tin liên hệ"></div>
+    </div>
+    <nav class="footer-links" aria-label="Liên kết chân trang">
+      <a class="font-label-mono text-label-mono text-on-surface-variant hover:underline" href="/contact">Liên hệ</a>
+      <a class="font-label-mono text-label-mono text-on-surface-variant hover:underline" href="/pricing">Giá</a>
+      <a class="font-label-mono text-label-mono text-on-surface-variant hover:underline" href="/features">Tính năng</a>
+      <a class="font-label-mono text-label-mono text-on-surface-variant hover:underline" href="/get-app">Tải App</a>
+    </nav>
   </div>
 </footer>
+
+<script src="/landing.js?v=20260730getapp1"></script>
 <script>
 (function () {
+  var nav = document.querySelector('.site-header');
+  if (nav) {
+    window.addEventListener('scroll', function () {
+      if (window.scrollY > 20) {
+        nav.classList.add('h-16', 'shadow-sm');
+        nav.classList.remove('h-20');
+      } else {
+        nav.classList.add('h-20');
+        nav.classList.remove('h-16', 'shadow-sm');
+      }
+    }, { passive: true });
+  }
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.querySelectorAll('.reveal-on-scroll').forEach(function (el) {
+      el.classList.add('visible');
+    });
+  } else {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) entry.target.classList.add('visible');
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -80px 0px' });
+    document.querySelectorAll('.reveal-on-scroll').forEach(function (el) {
+      observer.observe(el);
+    });
+  }
+
   var email = localStorage.getItem('userEmail');
   var role = localStorage.getItem('userRole');
   var token = localStorage.getItem('token');
   var el = document.getElementById('sessionHint');
   var ws = document.getElementById('workspaceCta');
-  var homeBtn = document.getElementById('homeBtn');
   if (el && email) {
     el.hidden = false;
     el.textContent = 'Đã đăng nhập: ' + email + (role ? ' (' + role + ')' : '') +
-      '. Mở ứng dụng Android và đăng nhập cùng tài khoản — hoặc vào Personal Workspace để vẽ map.';
+      '. Mở app Android và đăng nhập cùng tài khoản — hoặc vào Personal Workspace để vẽ map.';
   }
   if (ws && token && String(role || '').toUpperCase() === 'REGISTERED_USER') {
     ws.hidden = false;
-    if (homeBtn) homeBtn.className = 'btn btn-large btn-block';
   }
 })();
 </script>
