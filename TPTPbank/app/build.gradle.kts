@@ -3,8 +3,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// Điện thoại thật: cùng WiFi với laptop. Đổi IP nếu ipconfig khác 192.168.2.29
-val DEV_SERVER_IP = "192.168.2.29"
+// Điện thoại thật: cùng WiFi với laptop. Cập nhật theo IPv4 Wi-Fi từ ipconfig.
+val DEV_SERVER_IP = "192.168.2.21"
 val DEV_SERVER_PORT = "5000"
 
 android {

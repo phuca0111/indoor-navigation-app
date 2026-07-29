@@ -217,3 +217,8 @@ TEST_VERIFY_PHASE7_SECURITY.md
 TEST_VERIFY_PHASE*.md
 Nang_cap_he_thong_backendserver.md
 
+
+# APK build artifacts (rebuild locally; ~70MB)
+Backend_server/public/downloads/*.apk
+*.apk
+

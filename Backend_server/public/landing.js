@@ -280,13 +280,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 var image = existingLogo || document.createElement('img');
                 image.className = 'cms-site-logo site-brand-logo-img';
                 image.src = logoUrl;
+                image.removeAttribute('srcset');
                 image.alt = siteName || 'Logo';
                 image.width = 32;
                 image.height = 32;
                 image.decoding = 'async';
                 if (!existingLogo) brand.insertBefore(image, brand.firstChild);
-            } else if (existingLogo) {
-                existingLogo.remove();
+            } else if (existingLogo && !existingLogo.classList.contains('site-brand-logo-default')) {
+                existingLogo.className = 'site-brand-logo-img site-brand-logo-default';
+                existingLogo.src = '/images/indoornav-logo.png';
+                existingLogo.srcset = '/images/indoornav-logo.png 1x, /images/indoornav-logo@2x.png 2x';
+                existingLogo.alt = '';
+                existingLogo.width = 32;
+                existingLogo.height = 32;
             }
         });
 

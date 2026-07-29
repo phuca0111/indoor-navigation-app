@@ -106,6 +106,15 @@ body.phase-ui .shell-header .brand {
     flex: 0 0 auto;
 }
 
+body.phase-ui .shell-header .brand-logo {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    border-radius: 7px;
+    flex-shrink: 0;
+    display: block;
+}
+
 body.phase-ui .shell-header .brand-name {
     font-size: 0.9rem;
     font-weight: 700;

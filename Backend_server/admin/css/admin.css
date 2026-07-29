@@ -83,10 +83,18 @@ body.admin-shell-body {
   flex: 0 0 40px;
   place-items: center;
   border-radius: 12px;
-  background: var(--admin-primary);
+  background: #1d1d1f;
   color: #fff;
   font-size: 20px;
-  box-shadow: 0 6px 14px rgba(0, 122, 255, 0.22);
+  box-shadow: 0 6px 14px rgba(29, 29, 31, 0.22);
+  overflow: hidden;
+}
+
+.admin-brand-icon img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  display: block;
 }
 
 .admin-brand strong,

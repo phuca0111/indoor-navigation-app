@@ -53,6 +53,23 @@ body {
     font-size: 1.8rem;
 }
 
+.logo a {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: inherit;
+    text-decoration: none;
+}
+
+.logo-icon-img {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    border-radius: 7px;
+    flex-shrink: 0;
+    display: block;
+}
+
 .nav {
     display: flex;
     gap: 24px;

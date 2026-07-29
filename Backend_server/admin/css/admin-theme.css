@@ -826,6 +826,7 @@ body[data-admin-theme="dark"] .users-table.dash-sort-table thead th.org-sort-act
   place-items: center;
 }
 
+.admin-brand-icon img,
 .admin-brand-icon svg,
 .admin-menu-icon svg,
 .admin-user-avatar svg,
