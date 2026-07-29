@@ -19,6 +19,7 @@ data class AuthUserDto(
     val email: String? = null,
     @SerializedName("full_name") val fullName: String? = null,
     val role: String? = null,
+    @SerializedName("avatar_url") val avatarUrl: String? = null,
 ) {
     fun resolvedId(): String? = id ?: idAlt
 }

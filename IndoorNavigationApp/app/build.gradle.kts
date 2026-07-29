@@ -3,6 +3,12 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Chỉ áp dụng google-services khi đã có google-services.json (tải từ Firebase Console).
+// Nhờ vậy dự án vẫn build được trước khi bạn cắm file; FCM sẽ tự bật khi có file.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "com.khoaluan.indoornav"
     compileSdk = 36
@@ -72,6 +78,8 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.runtime)
+    implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
 
@@ -98,6 +106,13 @@ dependencies {
 
     // Outdoor discovery map (OSM tiles — không cần Google Maps API key)
     implementation(libs.osmdroid.android)
+
+    // Firebase Cloud Messaging — push khẩn cấp full-screen (P3)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
+
+    // Spec D — geofence hệ thống (ENTER/DWELL khi app đóng)
+    implementation(libs.play.services.location)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockito.core)

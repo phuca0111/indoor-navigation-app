@@ -5,9 +5,33 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!-- Spec D+ — fingerprint Wi-Fi (Android 13+); vẫn gửi presence qua 4G -->
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="tiramisu" />
     <!-- GPS / vị trí trên map outdoor -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Spec D — OS geofence khi app đóng (ENTER vùng tòa → presence) -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Spec D+ — BLE scan fingerprint (không cần ghép nối) -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="s" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-feature
+        android:name="android.hardware.bluetooth_le"
+        android:required="false" />
     <!-- Quét QR -->
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- osmdroid tile cache (API < 29); maxSdk tránh yêu cầu thừa trên Android 10+ -->
@@ -17,6 +41,22 @@
         tools:ignore="ScopedStorage" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
+    <!-- FCM push khẩn cấp -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Full-screen intent: bật màn hình sáng & hiện cảnh báo dù đang khoá máy -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- Overlay trên mọi app khi màn đang mở khoá (Android không tự mở Activity) -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.TURN_SCREEN_ON" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission
+        android:name="android.permission.DISABLE_KEYGUARD"
+        tools:ignore="ProtectedPermissions" />
 
     <!-- Credential Manager / Google Sign-In -->
     <queries>
@@ -38,11 +78,24 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.IndoorNavigationApp"
         android:usesCleartextTraffic="true">
+        <!-- Full-screen cảnh báo khẩn cấp (FCM / full-screen intent) -->
+        <activity
+            android:name=".fcm.EmergencyAlertActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@style/Theme.IndoorNavigationApp"
+            android:taskAffinity="" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
             android:theme="@style/Theme.IndoorNavigationApp">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -66,14 +119,74 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="indoornav" android:host="place" />
             </intent-filter>
-            <!-- Alias Google-Maps-style: indoorhub://place/{id}/floor/{n} -->
+            <!-- Custom scheme: indoornav://emergency?... -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="indoorhub" android:host="place" />
+                <data android:scheme="indoornav" android:host="emergency" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="indoorhub" android:host="emergency" />
             </intent-filter>
         </activity>
+
+        <!-- FCM — nhận push khẩn cấp, dựng full-screen intent -->
+        <service
+            android:name=".fcm.EmergencyMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".fcm.EmergencyTakeoverService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="emergency_evacuation_alert" />
+        </service>
+        <!-- MVP mạng địa chấn: lắng nghe accel khi sạc -->
+        <service
+            android:name=".seismic.SeismicMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="community_seismic_sensor" />
+        </service>
+        <receiver
+            android:name=".seismic.SeismicPowerReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.POWER_CONNECTED" />
+                <action android:name="android.intent.action.POWER_DISCONNECTED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".fcm.EmergencyDismissReceiver"
+            android:exported="false" />
+        <!-- Spec D — OS geofence ENTER/DWELL/EXIT → PresenceSync -->
+        <receiver
+            android:name=".navigation.gps.BuildingGeofenceReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".navigation.gps.BuildingGeofenceBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="emergency_alerts_v2" />
     </application>
 
 </manifest>

@@ -41,10 +41,18 @@ private data class WallSegment(
     val y2: Float
 )
 
+/** Khe cửa: giao điểm tường gần tâm cửa → coi như có lối đi. */
+private data class DoorGap(
+    val x: Float,
+    val y: Float,
+    val radius: Float,
+)
+
 class GraphModel(private val mapData: MapData) {
     companion object {
         private const val GRID_SIZE_PX = 40f
         private const val DEFAULT_SCALE_RATIO = 0.5f // 1m = 80px
+        private const val DOOR_GAP_SLACK_PX = 10f
     }
 
     /** Map nodeId (String) → PathNode để tra cứu O(1) */
@@ -56,6 +64,7 @@ class GraphModel(private val mapData: MapData) {
     // còn là null (JVM default) → NPE "boolean List.isEmpty() on null".
     /** scaleRatio từ MapData (metersPerGrid, 1 grid = 40px) */
     private val safeScaleRatio = mapData.scaleRatio.toFloat().takeIf { it > 0f } ?: DEFAULT_SCALE_RATIO
+    private val doorGaps: List<DoorGap> = buildDoorGaps()
     private val wallSegments: List<WallSegment> = buildWallSegments()
 
     /** Tất cả GraphEdge (bao gồm cả 2 chiều của mỗi edge gốc) */
@@ -232,11 +241,39 @@ class GraphModel(private val mapData: MapData) {
     fun getEdgesFromNode(nodeId: String): List<GraphEdge> =
         adjacency[nodeId] ?: emptyList()
 
-    /** true nếu đoạn (x1,y1)→(x2,y2) cắt bất kỳ tường nào. */
+    /**
+     * true nếu đoạn (x1,y1)→(x2,y2) cắt tường đặc.
+     * Giao điểm nằm trong khe cửa (Door trên map) → không chặn (lối đi thật).
+     */
     fun crossesWall(x1: Float, y1: Float, x2: Float, y2: Float): Boolean {
         if (wallSegments.isEmpty()) return false
         return wallSegments.any { ws ->
-            segmentsIntersect(x1, y1, x2, y2, ws.x1, ws.y1, ws.x2, ws.y2)
+            if (!segmentsIntersect(x1, y1, x2, y2, ws.x1, ws.y1, ws.x2, ws.y2)) {
+                false
+            } else {
+                val hit = segmentIntersectionPoint(x1, y1, x2, y2, ws.x1, ws.y1, ws.x2, ws.y2)
+                hit == null || !isInDoorGap(hit.first, hit.second)
+            }
+        }
+    }
+
+    private fun buildDoorGaps(): List<DoorGap> {
+        return mapData.doors.orEmpty().map { door ->
+            val half = (door.width.takeIf { it > 0 } ?: 40) / 2f
+            DoorGap(
+                x = door.x.toFloat(),
+                y = door.y.toFloat(),
+                radius = half + DOOR_GAP_SLACK_PX,
+            )
+        }
+    }
+
+    private fun isInDoorGap(px: Float, py: Float): Boolean {
+        if (doorGaps.isEmpty()) return false
+        return doorGaps.any { gap ->
+            val dx = px - gap.x
+            val dy = py - gap.y
+            dx * dx + dy * dy <= gap.radius * gap.radius
         }
     }
 
@@ -278,17 +315,48 @@ class GraphModel(private val mapData: MapData) {
                 )
             }
         }
+        // Bao phòng cũng là tường ảo — soft-bridge chỉ được đi qua cửa, không cắt xuyên phòng
+        mapData.rooms.orEmpty().forEach { room ->
+            val poly = room.points.orEmpty()
+            if (poly.size >= 3) {
+                for (i in poly.indices) {
+                    val a = poly[i]
+                    val b = poly[(i + 1) % poly.size]
+                    segments.add(WallSegment(a.x, a.y, b.x, b.y))
+                }
+            } else if ((room.shape ?: "rect") != "circle" && room.width > 0 && room.height > 0) {
+                val x = room.x.toFloat()
+                val y = room.y.toFloat()
+                val w = room.width.toFloat()
+                val h = room.height.toFloat()
+                segments.add(WallSegment(x, y, x + w, y))
+                segments.add(WallSegment(x + w, y, x + w, y + h))
+                segments.add(WallSegment(x + w, y + h, x, y + h))
+                segments.add(WallSegment(x, y + h, x, y))
+            }
+        }
         return segments
     }
 
     private fun intersectsAnyWall(edge: GraphEdge): Boolean {
-        if (wallSegments.isEmpty()) return false
-        return wallSegments.any { ws ->
-            segmentsIntersect(
-                edge.sourceX, edge.sourceY, edge.targetX, edge.targetY,
-                ws.x1, ws.y1, ws.x2, ws.y2
-            )
-        }
+        return crossesWall(edge.sourceX, edge.sourceY, edge.targetX, edge.targetY)
+    }
+
+    /** Giao điểm hai đoạn (nội bộ đoạn); null nếu song song / không cắt. */
+    private fun segmentIntersectionPoint(
+        ax: Float, ay: Float, bx: Float, by: Float,
+        cx: Float, cy: Float, dx: Float, dy: Float,
+    ): Pair<Float, Float>? {
+        val rX = bx - ax
+        val rY = by - ay
+        val sX = dx - cx
+        val sY = dy - cy
+        val denom = rX * sY - rY * sX
+        if (abs(denom) < 1e-6f) return null
+        val t = ((cx - ax) * sY - (cy - ay) * sX) / denom
+        val u = ((cx - ax) * rY - (cy - ay) * rX) / denom
+        if (t < -0.02f || t > 1.02f || u < -0.02f || u > 1.02f) return null
+        return (ax + t * rX) to (ay + t * rY)
     }
 
     private fun segmentsIntersect(

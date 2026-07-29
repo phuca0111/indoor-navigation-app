@@ -325,6 +325,43 @@ class LocationEngine(
         syncOrientationOffset()
     }
 
+    /**
+     * Căn mũi tên theo cạnh hành lang gần nhất trên map.
+     * Dùng khi map_bearing_offset = 0 / la bàn trong nhà lệch — Snap cảm biến thuần không đủ.
+     * @return góc map đã căn, hoặc null nếu không tìm được cạnh gần.
+     */
+    fun snapHeadingToNearestCorridor(userX: Float, userY: Float): Float? {
+        syncDisplayRotation()
+        orientationManager.updateDeviceHeading(rotationEngine.smoothHeading.value)
+        val nearest = graphModel.findNearestEdge(userX, userY) ?: return null
+        val (edge, distPx) = nearest
+        if (distPx > 120f) return null
+
+        val fwd = Math.toDegrees(edge.angleRad.toDouble()).toFloat()
+        val bwd = Math.toDegrees(edge.reverseAngleRad.toDouble()).toFloat()
+        val current = orientationManager.mapHeadingDeg
+        val dFwd = kotlin.math.abs(MapHeadingMath.shortestDeltaDegrees(current, fwd))
+        val dBwd = kotlin.math.abs(MapHeadingMath.shortestDeltaDegrees(current, bwd))
+        val target = if (dFwd <= dBwd) fwd else bwd
+
+        headingCalibrationDeg = MapHeadingMath.calibrationToMatchTarget(
+            orientationManager.deviceHeadingDeg,
+            mapNorthOffsetBaseDeg,
+            target,
+        )
+        syncOrientationOffset()
+        orientationManager.clearLearnedMovementAndNavSmooth()
+        orientationManager.updateDeviceHeading(rotationEngine.smoothHeading.value)
+        val nav = currentNavigationHeadingDeg()
+        Log.i(
+            "LocationEngine",
+            "Corridor snap target=$target nav=$nav cal=$headingCalibrationDeg " +
+                "edgeDist=$distPx device=${orientationManager.deviceHeadingDeg}",
+        )
+        if (isRunning) dispatchLocationUpdate()
+        return nav
+    }
+
     private fun syncOrientationOffset() {
         orientationManager.setMapNorthOffset(effectiveMapNorthOffsetDeg)
     }
@@ -491,23 +528,11 @@ class LocationEngine(
     }
 
     private fun tryApplyOutdoorGpsCourseSeed() {
-        val course = pendingOutdoorGpsCourseDeg ?: return
-        if (!hasRotationVectorFix) return
-        orientationManager.updateDeviceHeading(rotationEngine.smoothHeading.value)
-        val device = orientationManager.deviceHeadingDeg
-        headingCalibrationDeg = MapHeadingMath.calibrationToMatchGpsCourse(
-            deviceHeadingDeg = device,
-            mapNorthOffsetBaseDeg = mapNorthOffsetBaseDeg,
-            gpsCourseTrueNorthDeg = course,
-        )
-        syncOrientationOffset()
-        pendingOutdoorGpsCourseDeg = null
-        Log.i(
-            "LocationEngine",
-            "Outdoor GPS→MapHeading seed course=$course device=$device cal=$headingCalibrationDeg" +
-                " mapH=" + orientationManager.mapHeadingDeg
-        )
-        if (isRunning) dispatchLocationUpdate()
+        // Tắt seed GPS→calib: căn Bắc chỉ từ map_bearing_offset (+ chỉnh tay khi đo).
+        if (pendingOutdoorGpsCourseDeg != null) {
+            Log.d("LocationEngine", "Outdoor GPS course seed ignored (basic map north only)")
+            pendingOutdoorGpsCourseDeg = null
+        }
     }
 
     /** Đồng bộ xoay màn hình → biết đầu/đít theo UI (dọc/ngang). */
@@ -689,6 +714,18 @@ private fun recentlyAcceptedStep(nowMs: Long = System.currentTimeMillis()): Bool
 
 
     var onStepEvent: ((stepLengthMeters: Float, totalSteps: Int, totalDistance: Float) -> Unit)? = null
+
+    /** Cạnh path chỉ đường — khi có, chấm user bám đường xanh thay vì cạnh graph lân cận. */
+    private var routeSnapEdges: List<GraphEdge> = emptyList()
+    /** Chỉ số cạnh + t đã đi trên route — tránh snap kéo ngược về đỉnh góc. */
+    private var routeSnapEdgeIndex: Int = 0
+    private var routeSnapT: Float = 0f
+
+    fun setRouteSnapEdges(edges: List<GraphEdge>) {
+        routeSnapEdges = edges
+        routeSnapEdgeIndex = 0
+        routeSnapT = 0f
+    }
 
 
 
@@ -875,7 +912,7 @@ private fun recentlyAcceptedStep(nowMs: Long = System.currentTimeMillis()): Bool
                             val blocked = moveWithWallBlock(fromX, fromY, toX, toY)
                             pdrX = blocked.first
                             pdrY = blocked.second
-                            applySnapToEdge(currentNavigationHeadingDeg(), forceStrong = false)
+                            snapPosition(currentNavigationHeadingDeg(), forceStrong = false)
                             clampToWalkableGraph()
                         }
 
@@ -1101,6 +1138,8 @@ private fun recentlyAcceptedStep(nowMs: Long = System.currentTimeMillis()): Bool
         preferPdrUntilMs = 0L
         tpfStuckStepCount = 0
         turnFreezeUntilMs = 0L
+        routeSnapEdgeIndex = 0
+        routeSnapT = 0f
         stepsSinceLocalization = 0
         qrAnchorX = pdrX
         qrAnchorY = pdrY
@@ -1163,6 +1202,16 @@ private fun recentlyAcceptedStep(nowMs: Long = System.currentTimeMillis()): Bool
 
     }
 
+    /** Giữ vị trí sau neo cầu thang / QR — chặn bước PDR trong durationMs. */
+    fun lockPositionFor(durationMs: Long) {
+        val ms = durationMs.coerceAtLeast(0L)
+        positionLockUntilMs = System.currentTimeMillis() + ms
+        qrAnchorX = pdrX
+        qrAnchorY = pdrY
+        committedX = pdrX
+        committedY = pdrY
+    }
+
 
 
 
@@ -1175,61 +1224,38 @@ private fun recentlyAcceptedStep(nowMs: Long = System.currentTimeMillis()): Bool
 
     fun startWithPosition(x: Float, y: Float) {
 
-
-
         pdrX = x
-
-
 
         pdrY = y
 
-
-
         hasRotationVectorFix = false
-
-
-
-        
-
-
 
         tpfEngine.particles.clear() // Không chạy TPF được vì không có node
 
-
-
-        
-
-
+        // Giống QR: reset smoother + snap RV — tránh mũi tên kẹt góc cũ / 0°
+        if (isRunning) {
+            sensorCollector.stop()
+        }
+        rotationEngine.reset()
+        orientationManager.reset()
+        syncOrientationOffset()
+        pendingPostQrHeadingSnap = true
+        pendingOutdoorGpsCourseDeg = null
+        qrAnchorX = pdrX
+        qrAnchorY = pdrY
+        committedX = pdrX
+        committedY = pdrY
 
         beginSensorLogging("pos:$x,$y")
-
-
 
         sensorCollector.start()
         rotationEngine.invertAzimuth180 = false
 
-
-
         isRunning = true
-
-
 
         dispatchLocationUpdate()
 
-
-
     }
-
-
-
-
-
-
-
-    /** Ngừng điều hướng */
-
-
-
     fun stop() {
 
 
@@ -1351,7 +1377,7 @@ private fun recentlyAcceptedStep(nowMs: Long = System.currentTimeMillis()): Bool
                 )
             )
             Log.d("LocationEngine", "Step gated (TURN) remain=" + (turnFreezeUntilMs - nowMs))
-            applySnapToEdge(currentHeadingDeg, forceStrong = true)
+            // Không forceStrong snap — kéo mạnh về vertex làm kẹt góc khi đang rẽ
             dispatchLocationUpdate()
             return
         }
@@ -1392,8 +1418,8 @@ private fun recentlyAcceptedStep(nowMs: Long = System.currentTimeMillis()): Bool
             // Heading sai → đâm tường: vẫn học hướng từ cạnh còn đi được
             learnHeadingWhenStepBlocked(beforeX, beforeY, currentHeadingDeg)
         }
-        tryMovementRecalibration()
-        applySnapToEdge(currentHeadingDeg, forceStrong = true)
+        // Không auto-recalib theo bước đi — chỉ dùng map_bearing_offset (+ calib tay nếu có).
+        snapPosition(currentHeadingDeg, forceStrong = true)
         clampToWalkableGraph()
 
         // TPF chạy song song để giữ particle; chỉ blend nhẹ khi cùng hướng (không gần cửa ⊥)
@@ -1412,15 +1438,18 @@ private fun recentlyAcceptedStep(nowMs: Long = System.currentTimeMillis()): Bool
 
         val nearDoor = isNearDoorLikeEdge(currentHeadingRad)
         val tpfAligned = after != null && alongHeadingPx >= stepPx * 0.20f && !nearDoor
-        if (tpfAligned) {
+        if (tpfAligned && routeSnapEdges.isEmpty()) {
             tpfStuckStepCount = 0
             pdrX += (after!!.first - pdrX) * 0.20f
             pdrY += (after.second - pdrY) * 0.20f
-            applySnapToEdge(currentHeadingDeg, forceStrong = true)
+            snapPosition(currentHeadingDeg, forceStrong = true)
         } else {
             tpfStuckStepCount++
             tpfEngine.reseedNearPosition(pdrX, pdrY, currentHeadingRad, searchRadiusPx = 90f)
             preferPdrUntilMs = nowMs + 800L
+            if (routeSnapEdges.isNotEmpty()) {
+                snapPosition(currentHeadingDeg, forceStrong = true)
+            }
         }
 
         sensorSessionLogger.logEvent(
@@ -1468,10 +1497,15 @@ private fun recentlyAcceptedStep(nowMs: Long = System.currentTimeMillis()): Bool
  headingChangeRelaxUntilMs = System.currentTimeMillis() + HEADING_CHANGE_RELAX_MS
  Log.d("LocationEngine", "Heading change: " + "%.1f".format(headingDelta) + "deg, relax until " + headingChangeRelaxUntilMs)
  }
- // Xoay người tại chỗ (vd. đóng cửa): đóng băng vị trí ~1.5s
- if (headingDelta > TURN_FREEZE_HEADING_DEG) {
- turnFreezeUntilMs = System.currentTimeMillis() + TURN_FREEZE_MS
- Log.d("LocationEngine", "Turn-freeze " + "%.1f".format(headingDelta) + "deg")
+ // Chỉ đóng băng vị trí khi xoay TẠI CHỖ (đóng cửa) — không chặn bước khi đang đi và rẽ góc
+ val walkingNow = motionStateEngine.allowsPositionUpdate || recentlyAcceptedStep()
+ if (headingDelta > TURN_FREEZE_HEADING_DEG && !walkingNow) {
+  val nowFreeze = System.currentTimeMillis()
+  // Không gia hạn liên tục khi heading vẫn đổi — tránh kẹt góc suốt lúc xoay người
+  if (nowFreeze >= turnFreezeUntilMs) {
+   turnFreezeUntilMs = nowFreeze + TURN_FREEZE_MS
+   Log.d("LocationEngine", "Turn-freeze " + "%.1f".format(headingDelta) + "deg (standing)")
+  }
  }
  lastDispatchedHeading = heading
 
@@ -1682,6 +1716,10 @@ private fun recentlyAcceptedStep(nowMs: Long = System.currentTimeMillis()): Bool
     
     /** Keo ve canh graph gan nhat neu ra xa duong di (tranh dam tuong). */
     private fun clampToWalkableGraph() {
+        if (routeSnapEdges.isNotEmpty()) {
+            applySnapToRoute(forceStrong = false)
+            return
+        }
         val nearest = graphModel.findNearestEdge(pdrX, pdrY) ?: return
         val edge = nearest.first
         val progress = nearest.second.coerceIn(0f, 1f)
@@ -1761,6 +1799,138 @@ private fun isNearDoorLikeEdge(userHeadingRad: Float): Boolean {
         val mismatchDeg = minOf(d1, d2)
         val shortEdge = edge.distanceMeters < 2.2f
         return mismatchDeg > 50f || (shortEdge && mismatchDeg > 35f)
+    }
+
+    /** Bám path chỉ đường (đường xanh) khi đang navigate. */
+    private fun snapPosition(headingDeg: Float, forceStrong: Boolean) {
+        if (routeSnapEdges.isNotEmpty()) {
+            applySnapToRoute(forceStrong)
+        } else {
+            applySnapToEdge(headingDeg, forceStrong)
+        }
+    }
+
+    private fun projectToSegment(
+        px: Float,
+        py: Float,
+        ax: Float,
+        ay: Float,
+        bx: Float,
+        by: Float,
+    ): Pair<Float, Float> {
+        val abX = bx - ax
+        val abY = by - ay
+        val abLenSq = abX * abX + abY * abY
+        if (abLenSq <= 1e-6f) {
+            val dx = px - ax
+            val dy = py - ay
+            return kotlin.math.sqrt(dx * dx + dy * dy) to 0f
+        }
+        val t = (((px - ax) * abX + (py - ay) * abY) / abLenSq).coerceIn(0f, 1f)
+        val projX = ax + t * abX
+        val projY = ay + t * abY
+        val dx = px - projX
+        val dy = py - projY
+        return kotlin.math.sqrt(dx * dx + dy * dy) to t
+    }
+
+    private fun applySnapToRoute(forceStrong: Boolean) {
+        if (routeSnapEdges.isEmpty()) return
+        val headingDeg = currentNavigationHeadingDeg()
+        val hx = kotlin.math.sin(Math.toRadians(headingDeg.toDouble())).toFloat()
+        val hy = (-kotlin.math.cos(Math.toRadians(headingDeg.toDouble()))).toFloat()
+
+        var bestProjX = pdrX
+        var bestProjY = pdrY
+        var bestScore = Float.MAX_VALUE
+        var bestEdgeIdx = routeSnapEdgeIndex
+        var bestT = routeSnapT
+
+        // Chỉ xét cửa sổ quanh tiến độ hiện tại (+ cạnh kế) — tránh kéo về góc trước
+        val startIdx = routeSnapEdgeIndex.coerceIn(0, routeSnapEdges.lastIndex)
+        val endIdx = (routeSnapEdgeIndex + 2).coerceAtMost(routeSnapEdges.lastIndex)
+
+        for (idx in startIdx..endIdx) {
+            val edge = routeSnapEdges[idx]
+            val (dist, t) = projectToSegment(
+                pdrX, pdrY,
+                edge.sourceX, edge.sourceY,
+                edge.targetX, edge.targetY,
+            )
+            val projX = edge.sourceX + t * (edge.targetX - edge.sourceX)
+            val projY = edge.sourceY + t * (edge.targetY - edge.sourceY)
+            if (graphModel.crossesWall(pdrX, pdrY, projX, projY)) continue
+
+            // Không cho lùi quá nhiều trên cùng cạnh
+            val tUse = if (idx == routeSnapEdgeIndex) {
+                t.coerceAtLeast(routeSnapT - 0.08f)
+            } else {
+                t
+            }
+            val projX2 = edge.sourceX + tUse * (edge.targetX - edge.sourceX)
+            val projY2 = edge.sourceY + tUse * (edge.targetY - edge.sourceY)
+
+            val abX = edge.targetX - edge.sourceX
+            val abY = edge.targetY - edge.sourceY
+            val abLen = kotlin.math.hypot(abX.toDouble(), abY.toDouble()).toFloat().coerceAtLeast(1e-3f)
+            val alongX = abX / abLen
+            val alongY = abY / abLen
+            val align = (alongX * hx + alongY * hy).coerceIn(-1f, 1f)
+
+            // Score nhỏ hơn = tốt hơn: gần + cùng hướng + tiến về đích
+            val progressBonus = (idx - startIdx) * 0.15f * pixelsPerMeter + tUse * 0.35f * pixelsPerMeter
+            val alignBonus = (align + 1f) * 0.25f * pixelsPerMeter
+            val score = dist - progressBonus - alignBonus
+
+            if (score < bestScore) {
+                bestScore = score
+                bestProjX = projX2
+                bestProjY = projY2
+                bestEdgeIdx = idx
+                bestT = tUse
+            }
+        }
+
+        // Gần hết cạnh hiện tại + heading khớp cạnh kế → nhảy sớm sang cạnh sau (tránh kẹt vertex)
+        if (bestEdgeIdx < routeSnapEdges.lastIndex && bestT >= 0.82f) {
+            val next = routeSnapEdges[bestEdgeIdx + 1]
+            val nabX = next.targetX - next.sourceX
+            val nabY = next.targetY - next.sourceY
+            val nLen = kotlin.math.hypot(nabX.toDouble(), nabY.toDouble()).toFloat().coerceAtLeast(1e-3f)
+            val nAlign = (nabX / nLen) * hx + (nabY / nLen) * hy
+            if (nAlign > 0.25f) {
+                val (ndist, nt) = projectToSegment(
+                    pdrX, pdrY,
+                    next.sourceX, next.sourceY,
+                    next.targetX, next.targetY,
+                )
+                if (ndist < 1.2f * pixelsPerMeter) {
+                    bestEdgeIdx = bestEdgeIdx + 1
+                    bestT = nt.coerceAtLeast(0.02f)
+                    bestProjX = next.sourceX + bestT * (next.targetX - next.sourceX)
+                    bestProjY = next.sourceY + bestT * (next.targetY - next.sourceY)
+                }
+            }
+        }
+
+        val maxDistPx = 2.5f * pixelsPerMeter
+        val dx = pdrX - bestProjX
+        val dy = pdrY - bestProjY
+        val distPx = kotlin.math.sqrt(dx * dx + dy * dy)
+        if (distPx >= maxDistPx) return
+        if (graphModel.crossesWall(pdrX, pdrY, bestProjX, bestProjY)) return
+
+        val snapStrength = when {
+            forceStrong -> 0.92f // không 1.0 cứng — tránh dán chết ở góc
+            !realtimeMotionEstimator.isMoving -> {
+                if (distPx < 0.5f * pixelsPerMeter) 0.95f else 0.85f
+            }
+            else -> 0.75f
+        }
+        pdrX += (bestProjX - pdrX) * snapStrength
+        pdrY += (bestProjY - pdrY) * snapStrength
+        routeSnapEdgeIndex = bestEdgeIdx
+        routeSnapT = bestT
     }
 
  private fun applySnapToEdge(headingDeg: Float, forceStrong: Boolean = false) {

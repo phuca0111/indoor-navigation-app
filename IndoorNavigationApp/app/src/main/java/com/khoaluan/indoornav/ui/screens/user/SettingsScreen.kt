@@ -12,6 +12,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -35,6 +37,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.khoaluan.indoornav.ui.i18n.tr
 import com.khoaluan.indoornav.ui.viewmodel.UserHubViewModel
 import com.khoaluan.indoornav.ui.viewmodel.UserListUiState
@@ -45,6 +49,7 @@ fun SettingsScreen(
     viewModel: UserHubViewModel,
     buildingsForOffline: List<Pair<String, String>>,
     onBack: () -> Unit,
+    onSimulateEmergency: ((buildingId: String, type: String) -> Unit)? = null,
 ) {
     val theme by viewModel.theme.collectAsState()
     val locale by viewModel.locale.collectAsState()
@@ -119,6 +124,161 @@ fun SettingsScreen(
                 color = Color.Gray,
                 modifier = Modifier.padding(top = 6.dp),
             )
+
+            if (onSimulateEmergency != null) {
+                Spacer(Modifier.height(20.dp))
+                SectionTitle(tr("Khẩn cấp (demo)", "Emergency (demo)"))
+                Text(
+                    tr(
+                        "Quyền chia sẻ vị trí khi có sự cố (Spec D).",
+                        "Location sharing during emergencies (Spec D).",
+                    ),
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                )
+                var consentMode by remember { mutableStateOf("EMERGENCY_ONLY") }
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                val scope = androidx.compose.runtime.rememberCoroutineScope()
+                LaunchedEffect(Unit) {
+                    consentMode = com.khoaluan.indoornav.fcm.EmergencyConsentHelper.cachedMode(ctx)
+                    try {
+                        com.khoaluan.indoornav.data.api.RetrofitClient.init(ctx)
+                        val res = com.khoaluan.indoornav.data.api.RetrofitClient.getApiService()
+                            .getEmergencyConsent()
+                        val m = res.body()?.emergency_location_consent?.mode
+                            ?: if (res.body()?.emergency_location_consent?.granted == true) {
+                                "EMERGENCY_ONLY"
+                            } else {
+                                "ALERT_ONLY"
+                            }
+                        consentMode = m
+                        com.khoaluan.indoornav.fcm.EmergencyConsentHelper.cacheMode(ctx, m)
+                    } catch (_: Exception) {
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        "EMERGENCY_ONLY" to tr(
+                            "Chỉ chia sẻ vị trí khi khẩn cấp (khuyến nghị)",
+                            "Share location only in emergencies (recommended)",
+                        ),
+                        "ALERT_ONLY" to tr(
+                            "Không chia sẻ vị trí (vẫn nhận cảnh báo)",
+                            "Do not share location (still receive alerts)",
+                        ),
+                        "ALWAYS_RESEARCH" to tr(
+                            "Luôn chia sẻ để hỗ trợ nghiên cứu",
+                            "Always share for research",
+                        ),
+                    ).forEach { (mode, label) ->
+                        FilterChip(
+                            selected = consentMode == mode,
+                            onClick = {
+                                consentMode = mode
+                                com.khoaluan.indoornav.fcm.EmergencyConsentHelper.cacheMode(ctx, mode)
+                                scope.launch {
+                                    try {
+                                        com.khoaluan.indoornav.data.api.RetrofitClient.init(ctx)
+                                        com.khoaluan.indoornav.data.api.RetrofitClient.getApiService()
+                                            .putEmergencyConsent(
+                                                com.khoaluan.indoornav.data.api.EmergencyConsentBody(mode = mode),
+                                            )
+                                    } catch (_: Exception) {
+                                    }
+                                }
+                            },
+                            label = { Text(label, fontSize = 12.sp) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    tr(
+                        "Mô phỏng màn hình cảnh báo full-screen rồi chỉ đường tới lối thoát. " +
+                            "Push FCM thật sẽ gắn sau khi cấu hình Firebase.",
+                        "Simulate full-screen alert then route to the nearest exit. " +
+                            "Real FCM push comes after Firebase setup.",
+                    ),
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                )
+                Spacer(Modifier.height(8.dp))
+                val demoBuildingId = offlineBuildingId.ifBlank {
+                    buildingsForOffline.firstOrNull()?.first.orEmpty()
+                }
+                if (buildingsForOffline.isNotEmpty()) {
+                    Text(
+                        tr("Tòa demo", "Demo building") + ": " +
+                            (buildingsForOffline.find { it.first == demoBuildingId }?.second
+                                ?: buildingsForOffline.first().second),
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                Button(
+                    onClick = {
+                        val id = demoBuildingId.ifBlank {
+                            buildingsForOffline.firstOrNull()?.first.orEmpty()
+                        }
+                        onSimulateEmergency(id, "FIRE")
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFB91C1C),
+                        contentColor = Color.White,
+                    ),
+                    enabled = buildingsForOffline.isNotEmpty() || offlineBuildingId.isNotBlank(),
+                ) {
+                    Text(tr("Mô phỏng cảnh báo CHÁY", "Simulate FIRE alert"))
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        val id = demoBuildingId.ifBlank {
+                            buildingsForOffline.firstOrNull()?.first.orEmpty()
+                        }
+                        onSimulateEmergency(id, "EARTHQUAKE")
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF9A3412),
+                        contentColor = Color.White,
+                    ),
+                    enabled = buildingsForOffline.isNotEmpty() || offlineBuildingId.isNotBlank(),
+                ) {
+                    Text(tr("Mô phỏng ĐỘNG ĐẤT", "Simulate EARTHQUAKE alert"))
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            SectionTitle(tr("Động đất cộng đồng", "Community earthquake sensor"))
+            val seismicCtx = androidx.compose.ui.platform.LocalContext.current
+            var seismicBg by remember {
+                mutableStateOf(
+                    com.khoaluan.indoornav.seismic.SeismicPrefs.isBackgroundEnabled(seismicCtx)
+                )
+            }
+            Text(
+                tr(
+                    "Bật để lắng nghe rung ngay cả khi không sạc và không mở app " +
+                        "(có thông báo nhỏ trên thanh trạng thái). App vẫn lọc nhiễu on-device trước khi gửi server. " +
+                        "Cần đã đăng nhập và từng mở map tòa để gắn presence.",
+                    "Enable to sense shaking even when not charging and the app is closed " +
+                        "(shows a quiet status notification). On-device filtering still applies. " +
+                        "Requires login and having opened a building map for presence.",
+                ),
+                fontSize = 12.sp,
+                color = Color.Gray,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            SettingSwitch(
+                tr("Cảm biến động đất chạy nền", "Background earthquake sensor"),
+                seismicBg,
+            ) { enabled ->
+                seismicBg = enabled
+                com.khoaluan.indoornav.seismic.SeismicMonitorService.setBackgroundEnabled(
+                    seismicCtx,
+                    enabled,
+                )
+            }
 
             Spacer(Modifier.height(16.dp))
             SectionTitle(tr("Điều hướng", "Navigation"))

@@ -8,11 +8,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /**
- * Vẽ POI giống Web Editor: vòng màu catalog + emoji cùng nguồn (poiCatalog / pois.js).
- * Trước đây Android tự vẽ glyph → cùng điểm nhìn khác Editor.
+ * Vẽ POI giống Web Editor: vòng màu catalog + emoji `pois.js`.
+ * Nếu emoji không đo được (font máy thiếu) → fallback chữ ngắn.
  */
 fun DrawScope.drawPoiIcon(
     category: PoiCategory,
@@ -34,16 +35,54 @@ fun DrawScope.drawPoiIcon(
         style = Stroke(width = (iconSize * 0.06f).coerceAtLeast(1.5f)),
     )
 
-    // Emoji scale theo bán kính — khớp Editor (font ≈ radius × 1.35)
     val emojiLayout = textMeasurer.measure(
         category.emoji,
-        TextStyle(fontSize = (iconSize * 0.68f).sp),
+        TextStyle(fontSize = (iconSize * 0.62f).sp),
+    )
+    // Một số máy đo emoji = 0 / quá hẹp → dùng fallback
+    if (emojiLayout.size.width > iconSize * 0.15f && emojiLayout.size.height > iconSize * 0.15f) {
+        drawText(
+            emojiLayout,
+            topLeft = Offset(
+                center.x - emojiLayout.size.width / 2f,
+                center.y - emojiLayout.size.height / 2f,
+            ),
+        )
+        return
+    }
+
+    val fallback = when (category) {
+        PoiCategory.TOILET -> "WC"
+        PoiCategory.ATM -> "ATM"
+        PoiCategory.EXIT -> "EXIT"
+        PoiCategory.ELEVATOR, PoiCategory.ESCALATOR -> "↑↓"
+        PoiCategory.STAIRS -> "〰"
+        PoiCategory.FOOD -> "FOOD"
+        PoiCategory.CAFE -> "CAFE"
+        PoiCategory.PARKING -> "P"
+        PoiCategory.MEDICAL -> "+"
+        PoiCategory.SECURITY -> "SEC"
+        PoiCategory.SAFETY -> "F"
+        PoiCategory.ASSEMBLY_POINT -> "★"
+        PoiCategory.RECEPTION -> "R"
+        PoiCategory.INFO -> "i"
+        PoiCategory.WAITING -> "W"
+        PoiCategory.VENDING -> "V"
+        PoiCategory.OTHER -> "?"
+    }
+    val layout = textMeasurer.measure(
+        fallback,
+        TextStyle(
+            fontSize = (iconSize * if (fallback.length <= 2) 0.42f else 0.28f).sp,
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+        ),
     )
     drawText(
-        emojiLayout,
+        layout,
         topLeft = Offset(
-            center.x - emojiLayout.size.width / 2f,
-            center.y - emojiLayout.size.height / 2f,
+            center.x - layout.size.width / 2f,
+            center.y - layout.size.height / 2f,
         ),
     )
 }

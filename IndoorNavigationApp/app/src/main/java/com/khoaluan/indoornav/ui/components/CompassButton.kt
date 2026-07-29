@@ -146,12 +146,13 @@ fun CompassButton(
             )
         }
 
-        // Hiển thị góc độ hiện tại (đã làm tròn)
+        // Góc độ — giữ layout cũ; chữ tối để không trùng xanh kim la bàn
+        val displayDeg = ((rotation % 360f) + 360f) % 360f
         Text(
-            text = "${rotation.roundToInt()}°",
+            text = "${displayDeg.roundToInt()}°",
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
-            color = Color(0xFF1A73E8),
+            color = Color(0xFF212121),
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)
         )
     }
