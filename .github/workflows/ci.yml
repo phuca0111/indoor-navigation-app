@@ -28,7 +28,11 @@ jobs:
           node-version: 22.17.0
           cache: npm
           cache-dependency-path: Backend_server/package-lock.json
+      # Skip compiling Redis stable/redistimeseries during install (breaks on ubuntu-24.04).
+      # Unit/architecture do not need redis-memory-server; provider tests use REDIS_URL when set.
       - run: npm ci
+        env:
+          REDISMS_DISABLE_POSTINSTALL: '1'
       - run: npm run test:architecture
       - run: npm run test:unit
       - run: npm run typecheck
@@ -112,6 +116,9 @@ jobs:
           sleep 5
       - working-directory: Backend_server
         run: npm ci
+        env:
+          # Integration job already provides REDIS_URL via the redis service container.
+          REDISMS_DISABLE_POSTINSTALL: '1'
       - working-directory: Backend_server
         run: npm run test:integration:safe
 

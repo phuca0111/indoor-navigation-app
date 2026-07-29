@@ -10,6 +10,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,30 +33,30 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
-import kotlinx.coroutines.delay
-import kotlin.math.ceil
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.roundToInt
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.toColorInt
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import com.khoaluan.indoornav.data.model.MapData
 import com.khoaluan.indoornav.data.model.WallPoint
+import com.khoaluan.indoornav.ui.navigation.applyMapPanZoomOffset
 import com.khoaluan.indoornav.ui.navigation.computeHeadingDrivenRotation
+import com.khoaluan.indoornav.ui.navigation.isMapRotationPivotFixedToUser
 import com.khoaluan.indoornav.ui.navigation.resolveManualMapRotationDelta
-import com.khoaluan.indoornav.ui.navigation.screenPanToMapOffsetDelta
 import com.khoaluan.indoornav.ui.viewmodel.MapRotationMode
 import com.khoaluan.indoornav.ui.viewmodel.NavigationState
+import kotlinx.coroutines.delay
+import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 private data class RoomDrawData(
@@ -92,6 +93,13 @@ fun MapView(
     centerOnDestinationTrigger: Int = 0,
     layers: MapLayerVisibility = MapLayerVisibility(),
     poiCategoryFilter: PoiCategory? = null,
+    /** Pin tạm khi user vừa chạm map (chưa xác nhận). */
+    pendingPickPos: Offset? = null,
+    /** Chạm map → toạ độ map (pixel). */
+    onMapTap: ((Offset) -> Unit)? = null,
+    /** Vùng nguy hiểm đang active (sơ tán) — toạ độ map. */
+    hazardZones: List<com.khoaluan.indoornav.navigation.emergency.HazardZoneDraw> = emptyList(),
+    currentFloorNumber: Int? = null,
 ) {
     var mapScale by remember { mutableFloatStateOf(1f) }
     var mapOffset by remember { mutableStateOf(Offset.Zero) }
@@ -177,8 +185,10 @@ fun MapView(
         }
         routeReveal = 1f
     }
+    // Đang navigate: luôn vẽ FULL path; routeProgress chỉ dùng để tô đoạn đã đi.
+    // (Trước đây gán routeDrawProgress = routeProgress → chỉ thấy ~1 đoạn gần chân, tưởng path đứt.)
     val routeDrawProgress = if (navState.isNavigatingMode) {
-        max(navState.routeProgress.coerceIn(0f, 1f), 0.05f)
+        1f
     } else {
         routeReveal.coerceIn(0f, 1f)
     }
@@ -289,12 +299,54 @@ fun MapView(
                     size = (poi.size ?: 24f).coerceIn(12f, 96f),
                 )
             }
-            .filter { poiCategoryFilter == null || it.category == poiCategoryFilter }
+            .filter { poiCategoryFilter == null || it.category.matchesFilter(poiCategoryFilter) }
     }
 
     val mapRotationForGestures = rememberUpdatedState(effectiveRotation)
+    val onMapTapState = rememberUpdatedState(onMapTap)
+    val scaleState = rememberUpdatedState(mapScale)
+    val offsetState = rememberUpdatedState(mapOffset)
+    val userPosState = rememberUpdatedState(navState.userPos)
+    val animatedUserPosState = rememberUpdatedState(animatedUserPos)
+    val rotationModeState = rememberUpdatedState(mapRotationMode)
+    val pendingPickState = rememberUpdatedState(pendingPickPos)
+
+    var screenW by remember { mutableFloatStateOf(0f) }
+    var screenH by remember { mutableFloatStateOf(0f) }
+    val screenWState = rememberUpdatedState(screenW)
+    val screenHState = rememberUpdatedState(screenH)
+
+    fun resolveMapPivot(): Offset {
+        val sw = screenW
+        val sh = screenH
+        val sc = scaleState.value
+        val off = offsetState.value
+        return if (rotationModeState.value == MapRotationMode.HEADING_UP && userPosState.value != null) {
+            animatedUserPosState.value
+        } else if (sc > 0f) {
+            Offset((sw / 2f - off.x) / sc, (sh / 2f - off.y) / sc)
+        } else {
+            Offset.Zero
+        }
+    }
+
+    fun screenToMap(screen: Offset): Offset {
+        return screenToMapCoords(
+            screen = screen,
+            scale = scaleState.value,
+            offset = offsetState.value,
+            rotationDeg = mapRotationForGestures.value,
+            pivot = resolveMapPivot(),
+        )
+    }
+
     val mapModifier = Modifier
         .fillMaxSize()
+        .pointerInput(Unit) {
+            detectTapGestures { tap ->
+                onMapTapState.value?.invoke(screenToMap(tap))
+            }
+        }
         .pointerInput(mapRotationMode) {
             detectTransformGestures { centroid, pan, zoom, gestureRotationDeg ->
                 autoFollowUser = false
@@ -306,16 +358,26 @@ fun MapView(
                 if (delta != 0f) {
                     userMapBearingOffset += delta
                 }
-                val adjustedPan = screenPanToMapOffsetDelta(pan, mapRotationForGestures.value)
                 val oldScale = mapScale
                 val newScale = (mapScale * zoom).coerceIn(0.1f, 10f)
-                mapOffset = centroid + adjustedPan - (centroid - mapOffset) * (newScale / oldScale)
+                val sw = screenWState.value
+                val sh = screenHState.value
+                mapOffset = applyMapPanZoomOffset(
+                    currentOffset = mapOffset,
+                    centroid = centroid,
+                    pan = pan,
+                    oldScale = oldScale,
+                    newScale = newScale,
+                    mapRotationDegrees = mapRotationForGestures.value,
+                    screenCenter = Offset(sw / 2f, sh / 2f),
+                    pivotFixedToUser = isMapRotationPivotFixedToUser(
+                        mode = rotationModeState.value,
+                        hasUserPos = userPosState.value != null,
+                    ),
+                )
                 mapScale = newScale
             }
         }
-
-    var screenW by remember { mutableFloatStateOf(0f) }
-    var screenH by remember { mutableFloatStateOf(0f) }
 
     Box(
         modifier = mapModifier
@@ -475,6 +537,56 @@ fun MapView(
                     }
                 }
 
+                // Vùng nguy hiểm — chỉ vẽ đúng tầng (null = coi như GF/0, không đè mọi tầng)
+                val hazardOnFloor = hazardZones.filter { z ->
+                    z.points.size >= 3 &&
+                        currentFloorNumber != null &&
+                        (z.floorNumber ?: 0) == currentFloorNumber
+                }
+                hazardOnFloor.forEach { zone ->
+                    val path = Path().apply {
+                        val first = zone.points.first()
+                        moveTo(first.first, first.second)
+                        zone.points.drop(1).forEach { lineTo(it.first, it.second) }
+                        close()
+                    }
+                    drawPath(path = path, color = Color(0xFFDC2626).copy(alpha = 0.32f))
+                    drawPath(
+                        path = path,
+                        color = Color(0xFFB91C1C),
+                        style = Stroke(width = 2.5f / mapScale),
+                    )
+                    if (mapScale > 0.02f) {
+                        val cx = zone.points.map { it.first }.average().toFloat()
+                        val cy = zone.points.map { it.second }.average().toFloat()
+                        // Label ngắn — tránh đè POI/phòng như "Vùng nguy hiểm" dài
+                        val label = "⚠"
+                        val layout = textMeasurer.measure(
+                            text = label,
+                            style = TextStyle(
+                                fontSize = (12f / mapScale).sp,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                        )
+                        withTransform({
+                            translate(cx, cy)
+                            rotate(-effectiveRotation, pivot = Offset.Zero)
+                            translate(-layout.size.width / 2f, -layout.size.height / 2f)
+                        }) {
+                            drawRect(
+                                color = Color(0xCC7F1D1D),
+                                topLeft = Offset(-4f / mapScale, -2f / mapScale),
+                                size = Size(
+                                    layout.size.width + 8f / mapScale,
+                                    layout.size.height + 4f / mapScale,
+                                ),
+                            )
+                            drawText(layout)
+                        }
+                    }
+                }
+
                 // Doors
                 if (layers.doors) {
                     mapData.doors.forEach { door ->
@@ -508,7 +620,7 @@ fun MapView(
                     }
                 }
 
-                // Path — GĐ3: vẽ lộ trình dần + đoạn đã đi sáng hơn khi đang navigate
+                // Path — full lộ trình; đoạn đã đi đậm hơn khi đang navigate
                 if (layers.path) {
                     val route = navState.path
                     if (route != null && route.size > 1) {
@@ -523,14 +635,14 @@ fun MapView(
                             val traveled = i < traveledEdges
                             if (navState.isNavigatingMode) {
                                 drawLine(
-                                    color = Color(0xFF1A73E8).copy(if (traveled) 0.85f else 0.28f),
+                                    color = Color(0xFF1A73E8).copy(if (traveled) 0.95f else 0.55f),
                                     start = from,
                                     end = to,
                                     strokeWidth = (if (traveled) 16f else 12f) / mapScale,
                                     cap = StrokeCap.Round,
                                 )
                                 drawLine(
-                                    color = if (traveled) Color.White else Color.White.copy(0.7f),
+                                    color = if (traveled) Color.White else Color.White.copy(0.75f),
                                     start = from,
                                     end = to,
                                     strokeWidth = (if (traveled) 5f else 3.5f) / mapScale,
@@ -545,6 +657,33 @@ fun MapView(
                                     cap = StrokeCap.Round,
                                 )
                             }
+                        }
+                    }
+                }
+
+                // Chấm + mũi tên điểm rẽ tiếp theo (ẩn khi early-turn đã skip)
+                if (navState.isNavigatingMode) {
+                    val turnPos = navState.nextManeuverPos
+                    val turnType = navState.nextManeuverType
+                    if (turnPos != null &&
+                        (turnType == "TURN_LEFT" || turnType == "TURN_RIGHT")
+                    ) {
+                        val r = 14f / mapScale
+                        drawCircle(Color(0xFF1A73E8).copy(0.22f), radius = r * 1.6f, center = turnPos)
+                        drawCircle(Color.White, radius = r, center = turnPos)
+                        drawCircle(Color(0xFF1A73E8), radius = r * 0.72f, center = turnPos)
+                        // Mũi tên chỉ hướng rẽ (trái = -90°, phải = +90° so với hướng cạnh tới)
+                        val tipSign = if (turnType == "TURN_LEFT") -1f else 1f
+                        withTransform({
+                            translate(turnPos.x, turnPos.y)
+                        }) {
+                            val arrow = Path().apply {
+                                moveTo(tipSign * 10f / mapScale, 0f)
+                                lineTo(tipSign * -2f / mapScale, -7f / mapScale)
+                                lineTo(tipSign * -2f / mapScale, 7f / mapScale)
+                                close()
+                            }
+                            drawPath(arrow, Color.White)
                         }
                     }
                 }
@@ -582,13 +721,13 @@ fun MapView(
                     drawCircle(Color.White, radius = 3.5f / mapScale, center = start)
                 }
 
-                // POIs — icon loại + tên luôn hiện (không phụ thuộc zoom)
+                // POIs — icon + nhãn billboard (không nghiêng theo map)
                 if (layers.pois) {
                     drawPois.forEach { poi ->
                         val selected = poi.id == selectedPoiId
                         // Emoji catalog cần đủ px trên màn hình để khớp Editor
                         val minScreenPx = when (poi.category) {
-                            PoiCategory.ATM -> 48f
+                            PoiCategory.ATM, PoiCategory.TOILET, PoiCategory.EXIT -> 48f
                             PoiCategory.ELEVATOR, PoiCategory.STAIRS -> 46f
                             else -> 42f
                         }
@@ -601,17 +740,10 @@ fun MapView(
                                 center = poi.pos,
                             )
                         }
-                        drawPoiIcon(
-                            category = poi.category,
-                            center = poi.pos,
-                            iconSize = iconSize,
-                            isSelected = selected,
-                            textMeasurer = textMeasurer,
-                        )
                         val label = poi.name.ifBlank { poi.category.label }
-                        if (label.isNotBlank()) {
-                            val fontSp = (10f / mapScale).coerceIn(8f / mapScale, 14f / mapScale)
-                            val layout = textMeasurer.measure(
+                        val fontSp = (10f / mapScale).coerceIn(8f / mapScale, 14f / mapScale)
+                        val labelLayout = if (label.isNotBlank()) {
+                            textMeasurer.measure(
                                 label,
                                 TextStyle(
                                     fontSize = fontSp.sp,
@@ -619,23 +751,37 @@ fun MapView(
                                     fontWeight = FontWeight.SemiBold,
                                 ),
                             )
-                            val pad = 3f / mapScale
-                            val labelTop = iconSize * 0.55f + 2f / mapScale
-                            withTransform({
-                                translate(poi.pos.x, poi.pos.y)
-                                rotate(-effectiveRotation, pivot = Offset.Zero)
-                                translate(-layout.size.width / 2f, labelTop)
-                            }) {
-                                drawRoundRect(
-                                    color = Color.White.copy(0.92f),
-                                    topLeft = Offset(-pad, -pad),
-                                    size = Size(
-                                        layout.size.width + pad * 2,
-                                        layout.size.height + pad * 2,
-                                    ),
-                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f / mapScale),
-                                )
-                                drawText(layout)
+                        } else {
+                            null
+                        }
+                        val pad = 3f / mapScale
+                        val labelTop = iconSize * 0.55f + 2f / mapScale
+                        withTransform({
+                            translate(poi.pos.x, poi.pos.y)
+                            rotate(-effectiveRotation, pivot = Offset.Zero)
+                        }) {
+                            drawPoiIcon(
+                                category = poi.category,
+                                center = Offset.Zero,
+                                iconSize = iconSize,
+                                isSelected = selected,
+                                textMeasurer = textMeasurer,
+                            )
+                            if (labelLayout != null) {
+                                withTransform({
+                                    translate(-labelLayout.size.width / 2f, labelTop)
+                                }) {
+                                    drawRoundRect(
+                                        color = Color.White.copy(0.92f),
+                                        topLeft = Offset(-pad, -pad),
+                                        size = Size(
+                                            labelLayout.size.width + pad * 2,
+                                            labelLayout.size.height + pad * 2,
+                                        ),
+                                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f / mapScale),
+                                    )
+                                    drawText(labelLayout)
+                                }
                             }
                         }
                     }
@@ -672,8 +818,15 @@ fun MapView(
                     drawPath(arrowPath, Color.White, style = Stroke(width = 1.5f / mapScale))
                 }
             }
-        }
 
+            // Pin tạm khi vừa chạm map
+            pendingPickState.value?.let { pick ->
+                val posScreen = rotateMapPointAroundPivot(pick, pivot, effectiveRotation)
+                drawCircle(Color(0xFFEF4444).copy(0.25f), radius = 22f / mapScale, center = posScreen)
+                drawCircle(Color.White, radius = 9f / mapScale, center = posScreen)
+                drawCircle(Color(0xFFEF4444), radius = 7f / mapScale, center = posScreen)
+            }
+        }
     }
 }
 

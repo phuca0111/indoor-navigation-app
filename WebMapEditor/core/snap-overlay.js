@@ -16,7 +16,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
     'use strict';
 
-    var DRAW_TOOLS = ['wall', 'line', 'room', 'circle', 'door', 'poi', 'point', 'path', 'ruler', 'polygon', 'dimlinear', 'dimaligned', 'dimedit'];
+    var DRAW_TOOLS = ['wall', 'line', 'room', 'circle', 'door', 'poi', 'point', 'path', 'ruler', 'polygon', 'hazard', 'dimlinear', 'dimaligned', 'dimedit', 'qr'];
     var HINT_TOOLS = ['select'].concat(DRAW_TOOLS);
 
     var hint = null;
@@ -134,10 +134,11 @@
         }
 
         function tracePerp() {
+            // Góc chữ L có đỉnh trùng tâm snap (sx, sy) — không lệch khỏi dấu +
             ctx.beginPath();
-            ctx.moveTo(sx - half * 0.55, sy + half * 0.45);
-            ctx.lineTo(sx - half * 0.55, sy - half * 0.35);
-            ctx.lineTo(sx + half * 0.55, sy - half * 0.35);
+            ctx.moveTo(sx - half * 0.7, sy);
+            ctx.lineTo(sx, sy);
+            ctx.lineTo(sx, sy - half * 0.7);
         }
 
         function traceShape() {
@@ -249,10 +250,11 @@
         }
 
         function tracePerp() {
+            // World-space: đỉnh L = đúng điểm snap
             ctx.beginPath();
-            ctx.moveTo(point.x - half * 0.55, point.y + half * 0.45);
-            ctx.lineTo(point.x - half * 0.55, point.y - half * 0.35);
-            ctx.lineTo(point.x + half * 0.55, point.y - half * 0.35);
+            ctx.moveTo(point.x - half * 0.7, point.y);
+            ctx.lineTo(point.x, point.y);
+            ctx.lineTo(point.x, point.y - half * 0.7);
         }
 
         function traceShape() {

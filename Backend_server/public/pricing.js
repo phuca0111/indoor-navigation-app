@@ -1,4 +1,4 @@
-// pricing.js — WL2: render gói từ GET /api/billing/plans (cùng nguồn planCatalog)
+// pricing.js — render gói từ GET /api/billing/plans (Aura Precision cards)
 (function () {
     var FALLBACK_PLANS = [
         {
@@ -38,6 +38,14 @@
         return v.toLocaleString('vi-VN');
     }
 
+    function escapeHtml(text) {
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
     function buildFeatureList(plan) {
         var feats = Array.isArray(plan.features) ? plan.features.slice() : [];
         if (!feats.length) {
@@ -49,56 +57,107 @@
         return feats;
     }
 
+    function tagFor(code) {
+        if (code === 'FREE') {
+            return {
+                label: 'Cá nhân / dùng thử',
+                className: 'bg-mist-gray text-on-surface-variant'
+            };
+        }
+        if (code === 'PRO') {
+            return {
+                label: 'Tổ chức',
+                className: 'bg-secondary-container/10 text-secondary'
+            };
+        }
+        return {
+            label: 'Doanh nghiệp',
+            className: 'bg-mist-gray text-on-surface-variant'
+        };
+    }
+
+    function priceHeadline(plan, code) {
+        var price = Number(plan.price_vnd) || 0;
+        if (code === 'FREE' || price === 0) return 'Miễn phí';
+        if (code === 'ENTERPRISE') return 'Liên hệ';
+        return formatVnd(price) + ' VND';
+    }
+
+    function periodLine(plan, code) {
+        if (code === 'FREE' || code === 'ENTERPRISE') return escapeHtml(plan.description || '');
+        var period = plan.period_days ? ('/ ' + plan.period_days + ' ngày') : '/ tháng';
+        return escapeHtml(period + (plan.description ? ' · ' + plan.description : ''));
+    }
+
     function ctaFor(plan) {
         var code = String(plan.code || '').toUpperCase();
         if (code === 'FREE') {
-            return { href: '/login', label: 'Dùng thử miễn phí', primary: true };
+            return { href: '/login', label: 'Dùng thử miễn phí', primary: false };
         }
         if (code === 'PRO') {
-            return { href: '/contact', label: 'Hỏi thêm', primary: false };
+            return { href: '/contact', label: 'Nâng cấp', primary: true };
         }
-        return { href: '/contact', label: 'Liên hệ', primary: false };
+        return { href: '/contact', label: 'Liên hệ tư vấn', primary: false };
     }
 
     function renderPlanCard(plan) {
         var code = String(plan.code || '').toUpperCase();
         var feats = buildFeatureList(plan);
         var cta = ctaFor(plan);
-        var featured = code === 'PRO' ? ' plan-featured' : '';
-        var period = plan.period_days ? ('/ ' + plan.period_days + ' ngày') : '/ tháng';
+        var tag = tagFor(code);
+        var featured = code === 'PRO' ? ' pricing-card--featured ring-1 ring-hairline-border' : '';
         var li = feats.map(function (f) {
-            return '<li>' + escapeHtml(String(f)) + '</li>';
+            return (
+                '<li class="flex items-start gap-3 text-on-surface-variant font-body-md">' +
+                '<span class="material-symbols-outlined text-secondary shrink-0 mt-0.5" style="font-size:20px" aria-hidden="true">check_circle</span>' +
+                '<span>' + escapeHtml(String(f)) + '</span>' +
+                '</li>'
+            );
         }).join('');
 
+        var ctaClass = cta.primary
+            ? 'w-full block text-center bg-deep-charcoal text-white py-4 rounded-full font-body-md hover:opacity-90 transition-all active:scale-95 shadow-lg shadow-deep-charcoal/5'
+            : 'w-full block text-center border border-deep-charcoal text-deep-charcoal py-4 rounded-full font-body-md hover:bg-deep-charcoal hover:text-white transition-all active:scale-95';
+
         return (
-            '<article class="plan-card' + featured + '" data-plan="' + escapeHtml(code) + '">' +
-            '<span class="plan-code">' + escapeHtml(code) + '</span>' +
-            '<div class="plan-title">' + escapeHtml(plan.name || code) + '</div>' +
-            '<div class="plan-price">' + formatVnd(plan.price_vnd) +
-            ' <span style="font-size:14px;font-weight:600;color:#6b7280;">VND</span></div>' +
-            '<div class="plan-period">' + escapeHtml(period) + '</div>' +
-            '<div class="plan-desc">' + escapeHtml(plan.description || '') + '</div>' +
-            '<ul class="plan-features">' + li + '</ul>' +
-            '<div class="plan-cta">' +
-            '<a class="btn ' + (cta.primary ? 'btn-primary' : 'btn-secondary') +
-            ' btn-large" href="' + cta.href + '">' + escapeHtml(cta.label) + '</a>' +
+            '<article class="pricing-card plan-card bg-white border border-hairline-border rounded-[24px] p-8 md:p-10 flex flex-col h-full' +
+            featured +
+            '" data-plan="' + escapeHtml(code) + '">' +
+            '<div class="mb-8">' +
+            '<span class="font-label-mono text-label-mono px-4 py-1.5 rounded-full uppercase ' +
+            tag.className +
+            '">' +
+            escapeHtml(tag.label) +
+            '</span>' +
+            '<p class="font-label-mono text-[10px] uppercase tracking-widest text-outline mt-4">' +
+            escapeHtml(code) +
+            (plan.name ? ' · ' + escapeHtml(plan.name) : '') +
+            '</p>' +
+            '<h3 class="font-headline-lg text-3xl md:text-headline-lg text-deep-charcoal mt-3">' +
+            escapeHtml(priceHeadline(plan, code)) +
+            '</h3>' +
+            '<p class="font-body-md text-sm text-on-surface-variant mt-2">' +
+            periodLine(plan, code) +
+            '</p>' +
+            '</div>' +
+            '<ul class="space-y-4 mb-10 md:mb-12 flex-grow list-none p-0 m-0 plan-features">' +
+            li +
+            '</ul>' +
+            '<div class="plan-cta mt-auto">' +
+            '<a class="' + ctaClass + '" href="' + cta.href + '">' +
+            escapeHtml(cta.label) +
+            '</a>' +
             '</div></article>'
         );
-    }
-
-    function escapeHtml(text) {
-        return String(text)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
     }
 
     function setStatus(el, text, kind) {
         if (!el) return;
         el.textContent = text || '';
         el.hidden = !text;
-        el.className = 'pricing-status' + (kind ? ' is-' + kind : '');
+        el.className =
+            'pricing-status text-center mt-8 font-label-mono text-label-mono text-on-surface-variant' +
+            (kind ? ' is-' + kind : '');
     }
 
     function paint(plans, statusEl, sourceLabel) {
@@ -109,7 +168,11 @@
         });
         if (!sorted.length) sorted = FALLBACK_PLANS;
         grid.innerHTML = sorted.map(renderPlanCard).join('');
-        setStatus(statusEl, sourceLabel, sourceLabel.indexOf('dự phòng') >= 0 ? 'error' : 'ok');
+        setStatus(
+            statusEl,
+            sourceLabel,
+            sourceLabel && sourceLabel.indexOf('dự phòng') >= 0 ? 'error' : sourceLabel ? 'ok' : ''
+        );
     }
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -127,7 +190,11 @@
                 paint(plans, statusEl, '');
             })
             .catch(function () {
-                paint(FALLBACK_PLANS, statusEl, 'API tạm lỗi — đang dùng bảng giá dự phòng (khớp FALLBACK Billing).');
+                paint(
+                    FALLBACK_PLANS,
+                    statusEl,
+                    'API tạm lỗi — đang dùng bảng giá dự phòng (khớp FALLBACK Billing).'
+                );
             });
     });
 })();

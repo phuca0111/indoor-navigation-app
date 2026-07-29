@@ -3,8 +3,10 @@
 // ============================================================
 
 // Tạo path node mới
-function createPathNode(x, y) {
-    var sp = snapWorldPoint(x, y);
+function createPathNode(x, y, opts) {
+    var sp = (opts && opts.alreadySnapped)
+        ? { x: x, y: y }
+        : snapWorldPoint(x, y);
     var node = {
         id: nextNodeId++,
         x: sp.x,

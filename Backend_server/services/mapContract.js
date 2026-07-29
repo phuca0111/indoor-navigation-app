@@ -37,13 +37,16 @@ function normalizeMapData(input) {
   }
   map.pois = map.pois.map((poi) => {
     const out = { ...poi };
-    // Ưu tiên key khác OTHER: map cũ hay bị đóng dấu poi_type="OTHER" dù
-    // tên/label là "Thang máy" → không được dừng sớm ở OTHER.
-    // Thứ tự: poiType (editor) → poi_type cũ → label type → tên POI.
-    const resolved = [out.poiType, out.poi_type, out.type, out.name]
-      .map(normalizePoiCategoryKey)
-      .find((key) => key && key !== 'OTHER');
-    out.poi_type = resolved || 'OTHER';
+    // Ưu tiên label/tên cụ thể trước typeIndex: map cũ hay lệch index
+    // (INFO/RECEPTION) dù name = "Nhà vệ sinh".
+    const fromKey = normalizePoiCategoryKey(out.poiType) || normalizePoiCategoryKey(out.poi_type);
+    const fromType = normalizePoiCategoryKey(out.type);
+    const fromName = normalizePoiCategoryKey(out.name);
+    const labeled = [fromKey, fromType, fromName].filter(Boolean);
+    const specificLabeled = labeled.find((key) => key !== 'OTHER' && key !== 'INFO');
+    out.poi_type = specificLabeled
+      || labeled.find((key) => key !== 'OTHER')
+      || 'OTHER';
     out.search_tags = normalizeSearchTags(out);
     return out;
   });

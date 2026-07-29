@@ -12,6 +12,55 @@ const {
 } = require('../../utils/placePlatform');
 const { haversineMeters } = require('../../services/placeDuplicateDetection');
 
+function escapeRegex(s) {
+  return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** "10.74, 106.61" hoặc "10.74 106.61" */
+function parseLatLngPair(raw) {
+  const t = String(raw || '').trim();
+  const m = t.match(/^(-?\d+(?:[.,]\d+)?)\s*[,;\s]+\s*(-?\d+(?:[.,]\d+)?)\s*$/);
+  if (!m) return null;
+  let lat = Number(String(m[1]).replace(',', '.'));
+  let lng = Number(String(m[2]).replace(',', '.'));
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  if (lng >= 8 && lng <= 24 && lat >= 100 && lat <= 120) {
+    const swap = lat;
+    lat = lng;
+    lng = swap;
+  }
+  return { lat, lng };
+}
+
+function isPartialCoordToken(q) {
+  return /^-?\d+(\.\d+)?$/.test(String(q || '').trim().replace(',', '.'));
+}
+
+/** Text tìm Place: tên, alias, địa chỉ, slug, danh mục, mô tả, ghi chú, tọa độ. */
+function placeTextSearchOr(q) {
+  const raw = String(q || '').trim();
+  if (!raw) return null;
+  const re = new RegExp(escapeRegex(raw), 'i');
+  const clauses = [
+    { name: re },
+    { aliases: re },
+    { address: re },
+    { category: re },
+    { slug: re },
+    { description: re },
+    { notes: re }
+  ];
+  if (isPartialCoordToken(raw)) {
+    const token = raw.replace(',', '.');
+    clauses.push(
+      { $expr: { $regexMatch: { input: { $toString: '$latitude' }, regex: escapeRegex(token) } } },
+      { $expr: { $regexMatch: { input: { $toString: '$longitude' }, regex: escapeRegex(token) } } }
+    );
+  }
+  return { $or: clauses };
+}
+
 function serializeRegistryPlace(doc, extras = {}) {
   if (!doc) return null;
   const p = typeof doc.toObject === 'function' ? doc.toObject() : doc;
@@ -72,26 +121,45 @@ async function buildingStatsByPlaceIds(placeIds) {
 async function listPublicPlaces({ q, category, limit = 50, skip = 0 } = {}) {
   const filter = placePublicMongoFilter();
   if (category) {
-    filter.$and.push({ category: new RegExp(String(category).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') });
+    filter.$and.push({ category: new RegExp(escapeRegex(category), 'i') });
   }
-  if (q) {
-    const re = new RegExp(String(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+  const qRaw = String(q || '').trim();
+  const coordPair = parseLatLngPair(qRaw);
+  if (coordPair) {
+    // Query là cặp tọa độ → tìm Place gần (~400 m)
+    const deg = 400 / 111000;
     filter.$and.push({
-      $or: [{ name: re }, { aliases: re }, { address: re }, { category: re }]
+      latitude: { $gte: coordPair.lat - deg, $lte: coordPair.lat + deg },
+      longitude: { $gte: coordPair.lng - deg, $lte: coordPair.lng + deg }
     });
+  } else {
+    const textOr = placeTextSearchOr(qRaw);
+    if (textOr) filter.$and.push(textOr);
   }
   const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
   const sk = Math.max(parseInt(skip, 10) || 0, 0);
-  const [rows, total] = await Promise.all([
-    Place.find(filter).sort({ updatedAt: -1 }).skip(sk).limit(lim).lean(),
-    Place.countDocuments(filter)
-  ]);
+  let rows = await Place.find(filter).sort({ updatedAt: -1 }).skip(sk).limit(coordPair ? 80 : lim).lean();
+  if (coordPair) {
+    rows = rows
+      .map((r) => ({
+        r,
+        d: haversineMeters(coordPair.lat, coordPair.lng, r.latitude, r.longitude)
+      }))
+      .filter((x) => x.d <= 400)
+      .sort((a, b) => a.d - b.d)
+      .slice(0, lim)
+      .map((x) => x.r);
+  }
+  const total = coordPair ? rows.length : await Place.countDocuments(filter);
   const stats = await buildingStatsByPlaceIds(rows.map((r) => r._id));
   return {
     total,
     places: rows.map((r) => serializeRegistryPlace(r, {
       building_count: stats[String(r._id)]?.count || 0,
-      has_published_indoor: (stats[String(r._id)]?.published || 0) > 0
+      has_published_indoor: (stats[String(r._id)]?.published || 0) > 0,
+      distance_m: coordPair
+        ? Math.round(haversineMeters(coordPair.lat, coordPair.lng, r.latitude, r.longitude))
+        : undefined
     }))
   };
 }
@@ -157,8 +225,8 @@ async function searchPlaces(body = {}) {
     });
   }
   if (body.q || body.query) {
-    const re = new RegExp(String(body.q || body.query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    filter.$and.push({ $or: [{ name: re }, { aliases: re }, { address: re }] });
+    const textOr = placeTextSearchOr(body.q || body.query);
+    if (textOr) filter.$and.push(textOr);
   }
 
   const rows = await Place.find(filter).limit(200).lean();

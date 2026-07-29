@@ -1,19 +1,31 @@
 /* Website CMS — Landing cố định (Super Admin) */
 (function (global) {
   const SUBS = {
-    pages: { title: 'Landing Pages', intro: '5 trang cố định — không tạo/xóa trang mới.' },
     articles: { title: 'Blog & News', intro: 'Soạn bài, SEO và xuất bản ngay hoặc theo lịch.' },
-    banner: { title: 'Banner & Hero', intro: 'Quản lý banner trang chủ, hero image/video và CTA.' },
-    navigation: { title: 'Navigation', intro: 'Thứ tự menu Landing. Kéo thứ tự bằng số Order.' },
-    media: { title: 'Media', intro: 'Thư viện logo, icon, hình, video, PDF — tái sử dụng nhiều trang.' },
     forms: { title: 'Liên hệ', intro: 'CRM mini — xử lý yêu cầu từ Landing ngay trong hệ thống.' },
+    media: { title: 'Media', intro: 'Thư viện logo, icon, hình, video, PDF — tái sử dụng nhiều trang.' },
     seo: { title: 'SEO', intro: 'Meta, OG, robots, favicon và mã Analytics.' },
-    theme: { title: 'Theme', intro: 'Màu, font, radius — toàn Landing đổi theo.' },
-    settings: { title: 'Cài đặt Website', intro: 'Tên, logo, liên hệ và footer.' },
-    audit: { title: 'Nhật ký CMS', intro: 'Lịch sử thay đổi nội dung Website, tách biệt nhật ký hệ thống.' }
+    settings: { title: 'Cài đặt Website', intro: 'Tên, logo, liên hệ và footer — áp dụng trên Landing Aura.' },
+    audit: { title: 'Nhật ký CMS', intro: 'Lịch sử thay đổi nội dung Website, tách biệt nhật ký hệ thống.' },
+    pages: {
+      title: 'Landing Pages (Legacy)',
+      intro: 'Chưa khớp Landing Aura — editor gắn layout cũ, public gần như không đổi.'
+    },
+    banner: {
+      title: 'Banner & Hero (Legacy)',
+      intro: 'Chưa khớp Landing Aura — hero public dùng HTML/ảnh tĩnh, không lấy từ tab này.'
+    },
+    navigation: {
+      title: 'Navigation (Legacy)',
+      intro: 'Trên Landing Aura menu giữ HTML tĩnh — CMS không ghi đè #mainNav.'
+    },
+    theme: {
+      title: 'Theme (Legacy)',
+      intro: 'Chưa khớp Landing Aura — màu/font public lấy từ design system mới.'
+    }
   };
 
-  let activeSub = 'pages';
+  let activeSub = 'articles';
   let configCache = null;
   let editingPage = null;
   let activeSectionId = null;
@@ -41,7 +53,7 @@
   }
 
   function setSub(sub) {
-    activeSub = SUBS[sub] ? sub : 'pages';
+    activeSub = SUBS[sub] ? sub : 'articles';
     window._activeWebsiteSub = activeSub;
     const meta = SUBS[activeSub];
     const title = document.getElementById('websiteCmsTitle');
@@ -68,7 +80,7 @@
       if (typeof switchTab === 'function') switchTab('overview');
       return;
     }
-    setSub(sub || window._activeWebsiteSub || 'pages');
+    setSub(sub || window._activeWebsiteSub || 'articles');
     try {
       if (activeSub === 'pages') return await loadPages();
       if (activeSub === 'articles') return await loadArticles();

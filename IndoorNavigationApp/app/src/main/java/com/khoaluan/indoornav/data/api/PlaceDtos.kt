@@ -214,9 +214,23 @@ data class PlaceReviewDto(
     val rating: Int = 0,
     val comment: String? = null,
     @SerializedName("helpful_count") val helpfulCount: Int = 0,
+    @SerializedName("createdAt") val createdAt: String? = null,
+    @SerializedName("updatedAt") val updatedAt: String? = null,
+    val user: PlaceReviewUserDto? = null,
+)
+
+data class PlaceReviewUserDto(
+    val id: String? = null,
+    @SerializedName("full_name") val fullName: String? = null,
+    val email: String? = null,
 )
 
 data class PlaceReviewResponse(val review: PlaceReviewDto? = null)
+
+data class PlaceReviewsListResponse(
+    val total: Int = 0,
+    val reviews: List<PlaceReviewDto> = emptyList(),
+)
 
 data class PlaceReportBody(
     @SerializedName("place_id") val placeId: String,
@@ -225,6 +239,94 @@ data class PlaceReportBody(
 )
 
 data class PlaceReportResponse(val report: Any? = null)
+
+/** POST /api/map-contributions — đề xuất cộng đồng (OUTDOOR/INDOOR) */
+data class MapContributionBody(
+    val type: String,
+    @SerializedName("map_scope") val mapScope: String = "OUTDOOR",
+    val title: String,
+    val description: String? = null,
+    @SerializedName("place_id") val placeId: String? = null,
+    @SerializedName("building_id") val buildingId: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+)
+
+data class MapContributionDto(
+    @SerializedName("_id") val id: String? = null,
+    val type: String? = null,
+    @SerializedName("map_scope") val mapScope: String? = null,
+    val title: String? = null,
+    val status: String? = null,
+)
+
+data class MapContributionResponse(val contribution: MapContributionDto? = null)
+
+/** GET /api/indoor-places/targets/... — phòng / POI như địa điểm */
+data class IndoorTargetSummaryDto(
+    @SerializedName("building_id") val buildingId: String? = null,
+    @SerializedName("floor_number") val floorNumber: Int? = null,
+    @SerializedName("entity_kind") val entityKind: String? = null,
+    @SerializedName("entity_id") val entityId: String? = null,
+    val name: String? = null,
+    @SerializedName("type_label") val typeLabel: String? = null,
+    val description: String? = null,
+    @SerializedName("rating_avg") val ratingAvg: Double? = null,
+    @SerializedName("rating_count") val ratingCount: Int = 0,
+    @SerializedName("is_favorite") val isFavorite: Boolean = false,
+    @SerializedName("my_review") val myReview: IndoorMyReviewDto? = null,
+)
+
+data class IndoorMyReviewDto(
+    val rating: Int? = null,
+    val comment: String? = null,
+)
+
+data class IndoorReviewBody(
+    @SerializedName("building_id") val buildingId: String,
+    @SerializedName("floor_number") val floorNumber: Int,
+    @SerializedName("entity_kind") val entityKind: String,
+    @SerializedName("entity_id") val entityId: String,
+    val rating: Int,
+    val comment: String? = null,
+    @SerializedName("entity_name") val entityName: String? = null,
+)
+
+data class IndoorReportBody(
+    @SerializedName("building_id") val buildingId: String,
+    @SerializedName("floor_number") val floorNumber: Int,
+    @SerializedName("entity_kind") val entityKind: String,
+    @SerializedName("entity_id") val entityId: String,
+    @SerializedName("reason_code") val reasonCode: String,
+    val detail: String? = null,
+    @SerializedName("entity_name") val entityName: String? = null,
+)
+
+data class IndoorFavoriteBody(
+    @SerializedName("building_id") val buildingId: String,
+    @SerializedName("floor_number") val floorNumber: Int,
+    @SerializedName("entity_kind") val entityKind: String,
+    @SerializedName("entity_id") val entityId: String,
+    @SerializedName("entity_name") val entityName: String? = null,
+)
+
+data class IndoorReviewItemDto(
+    @SerializedName("_id") val id: String? = null,
+    val rating: Int = 0,
+    val comment: String? = null,
+    val user: PlaceReviewUserDto? = null,
+    @SerializedName("createdAt") val createdAt: String? = null,
+    @SerializedName("updatedAt") val updatedAt: String? = null,
+)
+
+data class IndoorReviewsListResponse(
+    val total: Int = 0,
+    val reviews: List<IndoorReviewItemDto> = emptyList(),
+)
+
+data class IndoorReviewResponse(val review: Any? = null, val message: String? = null)
+data class IndoorReportResponse(val report: Any? = null, val message: String? = null)
+data class IndoorFavoriteResponse(val favorite: Any? = null, val message: String? = null, val ok: Boolean? = null)
 
 data class PlaceFollowBody(
     @SerializedName("place_id") val placeId: String,

@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -20,11 +20,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.khoaluan.indoornav.ui.i18n.tr
+import com.khoaluan.indoornav.ui.icons.QrScanIcon
 import com.khoaluan.indoornav.ui.theme.NavBlue
 import com.khoaluan.indoornav.ui.theme.NavLightBlue
 
 /**
- * Overlay hướng dẫn lần đầu — hiển thị khi chưa quét QR và chưa chọn điểm đến.
+ * Overlay hướng dẫn lần đầu — quét QR hoặc chạm bản đồ.
  */
 @Composable
 fun EmptyStateOverlay(
@@ -66,7 +67,7 @@ fun EmptyStateOverlay(
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Search,
+                            imageVector = Icons.Default.LocationOn,
                             contentDescription = null,
                             tint = NavBlue,
                             modifier = Modifier.size(36.dp),
@@ -83,26 +84,13 @@ fun EmptyStateOverlay(
 
                     Text(
                         text = tr(
-                            "Quét mã QR gần bạn để bắt đầu điều hướng trong tòa nhà",
-                            "Scan a nearby QR code to start indoor navigation",
+                            "Quét QR gần bạn, hoặc chạm bản đồ để chọn điểm.",
+                            "Scan a nearby QR, or tap the map to pick a point.",
                         ),
                         fontSize = 13.sp,
                         color = Color(0xFF757575),
                         textAlign = TextAlign.Center,
                         lineHeight = 18.sp,
-                    )
-
-                    HorizontalDivider(color = Color(0xFFEEEEEE))
-
-                    Text(
-                        text = tr(
-                            "Hoặc dùng ô Tìm phòng phía trên để chọn điểm đến trước",
-                            "Or use Find room above to pick a destination first",
-                        ),
-                        fontSize = 12.sp,
-                        color = Color(0xFF9E9E9E),
-                        textAlign = TextAlign.Center,
-                        lineHeight = 17.sp,
                     )
 
                     Button(
@@ -118,7 +106,7 @@ fun EmptyStateOverlay(
                         elevation = ButtonDefaults.buttonElevation(4.dp),
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Search,
+                            imageVector = QrScanIcon,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp),
                         )
@@ -135,7 +123,7 @@ fun EmptyStateOverlay(
                         colors = ButtonDefaults.textButtonColors(contentColor = NavLightBlue),
                     ) {
                         Text(
-                            tr("Bỏ qua, tôi tự tìm trên bản đồ", "Skip, I'll explore the map myself"),
+                            tr("Đóng — chạm bản đồ để chọn điểm", "Close — tap the map to pick a point"),
                             fontSize = 12.sp,
                         )
                     }

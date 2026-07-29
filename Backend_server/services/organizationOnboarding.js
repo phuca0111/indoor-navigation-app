@@ -97,13 +97,14 @@ async function createOrganizationWithAdmin({
     });
 
     // Log (fire-and-forget, không ảnh hưởng response)
+    const sourceLabel = source || 'MANUAL';
     logActivity({
       user_id: createdByUserId || adminUser._id,
-      action: 'CREATE_ORG',
+      action: sourceLabel === 'SELF_SERVICE' ? 'SELF_SERVICE_ORG_TRIAL' : 'CREATE_ORG',
       target_type: 'organization',
       target_id: String(org._id),
       target: org.name,
-      details: { slug: org.slug, plan: org.plan, source: source || 'MANUAL' },
+      details: { slug: org.slug, plan: org.plan, source: sourceLabel },
       ip_address: ipAddress || '',
       organization_id: String(org._id)
     });
@@ -114,7 +115,7 @@ async function createOrganizationWithAdmin({
       target_type: 'user',
       target_id: String(adminUser._id),
       target: adminUser.email,
-      details: { role: 'ORG_ADMIN', source: source || 'MANUAL', organization_id: String(org._id) },
+      details: { role: 'ORG_ADMIN', source: sourceLabel, organization_id: String(org._id) },
       ip_address: ipAddress || '',
       organization_id: String(org._id)
     });

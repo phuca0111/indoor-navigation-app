@@ -776,7 +776,7 @@ const getBuildingById = async (req, res) => {
         ] = await Promise.all([
             Floor.find({ building_id: buildingId })
                 .select(
-                    'floor_number floor_name version published_at last_modified_by ' +
+                    'floor_number floor_name version published_at last_modified_by is_visible display_order ' +
                     'map_data.scale_ratio map_data.map_bearing_offset map_data.background_image ' +
                     'map_data.rooms map_data.pois map_data.nodes map_data.edges map_data.walls map_data.qr_anchors'
                 )
@@ -876,6 +876,8 @@ const getBuildingById = async (req, res) => {
             return {
                 floor_number: floorNumber,
                 floor_name: floor?.floor_name || (floorNumber === 0 ? 'Tầng trệt' : `Tầng ${floorNumber}`),
+                is_visible: floor?.is_visible !== false,
+                display_order: floor?.display_order ?? floorNumber,
                 has_map: floorHasMapContent(floor),
                 is_published: Boolean(floor?.published_at),
                 has_draft: Boolean(draft),
@@ -895,6 +897,12 @@ const getBuildingById = async (req, res) => {
                 map_bearing_offset: floor?.map_data?.map_bearing_offset ?? null,
                 last_modified_by: floor?.last_modified_by || draft?.updated_by || null
             };
+        });
+
+        floors.sort(function (a, b) {
+            var ao = a.display_order != null ? a.display_order : a.floor_number;
+            var bo = b.display_order != null ? b.display_order : b.floor_number;
+            return ao - bo || a.floor_number - b.floor_number;
         });
 
         const latestVersion = versionDocs[0] || null;

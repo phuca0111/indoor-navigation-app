@@ -5,9 +5,16 @@ const {
   createReport,
   myReports,
   closeReport,
+  adminListPlaceReports,
   upsertReview,
   myReviews,
+  listPlaceReviews,
   markHelpful,
+  adminListReviews,
+  adminDeactivateReview,
+  adminActivateReview,
+  adminListFavorites,
+  adminRemoveFavorite,
   createClaim,
   listEvents,
   createEvent,
@@ -23,9 +30,21 @@ const { P } = require('../utils/permissions');
 
 const router = express.Router();
 
+const requirePlaceModerate = requireAnyPermission(P.PLACE_MODERATE, P.PLACE_MANAGE);
+
+// Admin engagement — đăng ký trước các route :placeId / :slugOrId
+router.get('/admin/reviews', auth, requirePlaceModerate, adminListReviews);
+router.delete('/admin/reviews/:id', auth, requirePlaceModerate, adminDeactivateReview);
+router.post('/admin/reviews/:id/activate', auth, requirePlaceModerate, adminActivateReview);
+router.get('/admin/favorites', auth, requirePlaceModerate, adminListFavorites);
+router.delete('/admin/favorites/:id', auth, requirePlaceModerate, adminRemoveFavorite);
+router.get('/admin/reports', auth, requirePlaceModerate, adminListPlaceReports);
+
+// Route cụ thể (:id/reviews, :id/events) phải đăng ký trước :slugOrId
+router.get('/places/:placeId/reviews', optionalAuth, listPlaceReviews);
+router.get('/places/:placeId/events', optionalAuth, listEvents);
 router.get('/places/:slugOrId', optionalAuth, getBySlug);
 router.post('/places/:slugOrId/view', optionalAuth, recordView);
-router.get('/places/:placeId/events', optionalAuth, listEvents);
 
 router.post('/reports', auth, requirePermission(P.PLACE_REPORT), createReport);
 router.get('/reports/mine', auth, myReports);

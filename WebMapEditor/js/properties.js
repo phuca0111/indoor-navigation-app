@@ -1183,6 +1183,20 @@ function showDoorProps(d) {
 }
 
 // --- POI ---
+function isExitPoiType(p) {
+    var info = (typeof getPoiTypeInfo === 'function') ? getPoiTypeInfo(p) : null;
+    if (info && info.key === 'EXIT') return true;
+    var key = String((p && (p.poiType || p.poi_type)) || '').toUpperCase();
+    return key === 'EXIT';
+}
+
+function isFinalExitPoi(p) {
+    if (!p || !isExitPoiType(p)) return false;
+    var role = String(p.exit_role || p.exitRole || '').toLowerCase();
+    if (role === 'final' || role === 'outdoor') return true;
+    return p.is_final_exit === true || p.isFinalExit === true;
+}
+
 function showPoiProps(p) {
     var desc = getInspectorDescriptor();
     var currentType = (typeof getPoiTypeInfo === 'function') ? getPoiTypeInfo(p) : poiTypes[p.typeIndex];
@@ -1191,9 +1205,22 @@ function showPoiProps(p) {
         var sel = (currentType === poiTypes[i]) ? ' selected' : '';
         typeOptions += '<option value="' + i + '"' + sel + '>' + poiTypes[i].icon + ' ' + poiTypes[i].name + '</option>';
     }
+    var exitRoleHtml = '';
+    if (isExitPoiType(p)) {
+        exitRoleHtml =
+            '<div class="prop-group">' +
+            '<div class="prop-group-title">🚪 Sơ tán / thoát hiểm</div>' +
+            '<div class="prop-row" style="align-items:flex-start;">' +
+            '<label style="flex:1;line-height:1.35;">Cửa ra ngoài (cuối)</label>' +
+            '<input type="checkbox" ' + (isFinalExitPoi(p) ? 'checked' : '') +
+            ' onchange="updateExitRoleFinal(this.checked)" style="width:18px;height:18px;margin-top:2px;">' +
+            '</div>' +
+            '<p class="hint-text">Bật cho cửa thật sự ra ngoài trời. App ưu tiên EXIT này khi sơ tán; cửa trong hành lang để tắt.</p>' +
+            '</div>';
+    }
 
     propertiesDiv.innerHTML =
-        renderSchemaPropGroup(desc, { title: '📍 Điểm POI #' + p.id, skipKeys: ['category', 'size'] }) +
+        renderSchemaPropGroup(desc, { title: '📍 Điểm POI #' + p.id, skipKeys: ['category', 'size', 'exit_role', 'exitRole', 'is_final_exit'] }) +
         '<div class="prop-group">' +
         '<div class="prop-row"><label>Loại:</label>' +
         '<select onchange="changePoiType(Number(this.value))">' + typeOptions + '</select></div>' +
@@ -1205,6 +1232,7 @@ function showPoiProps(p) {
         '<input type="range" min="12" max="96" step="2" value="' + (typeof normalizePoiSize === 'function' ? normalizePoiSize(p.size) : (p.size || 24)) + '" onchange="updatePoiSize(Number(this.value), this.nextElementSibling)">' +
         '<span class="unit">' + (typeof normalizePoiSize === 'function' ? normalizePoiSize(p.size) : (p.size || 24)) + ' px</span></div>' +
         '</div>' +
+        exitRoleHtml +
         '<div class="prop-group">' +
         '<div class="prop-group-title">🔎 Tìm kiếm (Android)</div>' +
         '<div class="prop-row"><label>Mô tả:</label>' +
@@ -1215,6 +1243,25 @@ function showPoiProps(p) {
         '</div>' +
         '<button onclick="deleteSelected()" style="width:100%;padding:6px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">🗑️ Xóa</button>';
 }
+
+function updateExitRoleFinal(checked) {
+    if (!selectedObject || selectedObject.type !== 'poi') return;
+    if (!isExitPoiType(selectedObject.data)) return;
+    saveState();
+    if (checked) {
+        selectedObject.data.exit_role = 'final';
+        selectedObject.data.is_final_exit = true;
+    } else {
+        selectedObject.data.exit_role = 'internal';
+        selectedObject.data.is_final_exit = false;
+    }
+    if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
+    if (typeof scheduleDraftServerSync === 'function') scheduleDraftServerSync();
+    if (typeof draw === 'function') draw();
+    showPoiProps(selectedObject.data);
+}
+window.updateExitRoleFinal = updateExitRoleFinal;
+window.isFinalExitPoi = isFinalExitPoi;
 
 /** GĐ1 POI Platform — tag tìm kiếm nhập dạng "a, b, c". */
 function updatePoiSearchTags(value) {
@@ -1470,10 +1517,20 @@ function changePoiType(index) {
     selectedObject.data.typeIndex = index;
     selectedObject.data.type = poiTypes[index].name;
     selectedObject.data.poiType = poiTypes[index].key;
+    if (poiTypes[index].key === 'EXIT') {
+        if (!selectedObject.data.exit_role) {
+            selectedObject.data.exit_role = 'internal';
+            selectedObject.data.is_final_exit = false;
+        }
+    } else {
+        delete selectedObject.data.exit_role;
+        delete selectedObject.data.is_final_exit;
+    }
     updateObjectList();
     draw();
     if (typeof markAutosaveDirty === 'function') markAutosaveDirty();
     if (typeof scheduleDraftServerSync === 'function') scheduleDraftServerSync();
+    showPoiProps(selectedObject.data);
 }
 
 function updatePoiSize(value, valueLabel) {

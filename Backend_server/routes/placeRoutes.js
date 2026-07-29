@@ -18,6 +18,9 @@ const {
   checkDuplicates,
   scanDuplicates,
   resolvePlaceVerification,
+  requestPlaceVerification,
+  approvePlaceVerification,
+  rejectPlaceVerification,
   searchPlacesPublic,
   getPlacePublic
 } = require('../controllers/placeController');
@@ -66,10 +69,43 @@ router.post('/check-duplicates', auth, requirePermission(P.PLACE_VALIDATE), chec
 router.post('/', auth, requirePermission(P.PLACE_MANAGE), createPlace);
 router.patch('/buildings/:buildingId/visibility', auth, requirePermission(P.PLACE_MANAGE), updateBuildingVisibility);
 router.patch('/:id', auth, requirePermission(P.PLACE_MANAGE), updatePlace);
-router.post('/:id/verification', auth, requirePermission(P.PLACE_MODERATE), resolvePlaceVerification);
 router.delete('/:id', auth, requireSuperAdmin, removePlace);
 router.post('/:id/attach-building', auth, requirePermission(P.PLACE_MANAGE), attachBuilding);
 router.post('/:id/detach-building', auth, requirePermission(P.PLACE_MANAGE), detachBuilding);
+
+// XM Place — tách endpoint request vs approve/reject
+router.post(
+  '/:id/verification/request',
+  auth,
+  requireAnyPermission(P.PLACE_REVIEW, P.PLACE_PROPOSE, P.PLACE_CLAIM),
+  requestPlaceVerification
+);
+router.post(
+  '/:id/verification/approve',
+  auth,
+  requireAnyPermission(P.PLACE_MODERATE, P.PLACE_VALIDATE, P.PLACE_MANAGE),
+  approvePlaceVerification
+);
+router.post(
+  '/:id/verification/reject',
+  auth,
+  requireAnyPermission(P.PLACE_MODERATE, P.PLACE_VALIDATE, P.PLACE_MANAGE),
+  rejectPlaceVerification
+);
+// Legacy unified action body — giữ tương thích integration / client cũ
+router.post(
+  '/:id/verification',
+  auth,
+  requireAnyPermission(
+    P.PLACE_REVIEW,
+    P.PLACE_PROPOSE,
+    P.PLACE_CLAIM,
+    P.PLACE_MODERATE,
+    P.PLACE_VALIDATE,
+    P.PLACE_MANAGE
+  ),
+  resolvePlaceVerification
+);
 
 router.get('/:id', optionalAuth, getPlaceRegistry);
 

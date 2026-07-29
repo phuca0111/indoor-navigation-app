@@ -86,9 +86,9 @@ describe('Map Governance P4 community + verification', () => {
 
   test('TC-P4-03 verification request → approve', async () => {
     const reqv = await request(app)
-      .post(`/api/places/${place._id}/verification`)
+      .post(`/api/places/${place._id}/verification/request`)
       .set('Authorization', `Bearer ${superToken}`)
-      .send({ action: 'request', note: 'cần xác minh' });
+      .send({ note: 'cần xác minh' });
     expect(reqv.status).toBe(200);
     expect(reqv.body.place.verification_status).toBe('PENDING');
 
@@ -98,9 +98,9 @@ describe('Map Governance P4 community + verification', () => {
     expect(hub.body.verification_queue.some((p) => String(p._id) === String(place._id))).toBe(true);
 
     const ok = await request(app)
-      .post(`/api/places/${place._id}/verification`)
+      .post(`/api/places/${place._id}/verification/approve`)
       .set('Authorization', `Bearer ${superToken}`)
-      .send({ action: 'approve', note: 'ok' });
+      .send({ note: 'ok' });
     expect(ok.status).toBe(200);
     expect(ok.body.place.verified).toBe(true);
     expect(ok.body.place.verification_status).toBe('VERIFIED');

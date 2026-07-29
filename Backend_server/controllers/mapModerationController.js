@@ -95,7 +95,7 @@ async function createReport(req, res) {
     }
 
     const reason_code = String(req.body?.reason_code || 'OTHER').toUpperCase();
-    const allowed = ['SPAM', 'INAPPROPRIATE', 'DUPLICATE', 'COPYRIGHT', 'OTHER'];
+    const allowed = ['SPAM', 'INAPPROPRIATE', 'DUPLICATE', 'COPYRIGHT', 'WRONG_LOCATION', 'OTHER'];
     const doc = await MapModerationReport.create({
       target_type,
       target_id,

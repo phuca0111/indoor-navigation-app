@@ -1,59 +1,280 @@
 ﻿<!DOCTYPE html>
-<html lang="vi">
+<html class="scroll-smooth" lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Giá | IndoorNav</title>
-    <meta name="description" content="Bảng giá IndoorNav đồng bộ từ catalog Billing (FREE / PRO / ENTERPRISE).">
-    <link rel="stylesheet" href="/styles.css?v=20260721c6">
-    <link rel="stylesheet" href="/css/landing-layout.css?v=20260721settings2">
-    <link rel="stylesheet" href="/css/landing-pricing.css?v=20260721c6">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Giá | IndoorNav</title>
+<meta name="description" content="Bảng giá IndoorNav đồng bộ từ catalog Billing (FREE / PRO / ENTERPRISE)."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&amp;family=Hanken+Grotesk:wght@400;600;700&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,300,0,0&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/css/landing-premium.css?v=20260730f3"/>
+<link rel="stylesheet" href="/css/landing-pricing.css?v=20260730p2"/>
+<script id="tailwind-config">
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "outline-variant": "#c7c6ca",
+        "on-error": "#ffffff",
+        "secondary-container": "#4d8efe",
+        "surface-container-high": "#e8e8e5",
+        "secondary-fixed-dim": "#adc6ff",
+        "error-container": "#ffdad6",
+        "deep-charcoal": "#1d1d1f",
+        "surface-bright": "#f9f9f6",
+        "on-primary-fixed": "#1b1b1d",
+        "surface": "#f9f9f6",
+        "outline": "#77767b",
+        "on-secondary-container": "#00285c",
+        "tertiary": "#060200",
+        "surface-dim": "#dadad7",
+        "on-tertiary-fixed-variant": "#643f00",
+        "on-surface": "#1a1c1b",
+        "secondary": "#005ac1",
+        "on-primary-container": "#868587",
+        "surface-container-lowest": "#ffffff",
+        "inverse-primary": "#c8c6c8",
+        "hairline-border": "#d9d5cf",
+        "on-primary-fixed-variant": "#474649",
+        "tertiary-fixed-dim": "#fdba61",
+        "on-surface-variant": "#46464a",
+        "inverse-surface": "#2f312f",
+        "secondary-fixed": "#d8e2ff",
+        "primary-fixed": "#e4e2e4",
+        "tertiary-container": "#2c1900",
+        "primary": "#030304",
+        "primary-fixed-dim": "#c8c6c8",
+        "on-background": "#1a1c1b",
+        "on-primary": "#ffffff",
+        "on-secondary-fixed-variant": "#004494",
+        "on-secondary-fixed": "#001a41",
+        "surface-variant": "#e2e3e0",
+        "surface-container": "#eeeeeb",
+        "surface-container-highest": "#e2e3e0",
+        "surface-tint": "#5f5e60",
+        "on-tertiary-fixed": "#2a1700",
+        "on-tertiary-container": "#b27927",
+        "primary-container": "#1d1d1f",
+        "surface-container-low": "#f4f4f1",
+        "on-error-container": "#93000a",
+        "error": "#ba1a1a",
+        "background": "#f9f9f6",
+        "on-secondary": "#ffffff",
+        "tertiary-fixed": "#ffddb7",
+        "inverse-on-surface": "#f1f1ee",
+        "on-tertiary": "#ffffff",
+        "mist-gray": "#f0f0f2"
+      },
+      borderRadius: {
+        DEFAULT: "0.25rem",
+        lg: "0.5rem",
+        xl: "0.75rem",
+        full: "9999px"
+      },
+      spacing: {
+        "page-margin-mobile": "24px",
+        gutter: "32px",
+        "section-gap-sm": "80px",
+        "component-padding": "1.5rem",
+        "page-margin-desktop": "80px",
+        "section-gap-lg": "160px"
+      },
+      fontFamily: {
+        "body-md": ["Be Vietnam Pro", "sans-serif"],
+        "label-mono": ["JetBrains Mono", "monospace"],
+        "headline-lg-mobile": ["Hanken Grotesk", "sans-serif"],
+        "headline-md": ["Hanken Grotesk", "sans-serif"],
+        "display-hero": ["Hanken Grotesk", "sans-serif"],
+        "body-lg": ["Be Vietnam Pro", "sans-serif"],
+        "headline-lg": ["Hanken Grotesk", "sans-serif"]
+      },
+      fontSize: {
+        "body-md": ["16px", { lineHeight: "24px", fontWeight: "400" }],
+        "label-mono": ["12px", { lineHeight: "16px", letterSpacing: "0.05em", fontWeight: "500" }],
+        "headline-lg-mobile": ["36px", { lineHeight: "42px", fontWeight: "600" }],
+        "headline-md": ["32px", { lineHeight: "40px", fontWeight: "600" }],
+        "display-hero": ["clamp(40px, 7vw, 72px)", { lineHeight: "1.1", letterSpacing: "-0.02em", fontWeight: "700" }],
+        "body-lg": ["20px", { lineHeight: "32px", fontWeight: "400" }],
+        "headline-lg": ["clamp(32px, 4vw, 48px)", { lineHeight: "1.2", letterSpacing: "-0.01em", fontWeight: "600" }]
+      }
+    }
+  }
+};
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle;
+  }
+  .transition-premium {
+    transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .hover-scale:hover {
+    transform: scale(0.98);
+  }
+  .pricing-card {
+    transition: transform 0.3s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.3s ease;
+  }
+  .pricing-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.03);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pricing-card:hover { transform: none; }
+  }
+</style>
 </head>
-<body>
-<header class="header">
-    <div class="container header-inner">
-        <div class="logo">
-            <a href="/" aria-label="IndoorNav — Trang chủ">
-                <span class="logo-icon">📍</span>
-                <span class="logo-text">IndoorNav</span>
-            </a>
-        </div>
-        <nav class="nav" id="mainNav">
-            <a href="/">Tổng quan</a>
-            <a href="/explore">Bản đồ</a>
-            <a href="/features">Tính năng</a>
-            <a href="/pricing">Giá</a>
-            <a href="/contact">Liên hệ</a>
-        </nav>
-        <div class="auth-actions" id="authActions">
-            <a href="/login" class="auth-btn login-btn">Đăng nhập</a>
-            <a href="/register" class="auth-btn register-btn org-register-btn">Đăng ký tổ chức</a>
-        </div>
-        <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">☰</button>
+<body class="landing-premium bg-surface text-deep-charcoal font-body-md selection:bg-secondary/20 overflow-x-hidden antialiased">
+
+<header class="site-header fixed top-0 left-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-hairline-border/50 h-20 transition-all duration-300">
+  <div class="site-header-inner flex justify-between items-center max-w-7xl mx-auto px-6 md:px-page-margin-desktop h-full">
+    <div class="flex items-center gap-8 md:gap-12 min-w-0">
+      <a class="site-brand font-headline-md text-2xl md:text-headline-md font-bold text-deep-charcoal shrink-0" href="/" aria-label="IndoorNav — Trang chủ"><span class="logo-text">IndoorNav</span></a>
+      <nav class="nav hidden md:flex gap-8" id="mainNav">
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/">Tổng quan</a>
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/explore">Bản đồ</a>
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/features">Tính năng</a>
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-secondary font-bold" href="/pricing" aria-current="page">Giá</a>
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/contact">Liên hệ</a>
+      </nav>
     </div>
+    <div class="flex items-center gap-3 md:gap-4">
+      <div class="auth-actions hidden md:flex items-center gap-3" id="authActions">
+        <a href="/login" class="px-5 py-2 rounded-full font-body-md text-on-surface-variant hover:opacity-70 transition-opacity" id="loginBtn">Đăng nhập</a>
+        <a href="/get-app" class="px-7 py-2.5 bg-deep-charcoal text-on-primary rounded-full font-body-md font-semibold hover-scale transition-premium">Tải App</a>
+      </div>
+      <button type="button" class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">☰</button>
+    </div>
+  </div>
 </header>
 
-<section class="pricing-section" id="pricing">
-    <div class="container">
-        <h2 class="section-title">Gói dịch vụ</h2>
-        <p class="landing-muted" style="margin-top: 10px; text-align: center;">
-            Giá và hạn mức lấy từ catalog Billing của hệ thống — không chỉnh tay trên CMS.
-        </p>
-        <div id="pricingGrid" class="pricing-grid" aria-live="polite">
-            <!-- JS fill từ /api/billing/plans -->
-        </div>
-        <p id="pricingStatus" class="pricing-status" aria-live="polite"></p>
-    </div>
-</section>
+<main id="main-content" class="pt-32 md:pt-40">
+  <section class="max-w-7xl mx-auto px-page-margin-mobile md:px-page-margin-desktop text-center mb-16 md:mb-section-gap-sm">
+    <span class="font-label-mono text-label-mono text-secondary uppercase tracking-[0.2em] block mb-6">Gói dịch vụ</span>
+    <h1 class="font-display-hero text-display-hero text-deep-charcoal mb-8">Bắt đầu đơn giản, mở rộng khi cần</h1>
+    <p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl mx-auto">
+      Giá và hạn mức lấy từ catalog Billing của hệ thống — minh bạch theo tổ chức và số tòa nhà.
+    </p>
+  </section>
 
-<footer class="footer">
-    <div class="container">
-        <p>&copy; 2025 - Hệ thống Bản đồ và Dẫn đường Trong nhà</p>
-        <p>Đồ án/Luận văn tốt nghiệp - Trình độ Đại học</p>
+  <section class="max-w-7xl mx-auto px-page-margin-mobile md:px-page-margin-desktop mb-16 md:mb-section-gap-sm" id="pricing" aria-labelledby="pricing-heading">
+    <h2 id="pricing-heading" class="landing-sr-only">Bảng giá</h2>
+    <div id="pricingGrid" class="pricing-grid grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-gutter" aria-live="polite">
+      <!-- pricing.js fill từ /api/billing/plans -->
     </div>
+    <p id="pricingStatus" class="pricing-status text-center mt-8 font-label-mono text-label-mono text-on-surface-variant" aria-live="polite"></p>
+    <p class="text-center mt-6 font-label-mono text-label-mono text-on-surface-variant opacity-60">
+      Số liệu thực tế đồng bộ từ hệ thống Billing — không chỉnh tay trên CMS.
+    </p>
+  </section>
+
+  <section class="max-w-7xl mx-auto px-page-margin-mobile md:px-page-margin-desktop mb-20 md:mb-section-gap-lg" id="faq">
+    <div class="max-w-3xl mx-auto">
+      <h2 class="font-headline-md text-2xl md:text-headline-md text-deep-charcoal mb-10 md:mb-12 text-center">Câu hỏi thường gặp</h2>
+      <div class="space-y-0" id="faqList">
+        <div class="faq-item border-b border-hairline-border py-6 md:py-8">
+          <button type="button" class="faq-toggle flex justify-between items-center w-full text-left gap-4" aria-expanded="false">
+            <span class="font-body-lg text-lg md:text-body-lg text-deep-charcoal font-medium">Đổi gói thế nào?</span>
+            <span class="material-symbols-outlined text-on-surface-variant shrink-0 faq-icon" aria-hidden="true">expand_more</span>
+          </button>
+          <div class="faq-panel hidden mt-4 font-body-md text-on-surface-variant leading-relaxed">
+            Trong Dashboard, Org Admin có thể xem gói hiện tại và gửi yêu cầu nâng cấp / đổi gói. Thay đổi hạn mức áp dụng theo catalog Billing sau khi được duyệt hoặc kích hoạt.
+          </div>
+        </div>
+        <div class="faq-item border-b border-hairline-border py-6 md:py-8">
+          <button type="button" class="faq-toggle flex justify-between items-center w-full text-left gap-4" aria-expanded="false">
+            <span class="font-body-lg text-lg md:text-body-lg text-deep-charcoal font-medium">Có dùng thử không?</span>
+            <span class="material-symbols-outlined text-on-surface-variant shrink-0 faq-icon" aria-hidden="true">expand_more</span>
+          </button>
+          <div class="faq-panel hidden mt-4 font-body-md text-on-surface-variant leading-relaxed">
+            Có — gói FREE / dùng thử cho phép trải nghiệm Dashboard, Editor và App trong hạn mức của catalog (số tòa nhà và tài khoản theo Billing).
+          </div>
+        </div>
+        <div class="faq-item border-b border-hairline-border py-6 md:py-8">
+          <button type="button" class="faq-toggle flex justify-between items-center w-full text-left gap-4" aria-expanded="false">
+            <span class="font-body-lg text-lg md:text-body-lg text-deep-charcoal font-medium">Thanh toán thế nào?</span>
+            <span class="material-symbols-outlined text-on-surface-variant shrink-0 faq-icon" aria-hidden="true">expand_more</span>
+          </button>
+          <div class="faq-panel hidden mt-4 font-body-md text-on-surface-variant leading-relaxed">
+            Với đồ án / triển khai thí điểm, liên hệ qua trang Liên hệ để nhận hướng dẫn thanh toán hoặc kích hoạt gói phù hợp tổ chức của bạn.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="max-w-7xl mx-auto px-page-margin-mobile md:px-page-margin-desktop mb-20 md:mb-section-gap-lg">
+    <div class="bg-deep-charcoal rounded-[32px] md:rounded-[48px] p-10 md:p-24 text-center relative overflow-hidden">
+      <div class="absolute top-0 right-0 w-[400px] h-[400px] bg-secondary opacity-10 blur-[100px] -translate-y-1/2 translate-x-1/2 pointer-events-none" aria-hidden="true"></div>
+      <div class="absolute bottom-0 left-0 w-[300px] h-[300px] bg-secondary-container opacity-10 blur-[80px] translate-y-1/2 -translate-x-1/2 pointer-events-none" aria-hidden="true"></div>
+      <h2 class="font-headline-lg text-headline-lg text-white mb-8 md:mb-10 relative z-10">Sẵn sàng chọn gói?</h2>
+      <div class="flex flex-col sm:flex-row justify-center items-center gap-4 md:gap-6 relative z-10">
+        <a href="/features" class="w-full sm:w-auto px-12 py-5 bg-white text-deep-charcoal rounded-full font-body-md font-semibold hover:bg-mist-gray transition-premium text-center">Xem tính năng</a>
+        <a href="/contact" class="w-full sm:w-auto px-12 py-5 border border-white/20 text-white rounded-full font-body-md font-semibold hover:bg-white/10 transition-premium text-center">Liên hệ</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="bg-surface-container-low border-t border-hairline-border w-full py-12 md:py-section-gap-sm">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <a class="site-brand font-headline-md text-2xl font-bold text-primary" href="/"><span class="logo-text">IndoorNav</span></a>
+      <p id="footerCopy" class="footer-copy font-body-md text-body-md text-on-surface-variant">© 2026 IndoorNav. Bảo lưu mọi quyền.</p>
+      <p class="font-body-md text-sm text-outline">Đồ án / Luận văn tốt nghiệp — ngành Công nghệ thông tin</p>
+      <div id="footerContact" role="group" aria-label="Thông tin liên hệ"></div>
+    </div>
+    <nav class="footer-links" aria-label="Liên kết chân trang">
+      <a class="font-label-mono text-label-mono text-on-surface-variant hover:underline" href="/contact">Liên hệ</a>
+      <a class="font-label-mono text-label-mono text-on-surface-variant hover:underline" href="/pricing">Giá</a>
+      <a class="font-label-mono text-label-mono text-on-surface-variant hover:underline" href="/features">Tính năng</a>
+      <a class="font-label-mono text-label-mono text-on-surface-variant hover:underline" href="/get-app">Tải App</a>
+    </nav>
+  </div>
 </footer>
 
-<script src="/landing.js?v=20260721settings2"></script>
-<script src="/pricing.js?v=20260721cmsfix1"></script>
+<script src="/landing.js?v=20260730legacy1"></script>
+<script src="/pricing.js?v=20260730p2"></script>
+<script>
+(function () {
+  var nav = document.querySelector('.site-header');
+  if (nav) {
+    window.addEventListener('scroll', function () {
+      if (window.scrollY > 20) {
+        nav.classList.add('h-16', 'shadow-sm');
+        nav.classList.remove('h-20');
+      } else {
+        nav.classList.add('h-20');
+        nav.classList.remove('h-16', 'shadow-sm');
+      }
+    }, { passive: true });
+  }
+
+  document.querySelectorAll('.faq-toggle').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var item = button.closest('.faq-item');
+      var panel = item && item.querySelector('.faq-panel');
+      var open = button.getAttribute('aria-expanded') === 'true';
+
+      document.querySelectorAll('.faq-item').forEach(function (other) {
+        var otherBtn = other.querySelector('.faq-toggle');
+        var otherPanel = other.querySelector('.faq-panel');
+        if (otherBtn) otherBtn.setAttribute('aria-expanded', 'false');
+        if (otherPanel) otherPanel.classList.add('hidden');
+        other.classList.remove('is-open');
+      });
+
+      if (!open && panel) {
+        button.setAttribute('aria-expanded', 'true');
+        panel.classList.remove('hidden');
+        item.classList.add('is-open');
+      }
+    });
+  });
+})();
+</script>
 </body>
 </html>

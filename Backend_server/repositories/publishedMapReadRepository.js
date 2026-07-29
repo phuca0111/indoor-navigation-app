@@ -25,7 +25,8 @@ async function findPublishedFloor(buildingId, floorNumber) {
   return Floor.findOne({
     building_id: building._id,
     floor_number: { $in: [floorNumber, String(floorNumber)] },
-    published_at: { $ne: null }
+    published_at: { $ne: null },
+    is_visible: { $ne: false }
   })
     .select('-draft_map_data -draft_updated_at -draft_updated_by')
     .lean();
@@ -58,7 +59,10 @@ async function findFloorForActor(buildingId, floorNumber, actor) {
     building_id: building._id,
     floor_number: { $in: [floorNumber, String(floorNumber)] }
   };
-  if (!actor) filter.published_at = { $ne: null };
+  if (!actor) {
+    filter.published_at = { $ne: null };
+    filter.is_visible = { $ne: false };
+  }
   const query = Floor.findOne(filter);
   if (!actor) query.select('-draft_map_data -draft_updated_at -draft_updated_by');
   return query.lean();
@@ -69,7 +73,8 @@ async function listPublishedFloors(buildingId) {
   if (!building) return null;
   const floors = await Floor.find({
     building_id: building._id,
-    published_at: { $ne: null }
+    published_at: { $ne: null },
+    is_visible: { $ne: false }
   })
     .select('-draft_map_data -draft_updated_at -draft_updated_by')
     .sort({ floor_number: 1 })

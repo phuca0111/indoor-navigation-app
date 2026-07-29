@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Outdoor Platform — OSM experience (search · filter · cluster · deep-link · Maps CTA)
  */
 (function () {
@@ -126,6 +126,53 @@
       encodeURIComponent(lat + ',' + lng);
   }
 
+  let outdoorRouteLine = null;
+
+  function clearOutdoorRoute() {
+    if (outdoorRouteLine) {
+      map.removeLayer(outdoorRouteLine);
+      outdoorRouteLine = null;
+    }
+  }
+
+  async function drawOsrmRouteToPlace(place) {
+    clearOutdoorRoute();
+    const toLat = Number(place.latitude);
+    const toLng = Number(place.longitude);
+    if (!Number.isFinite(toLat) || !Number.isFinite(toLng)) return false;
+    if (!navigator.geolocation) return false;
+    return new Promise(function (resolve) {
+      navigator.geolocation.getCurrentPosition(async function (pos) {
+        try {
+          const fromLat = pos.coords.latitude;
+          const fromLng = pos.coords.longitude;
+          const qs = new URLSearchParams({
+            fromLat: String(fromLat),
+            fromLng: String(fromLng),
+            toLat: String(toLat),
+            toLng: String(toLng),
+            profile: 'foot'
+          });
+          const res = await fetch('/api/navigation/outdoor-route?' + qs.toString());
+          const data = await res.json().catch(function () { return {}; });
+          if (!res.ok || !Array.isArray(data.polyline) || data.polyline.length < 2) {
+            resolve(false);
+            return;
+          }
+          const latlngs = data.polyline.map(function (p) {
+            return [p.lat, p.lng];
+          });
+          outdoorRouteLine = L.polyline(latlngs, { color: '#1A73E8', weight: 5 }).addTo(map);
+          map.fitBounds(outdoorRouteLine.getBounds(), { padding: [40, 40] });
+          setStatus('Đường đi bộ · ' + Math.round(data.distance_m || 0) + ' m');
+          resolve(true);
+        } catch (e) {
+          resolve(false);
+        }
+      }, function () { resolve(false); }, { enableHighAccuracy: true, timeout: 8000 });
+    });
+  }
+
   async function selectPlace(p, pan) {
     selectedId = p._id;
     renderResults(places);
@@ -184,10 +231,12 @@
         '<button type="button" class="secondary" id="btnFav" style="width:auto;">Yêu thích</button>' +
         '<button type="button" class="secondary" id="btnFollow" style="width:auto;">Follow</button>' +
         '<button type="button" class="secondary" id="btnReview" style="width:auto;">Đánh giá</button>' +
+        '<button type="button" class="secondary" id="btnPropose" style="width:auto;">Đề xuất</button>' +
         '<button type="button" class="secondary" id="btnReport" style="width:auto;">Báo cáo</button>' +
         (gmaps
           ? '<a class="btn-link" id="btnMaps" href="' + gmaps +
-            '" target="_blank" rel="noopener">Đi tới (Google Maps)</a>'
+            '" target="_blank" rel="noopener">Đi tới (Google Maps)</a>' +
+            '<button type="button" class="secondary" id="btnOsrm" style="width:auto;">Chỉ đường (OSM)</button>'
           : '') +
         '<button type="button" class="secondary" id="btnCopy" style="width:auto;">Copy link</button>' +
         '<a href="/get-app" style="font-size:0.8rem;align-self:center;">Android App</a>' +
@@ -195,7 +244,16 @@
       wireFavorite(place);
       wireFollow(place);
       wireReview(place);
+      wirePropose(place);
       wireReport(place);
+      const btnOsrm = document.getElementById('btnOsrm');
+      if (btnOsrm) {
+        btnOsrm.onclick = async function () {
+          setStatus('Đang tính đường OSRM…');
+          const ok = await drawOsrmRouteToPlace(place);
+          if (!ok) setStatus('Không lấy được đường — dùng Google Maps');
+        };
+      }
       const btnCopy = document.getElementById('btnCopy');
       if (btnCopy) {
         btnCopy.onclick = function () {
@@ -347,6 +405,50 @@
         setStatus('Đã gửi đánh giá ★' + rating);
       } catch (e) {
         setStatus(e.message || 'Lỗi review');
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  }
+
+  function wirePropose(place) {
+    const btn = document.getElementById('btnPropose');
+    if (!btn || !place || !place._id) return;
+    btn.onclick = async function () {
+      if (!requireAuth('/outdoor/place/' + (place.slug || place._id))) return;
+      const title = window.prompt(
+        'Đề xuất cho map ngoài trời (vd: Sửa cổng vào, Thêm lối thoát):',
+        ''
+      );
+      if (!title || !String(title).trim()) return;
+      const type = window.prompt(
+        'Loại: FIX_LOCATION · FIX_INFO · ADD_POI · OTHER',
+        'FIX_INFO'
+      ) || 'FIX_INFO';
+      const detail = window.prompt('Mô tả chi tiết (tuỳ chọn):', '') || '';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/map-contributions', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + authToken(),
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            map_scope: 'OUTDOOR',
+            type: String(type).trim().toUpperCase(),
+            title: String(title).trim().slice(0, 200),
+            description: String(detail).slice(0, 500),
+            place_id: place._id,
+            latitude: place.latitude,
+            longitude: place.longitude
+          })
+        });
+        const data = await res.json().catch(function () { return {}; });
+        if (!res.ok) throw new Error(data.message || 'HTTP ' + res.status);
+        setStatus('Đã gửi đề xuất — chờ kiểm duyệt');
+      } catch (e) {
+        setStatus(e.message || 'Lỗi đề xuất');
       } finally {
         btn.disabled = false;
       }

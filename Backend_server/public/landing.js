@@ -261,22 +261,50 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function applySiteSettings(settings) {
         if (!settings) return;
+        var siteName = String(settings.site_name || '').trim();
+        var logoUrl = String(settings.logo_url || '').trim();
+        var isPremium = document.body.classList.contains('landing-premium');
+
         document.querySelectorAll('.logo-text').forEach(function (element) {
-            if (settings.site_name) element.textContent = settings.site_name;
+            if (siteName) element.textContent = siteName;
         });
-        if (/^(\/|https?:\/\/)/i.test(settings.logo_url || '')) {
+
+        document.querySelectorAll('a.site-brand').forEach(function (brand) {
+            if (siteName) {
+                brand.setAttribute('aria-label', siteName + ' — Trang chủ');
+                var text = brand.querySelector('.logo-text');
+                if (text) text.textContent = siteName;
+            }
+            var existingLogo = brand.querySelector('img.cms-site-logo, img.site-brand-logo-img');
+            if (/^(\/|https?:\/\/)/i.test(logoUrl)) {
+                var image = existingLogo || document.createElement('img');
+                image.className = 'cms-site-logo site-brand-logo-img';
+                image.src = logoUrl;
+                image.alt = siteName || 'Logo';
+                image.width = 32;
+                image.height = 32;
+                image.decoding = 'async';
+                if (!existingLogo) brand.insertBefore(image, brand.firstChild);
+            } else if (existingLogo) {
+                existingLogo.remove();
+            }
+        });
+
+        if (/^(\/|https?:\/\/)/i.test(logoUrl)) {
             document.querySelectorAll('.logo-mark, .logo-icon').forEach(function (mark) {
+                if (mark.closest && mark.closest('a.site-brand')) return;
                 var image = document.createElement('img');
                 image.className = 'cms-site-logo';
-                image.src = settings.logo_url;
-                image.alt = settings.site_name || 'Logo';
+                image.src = logoUrl;
+                image.alt = siteName || 'Logo';
                 mark.replaceWith(image);
             });
         }
+
         var footer = document.querySelector('footer');
         if (!footer) return;
-        var firstText = footer.querySelector('p');
-        if (firstText && settings.footer_text) firstText.textContent = settings.footer_text;
+        var copyEl = footer.querySelector('#footerCopy') || footer.querySelector('.footer-copy') || footer.querySelector('p');
+        if (copyEl && settings.footer_text) copyEl.textContent = settings.footer_text;
         var old = footer.querySelector('.cms-site-contact');
         if (old) old.remove();
         var hasContact = settings.email || settings.hotline || settings.facebook ||
@@ -302,17 +330,36 @@ document.addEventListener('DOMContentLoaded', function () {
             contact.appendChild(link);
         });
         var mapUrl = googleMapUrl(settings.google_map);
-        if (mapUrl) {
-            var map = document.createElement('iframe');
-            map.className = 'cms-site-map';
-            map.src = mapUrl;
-            map.loading = 'lazy';
-            map.referrerPolicy = 'no-referrer-when-downgrade';
-            map.title = 'Vị trí trên Google Maps';
-            contact.appendChild(map);
+        var mapHref = safeHref(settings.google_map, '') || mapUrl;
+        if (mapUrl || mapHref) {
+            if (isPremium) {
+                // Premium footer: chỉ link, không nhúng iframe nặng
+                var mapLink = document.createElement('a');
+                mapLink.href = mapHref.indexOf('http') === 0 ? mapHref : mapUrl;
+                mapLink.textContent = 'Google Maps';
+                mapLink.target = '_blank';
+                mapLink.rel = 'noopener';
+                contact.appendChild(mapLink);
+            } else if (mapUrl) {
+                var map = document.createElement('iframe');
+                map.className = 'cms-site-map';
+                map.src = mapUrl;
+                map.loading = 'lazy';
+                map.referrerPolicy = 'no-referrer-when-downgrade';
+                map.title = 'Vị trí trên Google Maps';
+                contact.appendChild(map);
+            }
         }
-        var container = footer.querySelector('.container') || footer;
-        container.appendChild(contact);
+        var slot = footer.querySelector('#footerContact') ||
+            footer.querySelector('.footer-brand') ||
+            footer.querySelector('.container');
+        if (slot) {
+            slot.appendChild(contact);
+        } else {
+            var inner = footer.querySelector('.footer-inner');
+            if (inner) inner.appendChild(contact);
+            else footer.appendChild(contact);
+        }
     }
 
     function youtubeVideoId(value) {
@@ -591,16 +638,100 @@ document.addEventListener('DOMContentLoaded', function () {
         if (path !== '/' || !Array.isArray(data.articles) || !data.articles.length) return;
         var old = document.getElementById('cmsPublishedArticles');
         if (old) old.remove();
+
+        var isPremium = document.body.classList.contains('landing-premium');
         var section = document.createElement('section');
         section.id = 'cmsPublishedArticles';
+        section.setAttribute('aria-labelledby', 'cmsBlogHeading');
+
+        if (isPremium) {
+            section.className = 'cms-blog-section';
+            var wrap = document.createElement('div');
+            wrap.className = 'cms-blog-inner';
+
+            var head = document.createElement('div');
+            head.className = 'cms-blog-head';
+            var eyebrow = document.createElement('span');
+            eyebrow.className = 'cms-blog-eyebrow';
+            eyebrow.textContent = 'IndoorNav';
+            var heading = document.createElement('h2');
+            heading.id = 'cmsBlogHeading';
+            heading.className = 'cms-blog-title';
+            heading.textContent = 'Blog & Tin tức';
+            var support = document.createElement('p');
+            support.className = 'cms-blog-support';
+            support.textContent = 'Cập nhật sản phẩm, hướng dẫn triển khai và tin tức từ hệ thống.';
+            var allLink = document.createElement('a');
+            allLink.className = 'cms-blog-all';
+            allLink.href = '/blog';
+            allLink.textContent = 'Xem tất cả';
+            head.append(eyebrow, heading, support, allLink);
+
+            var grid = document.createElement('div');
+            grid.className = 'cms-blog-grid';
+
+            data.articles.slice(0, 6).forEach(function (article) {
+                var card = document.createElement('a');
+                card.className = 'cms-blog-card';
+                card.href = '/blog/' + encodeURIComponent(article.slug || '');
+
+                var media = document.createElement('div');
+                media.className = 'cms-blog-card-media';
+                if (article.featured_image && /^(\/|https?:\/\/)/i.test(article.featured_image)) {
+                    var image = document.createElement('img');
+                    image.src = article.featured_image;
+                    image.alt = article.title || '';
+                    image.loading = 'lazy';
+                    media.appendChild(image);
+                } else {
+                    media.classList.add('is-empty');
+                    media.setAttribute('aria-hidden', 'true');
+                }
+
+                var body = document.createElement('div');
+                body.className = 'cms-blog-card-body';
+                var type = document.createElement('span');
+                type.className = 'cms-blog-card-type';
+                type.textContent = article.type === 'NEWS' ? 'Tin tức' : 'Blog';
+                var title = document.createElement('h3');
+                title.className = 'cms-blog-card-title';
+                title.textContent = article.title || '';
+                var excerpt = document.createElement('p');
+                excerpt.className = 'cms-blog-card-excerpt';
+                excerpt.textContent = article.excerpt || '';
+                var more = document.createElement('span');
+                more.className = 'cms-blog-card-more';
+                more.textContent = 'Đọc tiếp';
+                body.append(type, title, excerpt, more);
+
+                card.append(media, body);
+                grid.appendChild(card);
+            });
+
+            wrap.append(head, grid);
+            section.appendChild(wrap);
+            var cta = document.getElementById('cta');
+            var main = document.getElementById('main-content');
+            if (cta && cta.parentNode) {
+                cta.parentNode.insertBefore(section, cta);
+            } else if (main) {
+                main.appendChild(section);
+            } else {
+                var footer = document.querySelector('footer');
+                if (footer) footer.parentNode.insertBefore(section, footer);
+            }
+            return;
+        }
+
         section.className = 'cms-public-section';
         var container = document.createElement('div');
         container.className = 'container';
-        var heading = document.createElement('h2');
-        heading.className = 'section-title';
-        heading.textContent = 'Blog & Tin tức';
-        var grid = document.createElement('div');
-        grid.className = 'cms-public-grid';
+        var headingLegacy = document.createElement('h2');
+        headingLegacy.className = 'section-title';
+        headingLegacy.id = 'cmsBlogHeading';
+        headingLegacy.textContent = 'Blog & Tin tức';
+        var gridLegacy = document.createElement('div');
+        gridLegacy.className = 'cms-public-grid';
         data.articles.forEach(function (article) {
             var card = document.createElement('a');
             card.className = 'cms-public-article-card';
@@ -619,9 +750,9 @@ document.addEventListener('DOMContentLoaded', function () {
             var excerpt = document.createElement('p');
             excerpt.textContent = article.excerpt || '';
             card.append(type, title, excerpt);
-            grid.appendChild(card);
+            gridLegacy.appendChild(card);
         });
-        container.append(heading, grid);
+        container.append(headingLegacy, gridLegacy);
         section.appendChild(container);
         var anchor = document.querySelector('.cta-band, footer');
         if (anchor) anchor.parentNode.insertBefore(section, anchor);
@@ -632,9 +763,17 @@ document.addEventListener('DOMContentLoaded', function () {
         .then(function (res) { return res.ok ? res.json() : null; })
         .then(function (data) {
             if (!data) return;
-            applyTheme(data.theme);
+            var isPremium = document.body.classList.contains('landing-premium');
+            // Landing Aura: bỏ Theme / Landing Pages / Banner layout cũ — giữ HTML + design system mới
+            if (!isPremium) applyTheme(data.theme);
             applySeo(data.seo);
-            if (Array.isArray(data.navigation) && data.navigation.length && mainNav) {
+            // Landing Aura: giữ nav HTML tĩnh — không để CMS Navigation ghi đè class/style
+            if (
+                !isPremium &&
+                Array.isArray(data.navigation) &&
+                data.navigation.length &&
+                mainNav
+            ) {
                 var navigation = data.navigation
                     .filter(function (item) {
                         if (item.enabled === false) return false;
@@ -680,9 +819,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                 });
             }
-            applyPublishedPage(data);
+            if (!isPremium) applyPublishedPage(data);
             applySiteSettings(data.settings);
-            if (data.banner) {
+            if (!isPremium && data.banner) {
                 var heroTitle = document.querySelector('.hero-content h1');
                 var heroDesc = document.querySelector('.hero-description');
                 var heroRoot = document.querySelector('.hero');
@@ -708,7 +847,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 applyHeroVideo(data.banner.hero_video);
             }
-            applyScheduledBanner(data);
+            if (!isPremium) applyScheduledBanner(data);
             applyPublishedArticles(data);
         })
         .catch(function () { /* giữ HTML tĩnh */ });

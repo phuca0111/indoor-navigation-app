@@ -429,13 +429,14 @@ async function completeGoogleOAuth({ code, state }, context) {
 }
 
 /** Android Credential Manager — đăng nhập bằng Google ID token. */
-async function loginWithGoogleIdToken({ idToken }, context) {
+async function loginWithGoogleIdToken(body = {}, context) {
   if (!process.env.GOOGLE_CLIENT_ID) {
     throw Object.assign(new Error('Google OAuth chưa được cấu hình.'), {
       status: 503,
       code: 'GOOGLE_OAUTH_DISABLED'
     });
   }
+  const idToken = body.idToken || body.id_token || body.credential;
   const profile = await verifyIdToken(idToken);
   const user = await upsertGoogleUser(profile, context);
   const eligibility = await loadEligibility(user);
@@ -447,7 +448,8 @@ async function loginWithGoogleIdToken({ idToken }, context) {
       ...session,
       user: {
         ...session.user,
-        full_name: eligibility.user.full_name || profile.name || ''
+        full_name: eligibility.user.full_name || profile.name || '',
+        avatar_url: profile.picture || null
       }
     }
   };

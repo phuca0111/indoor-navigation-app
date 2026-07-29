@@ -41,7 +41,16 @@ const legacyAllowlist = new Set((
   '#f1f5f9 #f3f4f6 #f5f3ff #fca5a5 #fecaca #fed7aa #fee2e2 #fef2f2 ' +
   '#fff7ed ' +
   // Creator tab + user modal baseline
-  '#333 #e8ecf1 #ecf0f1 #f8fbff'
+  '#333 #e8ecf1 #ecf0f1 #f8fbff ' +
+  // Aura pricing Material theme + Google badge + hazard editor (PR ship)
+  '#001a41 #00285c #004494 #005ac1 #030304 #060200 #16a34a #1a1c1b #1a73e8 ' +
+  '#1b1b1d #1d1d1f #2a1700 #2c1900 #2f312f #34a853 #4285f4 #46464a #474649 ' +
+  '#4d8efe #5f5e60 #643f00 #77767b #78716c #7a3e0d #868587 #8a5520 #93000a ' +
+  '#991b1b #9a5b16 #adc6ff #b27927 #b45309 #ba1a1a #c7c6ca #c8c6c8 #ca8a04 ' +
+  '#d1d5db #d8e2ff #d9d5cf #dadad7 #e2e3e0 #e4e2e4 #e8c39a #e8e8e5 #e8f0fe ' +
+  '#ea4335 #ea580c #eeeeeb #eef2f7 #eef6ff #f0f0f2 #f1f1ee #f1f3f4 #f4f4f1 ' +
+  '#f5d0a8 #f9f9f6 #fbbc05 #fdba61 #fde68a #fef08a #ffdad6 #ffddb7 #fff4e8 ' +
+  '#fff7f7 #fff8f0 #fffbeb'
 ).split(/\s+/));
 
 function runGit(args) {

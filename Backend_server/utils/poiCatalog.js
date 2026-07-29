@@ -24,7 +24,9 @@ const POI_CATEGORIES = Object.freeze([
   { key: 'STAIRS', label_vi: 'Cầu thang', label_en: 'Stairs', icon: '🪜', color: '#9b59b6', keywords: ['cau thang', 'thang bo', 'stairs'] },
   { key: 'ATM', label_vi: 'Máy ATM', label_en: 'ATM', icon: '🏧', color: '#27ae60', keywords: ['atm', 'rut tien', 'may atm', 'cay atm'] },
   { key: 'RECEPTION', label_vi: 'Quầy lễ tân', label_en: 'Reception', icon: '💁', color: '#e67e22', keywords: ['le tan', 'quay le tan', 'reception'] },
+  // EXIT metadata (Web/Android): exit_role = final|internal, is_final_exit — cửa ra ngoài cuối khi sơ tán
   { key: 'EXIT', label_vi: 'Lối ra', label_en: 'Exit', icon: '🚪', color: '#e74c3c', keywords: ['loi ra', 'cua ra', 'loi thoat', 'thoat hiem', 'exit'] },
+  { key: 'ASSEMBLY_POINT', label_vi: 'Điểm tập trung', label_en: 'Assembly point', icon: '🏃', color: '#16a34a', keywords: ['diem tap trung', 'tap trung', 'assembly', 'assembly point', 'evacuation'] },
   { key: 'FOOD', label_vi: 'Nhà hàng', label_en: 'Food', icon: '🍽️', color: '#f97316', keywords: ['nha hang', 'do an', 'an uong', 'food', 'restaurant', 'food court'] },
   { key: 'CAFE', label_vi: 'Quán cà phê', label_en: 'Cafe', icon: '☕', color: '#92400e', keywords: ['ca phe', 'cafe', 'coffee', 'tra sua'] },
   { key: 'PARKING', label_vi: 'Bãi đỗ xe', label_en: 'Parking', icon: '🅿️', color: '#2563eb', keywords: ['bai do xe', 'gui xe', 'do xe', 'parking'] },

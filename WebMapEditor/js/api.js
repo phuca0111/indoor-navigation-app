@@ -448,11 +448,23 @@ function rebuildFloorSelect(totalFloors) {
     const prev = sel.value;
     // F2: dùng floor_name từ meta nếu có (đổi tên tầng)
     const metaFloors = {};
+    const metaOrder = [];
     ((window.editorBuildingMeta && window.editorBuildingMeta.floors) || []).forEach((f) => {
-        if (f && f.floor_name) metaFloors[Number(f.floor_number)] = f.floor_name;
+        if (!f) return;
+        const num = Number(f.floor_number);
+        if (f.floor_name) metaFloors[num] = f.floor_name;
+        metaOrder.push({
+            num,
+            order: f.display_order != null ? Number(f.display_order) : num
+        });
     });
+    metaOrder.sort((a, b) => a.order - b.order || a.num - b.num);
+    const floorIndices = metaOrder.length
+        ? metaOrder.map((row) => row.num)
+        : Array.from({ length: n }, (_, i) => i);
     let html = '';
-    for (let i = 0; i < n; i++) {
+    for (const i of floorIndices) {
+        if (i < 0 || i >= n) continue;
         const label = metaFloors[i] || (i === 0 ? 'Tầng trệt' : ('Tầng ' + i));
         html += '<option value="' + i + '">' + escapeHtml(label) + '</option>';
     }
@@ -1869,18 +1881,30 @@ function buildPublishPayloadInline() {
             rotation: d.rotation || 0
         })),
 
-        pois: pois.filter(p => typeof p === 'object').map(p => ({
-            id: p.id,
-            name: p.name || 'P.O.I',
-            x: Math.round(p.x || 0),
-            y: Math.round(p.y || 0),
-            type: p.type || 'Điểm mốc',
-            poiType: p.poiType || null,
-            typeIndex: Number.isFinite(Number(p.typeIndex)) ? Number(p.typeIndex) : 0,
-            size: (typeof normalizePoiSize === 'function') ? normalizePoiSize(p.size) : (p.size || 24),
-            description: p.description || '',
-            search_tags: Array.isArray(p.search_tags) ? p.search_tags : []
-        })),
+        pois: pois.filter(p => typeof p === 'object').map(p => {
+            var out = {
+                id: p.id,
+                name: p.name || 'P.O.I',
+                x: Math.round(p.x || 0),
+                y: Math.round(p.y || 0),
+                type: p.type || 'Điểm mốc',
+                poiType: p.poiType || null,
+                typeIndex: Number.isFinite(Number(p.typeIndex)) ? Number(p.typeIndex) : 0,
+                size: (typeof normalizePoiSize === 'function') ? normalizePoiSize(p.size) : (p.size || 24),
+                description: p.description || '',
+                search_tags: Array.isArray(p.search_tags) ? p.search_tags : []
+            };
+            var isExit = String(p.poiType || '').toUpperCase() === 'EXIT' ||
+                (typeof isExitPoiType === 'function' && isExitPoiType(p));
+            if (isExit) {
+                var finalExit = (typeof isFinalExitPoi === 'function')
+                    ? isFinalExitPoi(p)
+                    : (String(p.exit_role || '').toLowerCase() === 'final' || p.is_final_exit === true);
+                out.exit_role = finalExit ? 'final' : 'internal';
+                out.is_final_exit = !!finalExit;
+            }
+            return out;
+        }),
 
         nodes: pathNodes.filter(n => typeof n === 'object').map(n => ({
             id: n.id,

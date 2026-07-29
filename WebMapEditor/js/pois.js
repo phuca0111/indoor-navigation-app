@@ -11,6 +11,7 @@ const poiTypes = [
     { key: 'ATM', name: 'Máy ATM', icon: '🏧', color: '#27ae60' },
     { key: 'RECEPTION', name: 'Quầy lễ tân', icon: '💁', color: '#e67e22' },
     { key: 'EXIT', name: 'Lối ra', icon: '🚪', color: '#e74c3c' },
+    { key: 'ASSEMBLY_POINT', name: 'Điểm tập trung', icon: '🏃', color: '#16a34a' },
     { key: 'OTHER', name: 'Khác', icon: '📍', color: '#95a5a6' },
     { key: 'FOOD', name: 'Nhà hàng', icon: '🍽️', color: '#f97316' },
     { key: 'CAFE', name: 'Quán cà phê', icon: '☕', color: '#92400e' },
@@ -39,12 +40,14 @@ function getPoiTypeInfo(poi) {
         var byName = poiTypes.find(function (item) { return item.name === poi.type; });
         if (byName) return byName;
     }
-    return poiTypes[7];
+    return poiTypes[8];
 }
 
 // Tạo POI mới
-function createPoi(x, y) {
-    var sp = snapWorldPoint(x, y);
+function createPoi(x, y, opts) {
+    var sp = (opts && opts.alreadySnapped)
+        ? { x: x, y: y }
+        : snapWorldPoint(x, y);
     var poi = {
         id: nextPoiId++,
         name: 'Điểm POI ' + pois.length,

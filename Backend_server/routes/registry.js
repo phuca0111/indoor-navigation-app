@@ -40,8 +40,13 @@ const routes = {
   placeOwnership: require('./placeOwnershipRoutes'),
   placeMerges: require('./placeMergeRoutes'),
   mapModeration: require('./mapModerationRoutes'),
+  mapContributions: require('./mapContributionRoutes'),
+  indoorPlaces: require('./indoorPlacesRoutes'),
+  mapManagement: require('./mapManagementRoutes'),
   community: require('./communityRoutes'),
   notifications: require('./notificationRoutes'),
+  navigation: require('./navigationRoutes'),
+  emergency: require('./emergencyRoutes'),
   eventAdmin: require('./eventAdminRoutes'),
   featureFlags: require('./featureFlagRoutes'),
   health: require('./healthRoutes'),
@@ -89,6 +94,9 @@ function mountRoutes(app, middleware = {}) {
   app.use('/api/place-ownership', routes.placeOwnership);
   app.use('/api/place-merges', routes.placeMerges);
   app.use('/api/map-moderation', routes.mapModeration);
+  app.use('/api/map-contributions', routes.mapContributions);
+  app.use('/api/indoor-places', routes.indoorPlaces);
+  app.use('/api/map-management', routes.mapManagement);
   app.use('/api/community', routes.community);
   app.use('/api/v1', routes.draft);
   app.use('/api/v1', routes.floorLock);
@@ -98,6 +106,8 @@ function mountRoutes(app, middleware = {}) {
   app.use('/uploads', express.static(middleware.uploadRoot));
 
   app.use('/api/maps', routes.maps);
+  app.use('/api/navigation', routes.navigation);
+  app.use('/api/emergency', routes.emergency);
   app.use('/api/users', routes.users);
   app.use('/api/qr', routes.qr);
   app.use('/api/activity-logs', routes.activityLogs);

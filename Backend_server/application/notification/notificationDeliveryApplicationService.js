@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const notificationRepository = require('../../repositories/notificationRepository');
 const { getTransporter } = require('../../services/mailService');
+const { sendFcmPush } = require('../../services/fcmPushAdapter');
 
 const adapters = new Map();
 const MAX_ATTEMPTS = Math.max(1, Number(process.env.NOTIFICATION_MAX_ATTEMPTS) || 8);
@@ -24,22 +25,73 @@ function render(text, data = {}) {
 }
 
 async function enabledChannels(userId, category, requested, securityOverride = false) {
-  const channels = requested?.length ? requested : ['IN_APP'];
-  if (securityOverride || SECURITY_CATEGORIES.has(String(category).toUpperCase())) {
+  let channels = requested?.length ? [...requested] : ['IN_APP'];
+  const normalizedCategory = String(category || 'GENERAL').toUpperCase();
+  if (securityOverride || SECURITY_CATEGORIES.has(normalizedCategory)) {
     return [...new Set(['IN_APP', ...channels])];
   }
-  const preference = await notificationRepository.findPreference(
-    userId,
-    String(category || 'GENERAL').toUpperCase()
-  );
+  if (normalizedCategory === 'EMERGENCY') {
+    const pushEnabled = await notificationRepository.isEmergencyPushEnabled(userId);
+    if (!pushEnabled) channels = channels.filter((channel) => channel !== 'PUSH');
+  }
+  const preference = await notificationRepository.findPreference(userId, normalizedCategory);
   if (!preference) return channels;
   return channels.filter((channel) => preference.channels?.[channel] !== false);
 }
 
-function idempotencyKey(notification, channel) {
-  return crypto.createHash('sha256')
-    .update(`${notification._id}:${channel}`)
-    .digest('hex');
+function idempotencyKey(notification, channel, tokenSuffix = '') {
+  const base = `${notification._id}:${channel}${tokenSuffix ? `:${tokenSuffix}` : ''}`;
+  return crypto.createHash('sha256').update(base).digest('hex');
+}
+
+async function buildDeliveryPayload(notification, input, channel) {
+  const template = input.template_key
+    ? await notificationRepository.findTemplate({
+        key: String(input.template_key).toUpperCase(),
+        channel,
+        locale: String(input.locale || 'vi').toLowerCase(),
+        enabled: true
+      })
+    : null;
+  const data = { ...(notification.data || {}), ...(input.render_data || {}) };
+  return template ? {
+    subject: render(template.subject, data),
+    body: render(template.body, data),
+    data
+  } : (input.rendered_payload || {
+    subject: notification.title,
+    body: notification.body,
+    data
+  });
+}
+
+function resolveRecipient(channel, notification, input, deviceToken = '') {
+  if (channel === 'EMAIL') return String(input.email || '');
+  if (channel === 'SMS') return String(input.phone || '');
+  if (channel === 'PUSH') return String(deviceToken || input.device_token || '');
+  return String(notification.user_id);
+}
+
+async function enqueueDeliveryForChannel(notification, input, channel, category, deviceToken = '') {
+  const payload = await buildDeliveryPayload(notification, input, channel);
+  const recipient = resolveRecipient(channel, notification, input, deviceToken);
+  const tokenSuffix = channel === 'PUSH' && recipient ? recipient.slice(0, 16) : '';
+  return notificationRepository.upsertDelivery(
+    notification._id,
+    channel,
+    {
+      event_id: input.event_id || notification.event_id || '',
+      category,
+      recipient,
+      provider: String(input.provider || channel),
+      idempotency_key: idempotencyKey(notification, channel, tokenSuffix),
+      template_key: input.template_key || '',
+      rendered_payload: redact(payload),
+      status: 'PENDING',
+      attempts: 0,
+      sent_at: null
+    }
+  );
 }
 
 async function enqueueForNotification(notification, input = {}) {
@@ -52,47 +104,20 @@ async function enqueueForNotification(notification, input = {}) {
   );
   const deliveries = [];
   for (const channel of channels) {
-    const template = input.template_key
-      ? await notificationRepository.findTemplate({
-          key: String(input.template_key).toUpperCase(),
+    if (channel === 'PUSH' && Array.isArray(input.device_tokens) && input.device_tokens.length) {
+      for (const token of input.device_tokens) {
+        if (!token) continue;
+        deliveries.push(await enqueueDeliveryForChannel(
+          notification,
+          input,
           channel,
-          locale: String(input.locale || 'vi').toLowerCase(),
-          enabled: true
-        })
-      : null;
-    const data = { ...(notification.data || {}), ...(input.render_data || {}) };
-    const payload = template ? {
-      subject: render(template.subject, data),
-      body: render(template.body, data),
-      data: notification.data || {}
-    } : (input.rendered_payload || {
-      subject: notification.title,
-      body: notification.body,
-      data: notification.data
-    });
-    const recipient = channel === 'EMAIL'
-      ? String(input.email || '')
-      : channel === 'SMS'
-        ? String(input.phone || '')
-        : channel === 'PUSH'
-          ? String(input.device_token || '')
-          : String(notification.user_id);
-    deliveries.push(await notificationRepository.upsertDelivery(
-      notification._id,
-      channel,
-      {
-        event_id: input.event_id || notification.event_id || '',
-        category,
-        recipient,
-        provider: String(input.provider || channel),
-        idempotency_key: idempotencyKey(notification, channel),
-        template_key: input.template_key || '',
-        rendered_payload: redact(payload),
-        status: 'PENDING',
-        attempts: 0,
-        sent_at: null
+          category,
+          token
+        ));
       }
-    ));
+      continue;
+    }
+    deliveries.push(await enqueueDeliveryForChannel(notification, input, channel, category));
   }
   return deliveries;
 }
@@ -142,7 +167,7 @@ async function deferredCredential(channel, delivery) {
 
 registerAdapter('IN_APP', async () => ({ provider_message_id: '' }), { idempotency: true });
 registerAdapter('EMAIL', smtpAdapter, { idempotency: false, html: true });
-registerAdapter('PUSH', (delivery) => deferredCredential('PUSH', delivery), { idempotency: true });
+registerAdapter('PUSH', sendFcmPush, { idempotency: true });
 registerAdapter('SMS', (delivery) => deferredCredential('SMS', delivery), { idempotency: true });
 
 async function claimNext(owner = `notification-worker:${process.pid}`) {

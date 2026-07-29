@@ -123,8 +123,9 @@
         '<td style="white-space:nowrap;">' +
           '<button type="button" class="btn-edit" onclick="MapGovernance.openEdit(\'' + p._id + '\')">Sửa</button> ' +
           '<button type="button" class="btn-edit" style="background:#2563eb;" onclick="MapGovernance.openDetail(\'' + p._id + '\')">Chi tiết</button> ' +
-          '<button type="button" class="btn-edit" style="background:#059669;" onclick="MapGovernance.requestVerify(\'' + p._id + '\')">Gửi XM</button> ' +
-          '<button type="button" class="btn-logout" style="background:#b91c1c;" onclick="MapGovernance.lockPlace(\'' + p._id + '\')">Khóa</button>' +
+          (String(p.status || '').toUpperCase() === 'LOCKED'
+            ? '<button type="button" class="btn-edit" style="background:#059669;" onclick="MapGovernance.unlockPlace(\'' + p._id + '\')">Mở khóa</button>'
+            : '<button type="button" class="btn-logout" style="background:#b91c1c;" onclick="MapGovernance.lockPlace(\'' + p._id + '\')">Khóa</button>') +
         '</td>' +
         '</tr>'
       );
@@ -425,11 +426,15 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Tạo merge thất bại');
       alert(data.message || 'OK');
-      if (typeof switchTab === 'function') switchTab('map-merges');
-      else await loadMerges();
+      await loadMerges();
+      await loadDuplicates();
     } catch (e) {
       alert(e.message);
     }
+  }
+
+  async function loadPlaceDupesPanel() {
+    await Promise.all([loadDuplicates(), loadMerges()]);
   }
 
   async function openDetail(id) {
@@ -568,6 +573,27 @@
       if (box) box.style.display = 'none';
       await loadPlaces();
       alert(data.message || 'Đã khóa.');
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function unlockPlace(id) {
+    if (!confirm('Mở khóa địa điểm này? Place sẽ hiện lại trên app (công bố PUBLIC).')) return;
+    try {
+      const res = await fetch(API + '/places/' + id, {
+        method: 'PATCH',
+        headers: headers(true),
+        body: JSON.stringify({ status: 'ACTIVE', publication_status: 'PUBLIC' })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Mở khóa thất bại');
+      await loadPlaces();
+      const box = document.getElementById('placeDetailBox');
+      if (box && box.style.display !== 'none') {
+        await openDetail(id);
+      }
+      alert(data.message || 'Đã mở khóa địa điểm.');
     } catch (e) {
       alert(e.message);
     }
@@ -857,26 +883,52 @@
     }
   }
 
+  function statCard(label, value) {
+    return (
+      '<div style="background:#fff;border:1px solid #eaecf0;border-radius:12px;padding:16px;">' +
+        '<div style="font-size:11px;color:#98a2b3;text-transform:uppercase;">' + escapeHtml(label) + '</div>' +
+        '<div style="font-size:28px;font-weight:700;color:#1d2939;margin-top:6px;">' + escapeHtml(String(value ?? 0)) + '</div>' +
+      '</div>'
+    );
+  }
+
   async function loadMapStats() {
     const box = document.getElementById('mapStatsBox');
     if (box) box.innerHTML = '<p>Đang tải…</p>';
     try {
-      const res = await fetch(API + '/map-moderation/stats', { headers: headers() });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || 'Không tải thống kê');
+      const [mgmtRes, modRes] = await Promise.all([
+        fetch(API + '/map-management/stats', { headers: headers() }),
+        fetch(API + '/map-moderation/stats', { headers: headers() })
+      ]);
+      const mgmt = await mgmtRes.json().catch(() => ({}));
+      const mod = await modRes.json().catch(() => ({}));
+      if (!mgmtRes.ok) throw new Error(mgmt.message || 'Không tải thống kê bản đồ');
+
+      const buildings = mgmt.buildings || {};
+      const floors = mgmt.floors || {};
+      const visibility = mgmt.visibility || {};
       const cards = [
-        ['Địa điểm', data.places],
-        ['Báo cáo mở', data.open_reports],
-        ['Chờ duyệt map', data.pending_reviews],
-        ['Place khóa', data.locked_places],
-        ['User bị ban map', data.banned_users]
+        ['Tòa nhà', buildings.total],
+        ['Đã xuất bản', buildings.published],
+        ['Bản nháp', buildings.draft],
+        ['Chưa gắn Place', buildings.without_place],
+        ['Tòa vô hiệu', buildings.inactive],
+        ['Tầng đã xuất bản', floors.published],
+        ['Tầng có nháp', floors.with_draft],
+        ['Phiên bản bản đồ', (mgmt.versions || {}).total],
+        ['Cộng đồng', visibility.COMMUNITY],
+        ['Chính thức', visibility.OFFICIAL]
       ];
-      box.innerHTML = cards.map(([label, val]) =>
-        '<div style="background:#fff;border:1px solid #eaecf0;border-radius:12px;padding:16px;">' +
-          '<div style="font-size:11px;color:#98a2b3;text-transform:uppercase;">' + escapeHtml(label) + '</div>' +
-          '<div style="font-size:28px;font-weight:700;color:#1d2939;margin-top:6px;">' + escapeHtml(String(val ?? 0)) + '</div>' +
-        '</div>'
-      ).join('');
+      if (modRes.ok) {
+        cards.push(
+          ['Địa điểm', mod.places],
+          ['Báo cáo mở', mod.open_reports],
+          ['Chờ duyệt map', mod.pending_reviews],
+          ['Place khóa', mod.locked_places],
+          ['User bị ban map', mod.banned_users]
+        );
+      }
+      box.innerHTML = cards.map(([label, val]) => statCard(label, val)).join('');
     } catch (e) {
       if (box) box.innerHTML = '<p class="analytics-error">' + escapeHtml(e.message) + '</p>';
     }
@@ -940,7 +992,7 @@
         tbody.innerHTML = emptyRow(
           5,
           'Không có Place đang chờ xác minh',
-          'Vào tab Địa điểm → chọn Place → bấm «Gửi XM» để đưa vào hàng đợi.'
+          'Hàng đợi trống.'
         );
         return;
       }
@@ -965,10 +1017,10 @@
 
   async function requestVerify(id) {
     const note = prompt('Ghi chú gửi xác minh (tuỳ chọn):') || '';
-    const res = await fetch(API + '/places/' + id + '/verification', {
+    const res = await fetch(API + '/places/' + id + '/verification/request', {
       method: 'POST',
       headers: headers(true),
-      body: JSON.stringify({ action: 'request', note })
+      body: JSON.stringify({ note })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -981,10 +1033,11 @@
 
   async function resolveVerify(id, action) {
     const note = prompt(action === 'approve' ? 'Ghi chú duyệt (tuỳ chọn):' : 'Lý do từ chối:') || '';
-    const res = await fetch(API + '/places/' + id + '/verification', {
+    const endpoint = action === 'approve' ? 'approve' : 'reject';
+    const res = await fetch(API + '/places/' + id + '/verification/' + endpoint, {
       method: 'POST',
       headers: headers(true),
-      body: JSON.stringify({ action, note })
+      body: JSON.stringify({ note })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -1255,6 +1308,7 @@
     detachBuilding,
     setBuildingVisibility,
     lockPlace,
+    unlockPlace,
     loadProposals,
     openCreateProposal,
     approveProposal,
@@ -1269,6 +1323,7 @@
     rejectReview,
     mergeReview,
     loadDuplicates,
+    loadPlaceDupesPanel,
     proposeMergeFromDup,
     loadOwnership,
     openOwnershipCreate,

@@ -190,6 +190,60 @@ function clampCreateTotalFloors(raw) {
   return n;
 }
 
+function floorDisplayOrder(floor, fallbackNumber) {
+  if (floor && floor.display_order != null && Number.isFinite(Number(floor.display_order))) {
+    return Number(floor.display_order);
+  }
+  return Number(fallbackNumber);
+}
+
+/** F9 — sắp xếp mảng floor lean theo display_order (giữ floor_number làm identity). */
+function sortFloorsByDisplayOrder(floors) {
+  const list = Array.isArray(floors) ? floors.slice() : [];
+  return list.sort((a, b) => {
+    const ao = floorDisplayOrder(a, a.floor_number);
+    const bo = floorDisplayOrder(b, b.floor_number);
+    if (ao !== bo) return ao - bo;
+    return Number(a.floor_number) - Number(b.floor_number);
+  });
+}
+
+/**
+ * F9 — validate body.order = permutation đủ 0..totalFloors-1.
+ * @returns {number[]}
+ */
+function validateFloorReorder(order, totalFloors) {
+  const total = Math.max(1, Number(totalFloors) || 1);
+  const expected = floorRangeList(total);
+  if (!Array.isArray(order) || order.length !== expected.length) {
+    throw makeError(
+      400,
+      'FLOOR_REORDER_INVALID',
+      `order phải là mảng ${expected.length} phần tử (floor_number 0..${total - 1}).`,
+      { total_floors: total }
+    );
+  }
+  const seen = new Set();
+  const normalized = [];
+  for (const raw of order) {
+    const num = Number.parseInt(raw, 10);
+    if (!Number.isFinite(num) || num < 0 || num >= total) {
+      throw makeError(
+        400,
+        'FLOOR_REORDER_INVALID',
+        `floor_number ${raw} ngoài phạm vi 0..${total - 1}.`,
+        { floor_number: raw, total_floors: total }
+      );
+    }
+    if (seen.has(num)) {
+      throw makeError(400, 'FLOOR_REORDER_INVALID', `floor_number ${num} bị lặp trong order.`);
+    }
+    seen.add(num);
+    normalized.push(num);
+  }
+  return normalized;
+}
+
 module.exports = {
   MAX_FLOORS,
   floorRangeList,
@@ -199,5 +253,8 @@ module.exports = {
   assertFloorInRange,
   hasFloorDocument,
   floorHasMapContent,
-  clampCreateTotalFloors
+  clampCreateTotalFloors,
+  floorDisplayOrder,
+  sortFloorsByDisplayOrder,
+  validateFloorReorder
 };

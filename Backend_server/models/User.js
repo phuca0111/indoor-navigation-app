@@ -129,7 +129,42 @@ const userSchema = new mongoose.Schema({
     notification_preferences: {
         email_security: { type: Boolean, default: true },
         email_product: { type: Boolean, default: true },
-        in_app: { type: Boolean, default: true }
+        in_app: { type: Boolean, default: true },
+        /** P2.3 / Emergency Broadcast — bật nhận push khẩn cấp */
+        emergency_push: { type: Boolean, default: true }
+    },
+
+    /**
+     * P2.1 — đồng ý gửi vị trí khi Incident Active (Emergency Location).
+     * Không dùng preferences.location.share_precise (đó là privacy thường).
+     */
+    emergency_location_consent: {
+        granted: { type: Boolean, default: false },
+        /** Spec D: EMERGENCY_ONLY | ALERT_ONLY | ALWAYS_RESEARCH */
+        mode: {
+            type: String,
+            enum: ['EMERGENCY_ONLY', 'ALERT_ONLY', 'ALWAYS_RESEARCH'],
+            default: 'EMERGENCY_ONLY'
+        },
+        granted_at: { type: Date, default: null },
+        revoked_at: { type: Date, default: null },
+        version: { type: String, default: 'v1', maxlength: 16 }
+    },
+
+    /** P2.1 — cảnh cáo tài khoản (hiển thị User Detail) */
+    account_warnings: {
+        type: [{
+            reason: { type: String, default: '', maxlength: 500 },
+            created_at: { type: Date, default: Date.now },
+            actor_user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
+        }],
+        default: []
+    },
+    /** Lý do khóa/ban gần nhất (kèm is_active=false) */
+    account_ban_reason: {
+        type: String,
+        default: '',
+        maxlength: 500
     },
 
     // Hồ sơ thanh toán / hóa đơn — tự điền form checkout lần sau

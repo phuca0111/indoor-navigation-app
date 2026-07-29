@@ -26,6 +26,8 @@ class GoogleSignInHelper(private val activity: Activity) {
         val idToken: String,
         val email: String? = null,
         val displayName: String? = null,
+        /** URL ảnh hồ sơ Google (Credential Manager / JWT picture). */
+        val photoUrl: String? = null,
     )
 
     class NotConfiguredException :
@@ -123,27 +125,59 @@ class GoogleSignInHelper(private val activity: Activity) {
     }
 
     private fun parseCredential(response: GetCredentialResponse): Result<GoogleIdResult> {
-        val cred = response.credential
-        if (cred is CustomCredential &&
-            cred.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
-        ) {
-            val google = GoogleIdTokenCredential.createFrom(cred.data)
-            val token = google.idToken
-            if (token.isBlank()) {
-                return Result.failure(IllegalStateException("Google không trả idToken"))
+        return try {
+            val cred = response.credential
+            if (cred is CustomCredential &&
+                cred.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+            ) {
+                val google = GoogleIdTokenCredential.createFrom(cred.data)
+                val token = google.idToken
+                if (token.isBlank()) {
+                    return Result.failure(IllegalStateException("Google không trả idToken"))
+                }
+                Result.success(
+                    GoogleIdResult(
+                        idToken = token,
+                        email = google.id,
+                        displayName = google.displayName,
+                        photoUrl = google.profilePictureUri?.toString()
+                            ?: pictureFromIdToken(token),
+                    ),
+                )
+            } else {
+                Result.failure(IllegalStateException("Credential không phải Google ID token"))
             }
-            return Result.success(
-                GoogleIdResult(
-                    idToken = token,
-                    email = google.id,
-                    displayName = google.displayName,
+        } catch (e: Exception) {
+            Log.e(TAG, "parseCredential failed", e)
+            Result.failure(
+                IllegalStateException(
+                    "Không đọc được Google ID token: ${e.message}",
+                    e,
                 ),
             )
         }
-        return Result.failure(IllegalStateException("Credential không phải Google ID token"))
     }
 
     companion object {
         private const val TAG = "GoogleSignIn"
+
+        /** Fallback: claim `picture` trong JWT Google ID token. */
+        fun pictureFromIdToken(idToken: String): String? {
+            return try {
+                val parts = idToken.split('.')
+                if (parts.size < 2) return null
+                val padded = parts[1] + "=".repeat((4 - parts[1].length % 4) % 4)
+                val json = String(
+                    android.util.Base64.decode(
+                        padded,
+                        android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP,
+                    ),
+                    Charsets.UTF_8,
+                )
+                Regex("\"picture\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.getOrNull(1)
+            } catch (_: Exception) {
+                null
+            }
+        }
     }
 }

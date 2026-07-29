@@ -139,7 +139,23 @@ data class Poi(
     /** GĐ1 POI Platform — metadata phục vụ tìm kiếm (Gson có thể trả null, xem sanitized()). */
     val description: String? = null,
     @SerializedName("search_tags") val searchTags: List<String>? = null,
+    /**
+     * EXIT: `final` = cửa ra ngoài cuối; `internal` = cửa trong / không phải đích sơ tán ưu tiên.
+     * Web Editor: checkbox 「Cửa ra ngoài (cuối)」.
+     */
+    @SerializedName("exit_role") val exitRole: String? = null,
+    @SerializedName("exitRole") val exitRoleCamel: String? = null,
+    @SerializedName("is_final_exit") val isFinalExit: Boolean? = null,
+    @SerializedName("isFinalExit") val isFinalExitCamel: Boolean? = null,
 )
+
+/** True nếu POI EXIT được đánh dấu cửa ra ngoài (cuối). */
+fun Poi.isMarkedFinalExit(): Boolean {
+    val role = (exitRole ?: exitRoleCamel)?.trim()?.lowercase().orEmpty()
+    if (role == "final" || role == "outdoor") return true
+    if (isFinalExit == true || isFinalExitCamel == true) return true
+    return false
+}
 
 /**
  * WHY: Gson 2.9 vanilla KHÔNG tôn trọng default values của Kotlin data class

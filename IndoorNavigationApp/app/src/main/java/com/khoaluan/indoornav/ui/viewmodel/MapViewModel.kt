@@ -12,10 +12,12 @@ import android.util.Log
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.khoaluan.indoornav.data.api.ActiveEmergencyHazardZoneDto
 import com.khoaluan.indoornav.data.api.BuildingExplorerDto
 import com.khoaluan.indoornav.data.api.IndoorSearchHitDto
 import com.khoaluan.indoornav.data.api.RetrofitClient
 import com.khoaluan.indoornav.data.model.MapData
+import com.khoaluan.indoornav.data.model.isMarkedFinalExit
 import com.khoaluan.indoornav.data.model.sanitized
 import com.khoaluan.indoornav.navigation.graph.AStarPathfinder
 import com.khoaluan.indoornav.navigation.graph.GraphEdge
@@ -37,14 +39,29 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sqrt
+import com.khoaluan.indoornav.navigation.emergency.BuildingActiveEmergency
+import com.khoaluan.indoornav.navigation.emergency.DefaultEmergencyRoutingAdapter
+import com.khoaluan.indoornav.navigation.emergency.EmergencyPhase
+import com.khoaluan.indoornav.navigation.emergency.EmergencySession
+import com.khoaluan.indoornav.navigation.emergency.HazardZoneDraw
+import com.khoaluan.indoornav.navigation.gps.OnSiteGate
+import com.khoaluan.indoornav.navigation.graph.SafePoiLocator
+import com.khoaluan.indoornav.ui.components.PoiCategory
+import com.khoaluan.indoornav.ui.components.resolveCategory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 // Trang thai UI cua ban do - 3 trang thai: Loading / Success / Error
+/** Chu kỳ poll REST fallback — FCM high-priority là kênh chính; poll chỉ đồng bộ zone / mất push. */
+private const val EMERGENCY_POLL_INTERVAL_MS = 45_000L
+/** Poll nhanh lần đầu sau khi vào tòa (bắt kịp sự cố ACTIVE nếu miss FCM). */
+private const val EMERGENCY_POLL_FIRST_DELAY_MS = 1_500L
+
 // Success.floorNumber: so tang hien tai, dung de sync currentFloor trong MapScreen
 sealed interface MapUiState {
     object Loading : MapUiState
@@ -69,6 +86,8 @@ data class NavigationState(
     val isRerouting: Boolean = false,
     val isNavigatingMode: Boolean = false,
     val destinationPoiId: Int? = null,
+    /** Tên đích hiển thị (POI / lối thoát / điểm chọn trên map). */
+    val destinationLabel: String? = null,
     /** Pin đích khi đã chọn phòng/POI nhưng chưa bấm "Xem đường" (G1). */
     val destinationMarkerPos: Offset? = null,
     /** Module #11 — điểm bắt đầu sau quét QR (giữ để vẽ pin). */
@@ -98,6 +117,10 @@ data class NavigationState(
     /** W3 — đích cuối cùng trên tầng khác (sau khi đổi tầng tiếp tục A*). */
     val pendingDestFloor: Int? = null,
     val pendingDestNodeId: String? = null,
+    /** Điểm rẽ tiếp theo trên map (px) — vẽ chấm + mũi tên. */
+    val nextManeuverPos: Offset? = null,
+    /** TURN_LEFT / TURN_RIGHT / ARRIVE / … */
+    val nextManeuverType: String? = null,
 )
 sealed interface BuildingListUiState {
     object Loading : BuildingListUiState
@@ -143,6 +166,18 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private var activePathEdges: List<GraphEdge> = emptyList()
     private var activeManeuvers: List<TurnByTurnEngine.Maneuver> = emptyList()
     private var activeFloorConnectors: List<FloorTransitionDetector.ConnectorHint> = emptyList()
+
+    /** Đồng bộ cạnh path → LocationEngine để chấm user bám đường xanh khi đi. */
+    private fun syncRouteSnapToEngine() {
+        locationEngine?.setRouteSnapEdges(
+            if (_navState.value.isNavigatingMode && activePathEdges.isNotEmpty()) {
+                activePathEdges
+            } else {
+                emptyList()
+            },
+        )
+    }
+
     // lastRerouteAtMs: thoi gian lan cuoi reroute (de cooldown 3s)
     private var lastRerouteAtMs: Long = 0L
     private val parkingManager = ParkingManager(context)
@@ -157,6 +192,32 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     // FIX #10: Lưu floor mục tiêu từ QR scan để load đúng tầng
     private val _initialFloor = MutableStateFlow<Int?>(null)
     val initialFloor: StateFlow<Int?> = _initialFloor.asStateFlow()
+
+    /** Phiên khẩn cấp — overlay + sơ tán. */
+    private val _emergencySession = MutableStateFlow(EmergencySession())
+    val emergencySession: StateFlow<EmergencySession> = _emergencySession.asStateFlow()
+    /**
+     * Vùng nguy hiểm ACTIVE của tòa đang mở — luôn vẽ trên map
+     * (kể cả khi user chưa bấm sơ tán / đã tắt màn đỏ).
+     */
+    private val _mapHazardZones = MutableStateFlow<List<HazardZoneDraw>>(emptyList())
+    val mapHazardZones: StateFlow<List<HazardZoneDraw>> = _mapHazardZones.asStateFlow()
+    /**
+     * Sự cố ACTIVE tại tòa (kể cả sau khi user Đóng overlay) —
+     * dùng hiện banner mở lại chỉ đường thoát hiểm.
+     */
+    private val _buildingActiveEmergency = MutableStateFlow<BuildingActiveEmergency?>(null)
+    val buildingActiveEmergency: StateFlow<BuildingActiveEmergency?> =
+        _buildingActiveEmergency.asStateFlow()
+    private var emergencyWatchJob: Job? = null
+    private var watchedEmergencyBuildingId: String? = null
+    /** Sự cố user đã tắt — không auto bật lại overlay ở lần poll sau (vẫn có banner mở lại). */
+    private val dismissedIncidentIds = mutableSetOf<String>()
+    /** Đã thông báo “xem từ xa” cho incident này — tránh spam notice mỗi lần poll. */
+    private val remoteViewNotifiedIncidentIds = mutableSetOf<String>()
+    /** True nếu lần vào indoor này đã claim presence (on-site). */
+    private var indoorPresenceClaimed: Boolean = false
+
     fun setInitialFloor(floor: Int) {
         _initialFloor.value = floor
     }
@@ -173,9 +234,57 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     // Bat dau theo doi GPS: nhan list buildings tu API, khi user vao vung -> cap nhat detectedBuilding
     fun startGpsGeofencing(buildings: List<com.khoaluan.indoornav.data.model.Building>) {
-        gpsGeofenceManager.startMonitoring(buildings) { building ->
-            _detectedBuilding.value = building
-        }
+        var lastFarClearAt = 0L
+        gpsGeofenceManager.startMonitoring(
+            buildings = buildings,
+            onEnter = { building ->
+                _detectedBuilding.value = building
+                val gps = building.gpsLocation
+                val fix = gpsGeofenceManager.getLastOutdoorFix()
+                com.khoaluan.indoornav.navigation.gps.PresenceHintStore.markEnter(
+                    getApplication(),
+                    building.id
+                )
+                com.khoaluan.indoornav.fcm.PresenceSync.update(
+                    context = getApplication(),
+                    buildingId = building.id,
+                    lat = fix?.latitude,
+                    lng = fix?.longitude,
+                    accuracy = fix?.accuracyMeters,
+                    buildingLat = gps?.lat,
+                    buildingLng = gps?.lng,
+                    touchIndoor = true,
+                    indoorSessionOpen = false,
+                    includeRadio = true,
+                )
+            },
+            onLocation = { loc ->
+                // Snapshot GPS outdoor — không gắn building_lat ở đây (tránh L5 clear nhầm tòa khác)
+                com.khoaluan.indoornav.fcm.PresenceSync.update(
+                    context = getApplication(),
+                    lat = loc.latitude,
+                    lng = loc.longitude,
+                    accuracy = if (loc.hasAccuracy()) loc.accuracy else null,
+                )
+            },
+            onFarAway = { building, dist ->
+                val now = System.currentTimeMillis()
+                if (now - lastFarClearAt < 60_000L) return@startMonitoring
+                lastFarClearAt = now
+                val gps = building.gpsLocation
+                val fix = gpsGeofenceManager.getLastOutdoorFix()
+                Log.i("MapViewModel", "Spec D clear presence: ${building.name} dist=${dist}m")
+                com.khoaluan.indoornav.fcm.PresenceSync.update(
+                    context = getApplication(),
+                    clearPresence = true,
+                    lat = fix?.latitude,
+                    lng = fix?.longitude,
+                    accuracy = fix?.accuracyMeters,
+                    buildingLat = gps?.lat,
+                    buildingLng = gps?.lng,
+                )
+            },
+        )
     }
     // Huy thong bao geofence (khi user da chon toa nha thu cong)
     fun dismissGeofence() {
@@ -200,12 +309,21 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         Log.i("MapViewModel", "Handoff outdoor GPS course → MapHeading seed=$course°")
     }
     fun getTotalFloorsForBuilding(buildingId: String): Int {
+        var fromList = 1
         val listState = _buildingListState.value
         if (listState is BuildingListUiState.Success) {
             val b = listState.buildings.find { it.id == buildingId }
-            if (b != null) return b.totalFloors.coerceAtLeast(1)
+            if (b != null) fromList = b.totalFloors.coerceAtLeast(1)
         }
-        return 1
+        // Prefetch / cache có thể biết nhiều tầng hơn field totalFloors trên Building
+        val fromCache = if (cachedBuildingIdForFloors == buildingId && buildingFloorCache.isNotEmpty()) {
+            (buildingFloorCache.keys.maxOrNull() ?: 0) + 1
+        } else {
+            0
+        }
+        val ui = _uiState.value as? MapUiState.Success
+        val fromUi = if (ui?.buildingId == buildingId) ui.floorNumber + 1 else 0
+        return maxOf(fromList, fromCache, fromUi, 1)
     }
 
     /**
@@ -223,6 +341,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         locationEngine?.stop()
         locationEngine = null
         localizationMapKey = null
+        stairsSeedHoldPos = null
+        stairsSeedHoldUntilMs = 0L
         graphModel = null
         pathfinder = null
         activePath = emptyList()
@@ -232,17 +352,30 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         lastRerouteAtMs = 0L
         if (clearCrossFloorPending) {
             pendingCrossFloor = null
+            stairsDepartHintX = null
+            stairsDepartHintY = null
             buildingFloorCache.clear()
             _crossFloorRooms.value = emptyList()
         }
         val pending = pendingCrossFloor
-        _navState.value = if (pending != null && !clearCrossFloorPending) {
+        val emergencyLabel = _emergencySession.value.targetLabel
+        val emergencyEvac = _emergencySession.value.active &&
+            (_emergencySession.value.phase == EmergencyPhase.EVACUATING ||
+                _emergencySession.value.phase == EmergencyPhase.ALERT)
+        _navState.value = if ((pending != null && !clearCrossFloorPending) || emergencyEvac) {
+            val realPending = pending?.takeIf { it.nodeId != "pending-exit" }
+            val marker = realPending
+                ?.takeIf { it.markerX != 0f || it.markerY != 0f }
+                ?.let { Offset(it.markerX, it.markerY) }
             NavigationState(
-                pendingDestFloor = pending.floor,
-                pendingDestNodeId = pending.nodeId,
-                destinationNodeId = pending.nodeId,
-                destinationMarkerPos = Offset(pending.markerX, pending.markerY),
-                suggestedTargetFloor = pending.floor,
+                pendingDestFloor = pending?.floor,
+                pendingDestNodeId = realPending?.nodeId,
+                destinationNodeId = realPending?.nodeId,
+                destinationMarkerPos = marker,
+                suggestedTargetFloor = pending?.floor
+                    ?: _emergencySession.value.suggestedExitFloor,
+                destinationLabel = emergencyLabel,
+                isNavigatingMode = emergencyEvac,
             )
         } else {
             NavigationState()
@@ -251,13 +384,64 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private data class PendingCrossFloor(
         val floor: Int,
+        /** Đích trên tầng đó (vd. EXIT). */
         val nodeId: String,
         val markerX: Float,
         val markerY: Float,
+        /** Node cầu thang / thang máy vừa bước sang tầng này — neo định vị, không cần QR. */
+        val arrivalNodeId: String? = null,
+        /** Gợi ý XY chân cầu thang đích (khớp POI đầu/cuối giữa 2 tầng). */
+        val arrivalHintX: Float? = null,
+        val arrivalHintY: Float? = null,
     )
 
     /** W3 — giữ đích khi đổi tầng giữa chừng. */
     private var pendingCrossFloor: PendingCrossFloor? = null
+    /** XY POI cầu thang tầng vừa rời — dùng chọn đúng đầu/cuối trên tầng mới. */
+    private var stairsDepartHintX: Float? = null
+    private var stairsDepartHintY: Float? = null
+
+    /** Bán kính snap POI cầu thang → node đi được (POI có thể lệch ~80–100px). */
+    private val stairsSnapPx2 = 120.0 * 120.0
+
+    private fun isStairsOrElevatorPoi(poi: com.khoaluan.indoornav.data.model.Poi): Boolean =
+        when (poi.resolveCategory()) {
+            PoiCategory.STAIRS, PoiCategory.ELEVATOR, PoiCategory.ESCALATOR -> true
+            else -> false
+        }
+
+    private fun listStairsPois(mapData: MapData): List<com.khoaluan.indoornav.data.model.Poi> =
+        mapData.pois.filter { isStairsOrElevatorPoi(it) }
+
+    /**
+     * Chọn POI cầu thang phù hợp khi có nhiều mốc đầu/cuối:
+     * ưu tiên gần hint (tọa độ tầng trước / pending), không thì gần node graph nhất.
+     */
+    private fun pickBestStairsPoi(
+        mapData: MapData,
+        gModel: GraphModel,
+        hintX: Float? = null,
+        hintY: Float? = null,
+    ): com.khoaluan.indoornav.data.model.Poi? {
+        val stairs = listStairsPois(mapData)
+        if (stairs.isEmpty()) return null
+        if (stairs.size == 1) return stairs.first()
+        if (hintX != null && hintY != null) {
+            return stairs.minByOrNull { p ->
+                val dx = p.x.toFloat() - hintX
+                val dy = p.y.toFloat() - hintY
+                dx * dx + dy * dy
+            }
+        }
+        // Không hint: chọn POI sát node đi được nhất (tránh icon giữa phòng)
+        return stairs.minByOrNull { p ->
+            val nid = SafePoiLocator.nearestNodeIdForPoi(gModel, p) ?: return@minByOrNull Float.MAX_VALUE
+            val n = gModel.nodeMap[nid] ?: return@minByOrNull Float.MAX_VALUE
+            val dx = (n.x - p.x).toDouble()
+            val dy = (n.y - p.y).toDouble()
+            (dx * dx + dy * dy).toFloat()
+        }
+    }
     /** W3 — cache MapData theo floor của building đang mở. */
     private val buildingFloorCache = mutableMapOf<Int, MapData>()
     private var cachedBuildingIdForFloors: String? = null
@@ -291,6 +475,36 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     fun clearBuildingExplorer() {
         _buildingExplorer.value = null
         _buildingExplorerLoading.value = false
+        _placeReviews.value = emptyList()
+        _placeReviewsLoading.value = false
+    }
+
+    private val _placeReviews = MutableStateFlow<List<com.khoaluan.indoornav.data.api.PlaceReviewDto>>(emptyList())
+    val placeReviews: StateFlow<List<com.khoaluan.indoornav.data.api.PlaceReviewDto>> = _placeReviews.asStateFlow()
+    private val _placeReviewsLoading = MutableStateFlow(false)
+    val placeReviewsLoading: StateFlow<Boolean> = _placeReviewsLoading.asStateFlow()
+
+    fun fetchPlaceReviews(placeId: String?) {
+        val id = placeId?.trim().orEmpty()
+        if (id.isBlank()) {
+            _placeReviews.value = emptyList()
+            return
+        }
+        viewModelScope.launch {
+            _placeReviewsLoading.value = true
+            try {
+                val res = RetrofitClient.getApiService().listPlaceReviews(id, limit = 20)
+                _placeReviews.value = if (res.isSuccessful) {
+                    res.body()?.reviews.orEmpty()
+                } else {
+                    emptyList()
+                }
+            } catch (_: Exception) {
+                _placeReviews.value = emptyList()
+            } finally {
+                _placeReviewsLoading.value = false
+            }
+        }
     }
 
     fun fetchBuildingExplorer(buildingId: String) {
@@ -340,6 +554,26 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     fun lastFloorFor(buildingId: String): Int = indoorSessionStore.getLastFloor(buildingId)
 
+    private fun resolveBuildingGps(buildingId: String): Pair<Double, Double>? {
+        val list = (_buildingListState.value as? BuildingListUiState.Success)?.buildings ?: return null
+        val g = list.firstOrNull { it.id == buildingId }?.gpsLocation ?: return null
+        val lat = g.lat
+        val lng = g.lng
+        if (!lat.isFinite() || !lng.isFinite() || (lat == 0.0 && lng == 0.0)) return null
+        return lat to lng
+    }
+
+    private fun siteStatusFor(buildingId: String): OnSiteGate.Status {
+        val gps = resolveBuildingGps(buildingId)
+        return OnSiteGate.evaluate(
+            context = getApplication(),
+            buildingId = buildingId,
+            buildingLat = gps?.first,
+            buildingLng = gps?.second,
+            lastOutdoorFix = gpsGeofenceManager.getLastOutdoorFix(),
+        )
+    }
+
     /**
      * Module #8 — vào Indoor: nhớ tầng · load map · preload tầng lân cận · báo Ready qua callback.
      */
@@ -372,6 +606,31 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             }
             indoorSessionStore.saveLastFloor(buildingId, startFloor)
             _indoorEntryState.value = IndoorEntryUiState.Idle
+            val site = siteStatusFor(buildingId)
+            if (OnSiteGate.allowsPresenceClaim(site)) {
+                // Spec D — chỉ claim presence khi đang tại / gần tòa
+                indoorPresenceClaimed = true
+                recordHistory(
+                    type = "VIEW_INDOOR",
+                    buildingId = buildingId,
+                    label = buildingId,
+                )
+                com.khoaluan.indoornav.fcm.PresenceSync.update(
+                    context = getApplication(),
+                    buildingId = buildingId,
+                    floor = startFloor,
+                    indoorSessionOpen = true,
+                    touchIndoor = true,
+                    includeRadio = true,
+                )
+            } else {
+                // Xem map từ xa: không presence / không học radio / không history broadcast
+                indoorPresenceClaimed = false
+                Log.i(
+                    "MapViewModel",
+                    "Remote/unknown map view building=$buildingId site=$site — skip presence+radio"
+                )
+            }
             val poiFocus = pendingFocusPoiId
             pendingFocusPoiId = null
             if (poiFocus != null) {
@@ -413,9 +672,26 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     fun exitIndoorNavigation() {
         rememberCurrentFloor()
+        val s = _uiState.value as? MapUiState.Success
+        if (indoorPresenceClaimed && s != null) {
+            com.khoaluan.indoornav.fcm.PresenceSync.update(
+                context = getApplication(),
+                buildingId = s.buildingId,
+                floor = s.floorNumber,
+                indoorSessionOpen = false,
+            )
+        } else if (indoorPresenceClaimed) {
+            com.khoaluan.indoornav.fcm.PresenceSync.update(
+                context = getApplication(),
+                indoorSessionOpen = false,
+            )
+        }
+        indoorPresenceClaimed = false
         clearLocalizationSession()
         cachedOutdoorGpsCourseDeg = null
         _indoorEntryState.value = IndoorEntryUiState.Idle
+        // Xóa Success để MainActivity không auto-restore currentBuildingId
+        _uiState.value = MapUiState.Loading
         val listState = _buildingListState.value
         if (listState is BuildingListUiState.Success) {
             startGpsGeofencing(listState.buildings)
@@ -428,8 +704,14 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     private val lowConfidenceThreshold = 0.25f // Reroute neu confidence TPF < 0.25
     private val rerouteBadgeDurationMs = 1400L // Thoi gian hien badge "Dang tinh lai duong..."
     private val MAX_REROUTE_ATTEMPTS = 5 // Toi da 5 lan reroute, sau do yeu cau quet lai QR
-    /** W2 — dưới ngưỡng này (mét) → Đã đến nơi. */
-    private val arriveThresholdMeters = 4.0f
+    /** W2 — dưới ngưỡng này (mét) → Đã đến nơi. Trước 4m quá rộng với nhà nhỏ. */
+    private val arriveThresholdMeters = 1.8f
+    /** Tránh gọi lại updatePath liên tục khi chưa tới pin đỏ. */
+    private var lastRepathToPinAtMs = 0L
+    /** Early-turn: heading khớp hướng sau rẽ từ lúc nào (ms). */
+    private var earlyTurnAlignSinceMs = 0L
+    private var earlyTurnAlignManeuverAt = Float.NaN
+    private val earlyTurnStableMs = 280L
     /** W2 — từ lần reroute này trở lên → gợi ý Sửa vị trí / Quét QR. */
     private val heavyRerouteHintAfter = 2
     private val GRID_SIZE_PX = 40f // 1 grid = 40px (tu Web Editor)
@@ -455,10 +737,24 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     val placeNotice: StateFlow<String?> = _placeNotice.asStateFlow()
     fun clearPlaceNotice() { _placeNotice.value = null }
 
+    private val _indoorTarget =
+        MutableStateFlow<com.khoaluan.indoornav.data.api.IndoorTargetSummaryDto?>(null)
+    val indoorTarget: StateFlow<com.khoaluan.indoornav.data.api.IndoorTargetSummaryDto?> =
+        _indoorTarget.asStateFlow()
+    private val _indoorReviews =
+        MutableStateFlow<List<com.khoaluan.indoornav.data.api.IndoorReviewItemDto>>(emptyList())
+    val indoorReviews: StateFlow<List<com.khoaluan.indoornav.data.api.IndoorReviewItemDto>> =
+        _indoorReviews.asStateFlow()
+    fun clearIndoorTarget() {
+        _indoorTarget.value = null
+        _indoorReviews.value = emptyList()
+    }
+
     /** Favorite/hub trả 401 → MainActivity mở lại Login. */
     private val _authRequired = MutableStateFlow(false)
     val authRequired: StateFlow<Boolean> = _authRequired.asStateFlow()
     fun consumeAuthRequired() { _authRequired.value = false }
+    fun requireAuth() { _authRequired.value = true }
 
     /** placeId → đã yêu thích (Hub sync). */
     private val _favoritePlaceIds = MutableStateFlow<Set<String>>(emptySet())
@@ -513,12 +809,14 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         Log.d("MapViewModel", "Foreground resume → heading resync")
     }
 
-    /** Nút Snap tay: bỏ Movement cũ, lấy lại hướng cảm biến tuyệt đối. */
+    /** Snap lại từ Rotation Vector — không căn hành lang / không đổi mapNorthOffset. */
     fun resyncHeadingFromSensors() {
         val engine = locationEngine ?: return
         engine.requestHeadingResync(reason = "manual_snap")
-        // UI cập nhật khi mẫu RV tới; sync offset hiện tại
         syncMapNorthOffsetFromEngine()
+        _navState.update {
+            it.copy(navHint = "Đã sync hướng cảm biến (căn Bắc = map_bearing_offset)")
+        }
     }
 
     private fun syncMapNorthOffsetFromEngine() {
@@ -529,6 +827,18 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         // (tránh geofence “Phát hiện tòa nhà” đè màn đăng nhập).
     }
     fun refreshMap(buildingId: String, level: Int = 0) {
+        // Khẩn cấp: KHÔNG đi softClear+fetchMap (xóa userPos rồi cancel job → kẹt
+        // “Quét QR” + đích 0 m). Luôn swap in-place + neo cầu thang.
+        val emergencyActive = _emergencySession.value.active &&
+            (_emergencySession.value.phase == EmergencyPhase.EVACUATING ||
+                _emergencySession.value.phase == EmergencyPhase.ALERT ||
+                _emergencySession.value.phase == EmergencyPhase.AWAITING_FLOOR ||
+                _emergencySession.value.phase == EmergencyPhase.AWAITING_LOCATION)
+        if (emergencyActive) {
+            Log.i("MapViewModel", "refreshMap → emergency in-place floor=$level")
+            switchFloorDuringEmergency(level)
+            return
+        }
         // Tránh reload cùng map (vd. thoát QR → MapScreen remount) — giữ nguyên định vị
         val current = _uiState.value
         if (current is MapUiState.Success &&
@@ -540,8 +850,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             Log.d("MapViewModel", "refreshMap skipped — same building/floor already loaded")
             return
         }
-        val preserveCross = pendingCrossFloor?.floor == level
-        fetchMap(buildingId, level, preserveCrossFloorPending = preserveCross)
+        fetchMap(buildingId, level, preserveCrossFloorPending = pendingCrossFloor?.floor == level)
     }
     fun fetchBuildings(enableGeofence: Boolean = true) {
         viewModelScope.launch {
@@ -554,9 +863,14 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     _buildingListState.value = BuildingListUiState.Success(buildings)
                     if (enableGeofence) {
                         startGpsGeofencing(buildings)
+                        // OS geofence: vào vùng tòa dù app đóng → PresenceSync (L1/L4)
+                        com.khoaluan.indoornav.navigation.gps.BuildingGeofenceRegistrar
+                            .registerForBuildings(getApplication(), buildings)
                     } else {
                         stopGpsGeofencing()
                         _detectedBuilding.value = null
+                        com.khoaluan.indoornav.navigation.gps.BuildingGeofenceRegistrar
+                            .removeAll(getApplication())
                     }
                     // Outdoor parity: gắn Place category/slug + marker Place-only
                     fetchPlaces()
@@ -588,10 +902,15 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     }
                     response.body()?.places.orEmpty()
                 } else {
+                    val pair = com.khoaluan.indoornav.ui.search.BuildingSearchText
+                        .parseLatLngPair(query.orEmpty())
                     val response = api.searchPlaces(
                         com.khoaluan.indoornav.data.api.PlaceSearchBody(
-                            q = query?.takeIf { it.isNotBlank() },
+                            q = if (pair == null) query?.takeIf { it.isNotBlank() } else null,
                             category = cat,
+                            lat = pair?.first,
+                            lng = pair?.second,
+                            radiusM = if (pair != null) 400 else null,
                             limit = 80,
                         )
                     )
@@ -623,6 +942,9 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             b.copy(
                 placeSlug = p.slug ?: b.placeSlug,
                 category = p.category ?: b.category,
+                description = p.description ?: b.description,
+                aliases = p.aliases ?: b.aliases,
+                address = b.address?.takeIf { it.isNotBlank() } ?: p.address,
                 hasPublishedIndoor = p.hasPublishedIndoor,
             )
         }
@@ -634,9 +956,11 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     id = "place:${p.id}",
                     name = p.name,
                     address = p.address,
+                    description = p.description,
                     placeId = p.id,
                     placeSlug = p.slug,
                     category = p.category,
+                    aliases = p.aliases,
                     gpsLocation = com.khoaluan.indoornav.data.model.GPSLocation(p.latitude, p.longitude),
                     totalFloors = 1,
                     hasPublishedIndoor = p.hasPublishedIndoor,
@@ -758,12 +1082,25 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     com.khoaluan.indoornav.data.api.PlaceReviewBody(placeId, rating, comment)
                 )
                 if (res.isSuccessful) {
+                    val saved = res.body()?.review
+                    if (saved != null) {
+                        val rest = _placeReviews.value.filterNot {
+                            it.id != null && it.id == saved.id ||
+                                (it.placeId == placeId && it.user?.id != null && it.user.id == saved.user?.id)
+                        }
+                        _placeReviews.value = listOf(saved) + rest
+                    }
                     _placeNotice.value = "Đã gửi đánh giá ★$rating"
                     recordHistory("REVIEW_PLACE", placeId, null, "★$rating")
+                    fetchPlaceReviews(placeId)
+                    val bid = _buildingExplorer.value?.buildingId
+                    if (!bid.isNullOrBlank()) fetchBuildingExplorer(bid)
                 } else if (res.code() == 401) {
                     _authRequired.value = true
                 } else {
-                    _placeNotice.value = "Review lỗi (${res.code()})"
+                    val err = res.errorBody()?.string()?.take(120).orEmpty()
+                    _placeNotice.value = "Review lỗi (${res.code()})" +
+                        if (err.isNotBlank()) ": $err" else ""
                 }
             } catch (e: Exception) {
                 _placeNotice.value = "Review: ${e.message}"
@@ -787,6 +1124,212 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 }
             } catch (e: Exception) {
                 _placeNotice.value = "Report: ${e.message}"
+            }
+        }
+    }
+
+    /** Đề xuất cộng đồng (map ngoài trời / trong nhà) — chờ Platform duyệt. */
+    fun submitMapContribution(
+        placeId: String?,
+        buildingId: String? = null,
+        type: String,
+        title: String,
+        description: String? = null,
+        mapScope: String = "OUTDOOR",
+        latitude: Double? = null,
+        longitude: Double? = null,
+    ) {
+        viewModelScope.launch {
+            try {
+                val trimmed = title.trim()
+                if (trimmed.length < 2) {
+                    _placeNotice.value = "Nhập tiêu đề đề xuất"
+                    return@launch
+                }
+                val res = RetrofitClient.getApiService().createMapContribution(
+                    com.khoaluan.indoornav.data.api.MapContributionBody(
+                        type = type.trim().uppercase(),
+                        mapScope = mapScope.trim().uppercase(),
+                        title = trimmed.take(200),
+                        description = description?.trim()?.take(2000),
+                        placeId = placeId,
+                        buildingId = buildingId,
+                        latitude = latitude,
+                        longitude = longitude,
+                    )
+                )
+                if (res.isSuccessful) {
+                    _placeNotice.value = "Đã gửi đề xuất — chờ kiểm duyệt"
+                    recordHistory("MAP_CONTRIBUTION", placeId, buildingId, type)
+                } else if (res.code() == 401) {
+                    _authRequired.value = true
+                } else {
+                    val err = res.errorBody()?.string().orEmpty()
+                    _placeNotice.value = "Đề xuất lỗi (${res.code()})" +
+                        if (err.isNotBlank()) ": ${err.take(80)}" else ""
+                }
+            } catch (e: Exception) {
+                _placeNotice.value = "Đề xuất: ${e.message}"
+            }
+        }
+    }
+
+    fun loadIndoorTarget(
+        buildingId: String,
+        floorNumber: Int,
+        entityKind: String,
+        entityId: String,
+        entityName: String? = null,
+    ) {
+        viewModelScope.launch {
+            try {
+                val api = RetrofitClient.getApiService()
+                val kind = entityKind.uppercase()
+                val res = api.getIndoorTarget(
+                    buildingId = buildingId,
+                    floor = floorNumber,
+                    kind = kind,
+                    entityId = entityId,
+                    name = entityName,
+                )
+                if (res.isSuccessful) {
+                    _indoorTarget.value = res.body()
+                    _placeNotice.value = null
+                } else {
+                    _indoorTarget.value = null
+                }
+                val rev = api.listIndoorReviews(
+                    buildingId = buildingId,
+                    floor = floorNumber,
+                    kind = kind,
+                    entityId = entityId,
+                    name = entityName,
+                    limit = 20,
+                )
+                _indoorReviews.value = if (rev.isSuccessful) {
+                    rev.body()?.reviews.orEmpty()
+                } else {
+                    emptyList()
+                }
+            } catch (_: Exception) {
+                _indoorTarget.value = null
+                _indoorReviews.value = emptyList()
+            }
+        }
+    }
+
+    fun submitIndoorReview(
+        buildingId: String,
+        floorNumber: Int,
+        entityKind: String,
+        entityId: String,
+        rating: Int,
+        comment: String? = null,
+        entityName: String? = null,
+    ) {
+        viewModelScope.launch {
+            try {
+                val res = RetrofitClient.getApiService().upsertIndoorReview(
+                    com.khoaluan.indoornav.data.api.IndoorReviewBody(
+                        buildingId = buildingId,
+                        floorNumber = floorNumber,
+                        entityKind = entityKind.uppercase(),
+                        entityId = entityId,
+                        rating = rating,
+                        comment = comment,
+                        entityName = entityName,
+                    )
+                )
+                if (res.isSuccessful) {
+                    _placeNotice.value = "Đã gửi đánh giá"
+                    loadIndoorTarget(buildingId, floorNumber, entityKind, entityId, entityName)
+                } else if (res.code() == 401) {
+                    _authRequired.value = true
+                } else {
+                    val err = res.errorBody()?.string().orEmpty()
+                    _placeNotice.value = "Đánh giá lỗi (${res.code()})" +
+                        if (err.isNotBlank()) ": ${err.take(60)}" else ""
+                }
+            } catch (e: Exception) {
+                _placeNotice.value = "Đánh giá: ${e.message}"
+            }
+        }
+    }
+
+    fun submitIndoorReport(
+        buildingId: String,
+        floorNumber: Int,
+        entityKind: String,
+        entityId: String,
+        reasonCode: String,
+        detail: String? = null,
+        entityName: String? = null,
+    ) {
+        viewModelScope.launch {
+            try {
+                val res = RetrofitClient.getApiService().createIndoorReport(
+                    com.khoaluan.indoornav.data.api.IndoorReportBody(
+                        buildingId = buildingId,
+                        floorNumber = floorNumber,
+                        entityKind = entityKind.uppercase(),
+                        entityId = entityId,
+                        reasonCode = reasonCode,
+                        detail = detail,
+                        entityName = entityName,
+                    )
+                )
+                if (res.isSuccessful) {
+                    _placeNotice.value = "Đã gửi báo cáo"
+                } else if (res.code() == 401) {
+                    _authRequired.value = true
+                } else {
+                    _placeNotice.value = "Báo cáo lỗi (${res.code()})"
+                }
+            } catch (e: Exception) {
+                _placeNotice.value = "Báo cáo: ${e.message}"
+            }
+        }
+    }
+
+    fun toggleIndoorFavorite(
+        buildingId: String,
+        floorNumber: Int,
+        entityKind: String,
+        entityId: String,
+        currentlyFavorite: Boolean,
+        entityName: String? = null,
+    ) {
+        viewModelScope.launch {
+            try {
+                val session = com.khoaluan.indoornav.data.local.SessionManager(getApplication())
+                if (!session.isLoggedIn) {
+                    _authRequired.value = true
+                    return@launch
+                }
+                val api = RetrofitClient.getApiService()
+                val res = if (currentlyFavorite) {
+                    api.removeIndoorFavorite(buildingId, floorNumber, entityKind.uppercase(), entityId)
+                } else {
+                    api.addIndoorFavorite(
+                        com.khoaluan.indoornav.data.api.IndoorFavoriteBody(
+                            buildingId = buildingId,
+                            floorNumber = floorNumber,
+                            entityKind = entityKind.uppercase(),
+                            entityId = entityId,
+                            entityName = entityName,
+                        )
+                    )
+                }
+                if (res.isSuccessful) {
+                    _placeNotice.value = if (currentlyFavorite) "Đã bỏ lưu" else "Đã lưu phòng"
+                    loadIndoorTarget(buildingId, floorNumber, entityKind, entityId, entityName)
+                } else if (res.code() == 401) {
+                    _authRequired.value = true
+                } else {
+                    _placeNotice.value = "Lưu lỗi (${res.code()})"
+                }
+            } catch (e: Exception) {
+                _placeNotice.value = "Lưu: ${e.message}"
             }
         }
     }
@@ -818,12 +1361,6 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     return@launch
                 }
                 val buildingId = indoor.first().id
-                recordHistory(
-                    type = "VIEW_INDOOR",
-                    placeId = placeId,
-                    buildingId = buildingId,
-                    label = place?.name
-                )
                 onBuilding(buildingId)
             } catch (e: Exception) {
                 _placeNotice.value = "Lỗi Place: ${e.message}"
@@ -918,16 +1455,73 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         }
     }
 
+    /** Tăng mỗi lần fetchMap — bỏ apply/resume của job đã cancel. */
+    private var mapLoadGeneration: Int = 0
+
     // Lay ban do 1 tang tu backend, khoi tao GraphModel + LocationEngine
     // Goi khi: MapScreen vua vao (buildingId, floor=0) hoac user chon tang khac
     private fun fetchMap(buildingId: String, floor: Int, preserveCrossFloorPending: Boolean = false) {
         stopGpsGeofencing() // Tat GPS geofence de tiet kiem pin khi da vao Indoor
-        // G1b: mỗi lần tải map mới → dừng engine cũ + xóa userPos (kể cả đổi tầng)
-        // W3: giữ pending đích đa tầng khi user chuyển đúng suggested floor
-        clearLocalizationSession(clearCrossFloorPending = !preserveCrossFloorPending)
+        val emergencyAtomic = _emergencySession.value.active &&
+            (_emergencySession.value.phase == EmergencyPhase.EVACUATING ||
+                _emergencySession.value.phase == EmergencyPhase.ALERT ||
+                _emergencySession.value.phase == EmergencyPhase.AWAITING_LOCATION)
+        if (emergencyAtomic) {
+            // Khẩn cấp: KHÔNG clear graph/engine trước khi map mới apply (tránh “văng” / mất path)
+            softClearPathForEmergencyFloorSwap(preserveCrossFloorPending)
+        } else {
+            // G1b: mỗi lần tải map mới → dừng engine cũ + xóa userPos
+            clearLocalizationSession(clearCrossFloorPending = !preserveCrossFloorPending)
+        }
         fetchMapJob?.cancel()
+        val gen = ++mapLoadGeneration
         fetchMapJob = viewModelScope.launch {
-            loadMapInternal(buildingId, floor, sessionAlreadyCleared = true)
+            val ok = loadMapInternal(buildingId, floor, sessionAlreadyCleared = true)
+            if (gen != mapLoadGeneration) return@launch
+            if (!ok && emergencyAtomic && graphModel != null &&
+                _uiState.value is MapUiState.Success &&
+                _emergencySession.value.active
+            ) {
+                // Load fail nhưng còn map cũ → neo lại + chỉ đường trên tầng đang hiện
+                seedAtStairsThenContinueEmergency()
+            }
+        }
+    }
+
+    /** Chỉ xóa path hiển thị; giữ GraphModel/LocationEngine đến applyLoadedMap. */
+    private fun softClearPathForEmergencyFloorSwap(preserveCrossFloorPending: Boolean) {
+        activePath = emptyList()
+        activePathEdges = emptyList()
+        activeManeuvers = emptyList()
+        activeFloorConnectors = emptyList()
+        localizationMapKey = null
+        lastRerouteAtMs = 0L
+        if (!preserveCrossFloorPending) {
+            pendingCrossFloor = null
+        }
+        val pending = pendingCrossFloor
+        val realPending = pending?.takeIf { it.nodeId != "pending-exit" }
+        val marker = realPending
+            ?.takeIf { it.markerX != 0f || it.markerY != 0f }
+            ?.let { Offset(it.markerX, it.markerY) }
+        _navState.update {
+            it.copy(
+                path = emptyList(),
+                userPos = null,
+                startAnchorPos = null,
+                hasArrived = false,
+                isRerouting = false,
+                navigationError = null,
+                isNavigatingMode = true,
+                pendingDestFloor = pending?.floor ?: it.pendingDestFloor,
+                pendingDestNodeId = realPending?.nodeId,
+                destinationNodeId = realPending?.nodeId ?: it.destinationNodeId,
+                destinationMarkerPos = marker ?: it.destinationMarkerPos,
+                suggestedTargetFloor = pending?.floor
+                    ?: _emergencySession.value.suggestedExitFloor
+                    ?: it.suggestedTargetFloor,
+                destinationLabel = _emergencySession.value.targetLabel ?: it.destinationLabel,
+            )
         }
     }
 
@@ -951,11 +1545,17 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             Log.i("MapViewModel", "#8 cache-first floor=$floor building=$buildingId")
             val ok = applyLoadedMap(cachedHit, buildingId)
             if (ok) {
-                refreshMapFromNetwork(buildingId, floor)
+                // Khẩn cấp: đừng reload mạng ngay (tránh applyLoadedMap lần 2 làm mất path)
+                if (!_emergencySession.value.active) {
+                    refreshMapFromNetwork(buildingId, floor)
+                }
             }
             return ok
         }
-        _uiState.value = MapUiState.Loading
+        // Đổi tầng khẩn cấp: giữ Success cũ trên UI thay vì Loading (tránh cảm giác “văng”)
+        if (!(_emergencySession.value.active && _uiState.value is MapUiState.Success)) {
+            _uiState.value = MapUiState.Loading
+        }
         try {
             val api = RetrofitClient.getApiService()
             val response = api.getMapByFloor(buildingId, floor)
@@ -965,19 +1565,35 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     cache.save(buildingId, body.floorNumber, body)
                     return applyLoadedMap(body, buildingId)
                 }
-                _uiState.value = MapUiState.Error("Du lieu trong!")
+                failLoadMap("Du lieu trong!", keepMapIfEmergency = true)
             } else if (response.code() == 404) {
-                _uiState.value = MapUiState.Error("Tang $floor chua co ban do.\nHay ve va Publish tu Web Editor.")
+                failLoadMap(
+                    "Tang $floor chua co ban do.\nHay ve va Publish tu Web Editor.",
+                    keepMapIfEmergency = true,
+                )
             } else {
-                _uiState.value = MapUiState.Error("Loi ket noi: ${response.code()}")
+                failLoadMap("Loi ket noi: ${response.code()}", keepMapIfEmergency = true)
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e("MapViewModel", "Loi Exception", e)
-            _uiState.value = MapUiState.Error("Loi mang: ${e.message}")
+            failLoadMap("Loi mang: ${e.message}", keepMapIfEmergency = true)
         }
         return false
+    }
+
+    /** Khẩn cấp: giữ bản đồ Success thay vì Error (tránh cảm giác bị văng khỏi map). */
+    private fun failLoadMap(message: String, keepMapIfEmergency: Boolean) {
+        if (keepMapIfEmergency &&
+            _emergencySession.value.active &&
+            _uiState.value is MapUiState.Success
+        ) {
+            _emergencySession.update { it.copy(error = message) }
+            _navState.update { it.copy(navHint = message) }
+            return
+        }
+        _uiState.value = MapUiState.Error(message)
     }
 
     /** Refresh map từ API sau cache-first; không ghi đè nếu đã localize. */
@@ -1013,6 +1629,10 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         val floorNumber = body.floorNumber
         val sessionKey = buildMapSessionKey(buildingId, floorNumber)
         indoorSessionStore.saveLastFloor(buildingId, floorNumber)
+        // Atomic swap: dừng engine cũ ngay trước khi gắn map mới (không để graph=null giữa chừng)
+        locationEngine?.stop()
+        locationEngine = null
+        localizationMapKey = null
         _uiState.value = MapUiState.Success(mapData, buildingId, floorNumber)
         val gModel = GraphModel(mapData)
         graphModel = gModel
@@ -1024,24 +1644,32 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         locationEngine = LocationEngine(context, mapData).apply {
             onLocationUpdated = { x, y, heading, confidence, isTpf ->
                 if (localizationMapKey == sessionKey) {
+                    val holdPos = stairsSeedHoldPos
+                    val holding = holdPos != null &&
+                        System.currentTimeMillis() < stairsSeedHoldUntilMs
+                    val posX = if (holding) holdPos.x else x
+                    val posY = if (holding) holdPos.y else y
                     _navState.update { current ->
                         var newState = current.copy(
-                            userPos = Offset(x, y),
+                            userPos = Offset(posX, posY),
                             userHeading = heading,
                             confidence = minOf(confidence, confidenceEngine.calculateCurrentConfidence()),
                             isTpfActive = isTpf,
                             particles = getParticles()
                         )
                         if (newState.isNavigatingMode && activePathEdges.isNotEmpty()) {
-                            newState = applyTurnGuidance(newState, x, y)
+                            newState = applyTurnGuidance(newState, posX, posY)
                         }
                         if (locationEngine?.consumeHeadingConflictQrSuggestion() == true) {
                             newState = newState.copy(
                                 navHint = "Hướng la bàn lệch với hướng đi. Hãy Snap hướng hoặc Quét lại QR."
                             )
                         }
-                        newState.destinationNodeId?.let { destinationNodeId ->
-                            maybeTriggerReroute(destinationNodeId)
+                        // Đừng reroute ngay sau đổi tầng — gây nhảy path liên tục
+                        if (!holding && System.currentTimeMillis() >= emergencyArriveBlockedUntilMs) {
+                            newState.destinationNodeId?.let { destinationNodeId ->
+                                maybeTriggerReroute(destinationNodeId)
+                            }
                         }
                         newState
                     }
@@ -1057,23 +1685,400 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         return true
     }
 
+    private fun currentHazardPolygons(floorNumber: Int? = null): List<List<Pair<Float, Float>>> {
+        val floor = floorNumber
+            ?: (_uiState.value as? MapUiState.Success)?.floorNumber
+        val zones = _mapHazardZones.value.ifEmpty { _emergencySession.value.hazardZones }
+        return zones
+            .filter { (it.floorNumber ?: 0) == floor }
+            .map { it.points }
+            .filter { it.size >= 3 }
+    }
+
+    private fun clearExitFloorHintIfArrived(floorNumber: Int) {
+        val hint = _emergencySession.value.suggestedExitFloor
+        if (hint != null && hint == floorNumber) {
+            _emergencySession.update { it.copy(suggestedExitFloor = null) }
+            _navState.update {
+                it.copy(
+                    suggestedTargetFloor = null,
+                    readyForFloorSwitch = false,
+                    floorTransitionHint = null,
+                )
+            }
+        }
+    }
+
+    /** Chặn “Đã đến nơi” ngay sau đổi tầng (tránh neo nhầm EXIT → coi như tới đích). */
+    private var emergencyArriveBlockedUntilMs: Long = 0L
+    /** Giữ chấm xanh tại cầu thang vài giây sau đổi tầng — tránh PDR/reroute làm giật. */
+    private var stairsSeedHoldUntilMs: Long = 0L
+    private var stairsSeedHoldPos: Offset? = null
+
+    /** Neo tới cầu thang / thang máy — ưu tiên POI khớp đầu/cuối (hint tầng trước). */
+    private fun findStairsArrivalNode(gModel: GraphModel): com.khoaluan.indoornav.data.model.PathNode? {
+        val ui = _uiState.value as? MapUiState.Success ?: return null
+        val exitIds = ui.mapData.pois
+            .filter { it.resolveCategory() == PoiCategory.EXIT }
+            .mapNotNull { SafePoiLocator.nearestNodeIdForPoi(gModel, it) }
+            .toSet()
+
+        val hintX = pendingCrossFloor?.arrivalHintX ?: stairsDepartHintX
+        val hintY = pendingCrossFloor?.arrivalHintY ?: stairsDepartHintY
+        val stairsPoi = pickBestStairsPoi(ui.mapData, gModel, hintX, hintY)
+        if (stairsPoi != null) {
+            val nearPoi = gModel.nodeMap.values
+                .asSequence()
+                .filter { it.nodeId !in exitIds }
+                .minByOrNull { n ->
+                    val dx = n.x - stairsPoi.x
+                    val dy = n.y - stairsPoi.y
+                    dx * dx + dy * dy
+                }
+            if (nearPoi != null) {
+                val dx = nearPoi.x - stairsPoi.x
+                val dy = nearPoi.y - stairsPoi.y
+                if (dx * dx + dy * dy <= stairsSnapPx2) {
+                    return nearPoi
+                }
+            }
+            return null // caller dùng đúng tọa độ POI
+        }
+
+        pendingCrossFloor?.arrivalNodeId?.let { id ->
+            gModel.nodeMap[id]?.takeIf { it.nodeId !in exitIds }?.let { return it }
+        }
+        gModel.nodeMap.values.firstOrNull { it.isStairs && it.nodeId !in exitIds }?.let { return it }
+        gModel.nodeMap.values.firstOrNull { it.isElevator && it.nodeId !in exitIds }?.let { return it }
+        return null
+    }
+
+    private fun findStairsArrivalPoint(gModel: GraphModel): Offset? {
+        val ui = _uiState.value as? MapUiState.Success
+        val hintX = pendingCrossFloor?.arrivalHintX ?: stairsDepartHintX
+        val hintY = pendingCrossFloor?.arrivalHintY ?: stairsDepartHintY
+        val stairsPoi = ui?.let { pickBestStairsPoi(it.mapData, gModel, hintX, hintY) }
+        if (stairsPoi != null) {
+            findStairsArrivalNode(gModel)?.let { node ->
+                val dx = node.x - stairsPoi.x
+                val dy = node.y - stairsPoi.y
+                if (dx * dx + dy * dy <= stairsSnapPx2) {
+                    return Offset(node.x.toFloat(), node.y.toFloat())
+                }
+            }
+            // Snap mềm: vẫn lấy node gần nhất nếu < 160px (đứng trên đường đi)
+            val soft = SafePoiLocator.nearestNodeIdForPoi(gModel, stairsPoi)?.let { gModel.nodeMap[it] }
+            if (soft != null) {
+                val dx = soft.x - stairsPoi.x
+                val dy = soft.y - stairsPoi.y
+                if (dx * dx + dy * dy <= 160.0 * 160.0) {
+                    return Offset(soft.x.toFloat(), soft.y.toFloat())
+                }
+            }
+            return Offset(stairsPoi.x.toFloat(), stairsPoi.y.toFloat())
+        }
+        findStairsArrivalNode(gModel)?.let { return Offset(it.x.toFloat(), it.y.toFloat()) }
+        if (ui == null) return null
+        val exitNodes = ui.mapData.pois
+            .filter { it.resolveCategory() == PoiCategory.EXIT }
+            .mapNotNull { SafePoiLocator.nearestNodeIdForPoi(gModel, it) }
+            .mapNotNull { gModel.nodeMap[it] }
+        if (exitNodes.isEmpty()) {
+            return gModel.nodeMap.values.firstOrNull()?.let { Offset(it.x.toFloat(), it.y.toFloat()) }
+        }
+        val farthest = gModel.nodeMap.values.maxByOrNull { n ->
+            exitNodes.minOf { e ->
+                val dx = n.x - e.x
+                val dy = n.y - e.y
+                dx * dx + dy * dy
+            }
+        }
+        return farthest?.let { Offset(it.x.toFloat(), it.y.toFloat()) }
+    }
+
     private fun resumeCrossFloorIfNeeded(floorNumber: Int) {
-        val pending = pendingCrossFloor ?: return
-        if (pending.floor != floorNumber) return
+        val pending = pendingCrossFloor
+
+        // Khẩn cấp đang sơ tán + vừa load tầng mới:
+        // neo chân cầu thang rồi chỉ đường tiếp (user đã chọn tầng đích).
+        if (_emergencySession.value.active &&
+            _emergencySession.value.phase == EmergencyPhase.EVACUATING
+        ) {
+            if (pending != null && pending.floor == floorNumber) {
+                clearExitFloorHintIfArrived(floorNumber)
+            }
+            // Giữ hint XY chân cầu thang đích trước khi xóa pending (seed cần để chọn đúng đầu/cuối)
+            pending?.arrivalHintX?.let { stairsDepartHintX = it }
+            pending?.arrivalHintY?.let { stairsDepartHintY = it }
+            pendingCrossFloor = null
+            seedAtStairsThenContinueEmergency()
+            return
+        }
+
+        if (pending == null || pending.floor != floorNumber) {
+            return
+        }
+
+        clearExitFloorHintIfArrived(floorNumber)
+
+        val gModel = graphModel ?: return
+        if (pending.nodeId == "pending-exit" || gModel.nodeMap[pending.nodeId] == null) {
+            pendingCrossFloor = null
+            return
+        }
+
+        // Giữ hint trước khi xóa pending — khớp đúng cầu thang vừa đi (không nhảy sang cầu kia)
+        pending.arrivalHintX?.let { stairsDepartHintX = it }
+        pending.arrivalHintY?.let { stairsDepartHintY = it }
+
+        val ui = _uiState.value as? MapUiState.Success
+        val engine = locationEngine
+        val exitIds = ui?.mapData?.pois
+            ?.filter { it.resolveCategory() == PoiCategory.EXIT }
+            ?.mapNotNull { SafePoiLocator.nearestNodeIdForPoi(gModel, it) }
+            ?.toSet()
+            .orEmpty()
+
+        // 1) Node connector đã ghép khi plan đa tầng (via.toNodeId)
+        val plannedArrival = pending.arrivalNodeId
+            ?.let { gModel.nodeMap[it] }
+            ?.takeIf { it.nodeId !in exitIds }
+
+        // 2) POI/node gần hint XY tầng trước (đầu ↔ cuối cầu thang cùng tọa độ)
+        val hintedPoint = findStairsArrivalPoint(gModel)
+        val hintedNode = findStairsArrivalNode(gModel)
+
+        // Ưu tiên planned nếu gần hint; nếu lệch xa → tin hint (tránh nhảy sang cầu thang kia)
+        val arrivalNode = when {
+            plannedArrival != null && hintedPoint != null -> {
+                val dx = plannedArrival.x - hintedPoint.x
+                val dy = plannedArrival.y - hintedPoint.y
+                if (dx * dx + dy * dy <= 160.0 * 160.0) plannedArrival else hintedNode ?: plannedArrival
+            }
+            plannedArrival != null -> plannedArrival
+            else -> hintedNode
+        }
+
+        val visual = when {
+            arrivalNode != null && hintedPoint != null -> {
+                val dx = arrivalNode.x - hintedPoint.x
+                val dy = arrivalNode.y - hintedPoint.y
+                if (dx * dx + dy * dy <= 120.0 * 120.0) {
+                    Offset(arrivalNode.x.toFloat(), arrivalNode.y.toFloat())
+                } else {
+                    hintedPoint
+                }
+            }
+            arrivalNode != null -> Offset(arrivalNode.x.toFloat(), arrivalNode.y.toFloat())
+            hintedPoint != null -> hintedPoint
+            else -> null
+        }
+
+        pendingCrossFloor = null
+
+        if (visual != null && engine != null && ui != null) {
+            val mapKey = buildMapSessionKey(ui.buildingId, ui.floorNumber)
+            localizationMapKey = mapKey
+            confidenceEngine.updateGroundTruth()
+            // Neo đúng icon cầu thang vừa xuống — không snap sang phòng / cầu thang kia
+            engine.startWithPosition(visual.x, visual.y)
+            if (arrivalNode != null) {
+                val dx = arrivalNode.x - visual.x
+                val dy = arrivalNode.y - visual.y
+                if (dx * dx + dy * dy <= 55.0 * 55.0) {
+                    engine.startWithQR(arrivalNode.nodeId)
+                }
+            }
+            engine.lockPositionFor(4_000L)
+            engine.requestHeadingResync(reason = "cross_floor_stairs_seed")
+            stairsSeedHoldPos = visual
+            stairsSeedHoldUntilMs = System.currentTimeMillis() + 4_000L
+            _navState.update {
+                it.copy(
+                    userPos = visual,
+                    startAnchorPos = visual,
+                )
+            }
+            Log.i(
+                "MapViewModel",
+                "W3 stairs seed floor=$floorNumber visual=(${visual.x},${visual.y}) " +
+                    "node=${arrivalNode?.nodeId} hint=($stairsDepartHintX,$stairsDepartHintY)",
+            )
+        } else if (visual != null) {
+            localizeAtMapPoint(
+                visual.x,
+                visual.y,
+                resumeEmergency = false,
+                hint = "Đã sang tầng — tiếp tục từ cầu thang",
+                preferExactPosition = true,
+            )
+        }
+
         _navState.update {
             it.copy(
                 destinationNodeId = pending.nodeId,
                 destinationMarkerPos = Offset(pending.markerX, pending.markerY),
-                pendingDestFloor = pending.floor,
-                pendingDestNodeId = pending.nodeId,
+                pendingDestFloor = null,
+                pendingDestNodeId = null,
                 suggestedTargetFloor = null,
+                readyForFloorSwitch = false,
+                isNavigatingMode = true,
+                hasArrived = false,
+                destinationLabel = it.destinationLabel
+                    ?: _emergencySession.value.targetLabel,
+                navHint = "Tiếp tục chỉ đường từ cầu thang tới điểm đến",
+                floorTransitionHint = null,
             )
         }
-        updatePath(pending.nodeId, force = true)
-        if (activePath.isNotEmpty()) {
-            pendingCrossFloor = null
-            Log.i("MapViewModel", "W3 resumed path on floor $floorNumber → ${pending.nodeId}")
+        if (!startEmergencyEvacuation(forceRecalculate = true)) {
+            updatePath(pending.nodeId, force = true)
+            if (activePath.isEmpty()) {
+                _navState.update {
+                    it.copy(
+                        navigationError = "Chạm gần đúng cầu thang vừa xuống rồi bấm 「Tính lại đường」",
+                    )
+                }
+            }
         }
+        Log.i("MapViewModel", "W3 resumed on floor $floorNumber → ${pending.nodeId}")
+    }
+
+    /** Sau đổi tầng khẩn cấp: đứng tại cầu thang rồi chỉ đường — ổn định, không giật. */
+    private fun seedAtStairsThenContinueEmergency() {
+        val gModel = graphModel ?: run {
+            Log.w("MapViewModel", "seedAtStairs: graphModel=null")
+            return
+        }
+        val ui = _uiState.value as? MapUiState.Success ?: run {
+            Log.w("MapViewModel", "seedAtStairs: ui not Success")
+            return
+        }
+        val engine = locationEngine ?: run {
+            Log.w("MapViewModel", "seedAtStairs: locationEngine=null")
+            return
+        }
+        clearExitFloorHintIfArrived(ui.floorNumber)
+        emergencyArriveBlockedUntilMs = System.currentTimeMillis() + 5_000L
+
+        // Xóa path tầng trước (giữ session sơ tán)
+        activePath = emptyList()
+        activePathEdges = emptyList()
+        activeManeuvers = emptyList()
+        activeFloorConnectors = emptyList()
+
+        _emergencySession.update {
+            it.copy(
+                phase = EmergencyPhase.EVACUATING,
+                floorConfirmed = true,
+                needsQr = false,
+                error = null,
+            )
+        }
+
+        val exitIds = ui.mapData.pois
+            .filter { it.resolveCategory() == PoiCategory.EXIT }
+            .mapNotNull { SafePoiLocator.nearestNodeIdForPoi(gModel, it) }
+            .toSet()
+
+        val visual = findStairsArrivalPoint(gModel)
+            ?: run {
+                val exitNodes = exitIds.mapNotNull { gModel.nodeMap[it] }
+                val candidates = gModel.nodeMap.values.filter { it.nodeId !in exitIds }
+                val farthest = if (exitNodes.isEmpty()) {
+                    candidates.firstOrNull()
+                } else {
+                    candidates.maxByOrNull { n ->
+                        exitNodes.minOf { e ->
+                            val dx = (n.x - e.x).toDouble()
+                            val dy = (n.y - e.y).toDouble()
+                            dx * dx + dy * dy
+                        }
+                    }
+                }
+                farthest?.let { Offset(it.x.toFloat(), it.y.toFloat()) }
+            }
+            ?: gModel.nodeMap.values.firstOrNull()
+                ?.let { Offset(it.x.toFloat(), it.y.toFloat()) }
+
+        if (visual == null) {
+            Log.w("MapViewModel", "seedAtStairs: no nodes on floor ${ui.floorNumber}")
+            _emergencySession.update {
+                it.copy(error = "Tầng này chưa có đường đi — chạm map gần cầu thang")
+            }
+            _navState.update {
+                it.copy(
+                    userPos = null,
+                    isNavigatingMode = true,
+                    navHint = "Chạm gần cầu thang trên bản đồ để neo vị trí",
+                )
+            }
+            return
+        }
+
+        val nearStairs = findStairsArrivalNode(gModel)
+            ?: gModel.nodeMap.values
+                .asSequence()
+                .filter { it.nodeId !in exitIds }
+                .minByOrNull { n ->
+                    val dx = n.x - visual.x
+                    val dy = n.y - visual.y
+                    dx * dx + dy * dy
+                }
+
+        val mapKey = buildMapSessionKey(ui.buildingId, ui.floorNumber)
+        localizationMapKey = mapKey
+        confidenceEngine.updateGroundTruth()
+
+        // Ưu tiên neo đúng icon cầu thang (tránh snap sang phòng ngủ / EXIT)
+        engine.startWithPosition(visual.x, visual.y)
+        if (nearStairs != null) {
+            val dx = nearStairs.x - visual.x
+            val dy = nearStairs.y - visual.y
+            if (dx * dx + dy * dy <= 55.0 * 55.0) {
+                engine.startWithQR(nearStairs.nodeId)
+            }
+        }
+        engine.lockPositionFor(4_000L)
+        engine.requestHeadingResync(reason = "stairs_seed")
+        stairsSeedHoldPos = visual
+        stairsSeedHoldUntilMs = System.currentTimeMillis() + 4_000L
+
+        _navState.update {
+            it.copy(
+                userPos = visual,
+                startAnchorPos = visual,
+                destinationPoiId = null,
+                path = null,
+                hasArrived = false,
+                isRerouting = false,
+                rerouteCount = 0,
+                navigationError = null,
+                confidence = 0.55f,
+                userHeading = engine.currentNavigationHeadingDeg(),
+                navHint = "Đã xuống tầng — từ cầu thang tới lối thoát",
+            )
+        }
+
+        val routed = startEmergencyEvacuation(forceRecalculate = true)
+        if (!routed || _navState.value.userPos == null) {
+            // Khôi phục neo nếu startEmergency / softClear race làm mất chấm xanh
+            _navState.update {
+                it.copy(
+                    userPos = visual,
+                    startAnchorPos = visual,
+                    isNavigatingMode = true,
+                    navHint = "Đã neo cầu thang — bấm 「Tính lại đường」 nếu chưa có đường",
+                )
+            }
+            localizationMapKey = mapKey
+            stairsSeedHoldPos = visual
+            stairsSeedHoldUntilMs = System.currentTimeMillis() + 4_000L
+        }
+        Log.i(
+            "MapViewModel",
+            "seedAtStairs floor=${ui.floorNumber} visual=(${visual.x},${visual.y}) " +
+                "node=${nearStairs?.nodeId} routed=$routed pois=${ui.mapData.pois.size}",
+        )
     }
 
     private suspend fun prefetchBuildingFloors(buildingId: String) {
@@ -1288,6 +2293,27 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                         seedUserPos(body.x, body.y)
                     }
                 }
+                // Spec D L3 — QR neo = đang tại chỗ (không phụ thuộc GPS)
+                indoorPresenceClaimed = true
+                com.khoaluan.indoornav.navigation.gps.PresenceHintStore.markEnter(
+                    getApplication(),
+                    body.building_id
+                )
+                com.khoaluan.indoornav.fcm.PresenceSync.update(
+                    context = getApplication(),
+                    buildingId = body.building_id,
+                    floor = body.floor_number,
+                    qrId = trimmedQr,
+                    indoorSessionOpen = true,
+                    touchIndoor = true,
+                    includeRadio = true,
+                )
+                com.khoaluan.indoornav.fcm.EmergencyHeartbeat.updateIndoorContext(
+                    buildingId = body.building_id,
+                    floor = body.floor_number,
+                    qrAnchor = trimmedQr,
+                )
+                tryResumeEmergencyEvacuationAfterLocalize()
             } catch (e: Exception) {
                 Log.e("MapViewModel", "Loi tra cuu QR", e)
                 _qrScanError.value = "Loi ket noi: ${e.message}"
@@ -1297,37 +2323,74 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         }
     }
     /**
-     * Tìm node gần nhất với vị trí (x, y) - đơn giản nhất quán, không lọc connectivity.
-     * Lý do: Khi user đang trong phòng, node trong phòng thường là leaf (degree=1).
-     * Hàm cũ ưu tiên connected nodes (degree>=2) đã gây sai: user trong phòng nhưng
-     * lại trả về node ở hành lang bên ngoài (connected node) → path bắt đầu từ hành lang,
-     * không nối với vị trí user thực tế.
+     * Tìm node gần nhất với vị trí (x, y).
+     * Ưu tiên node có ít nhất 1 cạnh (đi được trên đồ thị); nếu không có trong bán kính
+     * hợp lý thì fallback node gần nhất tuyệt đối (hành vi cũ).
      */
     private fun findNearestNodeIdWithConnectivity(
- mapData: MapData,
- graphModel: GraphModel?,
- x: Float,
- y: Float
- ): String? {
- val candidates = mapData.nodes.map { node ->
- val dx = node.x - x
- val dy = node.y - y
- Triple(node.nodeId, node.x, node.y) to (dx * dx + dy * dy)
- }.sortedBy { it.second }.take(3)
- Log.d("MapViewModel", "findNearestNode: userPos=(" + "%.1f".format(x) + "," + "%.1f".format(y) + "), pxPerM=" + pixelsPerMeter)
- for (c in candidates) {
- val id = c.first.first
- val nx = c.first.second
- val ny = c.first.third
- val dist = sqrt(c.second.toDouble()).toFloat()
- Log.d("MapViewModel", " candidate: " + id + " at (" + nx + "," + ny + "), dist=" + "%.1f".format(dist) + "px (" + "%.2f".format(dist / pixelsPerMeter) + "m)")
- }
- return mapData.nodes.minByOrNull { node ->
- val dx = node.x - x
- val dy = node.y - y
- dx * dx + dy * dy
- }?.nodeId
-}
+        mapData: MapData,
+        graphModel: GraphModel?,
+        x: Float,
+        y: Float,
+    ): String? {
+        val g = graphModel
+        if (g != null) {
+            val routable = nearestRoutableNodeId(g, x, y)
+            if (routable != null) {
+                Log.d(
+                    "MapViewModel",
+                    "findNearestNode: userPos=(${"%.1f".format(x)},${"%.1f".format(y)}) -> routable=$routable",
+                )
+                return routable
+            }
+        }
+        val candidates = mapData.nodes.map { node ->
+            val dx = node.x - x
+            val dy = node.y - y
+            Triple(node.nodeId, node.x, node.y) to (dx * dx + dy * dy)
+        }.sortedBy { it.second }.take(3)
+        Log.d(
+            "MapViewModel",
+            "findNearestNode: userPos=(${"%.1f".format(x)},${"%.1f".format(y)}), pxPerM=$pixelsPerMeter",
+        )
+        for (c in candidates) {
+            val id = c.first.first
+            val nx = c.first.second
+            val ny = c.first.third
+            val dist = sqrt(c.second.toDouble()).toFloat()
+            Log.d(
+                "MapViewModel",
+                " candidate: $id at ($nx,$ny), dist=${"%.1f".format(dist)}px " +
+                    "(${"%.2f".format(dist / pixelsPerMeter)}m)",
+            )
+        }
+        return mapData.nodes.minByOrNull { node ->
+            val dx = node.x - x
+            val dy = node.y - y
+            dx * dx + dy * dy
+        }?.nodeId
+    }
+
+    /**
+     * Node gần nhất có cạnh ra vào (không cô lập).
+     * Giới hạn bán kính ~12 m (theo pixelsPerMeter) để tránh nhảy sang phòng xa.
+     */
+    private fun nearestRoutableNodeId(gModel: GraphModel, x: Float, y: Float): String? {
+        val maxDistPx = (pixelsPerMeter * 12f).coerceIn(80f, 800f)
+        val maxDist2 = maxDistPx * maxDistPx
+        return gModel.nodeMap.values
+            .asSequence()
+            .filter { gModel.adjacency[it.nodeId].orEmpty().isNotEmpty() }
+            .map { node ->
+                val dx = node.x.toFloat() - x
+                val dy = node.y.toFloat() - y
+                node to (dx * dx + dy * dy)
+            }
+            .filter { it.second <= maxDist2 }
+            .minByOrNull { it.second }
+            ?.first
+            ?.nodeId
+    }
     private fun findNearestNodeId(x: Float, y: Float, mapData: MapData): String? {
         return findNearestNodeIdWithConnectivity(mapData, graphModel, x, y)
     }
@@ -1345,15 +2408,17 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         val roomCenterX = room.x + room.width / 2.0
         val roomCenterY = room.y + room.height / 2.0
         val markerPos = Offset(roomCenterX.toFloat(), roomCenterY.toFloat())
-        val targetNode = gModel.nodeMap.values.minByOrNull {
-            val dx = it.x - roomCenterX
-            val dy = it.y - roomCenterY
-            dx * dx + dy * dy
-        } ?: return
+        val targetNodeId = nearestRoutableNodeId(gModel, roomCenterX.toFloat(), roomCenterY.toFloat())
+            ?: gModel.nodeMap.values.minByOrNull {
+                val dx = it.x - roomCenterX
+                val dy = it.y - roomCenterY
+                dx * dx + dy * dy
+            }?.nodeId
+            ?: return
         Log.d(
             "MapViewModel",
             "setDestination(G1 select-only): roomId=$roomId, roomName=${room.name}, " +
-                "targetNodeId=${targetNode.nodeId}, path NOT computed"
+                "targetNodeId=$targetNodeId, path NOT computed"
         )
         activePath = emptyList()
         activePathEdges = emptyList()
@@ -1362,7 +2427,8 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         pendingCrossFloor = null
         _navState.value = _navState.value.copy(
             destinationPoiId = null,
-            destinationNodeId = targetNode.nodeId,
+            destinationLabel = room.name,
+            destinationNodeId = targetNodeId,
             destinationMarkerPos = markerPos,
             path = null,
             totalDistanceMeters = 0f,
@@ -1379,7 +2445,8 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             floorTransitionHint = null,
             suggestedTargetFloor = null,
             pendingDestFloor = state.floorNumber,
-            pendingDestNodeId = targetNode.nodeId,
+            pendingDestNodeId = targetNodeId,
+            readyForFloorSwitch = false,
         )
     }
 
@@ -1389,23 +2456,28 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         val poi = state.mapData.pois.find { it.id == poiId } ?: return
         val gModel = graphModel ?: return
         val markerPos = Offset(poi.x.toFloat(), poi.y.toFloat())
-        val targetNode = gModel.nodeMap.values.minByOrNull {
-            val dx = it.x - poi.x
-            val dy = it.y - poi.y
-            dx * dx + dy * dy
-        } ?: return
+        // Ưu tiên node có cạnh (đi được); tránh neo vào node cô lập gần icon POI
+        val targetNodeId = nearestRoutableNodeId(gModel, poi.x.toFloat(), poi.y.toFloat())
+            ?: gModel.nodeMap.values.minByOrNull {
+                val dx = it.x - poi.x
+                val dy = it.y - poi.y
+                dx * dx + dy * dy
+            }?.nodeId
+            ?: return
         Log.d(
             "MapViewModel",
             "setDestinationPoi(G1 select-only): poiId=$poiId, poiName=${poi.name}, " +
-                "targetNodeId=${targetNode.nodeId}, path NOT computed"
+                "targetNodeId=$targetNodeId, path NOT computed"
         )
         activePath = emptyList()
         activePathEdges = emptyList()
         activeManeuvers = emptyList()
         activeFloorConnectors = emptyList()
+        pendingCrossFloor = null
         _navState.value = _navState.value.copy(
             destinationPoiId = poiId,
-            destinationNodeId = targetNode.nodeId,
+            destinationLabel = poi.name?.takeIf { it.isNotBlank() },
+            destinationNodeId = targetNodeId,
             destinationMarkerPos = markerPos,
             path = null,
             totalDistanceMeters = 0f,
@@ -1420,6 +2492,12 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             routeProgress = 0f,
             pathHasFloorConnector = false,
             floorTransitionHint = null,
+            suggestedTargetFloor = null,
+            // Bắt buộc đồng bộ tầng/node đích — tránh giữ pendingDest* cũ (phòng trước)
+            // khiến A* tìm sang tầng/node sai → "Không tìm thấy đường".
+            pendingDestFloor = state.floorNumber,
+            pendingDestNodeId = targetNodeId,
+            readyForFloorSwitch = false,
         )
     }
     /** Tính lại đường preview tới đích hiện tại (nút "Xem đường"). */
@@ -1454,19 +2532,2124 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     activeManeuvers,
                     next.totalDistanceMeters,
                     traveledMeters = 0f,
+                    edges = activePathEdges,
                 )
+                val mPos = if (g.nextManeuverMapX != null && g.nextManeuverMapY != null) {
+                    Offset(g.nextManeuverMapX, g.nextManeuverMapY)
+                } else null
                 next = next.copy(
                     currentInstructionText = g.instructionText,
                     distanceToNextManeuverMeters = g.distanceToNextManeuverMeters,
                     remainingDistanceMeters = g.remainingDistanceMeters,
                     routeProgress = g.routeProgress,
+                    nextManeuverPos = mPos,
+                    nextManeuverType = g.nextType.name,
                 )
             }
             _navState.value = next
+            syncRouteSnapToEngine()
         } else {
             Log.w("MapViewModel", "Cannot start navigation: no destination or path unavailable")
         }
     }
+
+    /**
+     * Bật màn hình cảnh báo full-screen (chưa tính path).
+     * [buildingId] dùng khi đang outdoor — MainActivity sẽ mở indoor trước.
+     */
+    fun triggerEmergencyAlert(
+        incidentType: String,
+        title: String? = null,
+        body: String? = null,
+        buildingId: String? = null,
+        incidentId: String? = null,
+        blockedNodeIds: Set<String> = emptySet(),
+        blockedEdgeKeys: Set<String> = emptySet(),
+        hazardZones: List<HazardZoneDraw> = emptyList(),
+    ) {
+        val type = incidentType.trim().uppercase().ifBlank { "FIRE" }
+        val ui = _uiState.value as? MapUiState.Success
+        val incomingId = incidentId?.takeIf { it.isNotBlank() }
+        val current = _emergencySession.value
+
+        // Admin gửi lại broadcast cùng sự cố khi user đã nhận / đang sơ tán → không reset màn hình
+        if (current.active &&
+            !incomingId.isNullOrBlank() &&
+            current.incidentId == incomingId
+        ) {
+            _emergencySession.update {
+                it.copy(
+                    title = EmergencySession.defaultTitle(type, title).ifBlank { it.title },
+                    body = body?.takeIf { b -> b.isNotBlank() } ?: it.body,
+                    blockedNodeIds = if (blockedNodeIds.isNotEmpty()) blockedNodeIds else it.blockedNodeIds,
+                    blockedEdgeKeys = if (blockedEdgeKeys.isNotEmpty()) blockedEdgeKeys else it.blockedEdgeKeys,
+                    hazardZones = if (hazardZones.isNotEmpty()) hazardZones else it.hazardZones,
+                )
+            }
+            Log.i(
+                "MapViewModel",
+                "Emergency rebroadcast ignored (same incident=$incomingId phase=${current.phase})",
+            )
+            return
+        }
+
+        _emergencySession.value = EmergencySession(
+            active = true,
+            phase = EmergencyPhase.ALERT,
+            incidentType = type,
+            title = EmergencySession.defaultTitle(type, title),
+            body = body?.takeIf { it.isNotBlank() } ?: EmergencySession.bodyForType(type),
+            buildingId = buildingId ?: ui?.buildingId,
+            incidentId = incomingId,
+            needsQr = true,
+            floorConfirmed = false,
+            blockedNodeIds = blockedNodeIds,
+            blockedEdgeKeys = blockedEdgeKeys,
+            hazardZones = hazardZones,
+        )
+        if (!incomingId.isNullOrBlank()) {
+            dismissedIncidentIds.remove(incomingId)
+            _buildingActiveEmergency.value = BuildingActiveEmergency(
+                incidentId = incomingId,
+                incidentType = type,
+                title = EmergencySession.defaultTitle(type, title),
+                body = body?.takeIf { it.isNotBlank() } ?: EmergencySession.bodyForType(type),
+                buildingId = buildingId ?: ui?.buildingId ?: "",
+            )
+        }
+        if (hazardZones.isNotEmpty()) {
+            _mapHazardZones.value = hazardZones
+        }
+        com.khoaluan.indoornav.fcm.EmergencyNotifier.markActiveIncident(getApplication(), incomingId)
+        com.khoaluan.indoornav.fcm.EmergencySirenPlayer.start(getApplication())
+        if (!incomingId.isNullOrBlank()) {
+            com.khoaluan.indoornav.fcm.EmergencyConsentHelper.startHeartbeatIfAllowed(
+                context = getApplication(),
+                incidentId = incomingId,
+                buildingId = buildingId ?: ui?.buildingId,
+                floor = ui?.floorNumber,
+            )
+        }
+    }
+
+    fun dismissEmergency() {
+        _emergencySession.value.incidentId?.let { dismissedIncidentIds += it }
+        _emergencySession.value = EmergencySession()
+        stairsSeedHoldPos = null
+        stairsSeedHoldUntilMs = 0L
+        emergencyArriveBlockedUntilMs = 0L
+        // Giữ _mapHazardZones + _buildingActiveEmergency nếu sự cố vẫn ACTIVE
+        // → user bấm banner để chỉ đường thoát hiểm lại
+        com.khoaluan.indoornav.fcm.EmergencyNotifier.clearActiveIncident(getApplication())
+        com.khoaluan.indoornav.fcm.EmergencySirenPlayer.stop()
+        com.khoaluan.indoornav.fcm.EmergencyHeartbeat.stop(getApplication())
+        com.khoaluan.indoornav.fcm.EmergencyNotifier.cancel(getApplication())
+    }
+
+    /**
+     * User đã Đóng overlay nhưng sự cố vẫn ACTIVE → mở lại cảnh báo / chỉ đường thoát hiểm.
+     */
+    fun resumeEmergencyGuidance() {
+        val summary = _buildingActiveEmergency.value ?: return
+        dismissedIncidentIds.remove(summary.incidentId)
+        val zones = _mapHazardZones.value
+        val blocked = blockedNodesFromHazardDraws(zones)
+        triggerEmergencyAlert(
+            incidentType = summary.incidentType,
+            title = summary.title,
+            body = summary.body,
+            buildingId = summary.buildingId,
+            incidentId = summary.incidentId,
+            blockedNodeIds = blocked,
+            hazardZones = zones,
+        )
+    }
+
+    /**
+     * Chưa mở map / chưa có vị trí: chuyển sang chờ chọn vị trí đứng trên bản đồ.
+     */
+    fun requestEmergencyStandingPick() {
+        if (!_emergencySession.value.active) return
+        _emergencySession.update {
+            it.copy(
+                phase = EmergencyPhase.AWAITING_LOCATION,
+                needsQr = true,
+                error = null,
+            )
+        }
+        // Bắt buộc user chọn lại vị trí hiện tại, không dùng vị trí cũ gây chỉ đường sai.
+        stairsSeedHoldPos = null
+        stairsSeedHoldUntilMs = 0L
+        activePath = emptyList()
+        activePathEdges = emptyList()
+        _navState.update {
+            it.copy(
+                userPos = null,
+                startAnchorPos = null,
+                path = null,
+                isNavigatingMode = false,
+                hasArrived = false,
+                navigationError = null,
+                destinationPoiId = null,
+                destinationNodeId = null,
+                destinationMarkerPos = null,
+                destinationLabel = null,
+                pendingDestFloor = null,
+                pendingDestNodeId = null,
+                suggestedTargetFloor = null,
+                readyForFloorSwitch = false,
+            )
+        }
+        _navState.update {
+            it.copy(
+                navHint = "Chạm bản đồ để chọn vị trí đang đứng — sẽ chỉ đường ra lối thoát hiểm gần nhất",
+            )
+        }
+    }
+
+    /** Chưa chắc tầng (máy túi / chưa QR) → hỏi chọn tầng trước khi sơ tán. */
+    fun requestEmergencyFloorConfirm() {
+        if (!_emergencySession.value.active) return
+        if (_emergencySession.value.floorConfirmed) return
+        _emergencySession.update {
+            it.copy(
+                phase = EmergencyPhase.AWAITING_FLOOR,
+                floorConfirmed = false,
+                error = null,
+                needsQr = false,
+            )
+        }
+        _navState.update {
+            it.copy(navHint = "Chọn tầng bạn đang đứng để sơ tán đúng bản đồ")
+        }
+    }
+
+    /**
+     * User chọn tầng đang đứng trong cảnh báo.
+     * Load đúng bản đồ tầng đó rồi chờ chạm vị trí đứng.
+     */
+    fun confirmEmergencyFloor(floor: Int) {
+        if (!_emergencySession.value.active) return
+        val session = _emergencySession.value
+        val ui = _uiState.value as? MapUiState.Success
+        val bid = session.buildingId ?: ui?.buildingId ?: return
+        val safeFloor = floor.coerceAtLeast(0)
+        val floorLabel = if (safeFloor == 0) "GF" else "${safeFloor}F"
+        localizationMapKey = null
+        pendingCrossFloor = null
+        activePath = emptyList()
+        activePathEdges = emptyList()
+        _emergencySession.update {
+            it.copy(
+                floorConfirmed = true,
+                phase = EmergencyPhase.AWAITING_LOCATION,
+                needsQr = true,
+                error = null,
+                targetLabel = null,
+                suggestedExitFloor = null,
+            )
+        }
+        _navState.update {
+            it.copy(
+                userPos = null,
+                startAnchorPos = null,
+                path = null,
+                isNavigatingMode = false,
+                hasArrived = false,
+                destinationNodeId = null,
+                destinationMarkerPos = null,
+                destinationLabel = null,
+                navHint = "Đã chọn tầng $floorLabel — chạm bản đồ (hoặc quét QR) để chọn vị trí đang đứng",
+            )
+        }
+        indoorSessionStore.saveLastFloor(bid, safeFloor)
+        // Luôn load đúng tầng (kể cả đang đứng cùng số tầng — reset map/engine)
+        viewModelScope.launch {
+            loadFloorMapInPlace(bid, safeFloor, reason = "confirmEmergencyFloor")
+        }
+        Log.i("MapViewModel", "Emergency floor confirmed → $safeFloor building=$bid")
+    }
+
+    /**
+     * Đổi map tầng mà không teardown session / không Loading.
+     * Dùng cho chọn tầng khẩn cấp & sơ tán đa tầng.
+     */
+    private suspend fun loadFloorMapInPlace(
+        buildingId: String,
+        target: Int,
+        reason: String,
+    ): Boolean {
+        try {
+            Log.i("MapViewModel", "loadFloorMapInPlace reason=$reason → floor=$target")
+            prefetchBuildingFloors(buildingId)
+            var body: com.khoaluan.indoornav.data.model.MapResponse? = null
+            // Khẩn cấp / đổi tầng: ưu tiên mạng để nhận POI cầu thang mới publish (tránh cache cũ)
+            val preferNetwork = _emergencySession.value.active ||
+                reason == "goToEmergencyFloor" ||
+                reason == "confirmEmergencyFloor"
+            if (preferNetwork) {
+                try {
+                    val api = RetrofitClient.getApiService()
+                    val resp = api.getMapByFloor(buildingId, target)
+                    if (resp.isSuccessful) {
+                        body = resp.body()
+                        body?.let { mapCacheManager.save(buildingId, it.floorNumber, it) }
+                    }
+                } catch (e: Exception) {
+                    Log.w("MapViewModel", "loadFloorMapInPlace network: ${e.message}")
+                }
+            }
+            if (body == null) {
+                body = mapCacheManager.load(buildingId, target)
+            }
+            if (body == null) {
+                val md = buildingFloorCache[target]
+                if (md != null) {
+                    body = com.khoaluan.indoornav.data.model.MapResponse(
+                        mapData = md,
+                        buildingId = buildingId,
+                        floorNumber = target,
+                        version = 1,
+                    )
+                }
+            }
+            if (body == null && !preferNetwork) {
+                try {
+                    val api = RetrofitClient.getApiService()
+                    val resp = api.getMapByFloor(buildingId, target)
+                    if (resp.isSuccessful) {
+                        body = resp.body()
+                        body?.let { mapCacheManager.save(buildingId, it.floorNumber, it) }
+                    }
+                } catch (e: Exception) {
+                    Log.w("MapViewModel", "loadFloorMapInPlace network: ${e.message}")
+                }
+            }
+            if (body == null) {
+                _emergencySession.update {
+                    it.copy(error = "Không tải được tầng ${if (target == 0) "GF" else target}")
+                }
+                _navState.update {
+                    it.copy(navHint = "Không tải được tầng — kiểm tra mạng rồi chọn lại")
+                }
+                return false
+            }
+            // Ép floorNumber = target (tránh cache/body lệch số tầng → POI tầng cũ)
+            val forcedBody = if (body.floorNumber == target) {
+                body
+            } else {
+                body.copy(floorNumber = target)
+            }
+            buildingFloorCache[target] = forcedBody.mapData.sanitized()
+            applyLoadedMap(forcedBody, buildingId)
+            val loaded = (_uiState.value as? MapUiState.Success)?.floorNumber
+            Log.i(
+                "MapViewModel",
+                "loadFloorMapInPlace OK reason=$reason loadedFloor=$loaded " +
+                    "pois=${forcedBody.mapData.pois.size} rooms=${forcedBody.mapData.rooms.size}",
+            )
+            return loaded == target
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e("MapViewModel", "loadFloorMapInPlace failed reason=$reason", e)
+            _emergencySession.update {
+                it.copy(error = "Lỗi tải tầng — thử lại")
+            }
+            return false
+        }
+    }
+
+    /**
+     * Fallback REST khi miss FCM (pin tiết kiệm / OEM chặn).
+     * Kênh chính: FCM data-only priority=high → EmergencyMessagingService takeover.
+     * Poll thưa (45s) để đồng bộ hazard zone và bắt sự cố ACTIVE nếu push không tới.
+     */
+    fun startEmergencyWatch(buildingId: String?) {
+        val id = buildingId?.trim().orEmpty()
+        if (id == watchedEmergencyBuildingId && emergencyWatchJob?.isActive == true) return
+        emergencyWatchJob?.cancel()
+        watchedEmergencyBuildingId = id
+        if (id.isBlank()) return
+
+        emergencyWatchJob = viewModelScope.launch {
+            var first = true
+            while (isActive) {
+                if (first) {
+                    delay(EMERGENCY_POLL_FIRST_DELAY_MS)
+                    first = false
+                }
+                try {
+                    val res = RetrofitClient.getApiService().getActiveEmergency(id)
+                    val body = res.body()
+                    val incident = body?.incident
+                    if (res.isSuccessful && body?.active == true && incident != null) {
+                        val incidentId = incident.id.orEmpty()
+                        val current = _emergencySession.value
+                        val alreadyShown = current.active && current.incidentId == incidentId
+                        val zonesDraw = hazardZonesFromDto(body.hazard_zones)
+                        val blocked = blockedNodesFromHazardZones(body.hazard_zones)
+                        // Luôn hiện vùng đỏ trên map khi tòa có sự cố ACTIVE + zone đã bật
+                        _mapHazardZones.value = zonesDraw
+                        if (incidentId.isNotBlank()) {
+                            _buildingActiveEmergency.value = BuildingActiveEmergency(
+                                incidentId = incidentId,
+                                incidentType = (incident.type ?: "FIRE").uppercase(),
+                                title = incident.title.orEmpty(),
+                                body = incident.description.orEmpty(),
+                                buildingId = incident.building_id ?: id,
+                            )
+                        }
+                        if (alreadyShown) {
+                            // Admin bật/tắt zone sau khi đã báo → đồng bộ overlay + blocked nodes
+                            _emergencySession.update {
+                                it.copy(
+                                    hazardZones = zonesDraw,
+                                    blockedNodeIds = blocked,
+                                )
+                            }
+                        } else if (incidentId !in dismissedIncidentIds) {
+                            val site = siteStatusFor(id)
+                            if (OnSiteGate.allowsEmergencyTakeover(site)) {
+                                triggerEmergencyAlert(
+                                    incidentType = incident.type ?: "FIRE",
+                                    title = incident.title,
+                                    body = incident.description,
+                                    buildingId = incident.building_id ?: id,
+                                    incidentId = incidentId.takeIf { it.isNotBlank() },
+                                    blockedNodeIds = blocked,
+                                    hazardZones = zonesDraw,
+                                )
+                            } else {
+                                Log.i(
+                                    "MapViewModel",
+                                    "Emergency ACTIVE building=$id nhưng site=$site — chỉ xem map, không takeover"
+                                )
+                                if (incidentId.isNotBlank() && incidentId !in remoteViewNotifiedIncidentIds) {
+                                    remoteViewNotifiedIncidentIds += incidentId
+                                    _placeNotice.value =
+                                        "Tòa đang có sự cố. Bạn đang xem từ xa — cảnh báo đầy đủ chỉ khi tại khu vực."
+                                }
+                            }
+                        }
+                    } else if (res.isSuccessful && body?.active != true) {
+                        _mapHazardZones.value = emptyList()
+                        val prevId = _buildingActiveEmergency.value?.incidentId
+                        if (!prevId.isNullOrBlank()) dismissedIncidentIds.remove(prevId)
+                        _buildingActiveEmergency.value = null
+                    }
+                } catch (e: Exception) {
+                    Log.d("MapViewModel", "Emergency watch: ${e.message}")
+                }
+                delay(EMERGENCY_POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    fun stopEmergencyWatch() {
+        emergencyWatchJob?.cancel()
+        emergencyWatchJob = null
+        watchedEmergencyBuildingId = null
+        _mapHazardZones.value = emptyList()
+    }
+
+    /** Node nằm trong vùng nguy hiểm (tầng hiện tại hoặc vùng toàn tòa) → chặn khi tìm đường. */
+    private fun blockedNodesFromHazardZones(zones: List<ActiveEmergencyHazardZoneDto>): Set<String> {
+        val gModel = graphModel ?: return emptySet()
+        val currentFloor = (_uiState.value as? MapUiState.Success)?.floorNumber
+        val polygons = zones
+            .filter { (it.floor_number ?: 0) == currentFloor }
+            .map { zone -> zone.polygon.map { it.x.toFloat() to it.y.toFloat() } }
+            .filter { it.size >= 3 }
+        if (polygons.isEmpty()) return emptySet()
+
+        return gModel.nodeMap.values
+            .filter { node ->
+                polygons.any { poly ->
+                    pointInPolygon(node.x.toFloat(), node.y.toFloat(), poly)
+                }
+            }
+            .map { it.nodeId }
+            .toSet()
+    }
+
+    private fun hazardZonesFromDto(zones: List<ActiveEmergencyHazardZoneDto>): List<HazardZoneDraw> {
+        return zones.mapNotNull { z ->
+            val pts = z.polygon.map { it.x.toFloat() to it.y.toFloat() }
+            if (pts.size < 3) return@mapNotNull null
+            HazardZoneDraw(
+                id = z.id.orEmpty(),
+                hazardType = z.hazard_type ?: "OTHER",
+                name = z.name.orEmpty(),
+                floorNumber = z.floor_number,
+                points = pts,
+            )
+        }
+    }
+
+    private fun blockedNodesFromHazardDraws(zones: List<HazardZoneDraw>): Set<String> {
+        val gModel = graphModel ?: return emptySet()
+        val currentFloor = (_uiState.value as? MapUiState.Success)?.floorNumber
+        val polygons = zones
+            .filter { (it.floorNumber ?: 0) == currentFloor }
+            .map { it.points }
+            .filter { it.size >= 3 }
+        if (polygons.isEmpty()) return emptySet()
+        return gModel.nodeMap.values
+            .filter { node ->
+                polygons.any { poly ->
+                    pointInPolygon(node.x.toFloat(), node.y.toFloat(), poly)
+                }
+            }
+            .map { it.nodeId }
+            .toSet()
+    }
+
+    private fun pointInPolygon(x: Float, y: Float, poly: List<Pair<Float, Float>>): Boolean {
+        var inside = false
+        var j = poly.size - 1
+        for (i in poly.indices) {
+            val (xi, yi) = poly[i]
+            val (xj, yj) = poly[j]
+            if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi + 1e-9f) + xi) {
+                inside = !inside
+            }
+            j = i
+        }
+        return inside
+    }
+
+    /**
+     * Tìm lối thoát / điểm tập trung gần nhất (tránh blocked) và bật chỉ đường.
+     * @param forceRecalculate true sau đổi tầng — bỏ path cũ, tính lại từ cầu thang.
+     */
+    fun startEmergencyEvacuation(forceRecalculate: Boolean = false): Boolean {
+        val session = _emergencySession.value
+        if (!session.active) return false
+        // Đã đang sơ tán + còn path → không tính lại (tránh “Đã tự tính lại lộ trình”)
+        // Sau đổi tầng phải forceRecalculate vì path/cạnh thuộc tầng cũ.
+        if (!forceRecalculate && session.phase == EmergencyPhase.EVACUATING) {
+            val nav = _navState.value
+            if (!nav.path.isNullOrEmpty() || activePath.isNotEmpty()) return true
+        }
+        if (forceRecalculate) {
+            // Chỉ reset cờ — KHÔNG xóa path ngay (tránh khoảng trống path nếu tính lại fail)
+            _navState.update {
+                it.copy(
+                    navigationError = null,
+                    hasArrived = false,
+                    isRerouting = false,
+                    rerouteCount = 0,
+                )
+            }
+        }
+        if (session.phase == EmergencyPhase.AWAITING_FLOOR) return false
+
+        // Chưa xác nhận tầng trong phiên khẩn cấp → hỏi chọn tầng (không tin vị trí map cũ)
+        if (!forceRecalculate && !session.floorConfirmed) {
+            _emergencySession.update {
+                it.copy(
+                    phase = EmergencyPhase.AWAITING_FLOOR,
+                    floorConfirmed = false,
+                    error = null,
+                )
+            }
+            _navState.update {
+                it.copy(navHint = "Chọn tầng bạn đang đứng để sơ tán đúng bản đồ")
+            }
+            return false
+        }
+
+        // force=true trong applyComputedPath làm +1 rerouteCount — reset về 0 sau khi gán đích
+        val ui = _uiState.value as? MapUiState.Success
+        if (ui == null) {
+            // Đổi tầng / force: giữ EVACUATING, chờ map (không đẩy overlay “chọn vị trí”)
+            if (forceRecalculate || session.phase == EmergencyPhase.EVACUATING) {
+                _emergencySession.update {
+                    it.copy(
+                        phase = EmergencyPhase.EVACUATING,
+                        needsQr = false,
+                        error = "Đang tải bản đồ tầng…",
+                    )
+                }
+                return false
+            }
+            _emergencySession.update {
+                it.copy(
+                    phase = EmergencyPhase.AWAITING_LOCATION,
+                    needsQr = true,
+                    error = null,
+                )
+            }
+            _navState.update {
+                it.copy(
+                    navHint = "Chạm bản đồ để chọn vị trí đang đứng — sẽ chỉ đường ra lối thoát hiểm gần nhất",
+                )
+            }
+            return false
+        }
+        val gModel = graphModel
+        if (gModel == null) {
+            if (forceRecalculate || session.phase == EmergencyPhase.EVACUATING) {
+                _emergencySession.update {
+                    it.copy(
+                        phase = EmergencyPhase.EVACUATING,
+                        needsQr = false,
+                        error = "Đang chuẩn bị chỉ đường trên tầng này…",
+                    )
+                }
+                return false
+            }
+            _emergencySession.update {
+                it.copy(
+                    phase = EmergencyPhase.AWAITING_LOCATION,
+                    needsQr = true,
+                    error = null,
+                )
+            }
+            return false
+        }
+        // Graph vừa sẵn sàng → tính lại node bị chặn từ polygon zone
+        if (_emergencySession.value.hazardZones.isNotEmpty()) {
+            val blocked = blockedNodesFromHazardDraws(_emergencySession.value.hazardZones)
+            _emergencySession.update { it.copy(blockedNodeIds = blocked) }
+        }
+        val blockedNodes = _emergencySession.value.blockedNodeIds
+        val blockedEdges = _emergencySession.value.blockedEdgeKeys
+        // Sau đổi tầng: không lấy node bừa (thường trúng EXIT → path 0 m, không có chấm xanh)
+        if (forceRecalculate && _navState.value.userPos == null) {
+            val stairsPt = findStairsArrivalPoint(gModel)
+            if (stairsPt != null) {
+                val eng = locationEngine
+                if (eng != null) {
+                    val mapKey = buildMapSessionKey(ui.buildingId, ui.floorNumber)
+                    localizationMapKey = mapKey
+                    eng.startWithPosition(stairsPt.x, stairsPt.y)
+                    eng.lockPositionFor(4_000L)
+                    stairsSeedHoldPos = stairsPt
+                    stairsSeedHoldUntilMs = System.currentTimeMillis() + 4_000L
+                    _navState.update {
+                        it.copy(userPos = stairsPt, startAnchorPos = stairsPt, confidence = 0.5f)
+                    }
+                }
+            }
+            if (_navState.value.userPos == null) {
+                _emergencySession.update {
+                    it.copy(
+                        phase = EmergencyPhase.EVACUATING,
+                        needsQr = false,
+                        error = "Chạm gần cầu thang trên bản đồ rồi bấm 「Tính lại đường」",
+                    )
+                }
+                _navState.update {
+                    it.copy(
+                        isNavigatingMode = true,
+                        navHint = "Chạm gần cầu thang — hệ thống sẽ chỉ đường ra lối thoát",
+                    )
+                }
+                return false
+            }
+        }
+        val startNodeId = findNearestNodeIdFromCurrentPosition(gModel)
+            ?: locationEngine?.getParticles()?.firstOrNull()?.edgeId?.split("->")?.firstOrNull()
+            ?: _navState.value.startAnchorPos?.let { anchor ->
+                SafePoiLocator.nearestNodeIdFromPosition(gModel, anchor.x, anchor.y)
+            }
+            ?: findStairsArrivalNode(gModel)?.nodeId
+            ?: _navState.value.userPos?.let { pos ->
+                SafePoiLocator.nearestNodeIdFromPosition(gModel, pos.x, pos.y)
+            }
+        if (startNodeId == null) {
+            // Đổi tầng / force: không đẩy về AWAITING_LOCATION (trông như bị văng)
+            if (forceRecalculate) {
+                _emergencySession.update {
+                    it.copy(
+                        phase = EmergencyPhase.EVACUATING,
+                        needsQr = false,
+                        error = "Chạm gần cầu thang trên bản đồ rồi bấm 「Tính lại đường」",
+                    )
+                }
+                _navState.update {
+                    it.copy(
+                        isNavigatingMode = true,
+                        navHint = "Chạm gần cầu thang — hệ thống sẽ chỉ đường ra lối thoát",
+                    )
+                }
+                return false
+            }
+            _emergencySession.update {
+                it.copy(
+                    phase = EmergencyPhase.AWAITING_LOCATION,
+                    needsQr = true,
+                    error = null,
+                    targetLabel = null,
+                )
+            }
+            _navState.update {
+                it.copy(
+                    navHint = "Chạm bản đồ để chọn vị trí đang đứng — sẽ chỉ đường ra lối thoát hiểm gần nhất",
+                )
+            }
+            return false
+        }
+        val adapter = DefaultEmergencyRoutingAdapter(
+            currentFloorGraph = gModel,
+            floorGraphProvider = { floor ->
+                buildingFloorCache[floor]?.let { GraphModel(it) }
+            },
+            currentFloor = ui.floorNumber,
+            floorPoisProvider = { floor ->
+                when (floor) {
+                    ui.floorNumber -> ui.mapData.pois
+                    else -> buildingFloorCache[floor]?.pois.orEmpty()
+                }
+            },
+            hazardPolygonsProvider = { currentHazardPolygons(ui.floorNumber) },
+        )
+
+        val inHazard = startNodeId in blockedNodes
+        if (inHazard) {
+            _navState.update {
+                it.copy(
+                    navHint = "Bạn đang trong vùng nguy hiểm — thoát vùng đỏ rồi tới lối sơ tán",
+                )
+            }
+        }
+
+        val avoidElevator = _emergencySession.value.incidentType.equals("FIRE", ignoreCase = true) ||
+            _emergencySession.value.incidentType.equals("GAS", ignoreCase = true)
+
+        // Đích: EXIT (tránh đỏ) → nếu tầng có EXIT nhưng bị đỏ chặn → xuyên zone tới EXIT
+        // → chỉ dùng cầu thang khi tầng này KHÔNG có lối thoát (cần xuống tầng khác)
+        val exitCandidate = adapter.findNearestExit(
+            startNodeId = startNodeId,
+            pois = ui.mapData.pois,
+            blockedNodeIds = blockedNodes,
+            blockedEdgeKeys = blockedEdges,
+        )
+        val floorHasExit = ui.mapData.pois.any { it.resolveCategory() == PoiCategory.EXIT }
+        val stairsTarget = findNearestStairsNodeForEvacuation(
+            gModel = gModel,
+            startNodeId = startNodeId,
+            blockedNodeIds = blockedNodes,
+            blockedEdgeKeys = blockedEdges,
+            preferStairsOnly = avoidElevator,
+        )
+        val safeCandidate = adapter.findNearestSafePoi(
+            startNodeId = startNodeId,
+            pois = ui.mapData.pois,
+            kinds = setOf(
+                SafePoiLocator.SafeKind.ASSEMBLY_POINT,
+                SafePoiLocator.SafeKind.SAFETY,
+            ),
+            blockedNodeIds = blockedNodes,
+            blockedEdgeKeys = blockedEdges,
+        )
+
+        if (exitCandidate != null) {
+            applyEmergencyEvacuationToPoi(
+                gModel = gModel,
+                startNodeId = startNodeId,
+                candidate = exitCandidate,
+                floorNumber = ui.floorNumber,
+                inHazard = inHazard,
+            )
+            return true
+        }
+
+        // Đã ở tầng có cửa ra: đừng chỉ đường tới cầu thang — buộc tìm EXIT (kể cả xuyên vùng đỏ)
+        if (floorHasExit) {
+            if (tryForcedHazardEvacuation(
+                    gModel = gModel,
+                    startNodeId = startNodeId,
+                    blockedNodeIds = blockedNodes,
+                    blockedEdgeKeys = blockedEdges,
+                    preferStairsOnly = avoidElevator,
+                    floorNumber = ui.floorNumber,
+                    exitOnly = true,
+                )
+            ) {
+                return true
+            }
+        }
+
+        // Chỉ khi tầng này không có EXIT mới hướng tới cầu thang để đổi tầng
+        if (stairsTarget != null && !floorHasExit) {
+            val (stairsNodeId, path, viaLabel) = stairsTarget
+            applyEmergencyEvacuationToStairs(
+                gModel = gModel,
+                startNodeId = startNodeId,
+                stairsNodeId = stairsNodeId,
+                path = path,
+                viaLabel = viaLabel,
+                floorNumber = ui.floorNumber,
+                inHazard = inHazard,
+            )
+            return true
+        }
+
+        if (safeCandidate != null) {
+            applyEmergencyEvacuationToPoi(
+                gModel = gModel,
+                startNodeId = startNodeId,
+                candidate = safeCandidate,
+                floorNumber = ui.floorNumber,
+                inHazard = inHazard,
+            )
+            return true
+        }
+
+        // Fallback: chỉ ra khỏi zone, rồi nối tiếp tới cầu thang nếu được
+        if (inHazard) {
+            val escaped = tryEscapeHazardZone(
+                gModel = gModel,
+                startNodeId = startNodeId,
+                blockedNodeIds = blockedNodes,
+                blockedEdgeKeys = blockedEdges,
+            )
+            if (escaped != null) {
+                if (floorHasExit) {
+                    // Ra khỏi đỏ rồi tính lại EXIT từ node an toàn
+                    val safeNode = gModel.nodeMap[escaped.first]
+                    if (safeNode != null) {
+                        localizeAtMapPoint(
+                            safeNode.x.toFloat(),
+                            safeNode.y.toFloat(),
+                            resumeEmergency = false,
+                            hint = "Đã thoát vùng đỏ — đang chỉ đường ra lối thoát",
+                        )
+                    }
+                    if (tryForcedHazardEvacuation(
+                            gModel = gModel,
+                            startNodeId = escaped.first,
+                            blockedNodeIds = blockedNodes,
+                            blockedEdgeKeys = blockedEdges,
+                            preferStairsOnly = avoidElevator,
+                            floorNumber = ui.floorNumber,
+                            exitOnly = true,
+                        )
+                    ) {
+                        return true
+                    }
+                }
+                val extended = extendEscapePathToStairs(
+                    gModel = gModel,
+                    escapeSafeNodeId = escaped.first,
+                    escapePath = escaped.second,
+                    blockedNodeIds = blockedNodes,
+                    blockedEdgeKeys = blockedEdges,
+                    preferStairsOnly = avoidElevator,
+                )
+                if (extended != null && !floorHasExit) {
+                    applyEmergencyEvacuationToStairs(
+                        gModel = gModel,
+                        startNodeId = startNodeId,
+                        stairsNodeId = extended.first,
+                        path = extended.second,
+                        viaLabel = extended.third,
+                        floorNumber = ui.floorNumber,
+                        inHazard = true,
+                    )
+                    return true
+                }
+                applyHazardEscapePath(gModel, startNodeId, escaped.first, escaped.second, ui.floorNumber)
+                return true
+            }
+        }
+
+        // Lối duy nhất bị vùng đỏ chặn → vẫn chỉ đường xuyên zone + cảnh báo
+        if (blockedNodes.isNotEmpty() || currentHazardPolygons(ui.floorNumber).isNotEmpty()) {
+            if (tryForcedHazardEvacuation(
+                    gModel = gModel,
+                    startNodeId = startNodeId,
+                    blockedNodeIds = blockedNodes,
+                    blockedEdgeKeys = blockedEdges,
+                    preferStairsOnly = avoidElevator,
+                    floorNumber = ui.floorNumber,
+                    exitOnly = floorHasExit,
+                )
+            ) {
+                return true
+            }
+        }
+
+        // Tầng hiện tại không có đích → tìm tầng khác
+        _emergencySession.update {
+            it.copy(
+                error = "Vùng nguy hiểm chặn đường sơ tán trên tầng này — đang tìm tầng khác…",
+            )
+        }
+        viewModelScope.launch {
+            prefetchBuildingFloors(ui.buildingId)
+            val exitFloorHint = buildingFloorCache.entries
+                .asSequence()
+                .filter { it.key != ui.floorNumber }
+                .firstOrNull { (_, md) ->
+                    md.pois.any { it.resolveCategory() == PoiCategory.EXIT }
+                }?.key
+            if (exitFloorHint != null) {
+                _emergencySession.update { it.copy(suggestedExitFloor = exitFloorHint) }
+            }
+            resolveEmergencyExitOnOtherFloors(
+                ui = ui,
+                gModel = gModel,
+                startNodeId = startNodeId,
+                session = _emergencySession.value,
+                adapter = adapter,
+            )
+        }
+        return false
+    }
+
+    private fun applyEmergencyEvacuationToPoi(
+        gModel: GraphModel,
+        startNodeId: String,
+        candidate: SafePoiLocator.SafePoiCandidate,
+        floorNumber: Int,
+        inHazard: Boolean,
+        throughHazardWarning: Boolean = false,
+    ) {
+        val kindLabel = when (candidate.kind) {
+            SafePoiLocator.SafeKind.EXIT ->
+                if (candidate.poi.isMarkedFinalExit()) "Lối thoát hiểm (cửa ngoài)"
+                else "Lối thoát hiểm"
+            SafePoiLocator.SafeKind.ASSEMBLY_POINT -> "Điểm tập trung"
+            SafePoiLocator.SafeKind.SAFETY -> "Điểm an toàn"
+        }
+        val poiName = candidate.poi.name?.takeIf { it.isNotBlank() } ?: kindLabel
+        applyComputedPath(
+            result = candidate.path,
+            gModel = gModel,
+            currentUserNodeId = startNodeId,
+            targetNodeId = candidate.nearestNodeId,
+            force = true,
+        )
+        val label = "$poiName · $kindLabel"
+        val warn = "⚠ Lối duy nhất đi qua vùng nguy hiểm — đi nhanh, cẩn thận"
+        // Khôi phục path nếu applyTurnGuidance “đến nơi” giả vừa xóa (đổi tầng / pin (0,0))
+        if ((_navState.value.path.isNullOrEmpty() && activePath.isEmpty()) &&
+            candidate.path.edges.isNotEmpty()
+        ) {
+            applyComputedPath(
+                result = candidate.path,
+                gModel = gModel,
+                currentUserNodeId = startNodeId,
+                targetNodeId = candidate.nearestNodeId,
+                force = true,
+            )
+        }
+        _navState.update {
+            it.copy(
+                destinationPoiId = candidate.poi.id,
+                destinationLabel = label,
+                destinationMarkerPos = Offset(candidate.poi.x.toFloat(), candidate.poi.y.toFloat()),
+                path = if (it.path.isNullOrEmpty() && activePath.isNotEmpty()) activePath else it.path,
+                isNavigatingMode = true,
+                hasArrived = false,
+                rerouteCount = 0,
+                isRerouting = false,
+                navHint = when {
+                    throughHazardWarning -> warn
+                    inHazard -> "Thoát vùng đỏ → $label — làm theo đường màu xanh"
+                    else -> "Sơ tán → $label — làm theo đường màu xanh"
+                },
+                currentInstructionText = when {
+                    throughHazardWarning -> "Đi qua vùng nguy hiểm → $poiName"
+                    inHazard -> "Thoát vùng nguy hiểm → $poiName"
+                    else -> "Đi tới $poiName"
+                },
+                navigationError = if (throughHazardWarning) warn else null,
+            )
+        }
+        if (_navState.value.path.isNullOrEmpty() && activePath.isEmpty()) {
+            startNavigationMode()
+        } else {
+            val nav = _navState.value
+            val pos = nav.userPos
+            if (pos != null && activePathEdges.isNotEmpty()) {
+                _navState.value = applyTurnGuidance(nav, pos.x, pos.y)
+            }
+        }
+        com.khoaluan.indoornav.fcm.EmergencySirenPlayer.stop()
+        val floorTag = if (floorNumber == 0) "GF" else "${floorNumber}F"
+        _emergencySession.update {
+            it.copy(
+                phase = EmergencyPhase.EVACUATING,
+                targetLabel = "$poiName · $kindLabel · từ $floorTag",
+                needsQr = false,
+                error = if (throughHazardWarning) warn else null,
+            )
+        }
+        Log.i(
+            "MapViewModel",
+            "Emergency evacuation → ${candidate.nearestNodeId} ($kindLabel), " +
+                "dist=${candidate.path.totalDistanceMeters}m",
+        )
+    }
+
+    /**
+     * Phương án cuối: không còn đường tránh vùng đỏ → vẫn chỉ đường xuyên zone kèm cảnh báo.
+     * Ưu tiên EXIT / cầu thang trên cùng tầng.
+     * @param exitOnly true khi tầng đã có lối thoát — không fallback sang cầu thang.
+     */
+    private fun tryForcedHazardEvacuation(
+        gModel: GraphModel,
+        startNodeId: String,
+        blockedNodeIds: Set<String>,
+        blockedEdgeKeys: Set<String>,
+        preferStairsOnly: Boolean,
+        floorNumber: Int,
+        exitOnly: Boolean = false,
+    ): Boolean {
+        val ui = _uiState.value as? MapUiState.Success ?: return false
+        val pathfinder = AStarPathfinder(gModel)
+        val forcedOpts = AStarPathfinder.RoutingOptions(
+            blockedNodeIds = blockedNodeIds,
+            blockedEdgeKeys = blockedEdgeKeys,
+            softBridgeMaxPx = DefaultEmergencyRoutingAdapter.EMERGENCY_SOFT_BRIDGE_PX,
+            escapeFromHazard = true,
+            hazardPolygons = currentHazardPolygons(floorNumber),
+            allowHazardTraversal = true,
+        )
+
+        // Thử EXIT — ưu tiên cửa ra ngoài (final) ngoài vùng đỏ; xuyên zone chỉ khi bắt buộc
+        var bestExit: SafePoiLocator.SafePoiCandidate? = null
+        val exitPois = ui.mapData.pois.filter { it.resolveCategory() == PoiCategory.EXIT }
+        val polys = currentHazardPolygons(floorNumber)
+
+        fun considerExits(
+            pool: List<com.khoaluan.indoornav.data.model.Poi>,
+            allowThroughHazard: Boolean,
+        ): SafePoiLocator.SafePoiCandidate? {
+            var best: SafePoiLocator.SafePoiCandidate? = null
+            val opts = if (allowThroughHazard) forcedOpts else forcedOpts.copy(
+                allowHazardTraversal = false,
+                escapeFromHazard = startNodeId in blockedNodeIds,
+            )
+            for (exitPoi in pool) {
+                val nid = SafePoiLocator.nearestNodeIdForPoi(gModel, exitPoi) ?: continue
+                if (!allowThroughHazard) {
+                    if (nid in blockedNodeIds) continue
+                    if (SafePoiLocator.poiInsideHazard(exitPoi, polys)) continue
+                }
+                val path = pathfinder.findPath(startNodeId, nid, opts) ?: continue
+                val cand = SafePoiLocator.SafePoiCandidate(
+                    poi = exitPoi,
+                    category = PoiCategory.EXIT,
+                    kind = SafePoiLocator.SafeKind.EXIT,
+                    nearestNodeId = nid,
+                    path = path,
+                    distanceMeters = path.totalDistanceMeters,
+                )
+                if (best == null || cand.distanceMeters < best.distanceMeters) {
+                    best = cand
+                }
+            }
+            return best
+        }
+
+        val hasFinal = exitPois.any { it.isMarkedFinalExit() }
+        val finals = if (hasFinal) exitPois.filter { it.isMarkedFinalExit() } else emptyList()
+        val internals = if (hasFinal) exitPois.filter { !it.isMarkedFinalExit() } else exitPois
+
+        // 1) Final ngoài đỏ → 2) Internal ngoài đỏ → 3) Final xuyên đỏ → 4) Internal xuyên đỏ
+        bestExit = considerExits(if (hasFinal) finals else exitPois, allowThroughHazard = false)
+            ?: considerExits(internals, allowThroughHazard = false)
+            ?: considerExits(if (hasFinal) finals else exitPois, allowThroughHazard = true)
+            ?: considerExits(internals, allowThroughHazard = true)
+        if (bestExit != null) {
+            applyEmergencyEvacuationToPoi(
+                gModel = gModel,
+                startNodeId = startNodeId,
+                candidate = bestExit,
+                floorNumber = floorNumber,
+                inHazard = startNodeId in blockedNodeIds,
+                throughHazardWarning = true,
+            )
+            _emergencySession.update {
+                it.copy(
+                    error = "Lối duy nhất đi qua vùng nguy hiểm — đi nhanh, cẩn thận",
+                )
+            }
+            return true
+        }
+
+        if (exitOnly) return false
+
+        // Cầu thang (chỉ khi tầng không có EXIT dùng được)
+        val stairs = findNearestStairsNodeForEvacuationForced(
+            gModel = gModel,
+            startNodeId = startNodeId,
+            options = forcedOpts,
+            preferStairsOnly = preferStairsOnly,
+        )
+        if (stairs != null) {
+            applyEmergencyEvacuationToStairs(
+                gModel = gModel,
+                startNodeId = startNodeId,
+                stairsNodeId = stairs.first,
+                path = stairs.second,
+                viaLabel = stairs.third,
+                floorNumber = floorNumber,
+                inHazard = startNodeId in blockedNodeIds,
+                throughHazardWarning = true,
+            )
+            _emergencySession.update {
+                it.copy(
+                    error = "Lối duy nhất đi qua vùng nguy hiểm — đi nhanh, cẩn thận",
+                )
+            }
+            return true
+        }
+        return false
+    }
+
+    private fun findNearestStairsNodeForEvacuationForced(
+        gModel: GraphModel,
+        startNodeId: String,
+        options: AStarPathfinder.RoutingOptions,
+        preferStairsOnly: Boolean,
+    ): Triple<String, AStarPathfinder.PathResult, String>? {
+        val pathfinder = AStarPathfinder(gModel)
+        val ui = _uiState.value as? MapUiState.Success
+
+        fun tryCandidates(
+            nodes: Sequence<Pair<String, String>>,
+        ): Triple<String, AStarPathfinder.PathResult, String>? {
+            var bestId: String? = null
+            var bestPath: AStarPathfinder.PathResult? = null
+            var bestLabel = "cầu thang"
+            for ((nodeId, label) in nodes) {
+                val path = pathfinder.findPath(startNodeId, nodeId, options) ?: continue
+                if (bestPath == null || path.totalDistanceMeters < bestPath!!.totalDistanceMeters) {
+                    bestPath = path
+                    bestId = nodeId
+                    bestLabel = label
+                }
+            }
+            val id = bestId ?: return null
+            val path = bestPath ?: return null
+            return Triple(id, path, bestLabel)
+        }
+
+        tryCandidates(
+            gModel.nodeMap.values.asSequence().mapNotNull { node ->
+                when {
+                    node.isStairs -> node.nodeId to "cầu thang"
+                    !preferStairsOnly && node.isElevator -> node.nodeId to "thang máy"
+                    else -> null
+                }
+            },
+        )?.let { return it }
+
+        if (ui != null) {
+            tryCandidates(
+                ui.mapData.pois.asSequence().mapNotNull { poi ->
+                    when (poi.resolveCategory()) {
+                        PoiCategory.STAIRS -> {
+                            val nid = SafePoiLocator.nearestNodeIdForPoi(gModel, poi) ?: return@mapNotNull null
+                            nid to "cầu thang"
+                        }
+                        else -> null
+                    }
+                },
+            )?.let { return it }
+
+            if (!preferStairsOnly) {
+                tryCandidates(
+                    ui.mapData.pois.asSequence().mapNotNull { poi ->
+                        when (poi.resolveCategory()) {
+                            PoiCategory.ELEVATOR, PoiCategory.ESCALATOR -> {
+                                val nid = SafePoiLocator.nearestNodeIdForPoi(gModel, poi) ?: return@mapNotNull null
+                                nid to "thang máy"
+                            }
+                            else -> null
+                        }
+                    },
+                )?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun applyEmergencyEvacuationToStairs(
+        gModel: GraphModel,
+        startNodeId: String,
+        stairsNodeId: String,
+        path: AStarPathfinder.PathResult,
+        viaLabel: String,
+        floorNumber: Int,
+        inHazard: Boolean,
+        throughHazardWarning: Boolean = false,
+    ) {
+        val stairsPoi = (_uiState.value as? MapUiState.Success)?.mapData?.pois
+            ?.filter { it.resolveCategory() == PoiCategory.STAIRS }
+            ?.minByOrNull { poi ->
+                val node = gModel.nodeMap[stairsNodeId]
+                if (node != null) {
+                    hypot((poi.x - node.x).toDouble(), (poi.y - node.y).toDouble())
+                } else {
+                    Double.MAX_VALUE
+                }
+            }
+        val fullPath = if (stairsPoi != null) {
+            appendPathLegToPoint(
+                path = path,
+                gModel = gModel,
+                destX = stairsPoi.x.toFloat(),
+                destY = stairsPoi.y.toFloat(),
+            )
+        } else {
+            path
+        }
+        applyComputedPath(
+            result = fullPath,
+            gModel = gModel,
+            currentUserNodeId = startNodeId,
+            targetNodeId = stairsNodeId,
+            force = true,
+        )
+        val stairsNode = gModel.nodeMap[stairsNodeId]
+        val marker = stairsPoi?.let { Offset(it.x.toFloat(), it.y.toFloat()) }
+            ?: stairsNode?.let { Offset(it.x.toFloat(), it.y.toFloat()) }
+        val label = viaLabel.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+        fun resolveExitFloorHint(): Int? = buildingFloorCache.entries
+            .asSequence()
+            .filter { it.key != floorNumber }
+            .firstOrNull { (_, md) ->
+                md.pois.any { it.resolveCategory() == PoiCategory.EXIT }
+            }?.key
+
+        var exitFloorHint = resolveExitFloorHint()
+        // Cache tầng chưa có → prefetch rồi gắn nút chuyển tầng
+        if (exitFloorHint == null) {
+            val bid = (_uiState.value as? MapUiState.Success)?.buildingId
+            if (!bid.isNullOrBlank()) {
+                viewModelScope.launch {
+                    prefetchBuildingFloors(bid)
+                    val hint = resolveExitFloorHint() ?: return@launch
+                    val flLabel = if (hint == 0) "GF / tầng trệt" else "tầng $hint"
+                    _emergencySession.update { it.copy(suggestedExitFloor = hint) }
+                    _navState.update {
+                        it.copy(
+                            suggestedTargetFloor = hint,
+                            readyForFloorSwitch = true,
+                            floorTransitionHint = "Tới $viaLabel xong chạm 「Chuyển $flLabel」",
+                            navHint = if (inHazard) {
+                                "Thoát vùng đỏ → $label → xuống $flLabel"
+                            } else {
+                                "Sơ tán → $label rồi xuống $flLabel"
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        val floorLabel = when (exitFloorHint) {
+            null -> null
+            0 -> "GF / tầng trệt"
+            else -> "tầng $exitFloorHint"
+        }
+        val warn = "⚠ Lối duy nhất đi qua vùng nguy hiểm — đi nhanh, cẩn thận"
+        _navState.update {
+            it.copy(
+                destinationPoiId = stairsPoi?.id,
+                destinationLabel = label,
+                destinationMarkerPos = marker,
+                isNavigatingMode = true,
+                hasArrived = false,
+                rerouteCount = 0,
+                isRerouting = false,
+                navHint = when {
+                    throughHazardWarning -> warn
+                    inHazard && floorLabel != null ->
+                        "Thoát vùng đỏ → $label → xuống $floorLabel"
+                    inHazard ->
+                        "Thoát vùng đỏ → $label — làm theo đường màu xanh"
+                    floorLabel != null ->
+                        "Sơ tán → $label rồi xuống $floorLabel"
+                    else ->
+                        "Sơ tán → $label — làm theo đường màu xanh"
+                },
+                currentInstructionText = when {
+                    throughHazardWarning -> "Đi qua vùng nguy hiểm → $viaLabel"
+                    inHazard -> "Thoát vùng nguy hiểm → $viaLabel"
+                    else -> "Đi tới $viaLabel"
+                },
+                pathHasFloorConnector = true,
+                floorTransitionHint = floorLabel?.let { "Tới $viaLabel xong chạm 「Chuyển $it」" },
+                suggestedTargetFloor = exitFloorHint,
+                readyForFloorSwitch = exitFloorHint != null,
+                navigationError = if (throughHazardWarning) warn else null,
+            )
+        }
+        if (_navState.value.path.isNullOrEmpty() && activePath.isEmpty()) {
+            startNavigationMode()
+        } else {
+            val nav = _navState.value
+            val pos = nav.userPos
+            if (pos != null && activePathEdges.isNotEmpty()) {
+                _navState.value = applyTurnGuidance(nav, pos.x, pos.y)
+            }
+        }
+        com.khoaluan.indoornav.fcm.EmergencySirenPlayer.stop()
+        _emergencySession.update {
+            it.copy(
+                phase = EmergencyPhase.EVACUATING,
+                targetLabel = if (floorLabel != null) "$label · xuống $floorLabel" else label,
+                needsQr = false,
+                error = if (throughHazardWarning) warn else null,
+                suggestedExitFloor = exitFloorHint,
+            )
+        }
+        Log.i(
+            "MapViewModel",
+            "Emergency stairs floor=$floorNumber → $stairsNodeId ($viaLabel) " +
+                "exitFloor=$exitFloorHint dist=${fullPath.totalDistanceMeters}m",
+        )
+    }
+
+    /**
+     * Nối thêm đoạn cuối từ node path cuối → tọa độ POI (vd. icon cầu thang),
+     * khi Editor chưa đặt path node sát POI.
+     */
+    private fun appendPathLegToPoint(
+        path: AStarPathfinder.PathResult,
+        gModel: GraphModel,
+        destX: Float,
+        destY: Float,
+    ): AStarPathfinder.PathResult {
+        val lastId = path.nodeIds.lastOrNull() ?: return path
+        val last = gModel.nodeMap[lastId] ?: return path
+        val dx = destX - last.x
+        val dy = destY - last.y
+        val distPx = hypot(dx, dy)
+        if (distPx < 28f) return path
+        // Cho phép đoạn cuối tới icon POI kể cả cắt nhẹ tường phòng (POI thường sát tường)
+        val distM = gModel.pixelsToMeters(distPx.toFloat())
+        val angle = kotlin.math.atan2(dx, -dy)
+        val rev = kotlin.math.atan2(-dx, dy)
+        val synth = GraphEdge(
+            id = "evac-poi:$lastId",
+            sourceNodeId = lastId,
+            targetNodeId = "__evac_poi__",
+            sourceX = last.x.toFloat(),
+            sourceY = last.y.toFloat(),
+            targetX = destX,
+            targetY = destY,
+            angleRad = angle,
+            reverseAngleRad = rev,
+            distanceMeters = distM,
+        )
+        return AStarPathfinder.PathResult(
+            nodeIds = path.nodeIds + "__evac_poi__",
+            edges = path.edges + synth,
+            totalDistanceMeters = path.totalDistanceMeters + distM,
+        )
+    }
+
+    /** Nối đoạn thoát zone + đoạn tiếp tới cầu thang. */
+    private fun extendEscapePathToStairs(
+        gModel: GraphModel,
+        escapeSafeNodeId: String,
+        escapePath: AStarPathfinder.PathResult,
+        blockedNodeIds: Set<String>,
+        blockedEdgeKeys: Set<String>,
+        preferStairsOnly: Boolean,
+    ): Triple<String, AStarPathfinder.PathResult, String>? {
+        val fromSafe = findNearestStairsNodeForEvacuation(
+            gModel = gModel,
+            startNodeId = escapeSafeNodeId,
+            blockedNodeIds = blockedNodeIds,
+            blockedEdgeKeys = blockedEdgeKeys,
+            preferStairsOnly = preferStairsOnly,
+        ) ?: return null
+        val (stairsId, leg2, label) = fromSafe
+        if (stairsId == escapeSafeNodeId) {
+            return Triple(stairsId, escapePath, label)
+        }
+        if (escapePath.nodeIds.isEmpty() || escapePath.nodeIds.last() != escapeSafeNodeId) {
+            return null
+        }
+        return Triple(
+            stairsId,
+            AStarPathfinder.PathResult(
+                nodeIds = escapePath.nodeIds + leg2.nodeIds.drop(1),
+                edges = escapePath.edges + leg2.edges,
+                totalDistanceMeters = escapePath.totalDistanceMeters + leg2.totalDistanceMeters,
+            ),
+            label,
+        )
+    }
+
+    /**
+     * Khi tầng hiện tại không có EXIT: chỉ đường tới cầu thang / lộ trình xuyên tầng,
+     * luôn giữ bản đồ tầng đang đứng (không tự load tầng trệt).
+     */
+    private suspend fun resolveEmergencyExitOnOtherFloors(
+        ui: MapUiState.Success,
+        gModel: GraphModel,
+        startNodeId: String,
+        session: EmergencySession,
+        adapter: DefaultEmergencyRoutingAdapter,
+    ) {
+        prefetchBuildingFloors(ui.buildingId)
+
+        val avoidElevator = session.incidentType.equals("FIRE", ignoreCase = true) ||
+            session.incidentType.equals("GAS", ignoreCase = true)
+        val avoidKinds = if (avoidElevator) {
+            setOf(FloorTransitionDetector.ConnectorHint.Kind.ELEVATOR)
+        } else {
+            emptySet()
+        }
+
+        data class CrossExit(
+            val floor: Int,
+            val poi: com.khoaluan.indoornav.data.model.Poi,
+            val kind: SafePoiLocator.SafeKind,
+            val destNodeId: String,
+            val plan: MultiFloorPathPlanner.Plan,
+        )
+
+        var best: CrossExit? = null
+        for ((floor, md) in buildingFloorCache) {
+            if (floor == ui.floorNumber) continue
+            val destGraph = GraphModel(md)
+            for (poi in md.pois) {
+                val kind = when (poi.resolveCategory()) {
+                    PoiCategory.EXIT -> SafePoiLocator.SafeKind.EXIT
+                    PoiCategory.ASSEMBLY_POINT -> SafePoiLocator.SafeKind.ASSEMBLY_POINT
+                    PoiCategory.SAFETY -> SafePoiLocator.SafeKind.SAFETY
+                    else -> continue
+                }
+                // Không chọn EXIT nằm trong vùng nguy hiểm tầng hiện tại (node/POI bị block)
+                if (kind == SafePoiLocator.SafeKind.EXIT) {
+                    if (SafePoiLocator.poiInsideHazard(poi, currentHazardPolygons(ui.floorNumber))) continue
+                }
+                // Ưu tiên EXIT trước ASSEMBLY/SAFETY khi so khoảng cách
+                val kindRank = when (kind) {
+                    SafePoiLocator.SafeKind.EXIT -> 0
+                    SafePoiLocator.SafeKind.ASSEMBLY_POINT -> 1
+                    SafePoiLocator.SafeKind.SAFETY -> 2
+                }
+                val destNodeId = SafePoiLocator.nearestNodeIdForPoi(destGraph, poi) ?: continue
+                if (kind == SafePoiLocator.SafeKind.EXIT && destNodeId in session.blockedNodeIds) continue
+                val plan = adapter.planMultiFloor(
+                    startFloor = ui.floorNumber,
+                    destFloor = floor,
+                    startNodeId = startNodeId,
+                    destNodeId = destNodeId,
+                    blockedNodeIds = session.blockedNodeIds,
+                    blockedEdgeKeys = session.blockedEdgeKeys,
+                    avoidConnectorKinds = avoidKinds,
+                ) ?: continue
+                val cand = CrossExit(floor, poi, kind, destNodeId, plan)
+                val bestKindRank = when (best?.kind) {
+                    SafePoiLocator.SafeKind.EXIT -> 0
+                    SafePoiLocator.SafeKind.ASSEMBLY_POINT -> 1
+                    SafePoiLocator.SafeKind.SAFETY -> 2
+                    null -> Int.MAX_VALUE
+                }
+                val better = when {
+                    best == null -> true
+                    kindRank < bestKindRank -> true
+                    kindRank > bestKindRank -> false
+                    kind == SafePoiLocator.SafeKind.EXIT &&
+                        poi.isMarkedFinalExit() && !best!!.poi.isMarkedFinalExit() -> true
+                    kind == SafePoiLocator.SafeKind.EXIT &&
+                        !poi.isMarkedFinalExit() && best!!.poi.isMarkedFinalExit() -> false
+                    else -> cand.plan.totalDistanceMeters < best!!.plan.totalDistanceMeters
+                }
+                if (better) best = cand
+            }
+        }
+
+        if (best != null) {
+            val plan = best.plan
+            applyComputedPath(
+                result = plan.currentFloorPath,
+                gModel = gModel,
+                currentUserNodeId = startNodeId,
+                targetNodeId = plan.via?.fromNodeId ?: best.destNodeId,
+                force = true,
+                totalDistanceOverride = plan.totalDistanceMeters,
+                suggestedFloor = plan.targetFloor,
+                pendingFloor = plan.targetFloor,
+                pendingNode = plan.destNodeId,
+            )
+            val destMap = buildingFloorCache[best.floor]
+            val destGraph = destMap?.let { GraphModel(it) }
+            val destNodeObj = destGraph?.nodeMap?.get(best.destNodeId)
+            pendingCrossFloor = PendingCrossFloor(
+                floor = plan.targetFloor,
+                nodeId = plan.destNodeId,
+                markerX = destNodeObj?.x?.toFloat() ?: best.poi.x.toFloat(),
+                markerY = destNodeObj?.y?.toFloat() ?: best.poi.y.toFloat(),
+                arrivalNodeId = plan.via?.toNodeId,
+            )
+            val kindLabel = when (best.kind) {
+                SafePoiLocator.SafeKind.EXIT ->
+                    if (best.poi.isMarkedFinalExit()) "Lối thoát hiểm (cửa ngoài)"
+                    else "Lối thoát hiểm"
+                SafePoiLocator.SafeKind.ASSEMBLY_POINT -> "Điểm tập trung"
+                SafePoiLocator.SafeKind.SAFETY -> "Điểm an toàn"
+            }
+            val poiName = best.poi.name?.takeIf { it.isNotBlank() } ?: kindLabel
+            val floorLabel = if (best.floor == 0) "GF" else best.floor.toString()
+            val viaLabel = when (plan.via?.kind) {
+                FloorTransitionDetector.ConnectorHint.Kind.ELEVATOR -> "thang máy"
+                FloorTransitionDetector.ConnectorHint.Kind.STAIRS -> "cầu thang"
+                else -> "connector"
+            }
+            val label = "$poiName · $kindLabel (tầng $floorLabel)"
+            val finalExitMarker = Offset(
+                pendingCrossFloor!!.markerX,
+                pendingCrossFloor!!.markerY,
+            )
+            _navState.update {
+                it.copy(
+                    destinationPoiId = best.poi.id,
+                    destinationLabel = label,
+                    // Pin đỏ = lối thoát thật (đích cuối), không phải cầu thang
+                    destinationMarkerPos = finalExitMarker,
+                    isNavigatingMode = true,
+                    hasArrived = false,
+                    rerouteCount = 0,
+                    isRerouting = false,
+                    navHint = "Sơ tán → $label — đi tới $viaLabel rồi xuống tầng $floorLabel",
+                    currentInstructionText = "Đến $viaLabel rồi xuống tầng $floorLabel",
+                    floorTransitionHint = "Xuống tầng $floorLabel rồi tiếp tục tới lối thoát",
+                    suggestedTargetFloor = plan.targetFloor,
+                    pendingDestFloor = plan.targetFloor,
+                    pendingDestNodeId = plan.destNodeId,
+                    pathHasFloorConnector = true,
+                )
+            }
+            if (_navState.value.path.isNullOrEmpty() && activePath.isEmpty()) {
+                startNavigationMode()
+            } else {
+                val nav = _navState.value
+                val pos = nav.userPos
+                if (pos != null && activePathEdges.isNotEmpty()) {
+                    _navState.value = applyTurnGuidance(nav, pos.x, pos.y)
+                }
+            }
+            com.khoaluan.indoornav.fcm.EmergencySirenPlayer.stop()
+            _emergencySession.update {
+                it.copy(
+                    phase = EmergencyPhase.EVACUATING,
+                    targetLabel = label,
+                    needsQr = false,
+                    error = null,
+                )
+            }
+            Log.i(
+                "MapViewModel",
+                "Emergency multi-floor → F${best.floor}/${best.destNodeId} via $viaLabel",
+            )
+            return
+        }
+
+        // Không đổi bản đồ sang tầng khác — giữ tầng đang đứng.
+        // Fallback: chỉ đường tới cầu thang gần nhất trên tầng hiện tại.
+        val stairsTarget = findNearestStairsNodeForEvacuation(
+            gModel = gModel,
+            startNodeId = startNodeId,
+            blockedNodeIds = session.blockedNodeIds,
+            blockedEdgeKeys = session.blockedEdgeKeys,
+            preferStairsOnly = avoidElevator,
+        )
+        if (stairsTarget != null) {
+            val (stairsNodeId, path, viaLabel) = stairsTarget
+            val exitFloorHint = buildingFloorCache.entries
+                .asSequence()
+                .filter { it.key != ui.floorNumber }
+                .firstOrNull { (_, md) ->
+                    md.pois.any { it.resolveCategory() == PoiCategory.EXIT }
+                }?.key
+            val floorLabel = when (exitFloorHint) {
+                null -> "dưới"
+                0 -> "GF / tầng trệt"
+                else -> "tầng $exitFloorHint"
+            }
+            applyComputedPath(
+                result = path,
+                gModel = gModel,
+                currentUserNodeId = startNodeId,
+                targetNodeId = stairsNodeId,
+                force = true,
+            )
+            val stairsNode = gModel.nodeMap[stairsNodeId]
+            val marker = stairsNode?.let { Offset(it.x.toFloat(), it.y.toFloat()) }
+            val label = "$viaLabel · xuống $floorLabel"
+            _navState.update {
+                it.copy(
+                    destinationPoiId = null,
+                    destinationLabel = label,
+                    destinationMarkerPos = marker,
+                    isNavigatingMode = true,
+                    hasArrived = false,
+                    rerouteCount = 0,
+                    isRerouting = false,
+                    navHint = "Tầng này không có lối thoát — đi tới $viaLabel rồi xuống $floorLabel",
+                    currentInstructionText = "Đi tới $viaLabel",
+                    floorTransitionHint = "Xuống $floorLabel để tới lối thoát hiểm",
+                    suggestedTargetFloor = exitFloorHint,
+                    pathHasFloorConnector = true,
+                )
+            }
+            if (_navState.value.path.isNullOrEmpty() && activePath.isEmpty()) {
+                startNavigationMode()
+            } else {
+                val nav = _navState.value
+                val pos = nav.userPos
+                if (pos != null && activePathEdges.isNotEmpty()) {
+                    _navState.value = applyTurnGuidance(nav, pos.x, pos.y)
+                }
+            }
+            com.khoaluan.indoornav.fcm.EmergencySirenPlayer.stop()
+            _emergencySession.update {
+                it.copy(
+                    phase = EmergencyPhase.EVACUATING,
+                    targetLabel = label,
+                    needsQr = false,
+                    error = null,
+                )
+            }
+            Log.i(
+                "MapViewModel",
+                "Emergency stay on floor ${ui.floorNumber} → $viaLabel $stairsNodeId (EXIT on other floor)",
+            )
+            return
+        }
+
+        // Fallback cuối: đang trong vùng nguy hiểm → chỉ đường ra ngoài zone
+        if (startNodeId in session.blockedNodeIds) {
+            val escaped = tryEscapeHazardZone(
+                gModel = gModel,
+                startNodeId = startNodeId,
+                blockedNodeIds = session.blockedNodeIds,
+                blockedEdgeKeys = session.blockedEdgeKeys,
+            )
+            if (escaped != null) {
+                applyHazardEscapePath(gModel, startNodeId, escaped.first, escaped.second, ui.floorNumber)
+                return
+            }
+        }
+
+        val exitFloorHint = buildingFloorCache.entries
+            .asSequence()
+            .filter { it.key != ui.floorNumber }
+            .firstOrNull { (_, md) ->
+                md.pois.any { it.resolveCategory() == PoiCategory.EXIT }
+            }?.key
+        _emergencySession.update {
+            it.copy(
+                phase = EmergencyPhase.EVACUATING,
+                needsQr = false,
+                suggestedExitFloor = exitFloorHint,
+                error = "Đường đi trên tầng này bị đứt đoạn (node/edge chưa nối hết tới cầu thang). " +
+                    "Chạm 「Tính lại đường」, 「Xuống tầng lối thoát」, hoặc nối lại edges trong Web Editor rồi Publish.",
+            )
+        }
+        if (exitFloorHint != null) {
+            _navState.update {
+                it.copy(
+                    suggestedTargetFloor = exitFloorHint,
+                    readyForFloorSwitch = true,
+                    isNavigatingMode = true,
+                    navHint = "Sơ tán: chọn tầng ${if (exitFloorHint == 0) "GF" else exitFloorHint} " +
+                        "hoặc chạm vị trí đứng — lối thoát ở tầng đó.",
+                )
+            }
+        } else {
+            _navState.update {
+                it.copy(
+                    isNavigatingMode = true,
+                    navHint = "Chạm gần hành lang chính rồi bấm 「Tính lại đường」",
+                )
+            }
+        }
+    }
+
+    /**
+     * User đang trong vùng nguy hiểm → tìm node ngoài zone gần nhất và chỉ đường thoát ra.
+     * Ưu tiên đường ra cửa nhanh (ít mét trong vùng đỏ), không đi sâu vào phòng khác trong zone.
+     */
+    private fun tryEscapeHazardZone(
+        gModel: GraphModel,
+        startNodeId: String,
+        blockedNodeIds: Set<String>,
+        blockedEdgeKeys: Set<String>,
+    ): Pair<String, AStarPathfinder.PathResult>? {
+        if (startNodeId !in blockedNodeIds) return null
+        val pathfinder = AStarPathfinder(gModel)
+        val options = AStarPathfinder.RoutingOptions(
+            blockedNodeIds = blockedNodeIds,
+            blockedEdgeKeys = blockedEdgeKeys,
+            softBridgeMaxPx = DefaultEmergencyRoutingAdapter.EMERGENCY_SOFT_BRIDGE_PX,
+            escapeFromHazard = true,
+            hazardPolygons = currentHazardPolygons(),
+        )
+        val portalIds = linkedSetOf<String>()
+        for (blockedId in blockedNodeIds) {
+            gModel.adjacency[blockedId].orEmpty().forEach { e ->
+                if (e.targetNodeId !in blockedNodeIds) portalIds.add(e.targetNodeId)
+            }
+        }
+
+        val hazardPolys = _mapHazardZones.value
+            .ifEmpty { _emergencySession.value.hazardZones }
+            .map { it.points }
+            .filter { it.size >= 3 }
+        val doors = (_uiState.value as? MapUiState.Success)?.mapData?.doors.orEmpty()
+        val maxPx = DefaultEmergencyRoutingAdapter.EMERGENCY_SOFT_BRIDGE_PX
+        val maxPx2 = maxPx * maxPx
+        val startNode = gModel.nodeMap[startNodeId]
+
+        fun nearestUnblocked(px: Float, py: Float): String? {
+            var bestId: String? = null
+            var bestD = Float.MAX_VALUE
+            for (node in gModel.nodeMap.values) {
+                if (node.nodeId in blockedNodeIds) continue
+                val dx = node.x - px
+                val dy = node.y - py
+                val d = dx * dx + dy * dy
+                if (d < bestD) {
+                    bestD = d
+                    bestId = node.nodeId
+                }
+            }
+            return bestId
+        }
+
+        // Lối đi thật = cửa: lấy điểm vừa ra ngoài zone theo pháp tuyến cửa
+        for (door in doors) {
+            val rot = Math.toRadians(door.rotation.toDouble())
+            val nx = (-kotlin.math.sin(rot)).toFloat()
+            val ny = kotlin.math.cos(rot).toFloat()
+            val offset = (door.width.takeIf { it > 0 } ?: 40) * 0.75f + 36f
+            for (sign in floatArrayOf(1f, -1f)) {
+                val ex = door.x + sign * nx * offset
+                val ey = door.y + sign * ny * offset
+                val outside = hazardPolys.isEmpty() || hazardPolys.none { poly ->
+                    pointInPolygon(ex, ey, poly)
+                }
+                if (!outside) continue
+                val nid = nearestUnblocked(ex, ey) ?: continue
+                portalIds.add(nid)
+            }
+        }
+
+        if (startNode != null) {
+            for (node in gModel.nodeMap.values) {
+                if (node.nodeId in blockedNodeIds || node.nodeId == startNodeId) continue
+                val dx = (node.x - startNode.x).toFloat()
+                val dy = (node.y - startNode.y).toFloat()
+                if (dx * dx + dy * dy > maxPx2) continue
+                if (!gModel.crossesWall(
+                        startNode.x.toFloat(), startNode.y.toFloat(),
+                        node.x.toFloat(), node.y.toFloat(),
+                    )
+                ) {
+                    portalIds.add(node.nodeId)
+                }
+            }
+        }
+
+        fun better(
+            path: AStarPathfinder.PathResult,
+            bestPath: AStarPathfinder.PathResult?,
+        ): Boolean {
+            if (bestPath == null) return true
+            val exp = path.hazardExposureMeters(blockedNodeIds)
+            val bestExp = bestPath.hazardExposureMeters(blockedNodeIds)
+            if (exp < bestExp - 0.05f) return true
+            if (kotlin.math.abs(exp - bestExp) <= 0.05f &&
+                path.totalDistanceMeters < bestPath.totalDistanceMeters
+            ) {
+                return true
+            }
+            return false
+        }
+
+        var bestId: String? = null
+        var bestPath: AStarPathfinder.PathResult? = null
+
+        fun considerGoals(ids: Iterable<String>) {
+            for (id in ids) {
+                if (id == startNodeId || id in blockedNodeIds) continue
+                val path = pathfinder.findPath(startNodeId, id, options) ?: continue
+                if (better(path, bestPath)) {
+                    bestPath = path
+                    bestId = id
+                }
+            }
+        }
+
+        considerGoals(portalIds)
+        considerGoals(gModel.nodeMap.keys)
+
+        val id = bestId ?: return null
+        val path = bestPath ?: return null
+        return id to path
+    }
+
+    private fun applyHazardEscapePath(
+        gModel: GraphModel,
+        startNodeId: String,
+        safeNodeId: String,
+        path: AStarPathfinder.PathResult,
+        floorNumber: Int,
+    ) {
+        applyComputedPath(
+            result = path,
+            gModel = gModel,
+            currentUserNodeId = startNodeId,
+            targetNodeId = safeNodeId,
+            force = true,
+        )
+        val safeNode = gModel.nodeMap[safeNodeId]
+        val marker = safeNode?.let { Offset(it.x.toFloat(), it.y.toFloat()) }
+        val label = "Thoát vùng nguy hiểm"
+        _navState.update {
+            it.copy(
+                destinationPoiId = null,
+                destinationLabel = label,
+                destinationMarkerPos = marker,
+                isNavigatingMode = true,
+                hasArrived = false,
+                rerouteCount = 0,
+                isRerouting = false,
+                navHint = "Bạn đang trong vùng nguy hiểm — đi theo đường xanh để ra ngoài khu vực tô đỏ",
+                currentInstructionText = "Ra khỏi vùng nguy hiểm",
+            )
+        }
+        if (_navState.value.path.isNullOrEmpty() && activePath.isEmpty()) {
+            startNavigationMode()
+        } else {
+            val nav = _navState.value
+            val pos = nav.userPos
+            if (pos != null && activePathEdges.isNotEmpty()) {
+                _navState.value = applyTurnGuidance(nav, pos.x, pos.y)
+            }
+        }
+        com.khoaluan.indoornav.fcm.EmergencySirenPlayer.stop()
+        _emergencySession.update {
+            it.copy(
+                phase = EmergencyPhase.EVACUATING,
+                targetLabel = label,
+                needsQr = false,
+                error = null,
+            )
+        }
+        Log.i(
+            "MapViewModel",
+            "Emergency escape hazard floor=$floorNumber → $safeNodeId dist=${path.totalDistanceMeters}m",
+        )
+    }
+
+    /** Tìm node cầu thang (ưu tiên) / thang máy gần nhất trên tầng hiện tại để sơ tán. */
+    private fun findNearestStairsNodeForEvacuation(
+        gModel: GraphModel,
+        startNodeId: String,
+        blockedNodeIds: Set<String>,
+        blockedEdgeKeys: Set<String>,
+        preferStairsOnly: Boolean,
+    ): Triple<String, AStarPathfinder.PathResult, String>? {
+        val pathfinder = AStarPathfinder(gModel)
+        val options = AStarPathfinder.RoutingOptions(
+            blockedNodeIds = blockedNodeIds,
+            blockedEdgeKeys = blockedEdgeKeys,
+            softBridgeMaxPx = DefaultEmergencyRoutingAdapter.EMERGENCY_SOFT_BRIDGE_PX,
+            escapeFromHazard = startNodeId in blockedNodeIds,
+            hazardPolygons = currentHazardPolygons(),
+        )
+        val ui = _uiState.value as? MapUiState.Success
+
+        fun tryCandidates(
+            nodes: Sequence<Pair<String, String>>,
+        ): Triple<String, AStarPathfinder.PathResult, String>? {
+            var bestId: String? = null
+            var bestPath: AStarPathfinder.PathResult? = null
+            var bestLabel = "cầu thang"
+            for ((nodeId, label) in nodes) {
+                val path = pathfinder.findPath(startNodeId, nodeId, options) ?: continue
+                if (bestPath == null || path.totalDistanceMeters < bestPath!!.totalDistanceMeters) {
+                    bestPath = path
+                    bestId = nodeId
+                    bestLabel = label
+                }
+            }
+            val id = bestId ?: return null
+            val path = bestPath ?: return null
+            return Triple(id, path, bestLabel)
+        }
+
+        // 1) Node gắn cờ is_stairs / is_elevator
+        val flagged = tryCandidates(
+            gModel.nodeMap.values.asSequence()
+                .mapNotNull { node ->
+                    when {
+                        node.isStairs -> node.nodeId to "cầu thang"
+                        !preferStairsOnly && node.isElevator -> node.nodeId to "thang máy"
+                        else -> null
+                    }
+                },
+        )
+        if (flagged != null) return flagged
+
+        // 2) POI STAIRS / ELEVATOR (kể cả tên "cầu thang" dù poi_type=OTHER)
+        if (ui != null) {
+            val stairPois = tryCandidates(
+                ui.mapData.pois.asSequence()
+                    .mapNotNull { poi ->
+                        when (poi.resolveCategory()) {
+                            PoiCategory.STAIRS -> {
+                                val nid = SafePoiLocator.nearestNodeIdForPoi(gModel, poi) ?: return@mapNotNull null
+                                nid to "cầu thang"
+                            }
+                            else -> null
+                        }
+                    },
+            )
+            if (stairPois != null) return stairPois
+
+            // 3) Fallback cháy: dùng thang máy / thang cuốn nếu không có cầu thang
+            val elevPois = tryCandidates(
+                ui.mapData.pois.asSequence()
+                    .mapNotNull { poi ->
+                        when (poi.resolveCategory()) {
+                            PoiCategory.ELEVATOR, PoiCategory.ESCALATOR -> {
+                                val nid = SafePoiLocator.nearestNodeIdForPoi(gModel, poi) ?: return@mapNotNull null
+                                nid to "thang máy/thang cuốn"
+                            }
+                            else -> null
+                        }
+                    },
+            )
+            if (elevPois != null) return elevPois
+        }
+
+        // 4) Node cờ thang máy (dù preferStairsOnly) — chỉ khi không còn lựa chọn
+        return tryCandidates(
+            gModel.nodeMap.values.asSequence()
+                .filter { it.isElevator }
+                .map { it.nodeId to "thang máy" },
+        )
+    }
+
+    /**
+     * User chọn 「Xuống tầng lối thoát」 từ màn cảnh báo khi tầng hiện tại không sơ tán được.
+     */
+    fun switchEmergencyToExitFloor() {
+        val session = _emergencySession.value
+        if (!session.active) return
+        val ui = _uiState.value as? MapUiState.Success ?: return
+        val target = session.suggestedExitFloor
+            ?: buildingFloorCache.entries
+                .asSequence()
+                .filter { it.key != ui.floorNumber }
+                .firstOrNull { (_, md) ->
+                    md.pois.any { it.resolveCategory() == PoiCategory.EXIT }
+                }?.key
+            ?: return
+
+        // Đã ở đúng tầng lối thoát → neo cầu thang + chỉ đường tiếp
+        if (target == ui.floorNumber) {
+            clearExitFloorHintIfArrived(ui.floorNumber)
+            seedAtStairsThenContinueEmergency()
+            return
+        }
+        goToEmergencyFloor(ui.buildingId, target)
+    }
+
+    /**
+     * Chọn tầng từ sheet GF▼ khi đang khẩn cấp — giữ phiên sơ tán, neo cầu thang, chỉ đường lại.
+     */
+    fun switchFloorDuringEmergency(targetFloor: Int) {
+        if (!_emergencySession.value.active) return
+        val ui = _uiState.value as? MapUiState.Success ?: return
+        val target = targetFloor.coerceAtLeast(0)
+        _emergencySession.update {
+            it.copy(
+                suggestedExitFloor = target,
+                floorConfirmed = true,
+                phase = EmergencyPhase.EVACUATING,
+                needsQr = false,
+                error = null,
+            )
+        }
+        if (target == ui.floorNumber) {
+            clearExitFloorHintIfArrived(ui.floorNumber)
+            seedAtStairsThenContinueEmergency()
+            return
+        }
+        goToEmergencyFloor(ui.buildingId, target)
+    }
+
+    fun prefetchFloorsForEmergencyUi(buildingId: String) {
+        if (buildingId.isBlank()) return
+        viewModelScope.launch { prefetchBuildingFloors(buildingId) }
+    }
+
+    /**
+     * Đổi tầng khi đang khẩn cấp — CHỈ swap map in-place.
+     * Không gọi refreshMap / fetchMap / clearLocalization (tránh Loading / mất session / “văng”).
+     */
+    private fun goToEmergencyFloor(buildingId: String, target: Int) {
+        viewModelScope.launch {
+            try {
+                Log.i("MapViewModel", "EMERGENCY in-place floor → $target")
+                prefetchBuildingFloors(buildingId)
+
+                // Prefetch có thể đã có map — chuẩn bị pending EXIT + khớp POI cầu thang đầu/cuối
+                val fromUi = _uiState.value as? MapUiState.Success
+                val fromMap = fromUi?.mapData
+                val fromGraph = graphModel
+                val userHintX = _navState.value.userPos?.x
+                val userHintY = _navState.value.userPos?.y
+                val departStairs = if (fromMap != null && fromGraph != null) {
+                    pickBestStairsPoi(fromMap, fromGraph, userHintX, userHintY)
+                } else null
+                if (departStairs != null) {
+                    stairsDepartHintX = departStairs.x.toFloat()
+                    stairsDepartHintY = departStairs.y.toFloat()
+                } else if (userHintX != null && userHintY != null) {
+                    stairsDepartHintX = userHintX
+                    stairsDepartHintY = userHintY
+                }
+
+                val destMapPreview = buildingFloorCache[target]
+                    ?: mapCacheManager.load(buildingId, target)?.mapData
+                if (destMapPreview != null) {
+                    val destGraph = GraphModel(destMapPreview.sanitized())
+                    val exitPoi = destMapPreview.pois.firstOrNull {
+                        it.resolveCategory() == PoiCategory.EXIT
+                    }
+                    val exitNodeId = exitPoi?.let {
+                        SafePoiLocator.nearestNodeIdForPoi(destGraph, it)
+                    } ?: destGraph.nodeMap.keys.firstOrNull()
+                    val exitNode = exitNodeId?.let { destGraph.nodeMap[it] }
+                    val arrivalStairs = pickBestStairsPoi(
+                        destMapPreview.sanitized(),
+                        destGraph,
+                        stairsDepartHintX,
+                        stairsDepartHintY,
+                    )
+                    val arrivalId = arrivalStairs?.let {
+                        SafePoiLocator.nearestNodeIdForPoi(destGraph, it)
+                    }
+                        ?: destGraph.nodeMap.values.firstOrNull { it.isStairs }?.nodeId
+                        ?: destGraph.nodeMap.values.firstOrNull { it.isElevator }?.nodeId
+                    pendingCrossFloor = PendingCrossFloor(
+                        floor = target,
+                        nodeId = exitNodeId ?: "pending-exit",
+                        markerX = exitNode?.x?.toFloat() ?: exitPoi?.x?.toFloat() ?: 0f,
+                        markerY = exitNode?.y?.toFloat() ?: exitPoi?.y?.toFloat() ?: 0f,
+                        arrivalNodeId = arrivalId,
+                        arrivalHintX = arrivalStairs?.x?.toFloat() ?: stairsDepartHintX,
+                        arrivalHintY = arrivalStairs?.y?.toFloat() ?: stairsDepartHintY,
+                    )
+                    Log.i(
+                        "MapViewModel",
+                        "goToEmergencyFloor match stairs depart=" +
+                            "(${stairsDepartHintX},${stairsDepartHintY}) arrival=" +
+                            "(${arrivalStairs?.x},${arrivalStairs?.y}) node=$arrivalId",
+                    )
+                } else {
+                    pendingCrossFloor = PendingCrossFloor(
+                        floor = target,
+                        nodeId = "pending-exit",
+                        markerX = 0f,
+                        markerY = 0f,
+                        arrivalNodeId = null,
+                        arrivalHintX = stairsDepartHintX,
+                        arrivalHintY = stairsDepartHintY,
+                    )
+                }
+
+                emergencyArriveBlockedUntilMs = System.currentTimeMillis() + 4_000L
+                stairsSeedHoldPos = null
+                stairsSeedHoldUntilMs = 0L
+                _emergencySession.update {
+                    it.copy(
+                        phase = EmergencyPhase.EVACUATING,
+                        needsQr = false,
+                        error = null,
+                        suggestedExitFloor = target,
+                        floorConfirmed = true,
+                        targetLabel = "Lối thoát hiểm (tầng ${if (target == 0) "GF" else target})",
+                    )
+                }
+                _navState.update {
+                    it.copy(
+                        suggestedTargetFloor = target,
+                        pendingDestFloor = target,
+                        isNavigatingMode = true,
+                        path = emptyList(),
+                        hasArrived = false,
+                        destinationPoiId = null,
+                        destinationNodeId = null,
+                        destinationMarkerPos = null,
+                        destinationLabel = null,
+                        userPos = null,
+                        startAnchorPos = null,
+                        navHint = "Đang chuyển tầng ${if (target == 0) "GF" else target}…",
+                    )
+                }
+
+                val ok = loadFloorMapInPlace(buildingId, target, reason = "goToEmergencyFloor")
+                if (!ok) {
+                    _navState.update {
+                        it.copy(navHint = "Đổi tầng thất bại — vẫn ở tầng cũ")
+                    }
+                    return@launch
+                }
+                // Đảm bảo neo cầu thang + path sau load (tránh kẹt “Quét QR” / 0 m)
+                if (_navState.value.userPos == null ||
+                    (_navState.value.path.isNullOrEmpty() && activePath.isEmpty())
+                ) {
+                    Log.w("MapViewModel", "goToEmergencyFloor: re-seed after load (pos/path missing)")
+                    seedAtStairsThenContinueEmergency()
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("MapViewModel", "EMERGENCY floor swap failed — stay on current floor", e)
+                _emergencySession.update {
+                    it.copy(
+                        phase = EmergencyPhase.EVACUATING,
+                        needsQr = false,
+                        error = "Đổi tầng lỗi — vẫn ở tầng cũ. Thử lại.",
+                    )
+                }
+                _navState.update {
+                    it.copy(navHint = "Đổi tầng lỗi — map không bị đóng")
+                }
+            }
+        }
+    }
+
+    /** Sau khi đặt vị trí đứng / quét QR khi đang chờ sơ tán → tự chỉ đường ra lối thoát. */
+    private fun tryResumeEmergencyEvacuationAfterLocalize() {
+        val session = _emergencySession.value
+        if (!session.active) return
+        _emergencySession.update { it.copy(floorConfirmed = true, needsQr = false, error = null) }
+        when (_emergencySession.value.phase) {
+            EmergencyPhase.AWAITING_LOCATION,
+            EmergencyPhase.AWAITING_FLOOR,
+            -> startEmergencyEvacuation()
+            EmergencyPhase.EVACUATING -> {
+                val nav = _navState.value
+                if (nav.path.isNullOrEmpty() && activePath.isEmpty()) {
+                    startEmergencyEvacuation()
+                }
+            }
+            else -> Unit
+        }
+    }
+
     private fun updatePath(targetNodeId: String) {
         updatePath(targetNodeId, force = false)
     }
@@ -1515,15 +4698,29 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 destNodeId = destNode,
                 startGraph = gModel,
                 destGraph = destGraph,
+                startPois = ui.mapData.pois,
+                destPois = destMap.pois,
             )
             if (plan == null) {
                 Log.e("MapViewModel", "W3 no multi-floor path $currentUserNodeId → F$destFloor/$destNode")
                 activePathEdges = emptyList()
                 activeManeuvers = emptyList()
                 activeFloorConnectors = emptyList()
+                val hasStairs =
+                    gModel.nodeMap.values.any { it.isStairs || it.isElevator } ||
+                        ui.mapData.pois.any {
+                            when (it.resolveCategory()) {
+                                PoiCategory.STAIRS, PoiCategory.ELEVATOR, PoiCategory.ESCALATOR -> true
+                                else -> false
+                            }
+                        }
                 _navState.value = _navState.value.copy(
                     path = emptyList(),
-                    navigationError = "Không tìm được đường xuyên tầng (cần connector cùng tọa độ).",
+                    navigationError = if (hasStairs) {
+                        "Đường đi đứt đoạn trên tầng này — nối edge từ vị trí bạn tới cầu thang trong Web Editor rồi Publish."
+                    } else {
+                        "Không tìm được đường xuyên tầng (cần connector cùng tọa độ)."
+                    },
                     suggestedTargetFloor = destFloor,
                     pathHasFloorConnector = false,
                     floorTransitionHint = null,
@@ -1542,11 +4739,21 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 pendingNode = plan.destNodeId,
             )
             val destNodeObj = destGraph.nodeMap[plan.destNodeId]
+            val viaFrom = plan.via?.fromNodeId?.let { gModel.nodeMap[it] }
+            val viaTo = plan.via?.toNodeId?.let { destGraph.nodeMap[it] }
+            // Lưu XY chân cầu thang tầng hiện tại → chọn đúng đầu/cuối trên tầng đích
+            if (viaFrom != null) {
+                stairsDepartHintX = viaFrom.x.toFloat()
+                stairsDepartHintY = viaFrom.y.toFloat()
+            }
             pendingCrossFloor = PendingCrossFloor(
                 floor = plan.targetFloor,
                 nodeId = plan.destNodeId,
                 markerX = destNodeObj?.x?.toFloat() ?: 0f,
                 markerY = destNodeObj?.y?.toFloat() ?: 0f,
+                arrivalNodeId = plan.via?.toNodeId,
+                arrivalHintX = viaTo?.x?.toFloat() ?: stairsDepartHintX,
+                arrivalHintY = viaTo?.y?.toFloat() ?: stairsDepartHintY,
             )
             val viaLabel = when (plan.via?.kind) {
                 FloorTransitionDetector.ConnectorHint.Kind.ELEVATOR -> "thang máy"
@@ -1554,17 +4761,56 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 else -> "connector"
             }
             val floorLabel = if (plan.targetFloor == 0) "GF" else plan.targetFloor.toString()
+            val currentFloor = ui.floorNumber
+            val goVerb = when {
+                plan.targetFloor < currentFloor -> "xuống"
+                plan.targetFloor > currentFloor -> "lên"
+                else -> "sang"
+            }
             _navState.update {
                 it.copy(
-                    currentInstructionText = "Đến $viaLabel rồi lên tầng $floorLabel",
-                    floorTransitionHint = "Đổi tầng $floorLabel rồi quét QR gần $viaLabel để tiếp tục",
+                    currentInstructionText = "Đến $viaLabel rồi $goVerb tầng $floorLabel",
+                    floorTransitionHint = "Chạm đây hoặc nút 「Chuyển tầng $floorLabel」 để tiếp tục",
                     destinationMarkerPos = Offset(pendingCrossFloor!!.markerX, pendingCrossFloor!!.markerY),
+                    suggestedTargetFloor = plan.targetFloor,
+                    pendingDestFloor = plan.targetFloor,
+                    readyForFloorSwitch = true,
+                    pathHasFloorConnector = true,
                 )
             }
             return
         }
 
-        val result = pFinder.findPath(currentUserNodeId, destNode)
+        val result = if (_emergencySession.value.active) {
+            // Khẩn cấp: tránh vùng đỏ (kể cả cạnh cắt xuyên polygon)
+            if (_emergencySession.value.hazardZones.isNotEmpty() || _mapHazardZones.value.isNotEmpty()) {
+                val blocked = blockedNodesFromHazardDraws(
+                    _mapHazardZones.value.ifEmpty { _emergencySession.value.hazardZones },
+                )
+                _emergencySession.update { it.copy(blockedNodeIds = blocked) }
+            }
+            val blocked = _emergencySession.value.blockedNodeIds
+            val polys = currentHazardPolygons(ui.floorNumber)
+            pFinder.findPath(
+                currentUserNodeId,
+                destNode,
+                AStarPathfinder.RoutingOptions(
+                    blockedNodeIds = blocked,
+                    blockedEdgeKeys = _emergencySession.value.blockedEdgeKeys,
+                    softBridgeMaxPx = DefaultEmergencyRoutingAdapter.EMERGENCY_SOFT_BRIDGE_PX,
+                    escapeFromHazard = currentUserNodeId in blocked,
+                    hazardPolygons = polys,
+                ),
+            )
+        } else {
+            // Thường: thử path cứng; nếu đứt đoạn map (POI/phòng gần node cô lập) → soft-bridge ngắn
+            pFinder.findPath(currentUserNodeId, destNode)
+                ?: pFinder.findPath(
+                    currentUserNodeId,
+                    destNode,
+                    AStarPathfinder.RoutingOptions(softBridgeMaxPx = pixelsPerMeter * 3.5f),
+                )
+        }
         if (result != null) {
             applyComputedPath(
                 result = result,
@@ -1620,6 +4866,8 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         activePath = pathOffsets
         activePathEdges = result.edges
         activeManeuvers = TurnByTurnEngine.buildManeuvers(result.edges)
+        earlyTurnAlignSinceMs = 0L
+        earlyTurnAlignManeuverAt = Float.NaN
         activeFloorConnectors = FloorTransitionDetector.findConnectorsOnPath(
             result.edges,
             gModel.nodeMap,
@@ -1631,10 +4879,21 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         )
         val etaSeconds = estimateEtaSeconds(totalDist, _navState.value.confidence)
         val rerouteCount = if (force) _navState.value.rerouteCount + 1 else _navState.value.rerouteCount
-        val markerPos = pathOffsets.lastOrNull() ?: _navState.value.destinationMarkerPos
+        // Đa tầng: giữ pin đỏ = đích cuối (EXIT), không đổi thành điểm cầu thang trên path
+        val isCrossFloorLeg = suggestedFloor != null || pendingFloor != null
+        val markerPos = when {
+            isCrossFloorLeg && _navState.value.destinationMarkerPos != null ->
+                _navState.value.destinationMarkerPos
+            else -> pathOffsets.lastOrNull() ?: _navState.value.destinationMarkerPos
+        }
         var next = _navState.value.copy(
             path = pathOffsets,
-            destinationNodeId = targetNodeId,
+            // Cross-floor: destinationNodeId tạm = connector; giữ pendingDestNodeId làm đích thật
+            destinationNodeId = if (isCrossFloorLeg) {
+                _navState.value.pendingDestNodeId ?: pendingNode ?: targetNodeId
+            } else {
+                targetNodeId
+            },
             destinationMarkerPos = markerPos,
             totalDistanceMeters = totalDist,
             etaSeconds = etaSeconds,
@@ -1649,19 +4908,32 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             suggestedTargetFloor = suggestedFloor,
             pendingDestFloor = pendingFloor,
             pendingDestNodeId = pendingNode,
+            // Đa tầng: cho phép bấm 「Chuyển tầng」 ngay sau khi có path (không bắt buộc đứng sát cầu thang)
+            readyForFloorSwitch = suggestedFloor != null || pendingFloor != null,
         )
         val pos = next.userPos
         if (next.isNavigatingMode && pos != null) {
             next = applyTurnGuidance(next, pos.x, pos.y)
         } else if (activeManeuvers.isNotEmpty()) {
-            val g = TurnByTurnEngine.guidance(activeManeuvers, result.totalDistanceMeters, 0f)
+            val g = TurnByTurnEngine.guidance(
+                activeManeuvers,
+                result.totalDistanceMeters,
+                0f,
+                edges = activePathEdges,
+            )
+            val mPos = if (g.nextManeuverMapX != null && g.nextManeuverMapY != null) {
+                Offset(g.nextManeuverMapX, g.nextManeuverMapY)
+            } else null
             next = next.copy(
                 currentInstructionText = g.instructionText,
                 distanceToNextManeuverMeters = g.distanceToNextManeuverMeters,
                 remainingDistanceMeters = totalDist,
+                nextManeuverPos = mPos,
+                nextManeuverType = g.nextType.name,
             )
         }
         _navState.value = next
+        syncRouteSnapToEngine()
         if (force) {
             lastRerouteAtMs = System.currentTimeMillis()
             if (next.rerouteCount >= heavyRerouteHintAfter && next.isNavigatingMode) {
@@ -1674,19 +4946,169 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
 
     private fun applyTurnGuidance(state: NavigationState, x: Float, y: Float): NavigationState {
         if (activePathEdges.isEmpty() || activeManeuvers.isEmpty()) return state
-        val traveled = TurnByTurnEngine.traveledMetersAlongEdges(activePathEdges, x, y)
+        val rawTraveled = TurnByTurnEngine.traveledMetersAlongEdges(activePathEdges, x, y)
+        val heading = state.userHeading
+        val aligned = TurnByTurnEngine.isEarlyTurnHeadingAligned(
+            maneuvers = activeManeuvers,
+            edges = activePathEdges,
+            traveledMeters = rawTraveled,
+            userHeadingDeg = heading,
+            totalDistanceMeters = state.totalDistanceMeters,
+        )
+        val nowAlign = System.currentTimeMillis()
+        val nextAhead = activeManeuvers.firstOrNull {
+            it.atDistanceMeters > rawTraveled + TurnByTurnEngine.MANEUVER_HYSTERESIS_M
+        }
+        val skipConfirmed = if (aligned && nextAhead != null) {
+            if (earlyTurnAlignManeuverAt != nextAhead.atDistanceMeters) {
+                earlyTurnAlignManeuverAt = nextAhead.atDistanceMeters
+                earlyTurnAlignSinceMs = nowAlign
+            }
+            nowAlign - earlyTurnAlignSinceMs >= earlyTurnStableMs
+        } else {
+            earlyTurnAlignSinceMs = 0L
+            earlyTurnAlignManeuverAt = Float.NaN
+            false
+        }
         val g = TurnByTurnEngine.guidance(
             maneuvers = activeManeuvers,
             totalDistanceMeters = state.totalDistanceMeters,
-            traveledMeters = traveled,
+            traveledMeters = rawTraveled,
+            edges = activePathEdges,
+            userHeadingDeg = heading,
+            skipEarlyTurnConfirmed = skipConfirmed,
         )
-        // W2 — Đã đến nơi
-        if (state.isNavigatingMode && g.remainingDistanceMeters <= arriveThresholdMeters) {
-            Log.i("MapViewModel", "W2 arrived: remaining=${g.remainingDistanceMeters}m")
+        val traveled = g.effectiveTraveledMeters
+        val maneuverPos = if (g.nextManeuverMapX != null && g.nextManeuverMapY != null) {
+            Offset(g.nextManeuverMapX, g.nextManeuverMapY)
+        } else {
+            null
+        }
+        val maneuverTypeName = g.nextType.name
+        val end = activePathEdges.last()
+        val distToPathEndM = hypot(x - end.targetX, y - end.targetY) / pixelsPerMeter
+        // Ngưỡng động: đường ngắn (vd. 5m) không dùng 1.8m tuyệt đối nếu vẫn quá “rộng” so với pin
+        val arriveTh = if (_emergencySession.value.active) {
+            1.0f
+        } else {
+            val dynamic = (state.totalDistanceMeters * 0.22f).coerceIn(1.0f, arriveThresholdMeters)
+            minOf(arriveThresholdMeters, dynamic)
+        }
+        // Phải đi được một đoạn thật — đường ≤ ngưỡng thì cần gần pin ngay từ đầu
+        val progressedEnough = if (state.totalDistanceMeters <= arriveTh * 1.5f) {
+            true
+        } else {
+            traveled >= minOf(2.0f, state.totalDistanceMeters * 0.35f)
+        }
+
+        // Pin đỏ (điểm đến thật) — chỉ khi tới đây mới “Đã đến nơi”
+        val redPin = state.destinationMarkerPos
+        val distToRedPinM = if (redPin != null) {
+            hypot(x - redPin.x, y - redPin.y) / pixelsPerMeter
+        } else {
+            Float.MAX_VALUE
+        }
+        val destNode = state.destinationNodeId?.let { graphModel?.nodeMap?.get(it) }
+        val distToDestNodeM = if (destNode != null) {
+            hypot(x - destNode.x.toFloat(), y - destNode.y.toFloat()) / pixelsPerMeter
+        } else {
+            distToRedPinM
+        }
+        // Phải gần pin đỏ + gần node đích + còn ít mét trên path (tránh đứng hành lang ~3–4m báo đến)
+        val nearRedPin = redPin != null &&
+            progressedEnough &&
+            distToRedPinM <= arriveTh &&
+            distToDestNodeM <= arriveTh * 1.35f &&
+            g.remainingDistanceMeters <= arriveTh * 1.4f
+
+        val nearPathEnd = progressedEnough &&
+            g.remainingDistanceMeters <= arriveTh &&
+            distToPathEndM <= arriveTh
+
+        val uiFloor = (_uiState.value as? MapUiState.Success)?.floorNumber
+        val crossFloorPending = state.suggestedTargetFloor != null ||
+            state.pendingDestFloor != null ||
+            pendingCrossFloor != null
+        val destFloor = state.pendingDestFloor
+            ?: state.suggestedTargetFloor
+            ?: pendingCrossFloor?.floor
+        val stillNeedFloorChange = crossFloorPending &&
+            destFloor != null &&
+            uiFloor != null &&
+            destFloor != uiFloor
+
+        // Hết đoạn path tới cầu thang → gợi ý đổi tầng (chưa phải đích)
+        if (state.isNavigatingMode && nearPathEnd && stillNeedFloorChange) {
+            val floorLabel = if (destFloor == 0) "GF" else destFloor.toString()
+            Log.i(
+                "MapViewModel",
+                "W3 at connector (not arrived): pathEnd=${distToPathEndM}m pin=${distToRedPinM}m → F$destFloor",
+            )
+            return state.copy(
+                currentInstructionText = "Đã tới cầu thang — chuyển xuống tầng $floorLabel",
+                distanceToNextManeuverMeters = 0f,
+                remainingDistanceMeters = g.remainingDistanceMeters.coerceAtLeast(0f),
+                routeProgress = 1f,
+                etaSeconds = estimateEtaSeconds(17f, state.confidence),
+                hasArrived = false,
+                readyForFloorSwitch = true,
+                suggestedTargetFloor = destFloor,
+                pathHasFloorConnector = true,
+                floorTransitionHint = "Chạm 「Chuyển tầng $floorLabel」 để tiếp tục tới lối thoát",
+                navHint = "Xuống tầng $floorLabel rồi đi tiếp tới lối thoát hiểm",
+                nextManeuverPos = null,
+                nextManeuverType = null,
+            )
+        }
+
+        // Hết path nhưng chưa sát pin đỏ → giữ chỉ đường, tính lại tới đích (tránh spam)
+        if (state.isNavigatingMode && nearPathEnd && !nearRedPin && !stillNeedFloorChange) {
+            val destId = state.destinationNodeId ?: state.pendingDestNodeId
+            val now = System.currentTimeMillis()
+            if (destId != null && now - lastRepathToPinAtMs > 2500L) {
+                lastRepathToPinAtMs = now
+                Log.i(
+                    "MapViewModel",
+                    "Path end but not at red pin (pin=${distToRedPinM}m) → repath $destId",
+                )
+                updatePath(destId, force = true)
+            }
+            return state.copy(
+                currentInstructionText = "Tiếp tục tới điểm đến (pin đỏ)",
+                hasArrived = false,
+                isNavigatingMode = true,
+                remainingDistanceMeters = distToRedPinM.coerceAtLeast(0.1f),
+                navHint = "Chưa tới pin đỏ — đang tính lại đường",
+                nextManeuverPos = maneuverPos,
+                nextManeuverType = maneuverTypeName,
+            )
+        }
+
+        // Chỉ “Đã đến nơi” khi đứng gần pin đỏ đích
+        // Khẩn cấp: không auto-arrive khi còn đổi tầng / vừa neo / path quá ngắn / vừa đổi tầng
+        val nowMs = System.currentTimeMillis()
+        val emergencyBlockArrive = _emergencySession.value.active && (
+            state.suggestedTargetFloor != null ||
+                state.readyForFloorSwitch ||
+                state.pendingDestFloor != null ||
+                pendingCrossFloor != null ||
+                traveled < 1.5f ||
+                state.totalDistanceMeters < 2.0f ||
+                nowMs < emergencyArriveBlockedUntilMs
+            )
+        if (state.isNavigatingMode && nearRedPin && !stillNeedFloorChange && !emergencyBlockArrive) {
+            Log.i(
+                "MapViewModel",
+                "W2 arrived at red pin: dist=${"%.2f".format(distToRedPinM)}m " +
+                    "remain=${"%.2f".format(g.remainingDistanceMeters)}m th=${"%.2f".format(arriveTh)}m",
+            )
             activePath = emptyList()
             activePathEdges = emptyList()
             activeManeuvers = emptyList()
             activeFloorConnectors = emptyList()
+            pendingCrossFloor = null
+            earlyTurnAlignSinceMs = 0L
+            earlyTurnAlignManeuverAt = Float.NaN
             return state.copy(
                 isNavigatingMode = false,
                 path = null,
@@ -1699,6 +5121,12 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 navHint = null,
                 pathHasFloorConnector = false,
                 floorTransitionHint = null,
+                readyForFloorSwitch = false,
+                suggestedTargetFloor = null,
+                pendingDestFloor = null,
+                pendingDestNodeId = null,
+                nextManeuverPos = null,
+                nextManeuverType = null,
             )
         }
         val targetFloor = state.suggestedTargetFloor ?: state.pendingDestFloor
@@ -1723,8 +5151,10 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             etaSeconds = eta,
             hasArrived = false,
             floorTransitionHint = floorHint,
-            pathHasFloorConnector = activeFloorConnectors.isNotEmpty(),
-            readyForFloorSwitch = readySwitch,
+            pathHasFloorConnector = activeFloorConnectors.isNotEmpty() || stillNeedFloorChange,
+            readyForFloorSwitch = readySwitch || (stillNeedFloorChange && nearPathEnd),
+            nextManeuverPos = maneuverPos,
+            nextManeuverType = maneuverTypeName,
         )
     }
 
@@ -1897,6 +5327,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         activeFloorConnectors = emptyList()
         lastRerouteAtMs = 0L
         pendingCrossFloor = null
+        locationEngine?.setRouteSnapEdges(emptyList())
         _navState.value = NavigationState()
     }
 
@@ -1908,6 +5339,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         activeFloorConnectors = emptyList()
         lastRerouteAtMs = 0L
         pendingCrossFloor = null
+        syncRouteSnapToEngine()
         _navState.update {
             it.copy(
                 path = null,
@@ -1931,8 +5363,32 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         }
     }
 
+    /** Đóng chế độ xem đường / hủy đích — giữ vị trí user. */
+    fun clearDestination() {
+        clearRouteOnly()
+        _navState.update {
+            it.copy(
+                destinationPoiId = null,
+                destinationLabel = null,
+                destinationNodeId = null,
+                destinationMarkerPos = null,
+                navHint = null,
+            )
+        }
+    }
+
     /** #12 — tính lại đường tới đích đang chọn. */
     fun recalculateRoute() {
+        if (_emergencySession.value.active &&
+            _emergencySession.value.phase == EmergencyPhase.EVACUATING
+        ) {
+            if (_navState.value.userPos == null) {
+                seedAtStairsThenContinueEmergency()
+                return
+            }
+            startEmergencyEvacuation(forceRecalculate = true)
+            return
+        }
         val dest = _navState.value.destinationNodeId ?: run {
             _navState.update { it.copy(navigationError = "Chưa có điểm đến để tính lại") }
             return
@@ -1941,7 +5397,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     }
 
     /**
-     * #11 — Sửa vị trí: dừng TPF, giữ đích/start pin, bắt buộc quét QR lại.
+     * #11 — Sửa vị trí: dừng TPF, giữ đích. Chạm map để chọn lại hoặc quét QR.
      */
     fun requestRelocalization() {
         locationEngine?.stop()
@@ -1968,9 +5424,156 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 totalDistanceMeters = 0f,
                 floorTransitionHint = null,
                 readyForFloorSwitch = false,
-                navHint = "Quét lại QR để đặt vị trí mới",
+                navHint = "Chạm bản đồ để chọn điểm, hoặc quét QR",
             )
         }
+    }
+
+    /**
+     * Chọn điểm trên map làm đích (chưa tính path) — dùng khi chạm map → "Đi đến đây".
+     */
+    fun setDestinationAtMapPoint(x: Float, y: Float) {
+        val state = _uiState.value as? MapUiState.Success ?: return
+        if (!x.isFinite() || !y.isFinite()) return
+        val markerPos = Offset(x, y)
+        val nearest = findNearestNodeId(x, y, state.mapData)
+        val gModel = graphModel
+        val targetNodeId = nearest
+            ?: gModel?.nodeMap?.values?.minByOrNull {
+                val dx = it.x - x
+                val dy = it.y - y
+                dx * dx + dy * dy
+            }?.nodeId
+        if (targetNodeId == null) {
+            _navState.update { it.copy(navigationError = "Không tìm được điểm gần trên bản đồ") }
+            return
+        }
+        activePath = emptyList()
+        activePathEdges = emptyList()
+        activeManeuvers = emptyList()
+        activeFloorConnectors = emptyList()
+        pendingCrossFloor = null
+        _navState.update {
+            it.copy(
+                destinationPoiId = null,
+                destinationLabel = "Điểm đã chọn",
+                destinationNodeId = targetNodeId,
+                destinationMarkerPos = markerPos,
+                path = null,
+                totalDistanceMeters = 0f,
+                etaSeconds = 0,
+                isNavigatingMode = false,
+                navigationError = null,
+                rerouteCount = 0,
+                currentInstructionText = null,
+                remainingDistanceMeters = 0f,
+                routeProgress = 0f,
+                pathHasFloorConnector = false,
+                floorTransitionHint = null,
+                suggestedTargetFloor = null,
+                pendingDestFloor = state.floorNumber,
+                pendingDestNodeId = targetNodeId,
+                navHint = "Đã chọn điểm đến — bấm Xem đường nếu muốn chỉ đường",
+            )
+        }
+    }
+
+    fun localizeAtMapPoint(
+        x: Float,
+        y: Float,
+        resumeEmergency: Boolean = true,
+        hint: String? = null,
+        preferExactPosition: Boolean = false,
+    ) {
+        val state = _uiState.value as? MapUiState.Success ?: return
+        val engine = locationEngine
+        if (engine == null) {
+            _navState.update { it.copy(navigationError = "Hệ thống định vị chưa sẵn sàng") }
+            return
+        }
+        if (!x.isFinite() || !y.isFinite()) return
+
+        confidenceEngine.updateGroundTruth()
+        val mapKey = buildMapSessionKey(state.buildingId, state.floorNumber)
+        localizationMapKey = mapKey
+
+        val nearest = findNearestNodeId(x, y, state.mapData)
+        var anchoredX = x
+        var anchoredY = y
+        var usedNode = false
+        if (preferExactPosition) {
+            // Neo đúng điểm (POI cầu thang) — không snap 80px sang phòng khác
+            engine.startWithPosition(x, y)
+            anchoredX = x
+            anchoredY = y
+        } else if (nearest != null) {
+            val ok = engine.startWithQR(nearest)
+            if (ok) {
+                usedNode = true
+                val node = graphModel?.nodeMap?.get(nearest)
+                if (node != null) {
+                    val dx = node.x.toFloat() - x
+                    val dy = node.y.toFloat() - y
+                    val dist2 = dx * dx + dy * dy
+                    if (dist2 < 80f * 80f) {
+                        anchoredX = node.x.toFloat()
+                        anchoredY = node.y.toFloat()
+                    } else {
+                        engine.startWithPosition(x, y)
+                        usedNode = false
+                        anchoredX = x
+                        anchoredY = y
+                    }
+                }
+            } else {
+                engine.startWithPosition(x, y)
+            }
+        } else {
+            engine.startWithPosition(x, y)
+        }
+
+        applyOutdoorGpsHeadingHandoff(engine)
+        val anchor = Offset(anchoredX, anchoredY)
+        _navState.update {
+            it.copy(
+                userPos = anchor,
+                startAnchorPos = anchor,
+                confidence = maxOf(it.confidence, if (usedNode) 0.45f else 0.35f),
+                navigationError = null,
+                navHint = hint ?: "Đã đặt vị trí đứng",
+            )
+        }
+
+        if (resumeEmergency && _emergencySession.value.active) {
+            com.khoaluan.indoornav.fcm.EmergencyHeartbeat.updateIndoorContext(
+                buildingId = state.buildingId,
+                floor = state.floorNumber,
+                qrAnchor = null,
+            )
+            _emergencySession.update { it.copy(floorConfirmed = true) }
+            tryResumeEmergencyEvacuationAfterLocalize()
+        } else if (_emergencySession.value.active) {
+            com.khoaluan.indoornav.fcm.EmergencyHeartbeat.updateIndoorContext(
+                buildingId = state.buildingId,
+                floor = state.floorNumber,
+                qrAnchor = null,
+            )
+            _emergencySession.update { it.copy(needsQr = false, error = null, floorConfirmed = true) }
+        }
+
+        indoorPresenceClaimed = true
+        com.khoaluan.indoornav.fcm.PresenceSync.update(
+            context = getApplication(),
+            buildingId = state.buildingId,
+            floor = state.floorNumber,
+            indoorSessionOpen = true,
+            touchIndoor = true,
+            includeRadio = true,
+        )
+        Log.i(
+            "MapViewModel",
+            "Manual localize at ($anchoredX,$anchoredY) node=$nearest usedNode=$usedNode",
+        )
     }
 
     /** #10 — chuyển sang tầng gợi ý (giữ pending cross-floor). */
@@ -1978,10 +5581,29 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         val s = _uiState.value as? MapUiState.Success ?: return
         val target = _navState.value.suggestedTargetFloor
             ?: _navState.value.pendingDestFloor
+            ?: _emergencySession.value.suggestedExitFloor
             ?: return
+        if (_emergencySession.value.active) {
+            // Khẩn cấp: neo cầu thang + chỉ đường EXIT
+            if (target == s.floorNumber) {
+                clearExitFloorHintIfArrived(s.floorNumber)
+                seedAtStairsThenContinueEmergency()
+                return
+            }
+            _emergencySession.update {
+                it.copy(
+                    suggestedExitFloor = target,
+                    floorConfirmed = true,
+                    phase = EmergencyPhase.EVACUATING,
+                )
+            }
+            switchEmergencyToExitFloor()
+            return
+        }
         indoorSessionStore.saveLastFloor(s.buildingId, target)
         refreshMap(s.buildingId, target)
     }
+
     fun saveParkingPosition(note: String?) {
         val state = _uiState.value as? MapUiState.Success ?: return
         val nav = _navState.value

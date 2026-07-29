@@ -4,13 +4,15 @@ const {
   listNotifications,
   getUnreadCount,
   readNotification,
-  readAllNotifications
+  readAllNotifications,
+  postTestEmergencyPush
 } = require('../controllers/notificationController');
 
 const router = express.Router();
 
 router.get('/', auth, listNotifications);
 router.get('/unread-count', auth, getUnreadCount);
+router.post('/test-emergency-push', auth, postTestEmergencyPush);
 router.patch('/:id/read', auth, readNotification);
 router.post('/read-all', auth, readAllNotifications);
 

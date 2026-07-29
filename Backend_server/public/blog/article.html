@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html class="scroll-smooth" lang="vi">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Bài viết | IndoorNav</title>
+<meta name="description" content="Blog và tin tức IndoorNav."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&amp;family=Hanken+Grotesk:wght@400;600;700&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,300,0,0&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/css/landing-premium.css?v=20260730b3"/>
+<script id="tailwind-config">
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "outline-variant": "#c7c6ca",
+        "on-error": "#ffffff",
+        "secondary-container": "#4d8efe",
+        "surface-container-high": "#e8e8e5",
+        "secondary-fixed-dim": "#adc6ff",
+        "error-container": "#ffdad6",
+        "deep-charcoal": "#1d1d1f",
+        "surface-bright": "#f9f9f6",
+        "on-primary-fixed": "#1b1b1d",
+        "surface": "#f9f9f6",
+        "outline": "#77767b",
+        "on-secondary-container": "#00285c",
+        "tertiary": "#060200",
+        "surface-dim": "#dadad7",
+        "on-tertiary-fixed-variant": "#643f00",
+        "on-surface": "#1a1c1b",
+        "secondary": "#005ac1",
+        "on-primary-container": "#868587",
+        "surface-container-lowest": "#ffffff",
+        "inverse-primary": "#c8c6c8",
+        "hairline-border": "#d9d5cf",
+        "on-primary-fixed-variant": "#474649",
+        "tertiary-fixed-dim": "#fdba61",
+        "on-surface-variant": "#46464a",
+        "inverse-surface": "#2f312f",
+        "secondary-fixed": "#d8e2ff",
+        "primary-fixed": "#e4e2e4",
+        "tertiary-container": "#2c1900",
+        "primary": "#030304",
+        "primary-fixed-dim": "#c8c6c8",
+        "on-background": "#1a1c1b",
+        "on-primary": "#ffffff",
+        "on-secondary-fixed-variant": "#004494",
+        "on-secondary-fixed": "#001a41",
+        "surface-variant": "#e2e3e0",
+        "surface-container": "#eeeeeb",
+        "surface-container-highest": "#e2e3e0",
+        "surface-tint": "#5f5e60",
+        "on-tertiary-fixed": "#2a1700",
+        "on-tertiary-container": "#b27927",
+        "primary-container": "#1d1d1f",
+        "surface-container-low": "#f4f4f1",
+        "on-error-container": "#93000a",
+        "error": "#ba1a1a",
+        "background": "#f9f9f6",
+        "on-secondary": "#ffffff",
+        "tertiary-fixed": "#ffddb7",
+        "inverse-on-surface": "#f1f1ee",
+        "on-tertiary": "#ffffff",
+        "mist-gray": "#f0f0f2"
+      },
+      borderRadius: {
+        DEFAULT: "0.25rem",
+        lg: "0.5rem",
+        xl: "0.75rem",
+        full: "9999px"
+      },
+      spacing: {
+        "page-margin-mobile": "24px",
+        gutter: "32px",
+        "section-gap-sm": "80px",
+        "component-padding": "1.5rem",
+        "page-margin-desktop": "80px",
+        "section-gap-lg": "160px"
+      },
+      fontFamily: {
+        "body-md": ["Be Vietnam Pro", "sans-serif"],
+        "label-mono": ["JetBrains Mono", "monospace"],
+        "headline-lg-mobile": ["Hanken Grotesk", "sans-serif"],
+        "headline-md": ["Hanken Grotesk", "sans-serif"],
+        "display-hero": ["Hanken Grotesk", "sans-serif"],
+        "body-lg": ["Be Vietnam Pro", "sans-serif"],
+        "headline-lg": ["Hanken Grotesk", "sans-serif"]
+      },
+      fontSize: {
+        "body-md": ["16px", { lineHeight: "24px", fontWeight: "400" }],
+        "label-mono": ["12px", { lineHeight: "16px", letterSpacing: "0.05em", fontWeight: "500" }],
+        "headline-lg-mobile": ["36px", { lineHeight: "42px", fontWeight: "600" }],
+        "headline-md": ["32px", { lineHeight: "40px", fontWeight: "600" }],
+        "display-hero": ["clamp(40px, 7vw, 72px)", { lineHeight: "1.1", letterSpacing: "-0.02em", fontWeight: "700" }],
+        "body-lg": ["20px", { lineHeight: "32px", fontWeight: "400" }],
+        "headline-lg": ["clamp(32px, 4vw, 48px)", { lineHeight: "1.2", letterSpacing: "-0.01em", fontWeight: "600" }]
+      }
+    }
+  }
+};
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle;
+  }
+  .transition-premium {
+    transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .hover-scale:hover {
+    transform: scale(0.98);
+  }
+  .article-shell {
+    max-width: 760px;
+  }
+  .article-body-prose > p + p {
+    margin-top: 2rem;
+  }
+</style>
+</head>
+<body class="landing-premium bg-surface text-deep-charcoal font-body-md selection:bg-secondary/20 overflow-x-hidden antialiased">
+
+<header class="site-header fixed top-0 left-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-hairline-border/50 h-20 transition-all duration-300">
+  <div class="site-header-inner flex justify-between items-center max-w-7xl mx-auto px-6 md:px-page-margin-desktop h-full">
+    <div class="flex items-center gap-8 md:gap-12 min-w-0">
+      <a class="site-brand font-headline-md text-2xl md:text-headline-md font-bold text-deep-charcoal shrink-0" href="/" aria-label="IndoorNav — Trang chủ"><span class="logo-text">IndoorNav</span></a>
+      <nav class="nav hidden md:flex gap-8" id="mainNav">
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/">Tổng quan</a>
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/explore">Bản đồ</a>
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/features">Tính năng</a>
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/pricing">Giá</a>
+        <a class="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-opacity" href="/contact">Liên hệ</a>
+      </nav>
+    </div>
+    <div class="flex items-center gap-3 md:gap-4">
+      <div class="auth-actions hidden md:flex items-center gap-3" id="authActions">
+        <a href="/login" class="px-5 py-2 rounded-full font-body-md text-on-surface-variant hover:opacity-70 transition-opacity" id="loginBtn">Đăng nhập</a>
+        <a href="/get-app" class="px-7 py-2.5 bg-deep-charcoal text-on-primary rounded-full font-body-md font-semibold hover-scale transition-premium">Tải App</a>
+      </div>
+      <button type="button" class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">☰</button>
+    </div>
+  </div>
+</header>
+
+<main id="main-content" class="pt-28 md:pt-32 pb-20 md:pb-section-gap-lg">
+  <article id="publicArticle" class="article-shell mx-auto px-page-margin-mobile md:px-0" aria-live="polite">
+    <p class="font-body-md text-on-surface-variant py-16 text-center">Đang tải bài viết…</p>
+  </article>
+</main>
+
+<footer class="bg-surface-container-low border-t border-hairline-border w-full py-12 md:py-section-gap-sm">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <a class="site-brand font-headline-md text-2xl font-bold text-primary" href="/"><span class="logo-text">IndoorNav</span></a>
+      <p id="footerCopy" class="footer-copy font-body-md text-body-md text-on-surface-variant">© 2026 IndoorNav. Bảo lưu mọi quyền.</p>
+      <p class="font-body-md text-sm text-outline">Đồ án / Luận văn tốt nghiệp — ngành Công nghệ thông tin</p>
+      <div id="footerContact" role="group" aria-label="Thông tin liên hệ"></div>
+    </div>
+    <nav class="footer-links" aria-label="Liên kết chân trang">
+      <a class="font-label-mono text-label-mono text-on-surface-variant hover:underline" href="/contact">Liên hệ</a>
+      <a class="font-label-mono text-label-mono text-on-surface-variant hover:underline" href="/pricing">Giá</a>
+      <a class="font-label-mono text-label-mono text-on-surface-variant hover:underline" href="/features">Tính năng</a>
+      <a class="font-label-mono text-label-mono text-on-surface-variant hover:underline" href="/get-app">Tải App</a>
+    </nav>
+  </div>
+</footer>
+
+<script src="/landing.js?v=20260730legacy1"></script>
+<script src="/article.js?v=20260730b3"></script>
+<script>
+  (function () {
+    var header = document.querySelector('.site-header');
+    if (!header) return;
+    window.addEventListener('scroll', function () {
+      if (window.scrollY > 20) header.classList.add('shadow-md');
+      else header.classList.remove('shadow-md');
+    }, { passive: true });
+  })();
+</script>
+</body>
+</html>

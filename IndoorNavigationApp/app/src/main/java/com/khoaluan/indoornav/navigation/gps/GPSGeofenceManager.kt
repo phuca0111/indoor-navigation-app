@@ -29,23 +29,34 @@ class GPSGeofenceManager(private val context: Context) {
 
     private var monitoredBuildings: List<Building> = emptyList()
     private var onEnterBuildingCallback: ((Building) -> Unit)? = null
+    private var onLocationCallback: ((Location) -> Unit)? = null
+    private var onFarAwayCallback: ((Building, Float) -> Unit)? = null
     private var activeBuildingId: String? = null
+    /** Spec D — clear presence khi cách tòa > clear (khớp backend ~200m) */
+    private val clearPresenceRadiusMeters = 200f
 
     /** Fix ngoài trời gần nhất — giữ cả sau [stopMonitoring] để handoff indoor. */
     @Volatile
     private var lastOutdoorFix: OutdoorGpsFix? = null
 
-    private val defaultActivationRadiusMeters = 150f // Bán kính kích hoạt mặc định 150m
+    private val defaultActivationRadiusMeters = 120f // Khớp R broadcast thu hẹp
 
     /**
      * Bắt đầu giám sát vị trí GPS ngoài trời dựa trên danh sách tòa nhà
      */
     @SuppressLint("MissingPermission")
-    fun startMonitoring(buildings: List<Building>, onEnter: (Building) -> Unit) {
+    fun startMonitoring(
+        buildings: List<Building>,
+        onEnter: (Building) -> Unit,
+        onLocation: ((android.location.Location) -> Unit)? = null,
+        onFarAway: ((Building, Float) -> Unit)? = null,
+    ) {
         stopMonitoring(clearOutdoorCache = false) // Dọn listener cũ; giữ bearing đã cache
 
         monitoredBuildings = buildings
         onEnterBuildingCallback = onEnter
+        onLocationCallback = onLocation
+        onFarAwayCallback = onFarAway
         activeBuildingId = null
 
         Log.d("GPSGeofenceManager", "Bắt đầu giám sát GPS cho ${buildings.size} tòa nhà")
@@ -53,6 +64,7 @@ class GPSGeofenceManager(private val context: Context) {
         locationListener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
                 cacheOutdoorFix(location)
+                onLocationCallback?.invoke(location)
                 checkGeofences(location)
             }
 
@@ -97,6 +109,8 @@ class GPSGeofenceManager(private val context: Context) {
         }
         locationListener = null
         onEnterBuildingCallback = null
+        onLocationCallback = null
+        onFarAwayCallback = null
         activeBuildingId = null
         if (clearOutdoorCache) {
             lastOutdoorFix = null
@@ -185,14 +199,21 @@ class GPSGeofenceManager(private val context: Context) {
      * Kiểm tra khoảng cách của User tới tất cả các geofence tòa nhà
      */
     private fun checkGeofences(location: Location) {
+        var nearest: Building? = null
+        var nearestDist = Float.MAX_VALUE
+
         for (building in monitoredBuildings) {
             val gps = building.gpsLocation ?: continue
             val distance = calculateDistance(
                 location.latitude, location.longitude,
                 gps.lat, gps.lng
             )
-
             Log.d("GPSGeofenceManager", "Khoảng cách tới ${building.name}: ${distance}m")
+
+            if (distance < nearestDist) {
+                nearestDist = distance
+                nearest = building
+            }
 
             if (distance <= defaultActivationRadiusMeters) {
                 if (activeBuildingId != building.id) {
@@ -200,8 +221,22 @@ class GPSGeofenceManager(private val context: Context) {
                     Log.i("GPSGeofenceManager", "Đã đi vào Geofence của tòa nhà: ${building.name}")
                     onEnterBuildingCallback?.invoke(building)
                 }
-                break // Ưu tiên tòa nhà gần nhất phát hiện được
+                return
             }
+        }
+
+        // Spec D L5 — ra ngoài >300m so với tòa gần nhất có GPS
+        val farBuilding = nearest
+        if (
+            farBuilding != null &&
+            nearestDist > clearPresenceRadiusMeters &&
+            location.hasAccuracy() &&
+            location.accuracy <= 50f
+        ) {
+            if (activeBuildingId != null) {
+                activeBuildingId = null
+            }
+            onFarAwayCallback?.invoke(farBuilding, nearestDist)
         }
     }
 

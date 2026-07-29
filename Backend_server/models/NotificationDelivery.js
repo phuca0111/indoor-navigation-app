@@ -44,8 +44,9 @@ const notificationDeliverySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Unique theo (notification, channel, recipient) — cho phép nhiều PUSH cùng notification (nhiều FCM token).
 notificationDeliverySchema.index(
-  { notification_id: 1, channel: 1 },
+  { notification_id: 1, channel: 1, recipient: 1 },
   { unique: true }
 );
 notificationDeliverySchema.index({ status: 1, available_at: 1, lease_expires_at: 1 });
@@ -55,4 +56,34 @@ notificationDeliverySchema.index(
   { unique: true, partialFilterExpression: { idempotency_key: { $gt: '' } } }
 );
 
-module.exports = mongoose.model('NotificationDelivery', notificationDeliverySchema);
+const NotificationDelivery = mongoose.model('NotificationDelivery', notificationDeliverySchema);
+
+/**
+ * Bỏ index cũ notification_id+channel (chặn multi-device PUSH).
+ * Gọi một lần khi server boot.
+ */
+async function ensureDeliveryIndexes() {
+  try {
+    const indexes = await NotificationDelivery.collection.indexes();
+    const obsolete = indexes.find(
+      (idx) =>
+        idx.name === 'notification_id_1_channel_1' ||
+        (idx.unique &&
+          idx.key &&
+          Object.keys(idx.key).length === 2 &&
+          idx.key.notification_id === 1 &&
+          idx.key.channel === 1 &&
+          idx.key.recipient == null)
+    );
+    if (obsolete) {
+      await NotificationDelivery.collection.dropIndex(obsolete.name);
+      console.log(`[NotificationDelivery] dropped obsolete index ${obsolete.name}`);
+    }
+    await NotificationDelivery.syncIndexes();
+  } catch (err) {
+    console.warn('[NotificationDelivery] ensureDeliveryIndexes:', err.message);
+  }
+}
+
+module.exports = NotificationDelivery;
+module.exports.ensureDeliveryIndexes = ensureDeliveryIndexes;

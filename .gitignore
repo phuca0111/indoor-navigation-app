@@ -60,11 +60,25 @@ nang-cap-he-thong-chuan-thuong-mai-saas.md
 # Gradle cache local (JDK zip / path Windows quá dài — KHÔNG commit)
 IndoorNavigationApp/.gradle-user-home/
 IndoorNavigationApp/.gradle-home/
+IndoorNavigationApp/.gradlehome/
+IndoorNavigationApp/.gradle-agent/
 **/.gradle-home/
+**/.gradlehome/
+**/.gradle-agent/
 .gradle-local/
 .cursor/
 IndoorNavigationApp.zip
 *.zip
+
+# Firebase / Google — giữ local, không commit (có thể chứa API key)
+**/google-services.json
+**/GoogleService-Info.plist
+
+# Stitch / design export (nguồn thiết kế, không cần runtime)
+stitch_indoornav_premium_landing_page/
+
+# WebMapEditor tests — giữ local theo policy không commit test
+WebMapEditor/tests/
 
 # File khóa tạm Microsoft Office
 **/~$*.docx

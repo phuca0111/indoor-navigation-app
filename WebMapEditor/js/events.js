@@ -82,6 +82,7 @@ canvas.addEventListener('mousemove', function (e) {
     var mouseX = e.clientX - rect.left;
     var mouseY = e.clientY - rect.top;
     var world = screenToWorld(mouseX, mouseY);
+    // lastMouseWorld sẽ được cập nhật sau snap trong handleMouseMove (WYSIWYG với dấu +)
     if (window.lastMouseWorld) {
         window.lastMouseWorld.x = world.x;
         window.lastMouseWorld.y = world.y;
@@ -125,6 +126,16 @@ canvas.addEventListener('dblclick', function (e) {
         }
         // Không hợp lệ — giữ điểm đang vẽ để sửa
         draw();
+        return;
+    }
+    if (currentTool === 'hazard' && isDrawingPolygon && polygonPoints.length >= 3 && window.HazardZones) {
+        window.HazardZones.finishHazardPolygon(polygonPoints.slice()).then(function (ok) {
+            if (ok) {
+                polygonPoints = [];
+                isDrawingPolygon = false;
+            }
+            draw();
+        });
         return;
     }
     if (currentTool === 'wall' && typeof stopWallChain === 'function') {
@@ -175,10 +186,23 @@ function handleLeftMouseDown(e) {
     var snapped = snapWorldPoint(world.x, world.y, snapOpts);
     var snappedX = snapped.x;
     var snappedY = snapped.y;
+    // Khóa đúng tâm dấu + đang hiện (tránh lệch ~1 ô khi snap lại lúc click khác lúc hover)
+    if (typeof getSnapHint === 'function') {
+        var placeHint = getSnapHint();
+        if (placeHint && placeHint.kind && placeHint.kind !== 'none'
+            && Number.isFinite(placeHint.x) && Number.isFinite(placeHint.y)) {
+            snappedX = placeHint.x;
+            snappedY = placeHint.y;
+        }
+    }
+    if (window.lastMouseWorld) {
+        window.lastMouseWorld.x = snappedX;
+        window.lastMouseWorld.y = snappedY;
+    }
 
     // Chặn vẽ khi lớp active đang khóa (select / ruler / bg-adjust vẫn được)
     var drawTools = {
-        room: 1, circle: 1, polygon: 1, door: 1, wall: 1, line: 1, poi: 1, point: 1, qr: 1, path: 1, mline: 1,
+        room: 1, circle: 1, polygon: 1, door: 1, wall: 1, line: 1, poi: 1, point: 1, qr: 1, path: 1, mline: 1, hazard: 1,
         dimlinear: 1,
         dimaligned: 1,
         dimedit: 1
@@ -284,8 +308,8 @@ function handleLeftMouseDown(e) {
     }
 
     // --- TOOL: VẼ ĐA GIÁC ---
-    else if (currentTool === 'polygon') {
-        var newPt = { x: world.x, y: world.y };
+    else if (currentTool === 'polygon' || currentTool === 'hazard') {
+        var newPt = { x: snappedX, y: snappedY };
         if (polygonPoints.length > 0 && typeof getMinPolygonEdgePx === 'function') {
             var lastPt = polygonPoints[polygonPoints.length - 1];
             var segPx = typeof polygonSegmentPx === 'function'
@@ -303,20 +327,23 @@ function handleLeftMouseDown(e) {
         }
         isDrawingPolygon = true;
         polygonPoints.push(newPt);
+        if (currentTool === 'hazard' && window.HazardZones && typeof HazardZones.ensurePanel === 'function') {
+            HazardZones.ensurePanel();
+        }
         draw();
     }
 
     // --- TOOL: VẼ CỬA ---
     else if (currentTool === 'door') {
         saveState();
-        var door = createDoor(world.x, world.y);
+        var door = createDoor(snappedX, snappedY, { alreadySnapped: true });
         setEditorSelection('door', door);
     }
 
     // --- TOOL: VẼ TƯỜNG (PolylineTool V4 + commit từng đoạn) ---
     else if (currentTool === 'wall') {
         if (typeof handleWallVertex === 'function') {
-            handleWallVertex(world, snapOpts);
+            handleWallVertex({ x: snappedX, y: snappedY }, snapOpts);
         }
         draw();
     }
@@ -324,7 +351,7 @@ function handleLeftMouseDown(e) {
     // --- TOOL: VẼ ĐOẠN THẲNG (LineTool V4: 2 click → 1 đoạn) ---
     else if (currentTool === 'line') {
         if (typeof handleLineVertex === 'function') {
-            handleLineVertex(world, snapOpts);
+            handleLineVertex({ x: snappedX, y: snappedY }, snapOpts);
         }
         draw();
     }
@@ -390,20 +417,20 @@ function handleLeftMouseDown(e) {
     // --- TOOL: VẼ POI ---
     else if (currentTool === 'poi') {
         saveState();
-        var poi = createPoi(world.x, world.y);
+        var poi = createPoi(snappedX, snappedY, { alreadySnapped: true });
         setEditorSelection('poi', poi);
     }
 
     // --- TOOL: VẼ QR CODE ---
     else if (currentTool === 'qr') {
         saveState();
-        var qr = createQr(world.x, world.y);
+        var qr = createQr(snappedX, snappedY);
         setEditorSelection('qr', qr);
     }
 
     // --- TOOL: PATH ---
     else if (currentTool === 'path') {
-        var clickedNode = findNodeAt(world.x, world.y);
+        var clickedNode = findNodeAt(snappedX, snappedY) || findNodeAt(world.x, world.y);
         if (clickedNode) {
             // Click vào node đã có: Nối nếu đã chọn 1 node trước đó, hoặc chọn node này làm điểm bắt đầu
             if (firstNodeForEdge && firstNodeForEdge.id !== clickedNode.id) {
@@ -417,7 +444,7 @@ function handleLeftMouseDown(e) {
         } else {
             // Click vào chỗ trống: Tạo node mới và tự động nối với node trước đó (nếu có)
             saveState();
-            var newNode = createPathNode(world.x, world.y);
+            var newNode = createPathNode(snappedX, snappedY, { alreadySnapped: true });
             if (firstNodeForEdge) {
                 connectNodes(firstNodeForEdge, newNode);
             }
@@ -757,6 +784,13 @@ function handleMouseMove(e, world) {
             return snapWorldPoint(x, y, snapOpts);
         });
     }
+
+    // WYSIWYG: preview / rubber-band theo đúng điểm snap (tâm dấu +), không dùng raw cursor
+    if (window.lastMouseWorld) {
+        window.lastMouseWorld.x = snappedX;
+        window.lastMouseWorld.y = snappedY;
+    }
+    window.lastSnapResult = snapped;
 
     // Kéo ảnh nền
     if (window.isDraggingBg && currentTool === 'bg-adjust') {
