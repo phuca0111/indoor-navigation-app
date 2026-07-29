@@ -4,21 +4,43 @@ const AxeBuilder = require('@axe-core/playwright').default;
 async function mockNetwork(page) {
   const consoleErrors = [];
   const networkErrors = [];
+  const ignoreConsole = /Failed to decode downloaded font|OTS parsing error|downloadable font|cdn\.tailwindcss\.com should not be used in production/i;
   page.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(message.text());
+    if (message.type() !== 'error') return;
+    const text = message.text();
+    if (ignoreConsole.test(text)) return;
+    consoleErrors.push(text);
   });
   page.on('response', (response) => {
     if (response.status() >= 400 && !response.url().includes('favicon')) {
       networkErrors.push(response.status() + ' ' + response.url());
     }
   });
-  await page.route(/^https?:\/\/(unpkg\.com|cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)\//, async (route) => {
+  await page.route(/^https?:\/\/(unpkg\.com|cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com|cdn\.tailwindcss\.com)\//, async (route) => {
     const url = route.request().url();
+    if (url.includes('cdn.tailwindcss.com')) {
+      // Stub CDN: tránh console/network flaky; layout e2e chỉ cần DOM + a11y.
+      return route.fulfill({
+        contentType: 'application/javascript',
+        body: 'window.tailwind={config:{}};'
+      });
+    }
     if (url.includes('lucide')) {
       return route.fulfill({ contentType: 'application/javascript', body: 'window.lucide={createIcons:function(){}};' });
     }
     if (url.includes('qrcode')) {
       return route.fulfill({ contentType: 'application/javascript', body: 'window.QRCode={toCanvas:function(){}};' });
+    }
+    // Font binary stub rỗng → browser báo OTS/decode error; abort thay vì fulfill rỗng.
+    if (url.includes('fonts.gstatic.com') || /\.(woff2?|ttf|otf)(\?|$)/i.test(url)) {
+      return route.abort();
+    }
+    if (url.includes('fonts.googleapis.com')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'text/css',
+        body: '/* e2e stub: google fonts */'
+      });
     }
     return route.fulfill({ status: 200, body: '' });
   });
