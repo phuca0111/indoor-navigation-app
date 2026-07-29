@@ -378,8 +378,16 @@ function selectTool(tool) {
         cancelJoinSession();
     }
 
-    if (isDrawingPolygon && tool !== 'polygon') {
-        if (polygonPoints.length >= 3) {
+    if (isDrawingPolygon && tool !== 'polygon' && tool !== 'hazard') {
+        if (currentTool === 'hazard' && polygonPoints.length >= 3 && window.HazardZones) {
+            window.HazardZones.finishHazardPolygon(polygonPoints.slice()).then(function () {
+                polygonPoints = [];
+                isDrawingPolygon = false;
+                if (typeof draw === 'function') draw();
+            });
+            polygonPoints = [];
+            isDrawingPolygon = false;
+        } else if (currentTool === 'polygon' && polygonPoints.length >= 3) {
             var newRoom = createPolygonRoom(polygonPoints);
             if (newRoom) {
                 saveState();
@@ -388,9 +396,16 @@ function selectTool(tool) {
                 roomCountSpan.textContent = rooms.length + ' Phòng';
                 updateObjectList();
             }
+            polygonPoints = [];
+            isDrawingPolygon = false;
+        } else {
+            polygonPoints = [];
+            isDrawingPolygon = false;
         }
-        polygonPoints = [];
-        isDrawingPolygon = false;
+    }
+
+    if (tool === 'hazard' && window.HazardZones && typeof HazardZones.ensurePanel === 'function') {
+        HazardZones.ensurePanel();
     }
 
     wallStartPoint = null;

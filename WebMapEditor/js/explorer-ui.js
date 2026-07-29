@@ -111,6 +111,69 @@
         }
     }
 
+    // F8 — bật/tắt hiển thị public cho một tầng.
+    async function patchFloorVisibility(floorNum, nextVisible) {
+        if (_floorPatchBusy || !window.buildingId) return;
+        _floorPatchBusy = true;
+        try {
+            var res = await apiFetch(BASE_API_URL + '/buildings/' + window.buildingId + '/floors/' + floorNum + '/visibility', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_visible: !!nextVisible })
+            });
+            var d = await res.json().catch(function () { return {}; });
+            if (!res.ok) {
+                if (typeof showToast === 'function') showToast(d.message || ('HTTP ' + res.status), 'error');
+                return;
+            }
+            if (typeof showToast === 'function') showToast(d.message || 'Đã cập nhật hiển thị tầng.', 'success');
+            if (typeof loadBuildingContext === 'function') await loadBuildingContext();
+            refreshExplorerPanel();
+        } catch (e) {
+            if (typeof showToast === 'function') showToast('Lỗi kết nối!', 'error');
+        } finally {
+            _floorPatchBusy = false;
+        }
+    }
+
+    // F9 — đổi thứ tự hiển thị (display_order), không đổi floor_number.
+    async function patchFloorReorder(order) {
+        if (_floorPatchBusy || !window.buildingId) return;
+        _floorPatchBusy = true;
+        try {
+            var res = await apiFetch(BASE_API_URL + '/buildings/' + window.buildingId + '/floors/reorder', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ order: order })
+            });
+            var d = await res.json().catch(function () { return {}; });
+            if (!res.ok) {
+                if (typeof showToast === 'function') showToast(d.message || ('HTTP ' + res.status), 'error');
+                return;
+            }
+            if (typeof showToast === 'function') showToast(d.message || 'Đã sắp xếp tầng.', 'success');
+            if (typeof loadBuildingContext === 'function') await loadBuildingContext();
+            refreshExplorerPanel();
+        } catch (e) {
+            if (typeof showToast === 'function') showToast('Lỗi kết nối!', 'error');
+        } finally {
+            _floorPatchBusy = false;
+        }
+    }
+
+    function moveFloorInOrder(floors, floorNum, direction) {
+        var nums = floors.map(function (f) { return Number(f.num); });
+        var idx = nums.indexOf(Number(floorNum));
+        if (idx < 0) return null;
+        var swap = direction === 'up' ? idx - 1 : idx + 1;
+        if (swap < 0 || swap >= nums.length) return null;
+        var next = nums.slice();
+        var tmp = next[idx];
+        next[idx] = next[swap];
+        next[swap] = tmp;
+        return next;
+    }
+
     function switchFloor(floor) {
         var sel = qs('#floorSelect');
         if (!sel) return;
@@ -155,7 +218,7 @@
             ? window.bgLastPersistedUrl
             : (isThumbUrl(window.bgImageBase64) ? window.bgImageBase64 : null);
         if (meta && Array.isArray(meta.floors) && meta.floors.length) {
-            return meta.floors.map(function (f) {
+            var mapped = meta.floors.map(function (f) {
                 var num = String(f.floor_number);
                 var thumb = f.background_image || null;
                 // Tầng đang mở: ưu tiên URL vừa upload (chưa kịp reload GET building)
@@ -163,6 +226,8 @@
                 return {
                     num: num,
                     name: f.floor_name || null,
+                    isVisible: f.is_visible !== false,
+                    displayOrder: f.display_order != null ? Number(f.display_order) : Number(f.floor_number),
                     published: !!f.is_published,
                     hasDraft: !!f.has_draft,
                     hasMap: !!f.has_map,
@@ -175,6 +240,10 @@
                     thumb: isThumbUrl(thumb) ? thumb : null
                 };
             });
+            mapped.sort(function (a, b) {
+                return a.displayOrder - b.displayOrder || Number(a.num) - Number(b.num);
+            });
+            return mapped;
         }
         var total = parseInt(meta && meta.total_floors, 10);
         if (!Number.isFinite(total) || total < 1) {
@@ -310,6 +379,7 @@
             main.appendChild(fNameSpan);
             var badges = el('span', 'explorer-floor-badges');
             if (f.num === current) badges.appendChild(el('span', 'explorer-badge badge-current', 'Đang mở'));
+            if (!f.isVisible) badges.appendChild(el('span', 'explorer-badge badge-empty', 'Ẩn'));
             if (f.published) badges.appendChild(el('span', 'explorer-badge badge-pub', 'v' + f.version));
             else if (f.hasDraft) badges.appendChild(el('span', 'explorer-badge badge-draft', 'Nháp'));
             else if (!f.hasMap) badges.appendChild(el('span', 'explorer-badge badge-empty', 'Trống'));
@@ -335,6 +405,66 @@
                 });
                 badges.appendChild(dup);
             }
+
+            // F8 — toggle ẩn/hiện public
+            var vis = el('span', 'explorer-floor-vis');
+            vis.setAttribute('role', 'button');
+            vis.setAttribute('tabindex', '0');
+            vis.title = f.isVisible ? 'Ẩn khỏi public/Android' : 'Bật hiển thị public';
+            var visIcon = el('i'); visIcon.setAttribute('data-lucide', f.isVisible ? 'eye' : 'eye-off');
+            vis.appendChild(visIcon);
+            var toggleVis = function (e) {
+                e.stopPropagation();
+                e.preventDefault();
+                patchFloorVisibility(f.num, !f.isVisible);
+            };
+            vis.addEventListener('click', toggleVis);
+            vis.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ' ') toggleVis(e);
+            });
+            badges.appendChild(vis);
+
+            // F9 — lên/xuống thứ tự hiển thị
+            var idxInList = floors.findIndex(function (x) { return x.num === f.num; });
+            if (idxInList > 0) {
+                var up = el('span', 'explorer-floor-move');
+                up.setAttribute('role', 'button');
+                up.setAttribute('tabindex', '0');
+                up.title = 'Lên trên trong danh sách';
+                var upIcon = el('i'); upIcon.setAttribute('data-lucide', 'chevron-up');
+                up.appendChild(upIcon);
+                var goUp = function (e) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    var next = moveFloorInOrder(floors, f.num, 'up');
+                    if (next) patchFloorReorder(next);
+                };
+                up.addEventListener('click', goUp);
+                up.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter' || e.key === ' ') goUp(e);
+                });
+                badges.appendChild(up);
+            }
+            if (idxInList >= 0 && idxInList < floors.length - 1) {
+                var down = el('span', 'explorer-floor-move');
+                down.setAttribute('role', 'button');
+                down.setAttribute('tabindex', '0');
+                down.title = 'Xuống dưới trong danh sách';
+                var downIcon = el('i'); downIcon.setAttribute('data-lucide', 'chevron-down');
+                down.appendChild(downIcon);
+                var goDown = function (e) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    var next = moveFloorInOrder(floors, f.num, 'down');
+                    if (next) patchFloorReorder(next);
+                };
+                down.addEventListener('click', goDown);
+                down.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter' || e.key === ' ') goDown(e);
+                });
+                badges.appendChild(down);
+            }
+
             main.appendChild(badges);
             body.appendChild(main);
 

@@ -6,8 +6,10 @@
 const doorTypes = ['Cửa chính', 'Cửa phụ', 'Cửa thoát hiểm'];
 
 // Tạo cửa mới tại vị trí click
-function createDoor(x, y) {
-    var sp = snapWorldPoint(x, y);
+function createDoor(x, y, opts) {
+    var sp = (opts && opts.alreadySnapped)
+        ? { x: x, y: y }
+        : snapWorldPoint(x, y);
     var door = {
         id: nextDoorId++,
         name: 'Cửa ' + doors.length,

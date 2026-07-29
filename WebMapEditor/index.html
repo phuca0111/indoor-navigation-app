@@ -204,6 +204,7 @@
                     <button class="tool-btn" id="btn-qr" onclick="selectTool('qr')"><i data-lucide="qr-code"></i> QR</button>
                     <button class="tool-btn" id="btn-path" onclick="selectTool('path')"><i data-lucide="route"></i> Đường đi</button>
                     <button class="tool-btn" id="btn-poi" onclick="selectTool('poi')"><i data-lucide="map-pin"></i> Điểm POI</button>
+                    <button class="tool-btn" id="btn-hazard" onclick="selectTool('hazard')" title="Khoanh vùng nguy hiểm (khẩn cấp)"><i data-lucide="alert-triangle"></i> Vùng nguy hiểm</button>
                 </div>
 
                 <div class="ribbon-panel" data-panel="view">
@@ -232,6 +233,7 @@
                         <button class="btn-layer-add tool-btn" type="button" onclick="addLayerUI()" style="margin-top:8px;">
                             <i data-lucide="plus"></i> Thêm lớp
                         </button>
+                        <div id="hazardPanelRoot"></div>
                     </div>
                     <div class="sidebar-panel config-panel" data-stab="config">
                         <div class="config-section-title">Bản đồ</div>
@@ -461,7 +463,7 @@
     <script src="core/spatial-index.js?v=20260709f"></script>
     <script src="core/snap-engine.js?v=20260721po1"></script>
     <script src="core/snap-bridge.js?v=20260709f"></script>
-    <script src="core/snap-overlay.js?v=20260721po1"></script>
+    <script src="core/snap-overlay.js?v=20260728snap1"></script>
     <script src="core/polar-tracking.js?v=20260709f"></script>
     <script src="core/dynamic-input.js?v=20260709f"></script>
     <script src="core/layer-manager.js?v=20260719lyr"></script>
@@ -501,7 +503,7 @@
     <script src="js/autodetect.js?v=20260716a"></script>
     <script src="js/image-phase4.js?v=20260716we6b"></script>
     <script src="js/rooms.js?v=20260719bo"></script>
-    <script src="js/doors.js?v=20260713c"></script>
+    <script src="js/doors.js?v=20260728snap1"></script>
     <script src="js/walls.js?v=20260713c"></script>
     <script src="js/lines.js?v=20260720el1"></script>
     <script src="js/align-tool.js?v=20260719n1"></script>
@@ -509,11 +511,11 @@
     <script src="js/offset-tool.js?v=20260719o1"></script>
     <script src="js/join-tool.js?v=20260719j1"></script>
     <script src="js/dxf-ui.js?v=20260719dxf1"></script>
-    <script src="js/pois.js?v=20260725poi1"></script>
+    <script src="js/pois.js?v=20260728snap1"></script>
     <script src="js/point-tool.js?v=20260721po1"></script>
     <script src="js/blocks.js?v=20260719x1"></script>
     <script src="js/dimensions.js?v=20260719n1"></script>
-    <script src="js/paths.js?v=2"></script>
+    <script src="js/paths.js?v=20260728snap1"></script>
     <script src="js/tools.js?v=20260721po1"></script>
     <script src="js/canvas.js?v=20260721po1"></script>
     <script src="js/io.js?v=20260725poi1"></script>
@@ -525,6 +527,7 @@
     <script src="js/storage-api.js?v=20260716we6"></script>
     <script src="js/validation-ui.js?v=20260716we5"></script>
     <script src="js/api.js?v=20260725poi1"></script>
+    <script src="js/hazard-zones.js?v=20260728hz4"></script>
     <script src="core/export-pipeline.js?v=20260719val"></script>
 
     <script src="js/secure-lock.js?v=20260710b"></script>
@@ -535,7 +538,7 @@
     <script src="js/autosave.js?v=20260716we6b"></script>
     <script src="js/version-ui.js?v=20260716p5"></script>
     <script src="js/explorer-ui.js?v=20260725fm5"></script>
-    <script src="js/events.js?v=20260721po1"></script>
+    <script src="js/events.js?v=20260728snap1"></script>
     <script src="js/dynamic-input-ui.js?v=20260714f"></script>
     <script src="js/command-bar-ui.js?v=20260721po1"></script>
     <script src="js/layers-ui.js?v=20260721po1"></script>

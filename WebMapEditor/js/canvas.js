@@ -184,6 +184,9 @@ function draw() {
             var sel = (selectedObject && selectedObject.type === 'node' && selectedObject.data === node);
             drawPathNode(node, sel);
         });
+        if (window.HazardZones && typeof HazardZones.drawHazardZones === 'function') {
+            HazardZones.drawHazardZones(ctx, zoom);
+        }
     } catch (errObj) {
         console.error('Lỗi vẽ object trong draw():', errObj);
     }
@@ -191,7 +194,13 @@ function draw() {
     // Preview đang vẽ — tách try để luôn cố vẽ dù object phía trên lỗi
     try {
         if (isDrawing) drawRoomPreview();
-        if (isDrawingPolygon && polygonPoints.length > 0) drawPolygonPreview();
+        if (isDrawingPolygon && polygonPoints.length > 0) {
+            if (currentTool === 'hazard' && window.HazardZones && typeof HazardZones.drawHazardPreview === 'function') {
+                HazardZones.drawHazardPreview(ctx, zoom, polygonPoints, window.lastMouseWorld);
+            } else {
+                drawPolygonPreview();
+            }
+        }
         if (currentTool === 'wall' && window.EditorCore && EditorCore.PolylineTool) {
             drawWallToolPreview();
         }

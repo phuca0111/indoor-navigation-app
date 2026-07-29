@@ -63,7 +63,7 @@
 
     function mapPois(pois) {
         return (pois || []).filter(isPlainItem).map(function (p) {
-            return {
+            var out = {
                 id: p.id,
                 name: p.name || 'P.O.I',
                 x: roundCoord(p.x),
@@ -75,6 +75,15 @@
                 description: p.description || '',
                 search_tags: Array.isArray(p.search_tags) ? p.search_tags : []
             };
+            var isExit = String(p.poiType || '').toUpperCase() === 'EXIT';
+            if (isExit) {
+                var role = String(p.exit_role || p.exitRole || '').toLowerCase();
+                var finalExit = role === 'final' || role === 'outdoor' ||
+                    p.is_final_exit === true || p.isFinalExit === true;
+                out.exit_role = finalExit ? 'final' : 'internal';
+                out.is_final_exit = !!finalExit;
+            }
+            return out;
         });
     }
 
