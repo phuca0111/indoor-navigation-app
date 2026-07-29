@@ -17,6 +17,7 @@ const {
   getVisibilityMeta,
   checkDuplicates,
   scanDuplicates,
+  resolvePlaceVerification,
   requestPlaceVerification,
   approvePlaceVerification,
   rejectPlaceVerification,
@@ -90,6 +91,20 @@ router.post(
   auth,
   requireAnyPermission(P.PLACE_MODERATE, P.PLACE_VALIDATE, P.PLACE_MANAGE),
   rejectPlaceVerification
+);
+// Legacy unified action body — giữ tương thích integration / client cũ
+router.post(
+  '/:id/verification',
+  auth,
+  requireAnyPermission(
+    P.PLACE_REVIEW,
+    P.PLACE_PROPOSE,
+    P.PLACE_CLAIM,
+    P.PLACE_MODERATE,
+    P.PLACE_VALIDATE,
+    P.PLACE_MANAGE
+  ),
+  resolvePlaceVerification
 );
 
 router.get('/:id', optionalAuth, getPlaceRegistry);
