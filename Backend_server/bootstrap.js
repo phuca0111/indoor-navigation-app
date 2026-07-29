@@ -29,6 +29,8 @@ async function startServer(app) {
   startNotificationWorker();
   startCmsScheduler();
   startMapLifecycleScheduler();
+  const { startUsgsEarthquakeScheduler } = require('./services/usgsEarthquakeScheduler');
+  startUsgsEarthquakeScheduler();
   if (String(process.env.PUBLISH_WORKER_IN_PROCESS || 'false') === 'true') {
     const { startWorker } = require('./services/publishQueueBull');
     await startWorker();
@@ -40,10 +42,14 @@ async function startServer(app) {
     ensureLandingPages
   } = require('./services/websiteCmsService');
   const BankUser = require('./models/BankUser');
+  const NotificationDelivery = require('./models/NotificationDelivery');
   ensureDefaultPlans().catch((error) => console.warn('planCatalog seed:', error.message));
   ensureWebsiteConfig().catch((error) => console.warn('websiteConfig ensure:', error.message));
   ensureLandingPages().catch((error) => console.warn('LandingPage ensure:', error.message));
   BankUser.ensureBankUserIndexes().catch((error) => console.warn('BankUser indexes:', error.message));
+  NotificationDelivery.ensureDeliveryIndexes().catch((error) =>
+    console.warn('NotificationDelivery indexes:', error.message)
+  );
 
   const port = process.env.PORT || 5000;
   const host = process.env.HOST || '0.0.0.0';
@@ -82,11 +88,13 @@ async function stopServer() {
     const { stopNotificationWorker } = require('./workers/notificationWorker');
     const { stopCmsScheduler } = require('./workers/cmsScheduler');
     const { stopMapLifecycleScheduler } = require('./services/mapLifecycleScheduler');
+    const { stopUsgsEarthquakeScheduler } = require('./services/usgsEarthquakeScheduler');
     stopBillingScheduler();
     stopDomainEventWorker();
     stopNotificationWorker();
     stopCmsScheduler();
     stopMapLifecycleScheduler();
+    stopUsgsEarthquakeScheduler();
     if (String(process.env.PUBLISH_WORKER_IN_PROCESS || 'false') === 'true') {
       const { stopWorker } = require('./services/publishQueueBull');
       await stopWorker();

@@ -1,9 +1,9 @@
 const express = require('express');
-const router  = express.Router();
+const router = express.Router();
 const { getLogs } = require('../controllers/activityLogController');
-const { auth, requireAdmin } = require('../middlewares/auth');
+const { auth, requirePermission, P } = require('../middlewares/auth');
 
-// Super Admin: toàn hệ thống; Org Admin: log trong org (2.6)
-router.get('/', auth, requireAdmin, getLogs);
+// Super / Org / Finance (có platform.logs.read); scope theo role + stream
+router.get('/', auth, requirePermission(P.PLATFORM_LOGS_READ), getLogs);
 
 module.exports = router;

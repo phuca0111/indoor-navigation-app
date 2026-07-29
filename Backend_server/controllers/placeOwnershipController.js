@@ -10,7 +10,9 @@ const ActivityLog = require('../models/ActivityLog');
 const { applyPlaceChanges, pickProposedChanges } = require('../services/placeMergeEngine');
 
 function logActivity(data) {
-  ActivityLog.create(data).catch(() => {});
+  ActivityLog.create(data).catch((err) => {
+    console.warn('[ActivityLog]', data?.action, err?.message || err);
+  });
 }
 
 function assertObjectId(id, label = 'id') {
@@ -254,6 +256,24 @@ async function rejectOwnership(req, res) {
     doc.reviewer_id = req.user.userId;
     doc.decided_at = new Date();
     await doc.save();
+
+    const place = doc.place_id
+      ? await Place.findById(doc.place_id).select('name').lean()
+      : null;
+    logActivity({
+      user_id: req.user.userId,
+      action: 'PLACE_OWNERSHIP_REJECT',
+      target_type: 'place',
+      target_id: String(doc.place_id || ''),
+      target: place?.name || String(doc.place_id || doc._id),
+      details: {
+        type: doc.type,
+        request_id: String(doc._id),
+        reason: doc.reject_reason
+      },
+      ip_address: req.ip || ''
+    });
+
     return res.status(200).json({ message: 'Đã từ chối.', request: serialize(doc) });
   } catch (error) {
     if (error.status) return res.status(error.status).json({ message: error.message, code: error.code });

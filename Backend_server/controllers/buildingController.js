@@ -2,6 +2,7 @@ const buildingApplication = require('../application/coreTenant/buildingApplicati
 const buildingQueries = require('../application/coreTenant/buildingQueryService');
 const buildingExplorer = require('../application/coreTenant/buildingExplorerApplicationService');
 const indoorSearch = require('../application/coreTenant/indoorSearchApplicationService');
+const mapHealth = require('../application/mapLifecycle/mapHealthApplicationService');
 
 function send(res, result) {
   if (result.headers) {
@@ -37,12 +38,16 @@ module.exports = {
   getBuildingExplorer: endpoint(buildingExplorer.getBuildingExplorer),
   /** GĐ4 Indoor Search — tìm POI trong nhà từ outdoor (public) */
   searchIndoorPois: endpoint(indoorSearch.searchIndoorPois),
+  /** P2.2 Map Health — tín hiệu OUTDATED / MISSING_POI / NO_MAP theo tầng */
+  getBuildingMapHealth: endpoint(mapHealth.getBuildingMapHealth),
   checkLocation: endpoint(buildingQueries.checkLocation),
   createBuilding: endpoint(buildingApplication.createBuilding),
   updateBuilding: endpoint(buildingApplication.updateBuilding),
   patchBuildingFloors: endpoint(buildingApplication.patchFloors),
   renameBuildingFloor: endpoint(buildingApplication.renameFloor),
   duplicateBuildingFloor: endpoint(buildingApplication.duplicateFloor),
+  setBuildingFloorVisibility: endpoint(buildingApplication.setFloorVisibility),
+  reorderBuildingFloors: endpoint(buildingApplication.reorderFloors),
   deleteBuilding: endpoint(buildingApplication.deactivateBuilding),
   restoreBuilding: endpoint(buildingApplication.restoreBuilding)
 };

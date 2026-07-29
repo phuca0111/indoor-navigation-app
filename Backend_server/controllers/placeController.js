@@ -29,7 +29,9 @@ const {
 const { isPlacePubliclyListed } = require('../utils/placePlatform');
 
 function logActivity(data) {
-  ActivityLog.create(data).catch(() => {});
+  ActivityLog.create(data).catch((err) => {
+    console.warn('[ActivityLog]', data?.action, err?.message || err);
+  });
 }
 
 function parseAliases(input) {
@@ -120,12 +122,37 @@ async function listPlaces(req, res) {
     if (verified === 'true') filter.verified = true;
     if (verified === 'false') filter.verified = false;
     if (q) {
-      filter.$or = [
-        { name: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
-        { aliases: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
-        { address: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
-        { category: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }
+      const esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(esc, 'i');
+      const or = [
+        { name: re },
+        { aliases: re },
+        { address: re },
+        { category: re },
+        { slug: re },
+        { description: re },
+        { notes: re }
       ];
+      const coordPair = q.match(/^(-?\d+(?:[.,]\d+)?)\s*[,;\s]+\s*(-?\d+(?:[.,]\d+)?)\s*$/);
+      if (coordPair) {
+        let lat = Number(String(coordPair[1]).replace(',', '.'));
+        let lng = Number(String(coordPair[2]).replace(',', '.'));
+        if (lng >= 8 && lng <= 24 && lat >= 100 && lat <= 120) {
+          const s = lat; lat = lng; lng = s;
+        }
+        const deg = 400 / 111000;
+        or.push({
+          latitude: { $gte: lat - deg, $lte: lat + deg },
+          longitude: { $gte: lng - deg, $lte: lng + deg }
+        });
+      } else if (/^-?\d+(\.\d+)?$/.test(q.replace(',', '.'))) {
+        const token = q.replace(',', '.');
+        or.push(
+          { $expr: { $regexMatch: { input: { $toString: '$latitude' }, regex: esc } } },
+          { $expr: { $regexMatch: { input: { $toString: '$longitude' }, regex: esc } } }
+        );
+      }
+      filter.$or = or;
     }
 
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
@@ -365,7 +392,12 @@ async function updatePlace(req, res) {
     if (body.verification_note !== undefined) {
       place.verification_note = String(body.verification_note || '').slice(0, 1000);
     }
-    if (body.status !== undefined) place.status = normalizePlaceStatus(body.status, place.status);
+    let unlockedPlace = false;
+    if (body.status !== undefined) {
+      const prevStatus = place.status;
+      place.status = normalizePlaceStatus(body.status, place.status);
+      unlockedPlace = prevStatus === 'LOCKED' && place.status === 'ACTIVE';
+    }
     if (body.notes !== undefined) place.notes = String(body.notes || '').slice(0, 1000);
 
     if (body.owner_org_id !== undefined) {
@@ -388,16 +420,18 @@ async function updatePlace(req, res) {
 
     logActivity({
       user_id: req.user.userId,
-      action: 'UPDATE_PLACE',
+      action: unlockedPlace ? 'UNLOCK_PLACE' : 'UPDATE_PLACE',
       target_type: 'place',
       target_id: String(place._id),
       target: place.name,
-      details: {},
+      details: unlockedPlace
+        ? { message: 'Mở khóa địa điểm', publication_status: place.publication_status }
+        : {},
       ip_address: req.ip || ''
     });
 
     return res.status(200).json({
-      message: 'Đã cập nhật Place.',
+      message: unlockedPlace ? 'Đã mở khóa địa điểm.' : 'Đã cập nhật Place.',
       place: serializePlace(place, { building_count: count })
     });
   } catch (error) {
@@ -461,6 +495,25 @@ async function resolvePlaceVerification(req, res) {
     if (error.status) return res.status(error.status).json({ message: error.message, code: error.code });
     return res.status(500).json({ message: 'Lỗi máy chủ: ' + error.message });
   }
+}
+
+// Wrappers — tách endpoint để phân quyền rõ: request vs approve/reject.
+async function requestPlaceVerification(req, res) {
+  req.body = req.body || {};
+  req.body.action = 'request';
+  return resolvePlaceVerification(req, res);
+}
+
+async function approvePlaceVerification(req, res) {
+  req.body = req.body || {};
+  req.body.action = 'approve';
+  return resolvePlaceVerification(req, res);
+}
+
+async function rejectPlaceVerification(req, res) {
+  req.body = req.body || {};
+  req.body.action = 'reject';
+  return resolvePlaceVerification(req, res);
 }
 
 // DELETE /api/places/:id — soft lock + detach buildings
@@ -590,6 +643,17 @@ async function detachBuilding(req, res) {
 
     building.place_id = null;
     await building.save();
+
+    const place = await Place.findById(placeId).select('name').lean();
+    logActivity({
+      user_id: req.user.userId,
+      action: 'DETACH_BUILDING_PLACE',
+      target_type: 'place',
+      target_id: String(placeId),
+      target: place?.name || String(placeId),
+      details: { building_id: String(building._id), building_name: building.name },
+      ip_address: req.ip || ''
+    });
 
     return res.status(200).json({ message: 'Đã gỡ Building khỏi Place.', building_id: building._id });
   } catch (error) {
@@ -744,6 +808,9 @@ module.exports = {
   checkDuplicates,
   scanDuplicates,
   resolvePlaceVerification,
+  requestPlaceVerification,
+  approvePlaceVerification,
+  rejectPlaceVerification,
   searchPlacesPublic,
   getPlacePublic
 };

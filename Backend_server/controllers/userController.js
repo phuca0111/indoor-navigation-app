@@ -12,8 +12,22 @@ const {
   getAdminUserOverview,
   listAdminUserFavorites,
   listAdminUserHistory,
-  listAdminUserSessions
+  listAdminUserSessions,
+  listAdminUserDevicesForDetail
 } = require('../application/endUser/adminUserDetailApplicationService');
+const {
+  upsertMyDevice,
+  updateMyPresence,
+  listMyDevices,
+  revokeMyDevice
+} = require('../application/endUser/userDeviceApplicationService');
+const {
+  setEmergencyConsent,
+  getEmergencyConsent,
+  warnUser,
+  banUserAccount,
+  unbanUserAccount
+} = require('../application/endUser/userModerationApplicationService');
 const { validatePasswordStrength } = require('../utils/passwordPolicy');
 const { validateFullName, normalizeFullName } = require('../utils/fullNamePolicy');
 const { validateProfilePatch } = require('../utils/identityValidation');
@@ -110,7 +124,7 @@ async function updateUser(req, res) {
     if (req.body.email !== undefined || req.body.password !== undefined || req.body.created_by !== undefined) {
       return res.status(400).json({ message: 'Không thể cập nhật email, password, hoặc created_by thông qua API này.' });
     }
-    const allowed = ['full_name', 'phone', 'role', 'is_active', 'assigned_buildings', 'organization_id'];
+    const allowed = ['full_name', 'phone', 'role', 'is_active', 'assigned_buildings', 'organization_id', 'account_ban_reason'];
     const patch = Object.fromEntries(
       allowed.filter((key) => req.body[key] !== undefined).map((key) => [key, req.body[key]])
     );
@@ -212,6 +226,109 @@ async function getUserSessions(req, res) {
   }
 }
 
+async function getUserDevices(req, res) {
+  try {
+    return res.status(200).json(
+      await listAdminUserDevicesForDetail(req.params.userId, req.effectivePrincipal)
+    );
+  } catch (error) {
+    return errorResponse(res, error);
+  }
+}
+
+async function putMyEmergencyConsent(req, res) {
+  try {
+    const body = req.body || {};
+    if (body.mode == null && typeof body.granted !== 'boolean') {
+      return res.status(400).json({
+        message: 'Cần mode (EMERGENCY_ONLY|ALERT_ONLY|ALWAYS_RESEARCH) hoặc granted boolean.'
+      });
+    }
+    return res.status(200).json(
+      await setEmergencyConsent(req.user.userId, body, context(req))
+    );
+  } catch (error) {
+    return errorResponse(res, error);
+  }
+}
+
+async function getMyEmergencyConsent(req, res) {
+  try {
+    return res.status(200).json(await getEmergencyConsent(req.user.userId));
+  } catch (error) {
+    return errorResponse(res, error);
+  }
+}
+
+async function putMyDevice(req, res) {
+  try {
+    return res.status(200).json(
+      await upsertMyDevice(req.user.userId, req.body || {}, context(req))
+    );
+  } catch (error) {
+    return errorResponse(res, error);
+  }
+}
+
+async function putMyPresence(req, res) {
+  try {
+    if (!req.body?.device_id) {
+      return res.status(400).json({ message: 'device_id là bắt buộc.' });
+    }
+    return res.status(200).json(
+      await updateMyPresence(req.user.userId, req.body || {})
+    );
+  } catch (error) {
+    return errorResponse(res, error);
+  }
+}
+
+async function getMyDevices(req, res) {
+  try {
+    return res.status(200).json(await listMyDevices(req.user.userId));
+  } catch (error) {
+    return errorResponse(res, error);
+  }
+}
+
+async function deleteMyDevice(req, res) {
+  try {
+    return res.status(200).json(
+      await revokeMyDevice(req.user.userId, req.params.deviceId, context(req))
+    );
+  } catch (error) {
+    return errorResponse(res, error);
+  }
+}
+
+async function postUserWarning(req, res) {
+  try {
+    return res.status(200).json(
+      await warnUser(req.params.userId, req.body?.reason, context(req))
+    );
+  } catch (error) {
+    return errorResponse(res, error);
+  }
+}
+
+async function postUserBan(req, res) {
+  try {
+    const user = await banUserAccount(req.params.userId, req.body?.reason, context(req));
+    return res.status(200).json({ message: 'Đã ban/khóa tài khoản.', user });
+  } catch (error) {
+    return errorResponse(res, error);
+  }
+}
+
+async function postUserUnban(req, res) {
+  try {
+    const user = await unbanUserAccount(req.params.userId, context(req));
+    return res.status(200).json({ message: 'Đã gỡ ban / mở khóa tài khoản.', user });
+  } catch (error) {
+    return errorResponse(res, error);
+  }
+}
+
 module.exports = {
   getUsers: listUsers,
   listUsers,
@@ -225,5 +342,15 @@ module.exports = {
   getUserOverview,
   getUserFavorites,
   getUserHistory,
-  getUserSessions
+  getUserSessions,
+  getUserDevices,
+  putMyEmergencyConsent,
+  getMyEmergencyConsent,
+  putMyDevice,
+  putMyPresence,
+  getMyDevices,
+  deleteMyDevice,
+  postUserWarning,
+  postUserBan,
+  postUserUnban
 };

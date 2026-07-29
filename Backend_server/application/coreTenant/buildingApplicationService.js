@@ -1,4 +1,5 @@
 const repository = require('../../repositories/coreTenantRepository');
+const Building = require('../../models/Building');
 const activities = require('../../repositories/activityLogRepository');
 const eventBus = require('../../shared/events/eventBus');
 const {
@@ -20,13 +21,16 @@ const {
   floorRangeList,
   clampCreateTotalFloors,
   floorHasMapContent,
-  assertFloorInRange
+  assertFloorInRange,
+  validateFloorReorder
 } = require('../../services/floorLifecycle');
+const { haversineMeters } = require('../../services/placeDuplicateDetection');
 const { autosaveFingerprint } = require('../../domain/mapLifecyclePolicies');
 const policy = require('./coreTenantPolicy');
 const { runCoreTenantCommand } = require('./runCoreTenantCommand');
 
 const MAP_CONTENT_KEYS = ['rooms', 'pois', 'nodes', 'edges', 'walls', 'qr_anchors'];
+const BUILDING_DUPLICATE_METERS = 30;
 
 function cloneMapPayload(src) {
   try {
@@ -43,6 +47,52 @@ function mapPayloadHasContent(md) {
 
 function fail(status, message, code, details) {
   throw Object.assign(new Error(message), { status, code, details });
+}
+
+async function findNearbyBuildingDuplicate({ lat, lng, excludeId = null }) {
+  const nLat = Number(lat);
+  const nLng = Number(lng);
+  const valid =
+    Number.isFinite(nLat) &&
+    Number.isFinite(nLng) &&
+    Math.abs(nLat) <= 90 &&
+    Math.abs(nLng) <= 180 &&
+    !(nLat === 0 && nLng === 0);
+  if (!valid) return null;
+
+  const filter = {
+    is_active: { $ne: false },
+    'gps_location.lat': { $gte: nLat - 0.02, $lte: nLat + 0.02 },
+    'gps_location.lng': { $gte: nLng - 0.02, $lte: nLng + 0.02 }
+  };
+  if (excludeId) filter._id = { $ne: excludeId };
+
+  const candidates = await Building.find(filter)
+    .select('_id name gps_location.lat gps_location.lng organization_id owner_user_id')
+    .limit(100)
+    .lean();
+
+  let nearest = null;
+  for (const b of candidates) {
+    const bLat = Number(b?.gps_location?.lat);
+    const bLng = Number(b?.gps_location?.lng);
+    if (!Number.isFinite(bLat) || !Number.isFinite(bLng)) continue;
+    const meters = haversineMeters(nLat, nLng, bLat, bLng);
+    if (!Number.isFinite(meters)) continue;
+    if (!nearest || meters < nearest.distance_meters) {
+      nearest = {
+        building_id: b._id,
+        building_name: b.name || '',
+        distance_meters: Math.round(meters),
+        organization_id: b.organization_id || null,
+        owner_user_id: b.owner_user_id || null
+      };
+    }
+  }
+  if (nearest && nearest.distance_meters <= BUILDING_DUPLICATE_METERS) {
+    return nearest;
+  }
+  return null;
 }
 
 async function recordMutation({ action, building, actor, ip, details, session }) {
@@ -104,6 +154,7 @@ async function createBuilding(input, options = {}) {
 
   const lat = input.body.lat ?? input.body.latitude ?? 0;
   const lng = input.body.lng ?? input.body.longitude ?? 0;
+  const force = input.body?.force === true || input.body?.force === '1';
   let initialVisibility = MAP_VISIBILITY.PRIVATE;
   if (input.body.visibility !== undefined) {
     initialVisibility = normalizeVisibility(input.body.visibility, '');
@@ -117,6 +168,16 @@ async function createBuilding(input, options = {}) {
     // Building mới mặc định DRAFT → không cho COMMUNITY/OFFICIAL ngay
     const matrix = assertVisibilityAllowedForStatus('DRAFT', initialVisibility);
     if (!matrix.ok) fail(400, matrix.message, matrix.code);
+  }
+
+  const duplicate = await findNearbyBuildingDuplicate({ lat, lng });
+  if (duplicate && !force) {
+    fail(
+      409,
+      `Tọa độ trùng/qua gần tòa nhà "${duplicate.building_name}" (~${duplicate.distance_meters}m). Vui lòng chọn tọa độ khác.`,
+      'BUILDING_LOCATION_DUPLICATE',
+      { duplicate }
+    );
   }
 
   const building = await runCoreTenantCommand(async (session) => {
@@ -157,7 +218,8 @@ async function createBuilding(input, options = {}) {
           : 'Tạo tòa nhà mới',
         organization_id: created.organization_id || null,
         place_id: placeResolved.place_id || null,
-        place_auto_created: placeResolved.auto_created
+        place_auto_created: placeResolved.auto_created,
+        force_create: !!force
       },
       session
     });
@@ -255,9 +317,25 @@ async function updateBuilding(input, options = {}) {
     }
   }
   if (input.body.lat !== undefined || input.body.lng !== undefined) {
+    const nextLat = input.body.lat ?? current.gps_location?.lat;
+    const nextLng = input.body.lng ?? current.gps_location?.lng;
+    const forceLocationUpdate = input.body?.force === true || input.body?.force === '1';
+    const duplicate = await findNearbyBuildingDuplicate({
+      lat: nextLat,
+      lng: nextLng,
+      excludeId: current._id
+    });
+    if (duplicate && !forceLocationUpdate) {
+      fail(
+        409,
+        `Tọa độ mới trùng/qua gần tòa nhà "${duplicate.building_name}" (~${duplicate.distance_meters}m). Vui lòng chọn tọa độ khác.`,
+        'BUILDING_LOCATION_DUPLICATE',
+        { duplicate }
+      );
+    }
     changes.gps_location = {
-      lat: input.body.lat ?? current.gps_location?.lat,
-      lng: input.body.lng ?? current.gps_location?.lng
+      lat: nextLat,
+      lng: nextLng
     };
   }
   if (input.body.total_floors !== undefined) {
@@ -610,6 +688,123 @@ async function changeActiveState(input, active, options = {}) {
   };
 }
 
+/**
+ * F8 — Bật/tắt hiển thị public cho một tầng.
+ * Body: { is_visible: boolean }
+ */
+async function setFloorVisibility(input, options = {}) {
+  const scope = await resolveBuildingScope(input.actor, input.params.id);
+  const current = await repository.findBuildingById(input.params.id, scope);
+  if (!current) fail(404, 'Không tìm thấy tòa nhà!');
+  await assertWritable(current, input.actor);
+
+  const floorNumber = Number.parseInt(input.params.floorNumber, 10);
+  if (!Number.isFinite(floorNumber)) {
+    fail(400, 'floorNumber không hợp lệ.', 'FLOOR_INVALID');
+  }
+  try {
+    assertFloorInRange(floorNumber, current.total_floors);
+  } catch (e) {
+    fail(e.status || 400, e.message, e.code || 'FLOOR_OUT_OF_RANGE', {
+      floor_number: e.floor_number,
+      total_floors: e.total_floors
+    });
+  }
+
+  if (input.body?.is_visible === undefined) {
+    fail(400, 'Thiếu is_visible (boolean).', 'FLOOR_VISIBILITY_REQUIRED');
+  }
+  const isVisible = Boolean(input.body.is_visible);
+
+  const floor = await runCoreTenantCommand(async (session) => {
+    const updated = await repository.updateFloorVisibility(
+      current._id,
+      floorNumber,
+      isVisible,
+      input.actor?.userId,
+      { session }
+    );
+    await recordMutation({
+      action: 'SET_FLOOR_VISIBILITY',
+      building: current,
+      actor: input.actor,
+      ip: input.ip,
+      details: {
+        message: isVisible ? 'Bật hiển thị tầng' : 'Ẩn tầng khỏi public',
+        floor_number: floorNumber,
+        is_visible: isVisible
+      },
+      session
+    });
+    return updated;
+  }, options);
+
+  return {
+    status: 200,
+    body: {
+      message: isVisible ? 'Đã bật hiển thị tầng.' : 'Đã ẩn tầng khỏi public.',
+      floor: {
+        floor_number: floor.floor_number,
+        floor_name: floor.floor_name,
+        is_visible: floor.is_visible !== false,
+        display_order: floor.display_order ?? null
+      }
+    }
+  };
+}
+
+/**
+ * F9 — Sắp xếp thứ tự hiển thị tầng (display_order). Không đổi floor_number.
+ * Body: { order: number[] } — permutation 0..total_floors-1
+ */
+async function reorderFloors(input, options = {}) {
+  const scope = await resolveBuildingScope(input.actor, input.params.id);
+  const current = await repository.findBuildingById(input.params.id, scope);
+  if (!current) fail(404, 'Không tìm thấy tòa nhà!');
+  await assertWritable(current, input.actor);
+
+  let order;
+  try {
+    order = validateFloorReorder(input.body?.order, current.total_floors);
+  } catch (e) {
+    fail(e.status || 400, e.message, e.code || 'FLOOR_REORDER_INVALID', {
+      total_floors: current.total_floors
+    });
+  }
+
+  await runCoreTenantCommand(async (session) => {
+    await repository.updateFloorDisplayOrders(
+      current._id,
+      order,
+      input.actor?.userId,
+      { session }
+    );
+    await recordMutation({
+      action: 'REORDER_FLOORS',
+      building: current,
+      actor: input.actor,
+      ip: input.ip,
+      details: {
+        message: 'Sắp xếp lại thứ tự hiển thị tầng',
+        order
+      },
+      session
+    });
+  }, options);
+
+  return {
+    status: 200,
+    body: {
+      message: 'Đã cập nhật thứ tự hiển thị tầng.',
+      order,
+      floors: order.map((floorNumber, index) => ({
+        floor_number: floorNumber,
+        display_order: index
+      }))
+    }
+  };
+}
+
 const deactivateBuilding = (input, options) => changeActiveState(input, false, options);
 const restoreBuilding = (input, options) => changeActiveState(input, true, options);
 
@@ -619,6 +814,8 @@ module.exports = {
   patchFloors,
   renameFloor,
   duplicateFloor,
+  setFloorVisibility,
+  reorderFloors,
   deactivateBuilding,
   restoreBuilding,
   // F6 — helpers thuần cho unit test

@@ -132,6 +132,57 @@ async function upsertFloorName(buildingId, floorNumber, floorName, userId, { ses
   ).lean();
 }
 
+/** F8 — bật/tắt hiển thị public cho một tầng. */
+async function updateFloorVisibility(buildingId, floorNumber, isVisible, userId, { session } = {}) {
+  return Floor.findOneAndUpdate(
+    { building_id: buildingId, floor_number: floorNumber },
+    {
+      $set: {
+        is_visible: Boolean(isVisible),
+        last_modified_by: userId || null
+      },
+      $setOnInsert: {
+        building_id: buildingId,
+        floor_number: floorNumber,
+        version: 0,
+        published_at: null,
+        floor_name: ''
+      }
+    },
+    {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+      session: session || undefined
+    }
+  ).lean();
+}
+
+/** F9 — gán display_order theo thứ tự UI (index trong order[]). */
+async function updateFloorDisplayOrders(buildingId, order, userId, { session } = {}) {
+  const ops = order.map((floorNumber, index) => ({
+    updateOne: {
+      filter: { building_id: buildingId, floor_number: floorNumber },
+      update: {
+        $set: {
+          display_order: index,
+          last_modified_by: userId || null
+        },
+        $setOnInsert: {
+          building_id: buildingId,
+          floor_number: floorNumber,
+          version: 0,
+          published_at: null,
+          floor_name: ''
+        }
+      },
+      upsert: true
+    }
+  }));
+  if (!ops.length) return;
+  await Floor.bulkWrite(ops, { session: session || undefined });
+}
+
 /** F6 — đọc đủ map_data + tên tầng để nhân bản. */
 async function findFloorMapData(buildingId, floorNumber, { session } = {}) {
   return Floor.findOne({ building_id: buildingId, floor_number: floorNumber })
@@ -180,6 +231,8 @@ module.exports = {
   updateBuilding,
   findFloorAt,
   upsertFloorName,
+  updateFloorVisibility,
+  updateFloorDisplayOrders,
   findFloorMapData,
   findActiveDraft,
   createFloorDraft,

@@ -184,15 +184,30 @@ async function clearHistory(req, res) {
 async function addHistory(req, res) {
   try {
     const type = String(req.body?.type || 'OTHER').toUpperCase();
+    const buildingId = req.body?.building_id || null;
+    const resolvedType = UserHistory.HISTORY_TYPES.includes(type) ? type : 'OTHER';
     const row = await UserHistory.create({
       user_id: req.user.userId,
-      type: UserHistory.HISTORY_TYPES.includes(type) ? type : 'OTHER',
+      type: resolvedType,
       place_id: req.body?.place_id || null,
-      building_id: req.body?.building_id || null,
+      building_id: buildingId,
       workspace_id: req.body?.workspace_id || null,
       label: String(req.body?.label || '').slice(0, 300),
       meta: req.body?.meta && typeof req.body.meta === 'object' ? req.body.meta : {}
     });
+    // Presence indoor → broadcast khẩn cấp vẫn tới được khi app đã đóng (còn FCM).
+    if (
+      buildingId &&
+      ['VIEW_INDOOR', 'NAVIGATE_INDOOR', 'OPEN_WORKSPACE'].includes(resolvedType)
+    ) {
+      const { markIndoorPresence } = require('../application/endUser/userDeviceApplicationService');
+      const floor = req.body?.meta?.floor ?? req.body?.floor;
+      markIndoorPresence(req.user.userId, buildingId, {
+        floor: floor != null ? Number(floor) : undefined,
+        qr_id: req.body?.meta?.qr_id || req.body?.qr_id || undefined,
+        indoor_session_open: resolvedType === 'VIEW_INDOOR' || resolvedType === 'NAVIGATE_INDOOR'
+      }).catch(() => {});
+    }
     return res.status(201).json({ history: row });
   } catch (e) {
     return res.status(500).json({ message: e.message });

@@ -78,12 +78,25 @@ class MongoSearchProvider extends SearchProvider {
       }));
     }
 
+    const buildingOr = [
+      { name: regex },
+      { address: regex },
+      { description: regex }
+    ];
+    if (/^-?\d+(\.\d+)?$/.test(String(query || '').trim().replace(',', '.'))) {
+      const token = String(query).trim().replace(',', '.');
+      const esc = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      buildingOr.push(
+        { $expr: { $regexMatch: { input: { $toString: '$gps_location.lat' }, regex: esc } } },
+        { $expr: { $regexMatch: { input: { $toString: '$gps_location.lng' }, regex: esc } } }
+      );
+    }
     const buildingFilter = {
       is_active: { $ne: false },
-      $or: [{ name: regex }, { address: regex }, { description: regex }],
+      $or: buildingOr,
       ...(buildingScope === null ? {} : { _id: { $in: buildingScope } })
     };
-    add('building', Building.find(buildingFilter).select('name address status organization_id place_id')
+    add('building', Building.find(buildingFilter).select('name address status organization_id place_id gps_location description')
       .limit(50).lean(), (item) => ({
       type: 'building', id: String(item._id), label: item.name,
       detail: item.address || item.status, tab: 'buildings'
@@ -115,8 +128,16 @@ class MongoSearchProvider extends SearchProvider {
     }
     if (placeFilter) add('place', Place.find({
       ...placeFilter,
-      $or: [{ name: regex }, { aliases: regex }, { address: regex }]
-    }).select('name address category verified').limit(50).lean(), (item) => ({
+      $or: [
+        { name: regex },
+        { aliases: regex },
+        { address: regex },
+        { category: regex },
+        { slug: regex },
+        { description: regex },
+        { notes: regex }
+      ]
+    }).select('name address category verified slug').limit(50).lean(), (item) => ({
       type: 'place', id: String(item._id), label: item.name,
       detail: item.address || item.category, tab: 'map-governance'
     }));

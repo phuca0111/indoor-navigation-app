@@ -1,5 +1,6 @@
 const queries = require('../application/mapLifecycle/mapLifecycleQueryService');
 const commands = require('../application/mapLifecycle/rollbackApplicationService');
+const compare = require('../application/mapLifecycle/mapVersionCompareApplicationService');
 
 function numbers(req) {
   const floorNumber = Number.parseInt(req.params.floor, 10);
@@ -38,6 +39,20 @@ async function getVersionDetail(req, res) {
   }
 }
 
+async function compareVersions(req, res) {
+  try {
+    const { floorNumber } = numbers(req);
+    return res.status(200).json(await compare.compareVersions({
+      buildingId: req.params.buildingId,
+      floorNumber,
+      from: req.query.from,
+      to: req.query.to
+    }));
+  } catch (error) {
+    return fail(res, error, 'Lỗi so sánh phiên bản');
+  }
+}
+
 async function rollbackVersion(req, res) {
   try {
     const { floorNumber, version } = numbers(req);
@@ -61,4 +76,4 @@ async function rollbackVersion(req, res) {
   }
 }
 
-module.exports = { getVersions, getVersionDetail, rollbackVersion };
+module.exports = { getVersions, getVersionDetail, compareVersions, rollbackVersion };

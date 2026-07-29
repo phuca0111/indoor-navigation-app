@@ -452,7 +452,8 @@ function defaultSettings() {
     notification_preferences: {
       email_security: true,
       email_product: true,
-      in_app: true
+      in_app: true,
+      emergency_push: true
     }
   };
 }
@@ -508,6 +509,7 @@ async function updateSettings(userId, body = {}) {
     if (np.email_security != null) user.notification_preferences.email_security = !!np.email_security;
     if (np.email_product != null) user.notification_preferences.email_product = !!np.email_product;
     if (np.in_app != null) user.notification_preferences.in_app = !!np.in_app;
+    if (np.emergency_push != null) user.notification_preferences.emergency_push = !!np.emergency_push;
   }
 
   await user.save();

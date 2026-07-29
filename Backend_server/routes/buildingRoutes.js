@@ -10,17 +10,20 @@ const {
   getBuildings,
   getBuildingById,
   getBuildingExplorer,
+  getBuildingMapHealth,
   searchIndoorPois,
   createBuilding,
   updateBuilding,
   patchBuildingFloors,
   renameBuildingFloor,
   duplicateBuildingFloor,
+  setBuildingFloorVisibility,
+  reorderBuildingFloors,
   deleteBuilding,
   restoreBuilding,
   checkLocation
 } = require('../controllers/buildingController');
-const { auth, requireAdmin, requireBuildingCreator } = require('../middlewares/auth');
+const { auth, requireAdmin, requireBuildingCreator, requirePermission, P } = require('../middlewares/auth');
 const { requireBuildingAccess } = require('../middlewares/buildingAccess');
 
 router.get('/',                auth, getBuildings);    // Web Admin — phải đăng nhập để thấy DRAFT
@@ -30,6 +33,8 @@ router.get('/check-location',  checkLocation);         // Android kiểm tra GPS
 router.get('/indoor-search',   searchIndoorPois);
 // GĐ2 — Building Explorer (public, chỉ PUBLISHED); phải trước /:id có auth
 router.get('/:id/explorer',    getBuildingExplorer);
+// P2.2 — Map Health (chỉ đọc); cần quyền đọc building + access tòa nhà
+router.get('/:id/map-health',  auth, requirePermission(P.BUILDING_READ), requireBuildingAccess, getBuildingMapHealth);
 
 router.get('/:id',             auth, requireBuildingAccess, getBuildingById);
 
@@ -37,8 +42,12 @@ router.post('/',       auth, requireBuildingCreator, createBuilding);
 
 // Floor lifecycle: thêm/bớt tầng đuôi (SUPER/ORG — BUILDING_ADMIN bị chặn trong controller)
 router.patch('/:id/floors', auth, requireBuildingAccess, patchBuildingFloors);
+// F9 — sắp xếp thứ tự hiển thị (trước :floorNumber để không nuốt "reorder")
+router.patch('/:id/floors/reorder', auth, requireBuildingAccess, reorderBuildingFloors);
 // F6 — nhân bản tầng (thêm tầng đuôi + copy map vào draft); BUILDING_ADMIN bị chặn trong controller
 router.post('/:id/floors/duplicate', auth, requireBuildingAccess, duplicateBuildingFloor);
+// F8 — ẩn/hiện tầng public
+router.patch('/:id/floors/:floorNumber/visibility', auth, requireBuildingAccess, setBuildingFloorVisibility);
 // F2 — đổi tên tầng (BUILDING_ADMIN được phép nếu có building access)
 router.patch('/:id/floors/:floorNumber', auth, requireBuildingAccess, renameBuildingFloor);
 

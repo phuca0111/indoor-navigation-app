@@ -4,6 +4,7 @@ const {
   markRead,
   markAllRead
 } = require('../application/notification/notificationApplicationService');
+const { sendTestEmergencyPush } = require('../application/notification/emergencyPushApplicationService');
 
 async function listNotifications(req, res) {
   const result = await listForUser(req.user.userId, req.query);
@@ -30,9 +31,24 @@ async function readAllNotifications(req, res) {
   res.json({ modified, unread_count: 0 });
 }
 
+async function postTestEmergencyPush(req, res) {
+  try {
+    const result = await sendTestEmergencyPush(req.user.userId, req.body || {});
+    return res.status(202).json({
+      message: 'Đã xếp hàng thông báo khẩn cấp thử nghiệm.',
+      ...result
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      message: error.message || 'Không gửi được push thử nghiệm.'
+    });
+  }
+}
+
 module.exports = {
   listNotifications,
   getUnreadCount,
   readNotification,
-  readAllNotifications
+  readAllNotifications,
+  postTestEmergencyPush
 };

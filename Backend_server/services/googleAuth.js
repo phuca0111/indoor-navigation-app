@@ -145,10 +145,11 @@ async function verifyIdToken(idToken) {
     err.code = 'GOOGLE_ID_TOKEN_INVALID';
     throw err;
   }
-  return {
+    return {
     email,
     googleId,
-    name: String(payload.name || payload.given_name || email.split('@')[0] || '')
+    name: String(payload.name || payload.given_name || email.split('@')[0] || ''),
+    picture: String(payload.picture || '')
   };
 }
 

@@ -110,6 +110,18 @@ const floorSchema = new mongoose.Schema({
         default: ''     // VD: "Tầng Trệt", "Tầng 1", "Tầng 2"
     },
 
+    /** F8 — ẩn khỏi public/Android; Admin/Editor vẫn thấy. Mặc định hiển thị. */
+    is_visible: {
+        type: Boolean,
+        default: true
+    },
+
+    /** F9 — thứ tự hiển thị UI (null = dùng floor_number). Không đổi identity floor_number. */
+    display_order: {
+        type: Number,
+        default: null
+    },
+
     version: {
         type: Number,
         default: 1

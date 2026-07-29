@@ -78,12 +78,16 @@ async function enqueueForNotification(notification, input = {}) {
           ? String(input.device_token || '')
           : String(notification.user_id);
     const delivery = await NotificationDelivery.findOneAndUpdate(
-      { notification_id: notification._id, channel },
+      {
+        notification_id: notification._id,
+        channel,
+        recipient: String(recipient || '')
+      },
       {
         $setOnInsert: {
           event_id: input.event_id || notification.event_id || '',
           category,
-          recipient,
+          recipient: String(recipient || ''),
           provider: input.provider || channel,
           template_key: input.template_key || '',
           rendered_payload: redact(renderedPayload),

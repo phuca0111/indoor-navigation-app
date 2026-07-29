@@ -2,9 +2,16 @@
  * Place Platform HTTP facade — /api/place-platform/*
  */
 const placePlatform = require('../application/placePlatform/placePlatformApplicationService');
+const ActivityLog = require('../models/ActivityLog');
 
 function userIdOf(req) {
   return req.user?.userId || req.user?.id || req.user?._id || null;
+}
+
+function logActivity(data) {
+  ActivityLog.create(data).catch((err) => {
+    console.warn('[ActivityLog]', data?.action, err?.message || err);
+  });
 }
 
 async function getBySlug(req, res) {
@@ -57,7 +64,30 @@ async function closeReport(req, res) {
       note: req.body.note,
       status: req.body.status
     });
+    logActivity({
+      user_id: userIdOf(req),
+      action: 'MAP_MODERATION_RESOLVE',
+      target_type: 'place_report',
+      target_id: String(report._id),
+      target: String(report.place_id || ''),
+      details: { status: report.status, note: report.resolver_note || '' },
+      ip_address: req.ip || ''
+    });
     return res.status(200).json({ report });
+  } catch (error) {
+    return res.status(error.status || 500).json({ message: error.message, code: error.code });
+  }
+}
+
+async function adminListPlaceReports(req, res) {
+  try {
+    const data = await placePlatform.adminListPlaceReports({
+      status: req.query.status,
+      reasonCode: req.query.reason_code,
+      placeId: req.query.place_id,
+      limit: req.query.limit
+    });
+    return res.status(200).json(data);
   } catch (error) {
     return res.status(error.status || 500).json({ message: error.message, code: error.code });
   }
@@ -86,10 +116,119 @@ async function myReviews(req, res) {
   }
 }
 
+async function listPlaceReviews(req, res) {
+  try {
+    const data = await placePlatform.listReviewsByPlace(req.params.placeId, {
+      limit: req.query.limit
+    });
+    return res.status(200).json(data);
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      message: error.message,
+      code: error.code
+    });
+  }
+}
+
 async function markHelpful(req, res) {
   try {
     const review = await placePlatform.markReviewHelpful(req.params.id);
     return res.status(200).json({ review });
+  } catch (error) {
+    return res.status(error.status || 500).json({ message: error.message, code: error.code });
+  }
+}
+
+async function adminListReviews(req, res) {
+  try {
+    const includeInactive = String(req.query.include_inactive || '') === '1'
+      || String(req.query.include_inactive || '').toLowerCase() === 'true';
+    const data = await placePlatform.adminListReviews({
+      placeId: req.query.place_id || '',
+      q: req.query.q || '',
+      includeInactive,
+      limit: req.query.limit,
+      skip: req.query.skip
+    });
+    return res.status(200).json(data);
+  } catch (error) {
+    return res.status(error.status || 500).json({ message: error.message, code: error.code });
+  }
+}
+
+async function adminDeactivateReview(req, res) {
+  try {
+    const review = await placePlatform.adminDeactivateReview(req.params.id);
+    logActivity({
+      user_id: userIdOf(req),
+      action: 'PLACE_REVIEW_DEACTIVATE',
+      target_type: 'place_review',
+      target_id: String(review._id),
+      target: 'Ẩn đánh giá địa điểm',
+      details: {
+        place_id: String(review.place_id || ''),
+        user_id: String(review.user_id || ''),
+        rating: review.rating
+      },
+      ip_address: req.ip
+    });
+    return res.status(200).json({ review });
+  } catch (error) {
+    return res.status(error.status || 500).json({ message: error.message, code: error.code });
+  }
+}
+
+async function adminActivateReview(req, res) {
+  try {
+    const review = await placePlatform.adminActivateReview(req.params.id);
+    logActivity({
+      user_id: userIdOf(req),
+      action: 'PLACE_REVIEW_ACTIVATE',
+      target_type: 'place_review',
+      target_id: String(review._id),
+      target: 'Hiện lại đánh giá địa điểm',
+      details: {
+        place_id: String(review.place_id || ''),
+        user_id: String(review.user_id || ''),
+        rating: review.rating
+      },
+      ip_address: req.ip
+    });
+    return res.status(200).json({ review });
+  } catch (error) {
+    return res.status(error.status || 500).json({ message: error.message, code: error.code });
+  }
+}
+
+async function adminListFavorites(req, res) {
+  try {
+    const data = await placePlatform.adminListFavorites({
+      placeId: req.query.place_id || '',
+      limit: req.query.limit,
+      skip: req.query.skip
+    });
+    return res.status(200).json(data);
+  } catch (error) {
+    return res.status(error.status || 500).json({ message: error.message, code: error.code });
+  }
+}
+
+async function adminRemoveFavorite(req, res) {
+  try {
+    const favorite = await placePlatform.adminRemoveFavorite(req.params.id);
+    logActivity({
+      user_id: userIdOf(req),
+      action: 'PLACE_FAVORITE_REMOVE',
+      target_type: 'user_favorite',
+      target_id: String(favorite._id),
+      target: 'Xóa yêu thích địa điểm',
+      details: {
+        place_id: String(favorite.place_id || ''),
+        user_id: String(favorite.user_id || '')
+      },
+      ip_address: req.ip
+    });
+    return res.status(200).json({ message: 'Đã xóa yêu thích.', favorite });
   } catch (error) {
     return res.status(error.status || 500).json({ message: error.message, code: error.code });
   }
@@ -147,9 +286,16 @@ module.exports = {
   createReport,
   myReports,
   closeReport,
+  adminListPlaceReports,
   upsertReview,
   myReviews,
+  listPlaceReviews,
   markHelpful,
+  adminListReviews,
+  adminDeactivateReview,
+  adminActivateReview,
+  adminListFavorites,
+  adminRemoveFavorite,
   createClaim,
   listEvents,
   createEvent,

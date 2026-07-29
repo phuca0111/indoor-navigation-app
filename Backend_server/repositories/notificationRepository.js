@@ -3,6 +3,7 @@ const NotificationDelivery = require('../models/NotificationDelivery');
 const NotificationPreference = require('../models/NotificationPreference');
 const NotificationTemplate = require('../models/NotificationTemplate');
 const User = require('../models/User');
+const UserDevice = require('../models/UserDevice');
 const DomainEvent = require('../models/DomainEvent');
 
 async function upsertNotification(userId, dedupeKey, input, { session } = {}) {
@@ -14,7 +15,27 @@ async function upsertNotification(userId, dedupeKey, input, { session } = {}) {
 }
 
 async function findRecipient(userId) {
-  return User.findById(userId).select('email phone device_token fcm_token').lean();
+  return User.findById(userId)
+    .select('email phone device_token fcm_token notification_preferences.emergency_push')
+    .lean();
+}
+
+async function findActiveFcmTokens(userId) {
+  const rows = await UserDevice.find({
+    user_id: userId,
+    is_active: true,
+    fcm_token: { $exists: true, $ne: '' }
+  })
+    .select('fcm_token')
+    .sort({ last_seen_at: -1 })
+    .limit(20)
+    .lean();
+  return [...new Set(rows.map((row) => String(row.fcm_token || '').trim()).filter(Boolean))];
+}
+
+async function isEmergencyPushEnabled(userId) {
+  const user = await User.findById(userId).select('notification_preferences.emergency_push').lean();
+  return user?.notification_preferences?.emergency_push !== false;
 }
 
 async function listRecipientIds(filter) {
@@ -31,11 +52,33 @@ async function findTemplate(filter) {
 }
 
 async function upsertDelivery(notificationId, channel, input, { session } = {}) {
-  return NotificationDelivery.findOneAndUpdate(
-    { notification_id: notificationId, channel },
-    { $setOnInsert: input },
-    { upsert: true, new: true, setDefaultsOnInsert: true, ...(session ? { session } : {}) }
-  ).lean();
+  const recipient = String(input.recipient || '');
+  const filter = {
+    notification_id: notificationId,
+    channel,
+    recipient
+  };
+  const options = {
+    upsert: true,
+    new: true,
+    setDefaultsOnInsert: true,
+    ...(session ? { session } : {})
+  };
+  try {
+    return await NotificationDelivery.findOneAndUpdate(
+      filter,
+      { $setOnInsert: { ...input, recipient } },
+      options
+    ).lean();
+  } catch (err) {
+    // Race upsert / index cũ notification_id+channel → đọc lại bản ghi hiện có
+    if (err?.code !== 11000) throw err;
+    const existing =
+      (await NotificationDelivery.findOne(filter).lean()) ||
+      (await NotificationDelivery.findOne({ notification_id: notificationId, channel }).lean());
+    if (existing) return existing;
+    throw err;
+  }
 }
 
 async function claimDelivery(owner, now, leaseExpiresAt) {
@@ -109,6 +152,8 @@ async function recentCompletedEvents(limit) {
 module.exports = {
   upsertNotification,
   findRecipient,
+  findActiveFcmTokens,
+  isEmergencyPushEnabled,
   listRecipientIds,
   findPreference,
   findTemplate,

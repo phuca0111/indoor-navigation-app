@@ -46,7 +46,12 @@ const P = {
   PLACE_REVIEW: 'place.review',
   PLACE_MANAGE: 'place.manage',
   PLACE_MODERATE: 'place.moderate',
-  PLACE_VALIDATE: 'place.validate'
+  PLACE_VALIDATE: 'place.validate',
+  // Phase 3 — Emergency Platform
+  EMERGENCY_INCIDENT_WRITE: 'emergency.incident.write',
+  EMERGENCY_BROADCAST: 'emergency.broadcast',
+  EMERGENCY_LOCATION_READ: 'emergency.location.read',
+  EMERGENCY_COMMAND_READ: 'emergency.command.read'
 };
 
 /** @type {Record<string, string[]>} */
@@ -98,7 +103,11 @@ const ROLE_PERMISSIONS = {
     P.PLACE_PROPOSE,
     P.PLACE_CLAIM,
     P.PLACE_REPORT,
-    P.PLACE_REVIEW
+    P.PLACE_REVIEW,
+    P.EMERGENCY_INCIDENT_WRITE,
+    P.EMERGENCY_BROADCAST,
+    P.EMERGENCY_LOCATION_READ,
+    P.EMERGENCY_COMMAND_READ
   ],
   BUILDING_ADMIN: [
     P.BUILDINGS_MANAGE,
@@ -119,7 +128,11 @@ const ROLE_PERMISSIONS = {
     P.PLACE_PROPOSE,
     P.PLACE_CLAIM,
     P.PLACE_REPORT,
-    P.PLACE_REVIEW
+    P.PLACE_REVIEW,
+    P.EMERGENCY_INCIDENT_WRITE,
+    P.EMERGENCY_BROADCAST,
+    P.EMERGENCY_LOCATION_READ,
+    P.EMERGENCY_COMMAND_READ
   ],
   MAP_MODERATOR: [
     P.PLACE_READ_PUBLIC,

@@ -39,7 +39,7 @@ function validateProfilePatch(body = {}) {
   }
   if (body.notification_preferences !== undefined) {
     const value = body.notification_preferences;
-    const allowed = ['email_security', 'email_product', 'in_app'];
+    const allowed = ['email_security', 'email_product', 'in_app', 'emergency_push'];
     if (!value || typeof value !== 'object' || Array.isArray(value) ||
         Object.keys(value).some((key) => !allowed.includes(key)) ||
         Object.values(value).some((item) => typeof item !== 'boolean')) {

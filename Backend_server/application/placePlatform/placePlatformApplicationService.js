@@ -10,6 +10,8 @@ const PlaceReview = require('../../models/PlaceReview');
 const PlaceReport = require('../../models/PlaceReport');
 const PlaceEvent = require('../../models/PlaceEvent');
 const MapModerationReport = require('../../models/MapModerationReport');
+const UserFavorite = require('../../models/UserFavorite');
+const User = require('../../models/User');
 const {
   ensureUniquePlaceSlug,
   normalizePublicationStatus,
@@ -221,13 +223,14 @@ async function createReport({ placeId, reasonCode, detail, userId }) {
     reported_by: userId
   });
 
-  // Mirror sang moderation queue (governance)
-  const modReason = ['SPAM', 'DUPLICATE'].includes(reason) ? reason : 'OTHER';
+  // Mirror sang moderation queue (governance) — giữ reason đồng bộ nếu enum hỗ trợ
+  const modAllowed = ['SPAM', 'INAPPROPRIATE', 'DUPLICATE', 'COPYRIGHT', 'WRONG_LOCATION', 'OTHER'];
+  const modReason = modAllowed.includes(reason) ? reason : 'OTHER';
   await MapModerationReport.create({
     target_type: 'PLACE',
     target_id: String(placeId),
     reason_code: modReason,
-    detail: `[${reason}] ${String(detail || '').slice(0, 1900)}`,
+    detail: `[PlaceReport:${reason}] ${String(detail || '').slice(0, 1800)}`,
     status: 'OPEN',
     reported_by: userId
   }).catch(() => {});
@@ -247,6 +250,51 @@ async function listReportsByUser(userId, { limit = 50 } = {}) {
     .limit(Math.min(Number(limit) || 50, 100))
     .lean();
   return { total: rows.length, reports: rows };
+}
+
+/** Admin — hàng đợi báo cáo địa điểm (PlaceReport từ outdoor / Android) */
+async function adminListPlaceReports({ status, reasonCode, placeId, limit = 50 } = {}) {
+  const filter = {};
+  const st = String(status || 'OPEN').toUpperCase();
+  if (st && st !== 'ALL') filter.status = st;
+  if (reasonCode) filter.reason_code = String(reasonCode).toUpperCase();
+  if (placeId) {
+    assertObjectId(placeId, 'place_id');
+    filter.place_id = placeId;
+  }
+  const lim = Math.min(Math.max(Number(limit) || 50, 1), 100);
+  const rows = await PlaceReport.find(filter)
+    .sort({ createdAt: -1 })
+    .limit(lim)
+    .populate('place_id', 'name slug latitude longitude')
+    .populate('reported_by', 'email full_name')
+    .lean();
+
+  return {
+    total: rows.length,
+    reports: rows.map((r) => ({
+      _id: r._id,
+      place_id: r.place_id?._id || r.place_id,
+      place: r.place_id && r.place_id.name
+        ? {
+          _id: r.place_id._id,
+          name: r.place_id.name,
+          slug: r.place_id.slug || '',
+          latitude: r.place_id.latitude,
+          longitude: r.place_id.longitude
+        }
+        : null,
+      reason_code: r.reason_code,
+      detail: r.detail || '',
+      status: r.status,
+      reported_by: r.reported_by,
+      resolved_by: r.resolved_by || null,
+      resolved_at: r.resolved_at || null,
+      resolver_note: r.resolver_note || '',
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    }))
+  };
 }
 
 async function closeReport(reportId, { resolverId, note, status = PLACE_REPORT_STATUS.CLOSED } = {}) {
@@ -291,7 +339,26 @@ async function upsertReview({ placeId, userId, rating, comment }) {
     await community.addPoints(userId, 10, 'reviews');
   } catch (_) { /* ignore */ }
 
-  return doc;
+  // Trả shape giống list (có user) để app hiện ngay trên carousel
+  await doc.populate('user_id', 'full_name email');
+  const u = doc.user_id && typeof doc.user_id === 'object' ? doc.user_id : null;
+  return {
+    _id: doc._id,
+    place_id: doc.place_id,
+    user_id: u ? u._id : doc.user_id,
+    rating: doc.rating,
+    comment: doc.comment || '',
+    helpful_count: doc.helpful_count || 0,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+    user: u
+      ? {
+          id: String(u._id),
+          full_name: u.full_name || '',
+          email: u.email || ''
+        }
+      : null
+  };
 }
 
 async function listReviewsByUser(userId, { limit = 50 } = {}) {
@@ -303,6 +370,38 @@ async function listReviewsByUser(userId, { limit = 50 } = {}) {
   return { total: rows.length, reviews: rows };
 }
 
+/** Public — danh sách đánh giá theo Place (UI Google Maps style). */
+async function listReviewsByPlace(placeId, { limit = 20 } = {}) {
+  assertObjectId(placeId, 'place_id');
+  const lim = Math.min(Math.max(Number(limit) || 20, 1), 50);
+  const rows = await PlaceReview.find({ place_id: placeId, is_active: { $ne: false } })
+    .sort({ updatedAt: -1 })
+    .limit(lim)
+    .populate('user_id', 'full_name email')
+    .lean();
+  const reviews = rows.map((r) => {
+    const u = r.user_id && typeof r.user_id === 'object' ? r.user_id : null;
+    return {
+      _id: r._id,
+      place_id: r.place_id,
+      user_id: u ? u._id : r.user_id,
+      rating: r.rating,
+      comment: r.comment || '',
+      helpful_count: r.helpful_count || 0,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      user: u
+        ? {
+            id: String(u._id),
+            full_name: u.full_name || '',
+            email: u.email || ''
+          }
+        : null
+    };
+  });
+  return { total: reviews.length, reviews };
+}
+
 async function markReviewHelpful(reviewId) {
   assertObjectId(reviewId);
   const doc = await PlaceReview.findByIdAndUpdate(
@@ -311,6 +410,168 @@ async function markReviewHelpful(reviewId) {
     { returnDocument: 'after', new: true }
   );
   if (!doc) throw notFound('Không tìm thấy review.');
+  return doc;
+}
+
+function mapReviewAdminRow(r) {
+  const u = r.user_id && typeof r.user_id === 'object' ? r.user_id : null;
+  const p = r.place_id && typeof r.place_id === 'object' ? r.place_id : null;
+  return {
+    _id: r._id,
+    place_id: p ? p._id : r.place_id,
+    user_id: u ? u._id : r.user_id,
+    rating: r.rating,
+    comment: r.comment || '',
+    helpful_count: r.helpful_count || 0,
+    is_active: r.is_active !== false,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    user: u
+      ? {
+          id: String(u._id),
+          full_name: u.full_name || '',
+          email: u.email || ''
+        }
+      : null,
+    place: p
+      ? {
+          id: String(p._id),
+          name: p.name || '',
+          slug: p.slug || '',
+          category: p.category || ''
+        }
+      : null
+  };
+}
+
+/** Admin — danh sách đánh giá (lọc theo place / từ khóa comment). */
+async function adminListReviews({
+  placeId,
+  q,
+  includeInactive = false,
+  limit = 50,
+  skip = 0
+} = {}) {
+  const lim = Math.min(Math.max(Number(limit) || 50, 1), 200);
+  const sk = Math.max(Number(skip) || 0, 0);
+  const filter = {};
+  if (placeId) {
+    assertObjectId(placeId, 'place_id');
+    filter.place_id = placeId;
+  }
+  if (!includeInactive) {
+    filter.is_active = { $ne: false };
+  }
+  const keyword = String(q || '').trim();
+  if (keyword) {
+    filter.comment = { $regex: keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+  }
+
+  const [total, rows] = await Promise.all([
+    PlaceReview.countDocuments(filter),
+    PlaceReview.find(filter)
+      .sort({ updatedAt: -1 })
+      .skip(sk)
+      .limit(lim)
+      .populate('user_id', 'full_name email')
+      .populate('place_id', 'name slug category')
+      .lean()
+  ]);
+
+  return { total, reviews: rows.map(mapReviewAdminRow) };
+}
+
+/** Admin — ẩn đánh giá (soft delete). */
+async function adminDeactivateReview(reviewId) {
+  assertObjectId(reviewId);
+  const doc = await PlaceReview.findById(reviewId);
+  if (!doc) throw notFound('Không tìm thấy review.');
+  if (doc.is_active === false) return doc;
+  doc.is_active = false;
+  await doc.save();
+  return doc;
+}
+
+/** Admin — hiện lại đánh giá. */
+async function adminActivateReview(reviewId) {
+  assertObjectId(reviewId);
+  const doc = await PlaceReview.findById(reviewId);
+  if (!doc) throw notFound('Không tìm thấy review.');
+  if (doc.is_active !== false) return doc;
+  doc.is_active = true;
+  await doc.save();
+  return doc;
+}
+
+/** Admin — danh sách yêu thích theo place (hoặc gần đây nếu không có place_id). */
+async function adminListFavorites({ placeId, limit = 50, skip = 0 } = {}) {
+  const lim = Math.min(Math.max(Number(limit) || 50, 1), 200);
+  const sk = Math.max(Number(skip) || 0, 0);
+  const filter = {};
+  if (placeId) {
+    assertObjectId(placeId, 'place_id');
+    filter.place_id = placeId;
+  }
+
+  const [total, rows] = await Promise.all([
+    UserFavorite.countDocuments(filter),
+    UserFavorite.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(sk)
+      .limit(lim)
+      .lean()
+  ]);
+
+  const userIds = [...new Set(rows.map((r) => String(r.user_id)).filter(Boolean))];
+  const placeIds = [...new Set(rows.map((r) => String(r.place_id)).filter(Boolean))];
+  const [users, places] = await Promise.all([
+    userIds.length
+      ? User.find({ _id: { $in: userIds } }).select('full_name email').lean()
+      : [],
+    placeIds.length
+      ? Place.find({ _id: { $in: placeIds } }).select('name slug category').lean()
+      : []
+  ]);
+  const userMap = {};
+  users.forEach((u) => { userMap[String(u._id)] = u; });
+  const placeMap = {};
+  places.forEach((p) => { placeMap[String(p._id)] = p; });
+
+  return {
+    total,
+    favorites: rows.map((r) => {
+      const u = userMap[String(r.user_id)] || null;
+      const p = placeMap[String(r.place_id)] || null;
+      return {
+        _id: r._id,
+        user_id: r.user_id,
+        place_id: r.place_id,
+        createdAt: r.createdAt,
+        user: u
+          ? {
+              id: String(u._id),
+              full_name: u.full_name || '',
+              email: u.email || ''
+            }
+          : null,
+        place: p
+          ? {
+              id: String(p._id),
+              name: p.name || '',
+              slug: p.slug || '',
+              category: p.category || ''
+            }
+          : null
+      };
+    })
+  };
+}
+
+/** Admin — xóa bản ghi yêu thích. */
+async function adminRemoveFavorite(favoriteId) {
+  assertObjectId(favoriteId);
+  const doc = await UserFavorite.findByIdAndDelete(favoriteId);
+  if (!doc) throw notFound('Không tìm thấy yêu thích.');
   return doc;
 }
 
@@ -363,10 +624,17 @@ module.exports = {
   createClaim,
   createReport,
   listReportsByUser,
+  adminListPlaceReports,
   closeReport,
   upsertReview,
   listReviewsByUser,
+  listReviewsByPlace,
   markReviewHelpful,
+  adminListReviews,
+  adminDeactivateReview,
+  adminActivateReview,
+  adminListFavorites,
+  adminRemoveFavorite,
   listActiveEvents,
   createEventStub,
   PROPOSAL_STATUS

@@ -49,11 +49,21 @@ async function createForUsers(userIds, input) {
       }
     );
     const recipient = await notificationRepository.findRecipient(userId);
+    const registryTokens = await notificationRepository.findActiveFcmTokens(userId);
+    const legacyToken = recipient?.device_token || recipient?.fcm_token || '';
+    const deviceTokens = input.device_tokens?.length
+      ? input.device_tokens
+      : registryTokens.length
+        ? registryTokens
+        : legacyToken
+          ? [legacyToken]
+          : [];
     await deliveryApplication.enqueueForNotification(notification, {
       ...input,
       email: input.email || recipient?.email || '',
       phone: input.phone || recipient?.phone || '',
-      device_token: input.device_token || recipient?.device_token || recipient?.fcm_token || '',
+      device_token: deviceTokens[0] || input.device_token || '',
+      device_tokens: deviceTokens,
       channels: input.channels || ['IN_APP']
     });
     notifications.push(notification);

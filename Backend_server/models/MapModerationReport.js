@@ -18,7 +18,7 @@ const mapModerationSchema = new mongoose.Schema({
   },
   reason_code: {
     type: String,
-    enum: ['SPAM', 'INAPPROPRIATE', 'DUPLICATE', 'COPYRIGHT', 'OTHER'],
+    enum: ['SPAM', 'INAPPROPRIATE', 'DUPLICATE', 'COPYRIGHT', 'WRONG_LOCATION', 'OTHER'],
     default: 'OTHER'
   },
   detail: {

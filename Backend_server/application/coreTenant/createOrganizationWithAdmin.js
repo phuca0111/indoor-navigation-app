@@ -74,13 +74,14 @@ async function createOrganizationWithAdmin(input, options = {}) {
     }, { session });
 
     const actorId = input.createdByUserId || adminUser._id;
+    const source = input.source || 'MANUAL';
     await activities.recordActivity({
       user_id: actorId,
-      action: 'CREATE_ORG',
+      action: source === 'SELF_SERVICE' ? 'SELF_SERVICE_ORG_TRIAL' : 'CREATE_ORG',
       target_type: 'organization',
       target_id: String(organization._id),
       target: organization.name,
-      details: { slug, plan, source: input.source || 'MANUAL' },
+      details: { slug, plan, source },
       ip_address: input.ipAddress || '',
       organization_id: organization._id
     }, { session });
@@ -92,7 +93,7 @@ async function createOrganizationWithAdmin(input, options = {}) {
       target: adminUser.email,
       details: {
         role: 'ORG_ADMIN',
-        source: input.source || 'MANUAL',
+        source,
         organization_id: String(organization._id)
       },
       ip_address: input.ipAddress || '',
@@ -109,7 +110,7 @@ async function createOrganizationWithAdmin(input, options = {}) {
         organization_id: String(organization._id),
         admin_user_id: String(adminUser._id),
         plan,
-        source: input.source || 'MANUAL'
+        source
       }
     }, { session });
 
