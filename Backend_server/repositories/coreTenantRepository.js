@@ -71,6 +71,25 @@ async function findBuildingById(id, scope, { session } = {}) {
     .lean();
 }
 
+/** Quét GPS gần để phát hiện tòa trùng (cross-tenant, không gắn scope org). */
+async function listNearbyBuildingsForDuplicateCheck({ lat, lng, excludeId = null, limit = 100 } = {}, { session } = {}) {
+  const nLat = Number(lat);
+  const nLng = Number(lng);
+  const filter = {
+    is_active: { $ne: false },
+    'gps_location.lat': { $gte: nLat - 0.02, $lte: nLat + 0.02 },
+    'gps_location.lng': { $gte: nLng - 0.02, $lte: nLng + 0.02 }
+  };
+  if (excludeId) filter._id = { $ne: excludeId };
+
+  const rows = await Building.find(filter)
+    .select('_id name gps_location.lat gps_location.lng organization_id owner_user_id')
+    .limit(Math.min(Math.max(Number(limit) || 100, 1), 200))
+    .session(session || null)
+    .lean();
+  return Array.isArray(rows) ? rows.map(dto) : [];
+}
+
 async function createBuilding(input, scope, { session } = {}) {
   const filter = tenantFilter(scope);
   const data = { ...input };
@@ -227,6 +246,7 @@ module.exports = {
   userEmailExists,
   createOrganizationAdmin,
   findBuildingById,
+  listNearbyBuildingsForDuplicateCheck,
   createBuilding,
   updateBuilding,
   findFloorAt,

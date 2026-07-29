@@ -2,14 +2,14 @@
  * Place Platform HTTP facade — /api/place-platform/*
  */
 const placePlatform = require('../application/placePlatform/placePlatformApplicationService');
-const ActivityLog = require('../models/ActivityLog');
+const activityLogRepository = require('../repositories/activityLogRepository');
 
 function userIdOf(req) {
   return req.user?.userId || req.user?.id || req.user?._id || null;
 }
 
 function logActivity(data) {
-  ActivityLog.create(data).catch((err) => {
+  activityLogRepository.recordActivity(data).catch((err) => {
     console.warn('[ActivityLog]', data?.action, err?.message || err);
   });
 }

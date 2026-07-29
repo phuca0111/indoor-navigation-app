@@ -1,5 +1,4 @@
 const repository = require('../../repositories/coreTenantRepository');
-const Building = require('../../models/Building');
 const activities = require('../../repositories/activityLogRepository');
 const eventBus = require('../../shared/events/eventBus');
 const {
@@ -60,17 +59,11 @@ async function findNearbyBuildingDuplicate({ lat, lng, excludeId = null }) {
     !(nLat === 0 && nLng === 0);
   if (!valid) return null;
 
-  const filter = {
-    is_active: { $ne: false },
-    'gps_location.lat': { $gte: nLat - 0.02, $lte: nLat + 0.02 },
-    'gps_location.lng': { $gte: nLng - 0.02, $lte: nLng + 0.02 }
-  };
-  if (excludeId) filter._id = { $ne: excludeId };
-
-  const candidates = await Building.find(filter)
-    .select('_id name gps_location.lat gps_location.lng organization_id owner_user_id')
-    .limit(100)
-    .lean();
+  const candidates = await repository.listNearbyBuildingsForDuplicateCheck({
+    lat: nLat,
+    lng: nLng,
+    excludeId
+  });
 
   let nearest = null;
   for (const b of candidates) {
