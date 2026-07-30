@@ -507,7 +507,7 @@ async function requestPasswordResetDelivery(email, context) {
   };
   setImmediate(() => {
     sendPasswordResetEmail(mailOpts).catch((err) => {
-      console.warn('[Mail] Password reset SMTP failed:', err && err.message ? err.message : err);
+      console.warn('[Mail] Password reset mail failed:', err && err.message ? err.message : err);
       if (err && err.code) console.warn('[Mail] SMTP code:', err.code);
       if (err && err.response) console.warn('[Mail] SMTP response:', err.response);
       if (err && err.responseCode) console.warn('[Mail] SMTP responseCode:', err.responseCode);
