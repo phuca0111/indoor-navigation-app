@@ -26,6 +26,8 @@ const {
 const { createOAuthState, verifyOAuthState } = require('../../services/oauthState');
 const {
   isSmtpConfigured,
+  isMailConfigured,
+  hasTestTransporter,
   buildPasswordResetLink,
   sendPasswordResetEmail
 } = require('../../services/mailService');
@@ -493,20 +495,27 @@ async function requestPasswordResetDelivery(email, context) {
   const issued = await issuePasswordReset(email, context);
   if (!issued) return { issued: false, emailSent: false, emailQueued: false };
 
-  if (!isSmtpConfigured()) {
-    console.warn('[Mail] Password reset skipped: SMTP chưa cấu hình (SMTP_HOST/USER/PASS).');
+  if (!isMailConfigured()) {
+    console.warn('[Mail] Password reset skipped: chưa cấu hình SMTP hoặc RESEND_API_KEY / BREVO_API_KEY.');
     return { ...issued, issued: true, emailSent: false, emailQueued: false };
   }
 
-  // Không chờ SMTP xong — trả HTTP nhanh; gửi mail nền (log lỗi nếu fail)
   const mailOpts = {
     to: issued.user.email,
     resetLink: buildPasswordResetLink(issued.rawToken),
     expiresAt: issued.expiresAt
   };
+
+  // Mock transporter: gửi sync để integration test assert được sendMail.
+  // Prod/dev thật: gửi nền — HTTP không treo SMTP/HTTPS.
+  if (hasTestTransporter()) {
+    await sendPasswordResetEmail(mailOpts);
+    return { ...issued, issued: true, emailSent: true, emailQueued: false };
+  }
+
   setImmediate(() => {
     sendPasswordResetEmail(mailOpts).catch((err) => {
-      console.warn('[Mail] Password reset SMTP failed:', err && err.message ? err.message : err);
+      console.warn('[Mail] Password reset mail failed:', err && err.message ? err.message : err);
       if (err && err.code) console.warn('[Mail] SMTP code:', err.code);
       if (err && err.response) console.warn('[Mail] SMTP response:', err.response);
       if (err && err.responseCode) console.warn('[Mail] SMTP responseCode:', err.responseCode);

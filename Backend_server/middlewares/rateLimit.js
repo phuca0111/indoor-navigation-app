@@ -7,11 +7,16 @@ const rateLimit = require('express-rate-limit');
 const { createHybridStore } = require('../services/rateLimitStore');
 
 function makeLimiter(opts) {
-  const { prefix, windowMs, ...rest } = opts;
+  const { prefix, windowMs, validate, ...rest } = opts;
   return rateLimit({
     ...rest,
     windowMs,
-    store: createHybridStore(prefix || 'rl:', windowMs)
+    store: createHybridStore(prefix || 'rl:', windowMs),
+    // trust proxy đã bật; vẫn tắt validate này để tránh crash khi config lệch
+    validate: {
+      xForwardedForHeader: false,
+      ...(validate || {})
+    }
   });
 }
 

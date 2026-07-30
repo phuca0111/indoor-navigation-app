@@ -23,6 +23,8 @@ function usesLargeMapBody(req) {
 
 function createApp() {
   const app = express();
+  // Render / reverse proxy gắn X-Forwarded-For — cần trust để rate-limit không cảnh báo
+  app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS) || 1);
   app.use(requestContext);
   app.use(requestLogger);
   app.use(cors(getCorsOptions()));
