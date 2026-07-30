@@ -25,6 +25,19 @@ function buildPasswordResetLink(rawToken) {
   return getPublicBaseUrl() + '/admin/reset-password.html?token=' + encodeURIComponent(rawToken);
 }
 
+function resolveMailFrom() {
+  const user = process.env.SMTP_USER || '';
+  const raw = String(process.env.SMTP_FROM || user || '').trim();
+  // Placeholder copy từ .env.example — Gmail sẽ reject / treo
+  if (!raw || /email_gmail_cua_ban|your@gmail\.com|example\.com/i.test(raw)) {
+    if (process.env.SMTP_FROM) {
+      console.warn('[Mail] SMTP_FROM giống placeholder — dùng SMTP_USER =', user);
+    }
+    return user;
+  }
+  return raw;
+}
+
 function getTransporter() {
   if (_testTransporter) return _testTransporter;
   if (_transporter) return _transporter;
@@ -41,7 +54,12 @@ function getTransporter() {
     auth: {
       user: process.env.SMTP_USER,
       pass
-    }
+    },
+    // Tránh treo request vài phút khi SMTP/Gmail chậm hoặc sai cấu hình
+    connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS) || 12000,
+    greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS) || 12000,
+    socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS) || 20000,
+    tls: { minVersion: 'TLSv1.2' }
   });
   return _transporter;
 }
@@ -71,7 +89,7 @@ async function sendPasswordResetEmail(opts) {
     throw new Error('SMTP chưa cấu hình');
   }
 
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = resolveMailFrom();
   const expiresText = expiresAt
     ? new Date(expiresAt).toLocaleString('vi-VN')
     : 'trong vòng 1 giờ';
@@ -97,7 +115,7 @@ async function sendPasswordResetEmail(opts) {
     html
   });
 
-  console.log('[Mail] Password reset sent to', to, 'messageId=', info && info.messageId);
+  console.log('[Mail] Password reset sent to', to, 'from=', from, 'messageId=', info && info.messageId);
   return info;
 }
 

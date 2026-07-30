@@ -2,6 +2,8 @@
 :root {
   --ds-admin-color-brand: #007aff;
   --ds-admin-color-brand-hover: #0062cc;
+  --ds-admin-color-personal: #5b3fbf;
+  --ds-admin-color-warning-ink: #8a6d00;
   --ds-admin-color-navy: #0a192f;
   --ds-admin-color-surface: #ffffff;
   --ds-admin-color-canvas: #f6f7fb;
@@ -13,6 +15,8 @@
 
   --brand-primary: var(--ds-admin-color-brand);
   --brand-primary-hover: var(--ds-admin-color-brand-hover);
+  --brand-personal: var(--ds-admin-color-personal);
+  --brand-warning-ink: var(--ds-admin-color-warning-ink);
   --brand-navy: var(--ds-admin-color-navy);
   --admin-surface: var(--ds-admin-color-surface);
   --admin-shell-bg: var(--ds-admin-color-canvas);

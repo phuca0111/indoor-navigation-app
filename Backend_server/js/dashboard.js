@@ -8779,7 +8779,7 @@ async function loadPersonalBilling() {
       badge.style.display = '';
       badge.textContent = isExpiredPaid ? (planCode + ' · Hết hạn') : planCode;
       badge.style.background = isExpiredPaid ? '#fee4e2' : (isPaidActive ? '#fff3cd' : '#eef');
-      badge.style.color = isExpiredPaid ? '#b42318' : (isPaidActive ? '#8a6d00' : '#5b3fbf');
+      badge.style.color = isExpiredPaid ? '#b42318' : (isPaidActive ? 'var(--brand-warning-ink)' : 'var(--brand-personal)');
     }
 
     if (planNameEl) planNameEl.textContent = (currentMeta && currentMeta.name) || planCode;

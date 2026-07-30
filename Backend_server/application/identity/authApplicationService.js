@@ -491,24 +491,28 @@ async function issuePasswordReset(email, context) {
 
 async function requestPasswordResetDelivery(email, context) {
   const issued = await issuePasswordReset(email, context);
-  if (!issued) return { issued: false, emailSent: false };
-  let emailSent = false;
-  if (isSmtpConfigured()) {
-    try {
-      await sendPasswordResetEmail({
-        to: issued.user.email,
-        resetLink: buildPasswordResetLink(issued.rawToken),
-        expiresAt: issued.expiresAt
-      });
-      emailSent = true;
-    } catch (err) {
-      console.warn('[Mail] Password reset SMTP failed:', err && err.message ? err.message : err);
-      emailSent = false;
-    }
-  } else {
+  if (!issued) return { issued: false, emailSent: false, emailQueued: false };
+
+  if (!isSmtpConfigured()) {
     console.warn('[Mail] Password reset skipped: SMTP chưa cấu hình (SMTP_HOST/USER/PASS).');
+    return { ...issued, issued: true, emailSent: false, emailQueued: false };
   }
-  return { ...issued, issued: true, emailSent };
+
+  // Không chờ SMTP xong — trả HTTP nhanh; gửi mail nền (log lỗi nếu fail)
+  const mailOpts = {
+    to: issued.user.email,
+    resetLink: buildPasswordResetLink(issued.rawToken),
+    expiresAt: issued.expiresAt
+  };
+  setImmediate(() => {
+    sendPasswordResetEmail(mailOpts).catch((err) => {
+      console.warn('[Mail] Password reset SMTP failed:', err && err.message ? err.message : err);
+      if (err && err.code) console.warn('[Mail] SMTP code:', err.code);
+      if (err && err.response) console.warn('[Mail] SMTP response:', err.response);
+      if (err && err.responseCode) console.warn('[Mail] SMTP responseCode:', err.responseCode);
+    });
+  });
+  return { ...issued, issued: true, emailSent: false, emailQueued: true };
 }
 
 async function resetPassword(rawToken, password, context) {
