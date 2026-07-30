@@ -41,9 +41,57 @@ function buildPasswordResetLink(rawToken) {
   return getPublicBaseUrl() + '/admin/reset-password.html?token=' + encodeURIComponent(rawToken);
 }
 
+function isResendRestrictedFromEmail(email) {
+  const e = String(email || '').toLowerCase().trim();
+  return (
+    !e ||
+    e === 'onboarding@resend.dev' ||
+    e.endsWith('@gmail.com') ||
+    e.endsWith('@googlemail.com') ||
+    /email_gmail_cua_ban|your@gmail\.com|example\.com/i.test(e)
+  );
+}
+
+/** From ưu tiên domain đã verify khi gửi qua Resend (tránh chỉ gửi được tới email tài khoản Resend). */
+function resolveVerifiedResendFrom() {
+  const explicit = String(process.env.RESEND_FROM || '').trim();
+  if (explicit && !isResendRestrictedFromEmail(parseFromAddress(explicit).email)) {
+    return explicit;
+  }
+  try {
+    const host = new URL(getPublicBaseUrl()).hostname.replace(/^www\./i, '');
+    if (host && host.includes('.') && !/localhost|onrender\.com$/i.test(host)) {
+      return `Indoor Nav <noreply@${host}>`;
+    }
+  } catch (_) { /* ignore */ }
+  return '';
+}
+
 function resolveMailFrom() {
   const user = process.env.SMTP_USER || process.env.MAIL_FROM || '';
-  const raw = String(process.env.SMTP_FROM || process.env.MAIL_FROM || user || '').trim();
+  const raw = String(
+    process.env.RESEND_FROM || process.env.SMTP_FROM || process.env.MAIL_FROM || user || ''
+  ).trim();
+
+  if (process.env.RESEND_API_KEY) {
+    const parsed = parseFromAddress(raw);
+    if (isResendRestrictedFromEmail(parsed.email)) {
+      const fallback = resolveVerifiedResendFrom();
+      if (fallback) {
+        console.warn(
+          '[Mail] Resend: From bị hạn chế (',
+          parsed.email || raw || '(empty)',
+          ') → dùng',
+          fallback
+        );
+        return fallback;
+      }
+      console.warn(
+        '[Mail] Resend: From vẫn là Gmail/onboarding — chỉ gửi được tới email tài khoản Resend. Đặt RESEND_FROM hoặc SMTP_FROM=noreply@navindoor.info'
+      );
+    }
+  }
+
   if (!raw || /email_gmail_cua_ban|your@gmail\.com|example\.com/i.test(raw)) {
     if (process.env.SMTP_FROM) {
       console.warn('[Mail] SMTP_FROM giống placeholder — dùng SMTP_USER =', user);
