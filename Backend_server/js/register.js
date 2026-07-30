@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     window.location.replace('/admin/dashboard.html');
                     return;
                 }
-                messageP.innerHTML = '<strong>Đăng ký thành công!</strong> Bạn có thể <a href="index.html" style="color:#007AFF;">đăng nhập</a>.';
+                messageP.innerHTML = '<strong>Đăng ký thành công!</strong> Bạn có thể <a href="index.html" style="color:var(--brand-primary);">đăng nhập</a>.';
                 messageP.style.display = 'block';
                 form.reset();
             } else {
