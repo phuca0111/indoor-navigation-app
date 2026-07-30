@@ -3,9 +3,10 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// Điện thoại thật: cùng WiFi với laptop. Cập nhật theo IPv4 Wi-Fi từ ipconfig.
+// Điện thoại thật (local): cùng WiFi với laptop — cập nhật IPv4 từ ipconfig.
 val DEV_SERVER_IP = "192.168.2.21"
 val DEV_SERVER_PORT = "5000"
+val PROD_API_BASE = "https://indoor-navigation-app-sqiu.onrender.com/api/tptp-bank/"
 
 android {
     namespace = "com.tptp.bank"
@@ -15,13 +16,24 @@ android {
         applicationId = "com.tptp.bank"
         minSdk = 24
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.0.1"
-        buildConfigField(
-            "String",
-            "BASE_URL",
-            "\"http://$DEV_SERVER_IP:$DEV_SERVER_PORT/api/tptp-bank/\""
-        )
+        versionCode = 3
+        versionName = "1.1.0"
+    }
+
+    flavorDimensions += "env"
+    productFlavors {
+        create("local") {
+            dimension = "env"
+            buildConfigField(
+                "String",
+                "BASE_URL",
+                "\"http://$DEV_SERVER_IP:$DEV_SERVER_PORT/api/tptp-bank/\""
+            )
+        }
+        create("prod") {
+            dimension = "env"
+            buildConfigField("String", "BASE_URL", "\"$PROD_API_BASE\"")
+        }
     }
 
     buildTypes {
@@ -39,15 +51,14 @@ android {
     }
 }
 
-// Android Studio có thể còn cache variant cũ (emulatorDebug / localDebug)
 afterEvaluate {
-    tasks.findByName("assembleDebug")?.let { assembleDebug ->
-        listOf("assembleEmulatorDebug", "assembleLocalDebug").forEach { legacyName ->
+    tasks.findByName("assembleLocalDebug")?.let { localDebug ->
+        listOf("assembleDebug", "assembleEmulatorDebug").forEach { legacyName ->
             if (tasks.findByName(legacyName) == null) {
                 tasks.register(legacyName) {
                     group = "build"
-                    description = "Alias → assembleDebug (variant cũ đã gỡ)"
-                    dependsOn(assembleDebug)
+                    description = "Alias → assembleLocalDebug"
+                    dependsOn(localDebug)
                 }
             }
         }
