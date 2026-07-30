@@ -1562,7 +1562,7 @@ fun MapScreen(
                     if (showLowConfidenceDialog) {
                         AlertDialog(
                             onDismissRequest = { showLowConfidenceDialog = false },
-                            title = { Text(tr("⚠️ Cảnh báo độ chính xác", "⚠️ Accuracy warning")) },
+                            title = { Text(tr("Cảnh báo độ chính xác", "Accuracy warning")) },
                             text = {
                                 Text(
                                     tr(

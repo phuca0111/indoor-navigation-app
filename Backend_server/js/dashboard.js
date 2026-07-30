@@ -483,12 +483,12 @@ function formatDetailQuotaBanner(quota, org) {
 
   let msg = parts.join(' · ');
   if (quota.billing_status === 'GRACE_PERIOD') {
-    msg = '⏳ Gia hạn ' + (quota.grace_days_left != null ? quota.grace_days_left + ' ngày' : '') +
+    msg = 'Gia hạn ' + (quota.grace_days_left != null ? quota.grace_days_left + ' ngày' : '') +
       ' — sau đó khóa phần vượt hạn mức. ' + msg;
   } else if (quota.enforcement_active && (quota.buildings?.locked > 0 || quota.users?.locked > 0)) {
-    msg = '🔒 ' + msg + ' — cần giảm tài nguyên hoặc nâng gói Pro/Doanh nghiệp.';
+    msg = msg + ' — cần giảm tài nguyên hoặc nâng gói Pro/Doanh nghiệp.';
   } else if (quota.buildings?.over || quota.users?.over) {
-    msg = '⚠️ ' + msg + ' — đang vượt hạn mức gói ' + escapeHtml(formatPlanNameVi(org?.plan || 'FREE')) + '.';
+    msg = msg + ' — đang vượt hạn mức gói ' + escapeHtml(formatPlanNameVi(org?.plan || 'FREE')) + '.';
   }
 
   const cls = (quota.enforcement_active && (quota.buildings?.locked > 0 || quota.users?.locked > 0))
@@ -1321,27 +1321,27 @@ function updatePlanQuotaBadge(user, quotaFromStats) {
   const billing = String(quota.billing_status || 'ACTIVE').toUpperCase();
   const role = currentUser?.role || user?.role || '';
   if (billing === 'ARCHIVED') {
-    msg = '📦 Tổ chức đã lưu trữ. Gia hạn để khôi phục — dữ liệu vẫn được giữ.';
+    msg = 'Tổ chức đã lưu trữ. Gia hạn để khôi phục — dữ liệu vẫn được giữ.';
   } else if (billing === 'EXPIRED') {
     if (role === 'BUILDING_ADMIN') {
-      msg = '⛔ Gói tổ chức đã hết hạn. Liên hệ Quản trị tổ chức để gia hạn.';
+      msg = 'Gói tổ chức đã hết hạn. Liên hệ Quản trị tổ chức để gia hạn.';
     } else {
-      msg = '⛔ Gói đã hết hạn. Chỉ còn xem Dashboard / dữ liệu. Gia hạn để mở lại đầy đủ.';
+      msg = 'Gói đã hết hạn. Chỉ còn xem Dashboard / dữ liệu. Gia hạn để mở lại đầy đủ.';
     }
   } else if (billing === 'GRACE_PERIOD') {
     const days = quota.grace_days_left != null ? quota.grace_days_left : (quota.grace_period_days || 15);
     const planName = quota.plan || org?.plan || 'gói';
     if (role === 'BUILDING_ADMIN') {
-      msg = '⚠️ Gói tổ chức đã hết hạn (còn ' + days + ' ngày gia hạn). Liên hệ Quản trị tổ chức.';
+      msg = 'Gói tổ chức đã hết hạn (còn ' + days + ' ngày gia hạn). Liên hệ Quản trị tổ chức.';
     } else {
-      msg = '⚠️ Gói ' + planName + ' đã hết hạn. Gia hạn trong ' + days +
+      msg = 'Gói ' + planName + ' đã hết hạn. Gia hạn trong ' + days +
         ' ngày để tiếp tục sử dụng đầy đủ. Không tạo tòa/user mới, không Publish/Upload CAD.';
     }
   } else if (quota.enforcement_active && (quota.buildings?.locked > 0 || quota.users?.locked > 0)) {
-    msg = '🔒 ' + (msg ? msg + ' — ' : '') +
+    msg = (msg ? msg + ' — ' : '') +
       'Vượt hạn mức: vẫn xem/sửa được, không tạo mới. Giảm bớt hoặc nâng cấp gói.';
   } else if (quota.buildings?.over || quota.users?.over) {
-    msg = '⚠️ ' + (msg ? msg + ' — ' : '') +
+    msg = (msg ? msg + ' — ' : '') +
       'Đang vượt hạn mức gói. Không tạo mới cho đến khi nâng gói hoặc xóa bớt.';
   }
 
@@ -2934,7 +2934,7 @@ function renderBuildingsFromCache() {
     } else if (b.quota_locked) {
       actions =
         '<button type="button" class="ba-btn ba-btn--detail" onclick="openBuildingDetail(\'' + b._id + '\')">Chi tiết</button>' +
-        '<span class="ba-note" title="Bị khóa quota">🔒 Khóa</span>';
+        '<span class="ba-note" title="Bị khóa quota">Khóa</span>';
       if (canDelete) {
         actions +=
           '<button type="button" class="ba-btn ba-btn--danger" onclick="deleteBuilding(\'' + b._id + '\')">Vô hiệu</button>';
@@ -4837,7 +4837,7 @@ function renderOverviewKpiFromBundle(scope, data) {
 
   let html = '';
   if (scope === 'platform') {
-    if (titleEl) titleEl.textContent = '📊 Tổng quan nền tảng';
+    if (titleEl) titleEl.textContent = 'Tổng quan nền tảng';
     if (introEl) {
       introEl.textContent = 'KPI vận hành + widget báo cáo. Đổi khoảng thời gian ở thanh công cụ.';
     }
@@ -4930,7 +4930,7 @@ function renderOverviewKpiFromBundle(scope, data) {
         });
   } else if (scope === 'organization') {
     const orgName = data.organization?.name || 'Tổ chức';
-    if (titleEl) titleEl.textContent = '📊 Tổng quan — ' + orgName;
+    if (titleEl) titleEl.textContent = ' Tổng quan — ' + orgName;
     if (introEl) introEl.textContent = 'Mức dùng tổ chức của bạn.';
     const b = data.buildings || {};
     const floors = data.floors || {};
@@ -4986,7 +4986,7 @@ function renderOverviewKpiFromBundle(scope, data) {
         'gray', true, 'platformJumpBuildingsInactive()',
         { alert: (b.inactive || 0) > 0, badge: (b.inactive || 0) > 0 ? 'Khôi phục' : '' });
   } else {
-    if (titleEl) titleEl.textContent = '📊 Tổng quan tòa được gán';
+    if (titleEl) titleEl.textContent = ' Tổng quan tòa được gán';
     if (introEl) introEl.textContent = 'Các tòa nhà gắn với tài khoản của bạn.';
     const b = data.buildings || {};
     const floors = data.floors || {};
@@ -8802,10 +8802,10 @@ async function loadPersonalBilling() {
       const lim = d.limits || {};
       const fmt = (v) => (v == null ? '<strong style="color:#12b76a;">Không giới hạn</strong>' : '<strong>' + v + '</strong>');
       quotaEl.innerHTML =
-        '🏢 Tòa nhà: ' + fmt(lim.maxBuildings) + '<br>' +
-        '🏬 Tầng/tòa: ' + fmt(lim.maxFloorsPerBuilding) + '<br>' +
-        '🗺️ Bản đồ: ' + fmt(lim.maxMaps) + '<br>' +
-        '🔗 Mã QR: ' + fmt(lim.maxQr);
+        'Tòa nhà: ' + fmt(lim.maxBuildings) + '<br>' +
+        'Tầng/tòa: ' + fmt(lim.maxFloorsPerBuilding) + '<br>' +
+        'Bản đồ: ' + fmt(lim.maxMaps) + '<br>' +
+        'Mã QR: ' + fmt(lim.maxQr);
     }
 
     // Mỗi gói cá nhân = 1 thẻ riêng (gói mới trong catalog tự xuất hiện)
@@ -8841,7 +8841,7 @@ async function loadPersonalBilling() {
               '</div>' +
               featHtml +
               '<button type="button" class="btn-add" style="background:#f39c12; width:100%; margin-top:auto;" ' +
-                'onclick="openPersonalUpgradeModal(\'' + escapeHtml(code) + '\')">⭐ ' + verb + ' ' + name + '</button>' +
+                'onclick="openPersonalUpgradeModal(\'' + escapeHtml(code) + '\')">' + verb + ' ' + name + '</button>' +
             '</div>'
           );
         }).join('');
@@ -9051,7 +9051,7 @@ async function loadMyJoinRequests() {
     if (!res.ok) { box.innerHTML = ''; return; }
     const rows = await res.json();
     if (!Array.isArray(rows) || !rows.length) { box.innerHTML = ''; return; }
-    const statusLabel = { PENDING: '⏳ Chờ duyệt', APPROVED: '✅ Đã duyệt', REJECTED: '❌ Bị từ chối', CANCELLED: 'Đã hủy' };
+    const statusLabel = { PENDING: 'Chờ duyệt', APPROVED: 'Đã duyệt', REJECTED: 'Bị từ chối', CANCELLED: 'Đã hủy' };
     box.innerHTML = '<strong>Yêu cầu tham gia của bạn:</strong> ' + rows.map(r =>
       `<span style="display:inline-block; margin:4px 6px 0 0; padding:3px 8px; background:#fff; border:1px solid #e0d7ff; border-radius:6px;">${escapeHtml(r.organization?.name || r.organization?.slug || 'Tổ chức')} — ${statusLabel[r.status] || r.status}</span>`
     ).join('');
@@ -9997,7 +9997,7 @@ async function compareMapVersion(toVersion) {
     });
     const header = 'So sánh v' + fromVersion + ' → v' + toVersion + ' (tầng ' + floor + ')';
     const note = data.partial_snapshot
-      ? '\n\n⚠️ Một trong hai bản chỉ có snapshot một phần — số liệu phòng/POI có thể thiếu.'
+      ? '\n\nMột trong hai bản chỉ có snapshot một phần — số liệu phòng/POI có thể thiếu.'
       : '';
     if (statusEl) {
       statusEl.style.display = 'block';
@@ -10044,7 +10044,7 @@ async function rollbackMapVersion(version, hasFullSnapshot) {
       let msg = (data.message || 'Đã khôi phục thành công!') +
         '\n\nPhiên bản hiện tại trên server: v' + newVer + '.';
       if (data.rollback_mode === 'graph_only') {
-        msg += '\n\n⚠️ Chỉ khôi phục nút đường đi và cạnh nối (bản cũ không có bản lưu phòng/cửa).';
+        msg += '\n\nChỉ khôi phục nút đường đi và cạnh nối (bản cũ không có bản lưu phòng/cửa).';
       }
       msg += '\n\nBước tiếp: Dashboard → Vẽ bản đồ → Ctrl+F5.';
       if (statusEl) {
@@ -10453,7 +10453,7 @@ function renderUsers(users) {
     let actionsHtml =
       '<button type="button" class="ua-btn ua-btn--detail" onclick="openUserDetailPage(\'' + u._id + '\')" title="Xem chi tiết tài khoản">Chi tiết</button> ';
     if (u.quota_locked && !isAdminSelf) {
-      actionsHtml += '<span class="user-action-note" title="Vượt hạn mức gói">🔒 Vượt hạn mức</span>';
+      actionsHtml += '<span class="user-action-note" title="Vượt hạn mức gói">Vượt hạn mức</span>';
     } else if (isAdminSelf) {
       actionsHtml += '<span class="user-action-note">Tự bảo vệ</span>';
     } else {
