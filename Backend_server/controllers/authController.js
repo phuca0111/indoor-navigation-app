@@ -32,8 +32,9 @@ function context(req) {
   };
 }
 
-function shouldExposeResetToken({ emailSent }) {
-  if (process.env.NODE_ENV === 'production' || emailSent) return false;
+function shouldExposeResetToken({ emailSent, emailQueued }) {
+  // Production / đã gửi hoặc đang xếp hàng SMTP → không lộ raw token
+  if (process.env.NODE_ENV === 'production' || emailSent || emailQueued) return false;
   if (process.env.AUTH_RESET_TOKEN_IN_RESPONSE === 'true') return true;
   if (process.env.AUTH_RESET_TOKEN_IN_RESPONSE === 'false') return false;
   return true;
@@ -194,8 +195,11 @@ async function forgotPassword(req, res) {
     const generic = { message: 'Nếu email tồn tại trong hệ thống, hướng dẫn đặt lại mật khẩu đã được gửi.' };
     const issued = await requestPasswordResetDelivery(email, context(req));
     if (!issued.issued) return res.status(200).json(generic);
-    const body = { ...generic, ...(issued.emailSent ? { emailSent: true } : {}) };
-    if (shouldExposeResetToken({ emailSent: issued.emailSent })) {
+    const body = {
+      ...generic,
+      ...((issued.emailSent || issued.emailQueued) ? { emailSent: true } : {})
+    };
+    if (shouldExposeResetToken({ emailSent: issued.emailSent, emailQueued: issued.emailQueued })) {
       body.resetToken = issued.rawToken;
       body.expiresAt = issued.expiresAt;
     }

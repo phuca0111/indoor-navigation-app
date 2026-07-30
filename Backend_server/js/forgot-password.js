@@ -9,7 +9,9 @@ document.getElementById('forgotForm').addEventListener('submit', async function 
   const mailHint = document.getElementById('mailHint');
   const forgotPanel = document.getElementById('forgotPanel');
   const successPanel = document.getElementById('successPanel');
+  const successEmail = document.getElementById('successEmail');
   const submitBtn = e.target.querySelector('button[type="submit"]');
+  const defaultBtnLabel = submitBtn ? submitBtn.textContent : '';
 
   msg.style.display = 'none';
   if (devBox) devBox.style.display = 'none';
@@ -17,6 +19,7 @@ document.getElementById('forgotForm').addEventListener('submit', async function 
   if (submitBtn) {
     submitBtn.disabled = true;
     submitBtn.style.opacity = '0.7';
+    submitBtn.textContent = 'Đang gửi…';
   }
 
   try {
@@ -48,6 +51,7 @@ document.getElementById('forgotForm').addEventListener('submit', async function 
     }
 
     // Production / SMTP: màn hình thành công Stitch
+    if (successEmail) successEmail.textContent = email;
     if (forgotPanel) forgotPanel.style.display = 'none';
     if (successPanel) successPanel.style.display = 'block';
   } catch (err) {
@@ -58,6 +62,7 @@ document.getElementById('forgotForm').addEventListener('submit', async function 
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.style.opacity = '';
+      submitBtn.textContent = defaultBtnLabel || 'Gửi yêu cầu';
     }
   }
 });
