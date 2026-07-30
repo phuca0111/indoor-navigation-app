@@ -17,7 +17,7 @@ function isSmtpConfigured() {
   return !!(
     process.env.SMTP_HOST &&
     process.env.SMTP_USER &&
-    process.env.SMTP_PASS
+    String(process.env.SMTP_PASS || '').replace(/\s+/g, '')
   );
 }
 
@@ -32,6 +32,7 @@ function getTransporter() {
 
   const port = Number(process.env.SMTP_PORT) || 587;
   const secure = process.env.SMTP_SECURE === 'true' || port === 465;
+  const pass = String(process.env.SMTP_PASS || '').replace(/\s+/g, '');
 
   _transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -39,7 +40,7 @@ function getTransporter() {
     secure,
     auth: {
       user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
+      pass
     }
   });
   return _transporter;

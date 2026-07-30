@@ -501,9 +501,12 @@ async function requestPasswordResetDelivery(email, context) {
         expiresAt: issued.expiresAt
       });
       emailSent = true;
-    } catch (_) {
+    } catch (err) {
+      console.warn('[Mail] Password reset SMTP failed:', err && err.message ? err.message : err);
       emailSent = false;
     }
+  } else {
+    console.warn('[Mail] Password reset skipped: SMTP chưa cấu hình (SMTP_HOST/USER/PASS).');
   }
   return { ...issued, issued: true, emailSent };
 }

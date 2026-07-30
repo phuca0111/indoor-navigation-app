@@ -78,9 +78,9 @@
                   <span>Tòa nhà</span>
                 </button>
                 <!-- Alias shell: maps → buildings (giữ data-tab + nhãn cũ cho contract Phase 8) -->
-                <button type="button" class="tab-btn" data-tab="maps" onclick="switchTab('maps')" hidden aria-hidden="true" tabindex="-1">
+                <!-- <button type="button" class="tab-btn" data-tab="maps" onclick="switchTab('maps')" hidden aria-hidden="true" tabindex="-1">
                   <span>Chi tiết tòa</span>
-                </button>
+                </button> -->
                 <button type="button" class="tab-btn creator-tab-btn" data-tab="creator" data-permission="creator.stats.read" onclick="switchTab('creator')" title="Thống kê bản đồ và tòa nhà của bạn">
                   <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 2 5-6"/><path d="M18 7h-3v3"/></svg></span>
                   <span>Bản đồ của tôi</span>
@@ -235,7 +235,7 @@
               </button>
               <div class="admin-nav-group-items">
                 <button type="button" class="tab-btn super-admin-only website-tab-btn" data-tab="website" data-website-sub="articles" data-permission="platform.cms.manage" onclick="openWebsiteSub('articles')">
-                  <span class="admin-menu-icon" aria-hidden="true">📰</span>
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6z"/></svg></span>
                   <span>Blog &amp; News</span>
                 </button>
                 <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.contacts.manage" data-tab="website" data-website-sub="forms" onclick="openWebsiteSub('forms')">
@@ -256,7 +256,7 @@
                   <span>Cài đặt Website</span>
                 </button>
                 <button type="button" class="tab-btn super-admin-only website-tab-btn" data-permission="platform.cms.manage" data-tab="website" data-website-sub="audit" onclick="openWebsiteSub('audit')">
-                  <span class="admin-menu-icon" aria-hidden="true">🧾</span>
+                  <span class="admin-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 3 2V2l-3 2-3-2-3 2-3-2-3 2-3-2z"/><path d="M8 7h8"/><path d="M8 11h8"/><path d="M8 15h5"/></svg></span>
                   <span>Nhật ký CMS</span>
                 </button>
                 <button type="button" class="tab-btn super-admin-only website-tab-btn is-website-legacy" data-tab="website" data-website-sub="pages" data-permission="platform.cms.manage" onclick="openWebsiteSub('pages')">
@@ -375,7 +375,7 @@
         <!-- Thông tin chào mừng -->
         <div class="welcome-box">
             <p id="userOrgLine" class="user-org-line" style="display:none;">
-                🏢 Tổ chức: <strong id="userOrgName"></strong>
+                Tổ chức: <strong id="userOrgName"></strong>
             </p>
             <h3>Xin chào, <span id="userName">Admin</span>!</h3>
             <p>Vai trò: <span id="userRole" class="badge">BUILDING_ADMIN</span>
@@ -386,7 +386,7 @@
 
         <!-- Phase 4.6 cũ: khối tổng quan mỗi tab — AD14 ẩn, chuyển sang tab overview -->
         <div id="platformOverviewSection" class="platform-overview-section" style="display:none;" hidden aria-hidden="true">
-            <h4 id="platformOverviewTitle" class="platform-overview-title">📊 Tổng quan</h4>
+            <h4 id="platformOverviewTitle" class="platform-overview-title">Tổng quan</h4>
             <p class="platform-overview-hint">Bấm thẻ để mở tab tương ứng và lọc dữ liệu</p>
             <div id="platformOverviewCards" class="org-overview-grid" aria-label="Thống kê tổng quan"></div>
         </div>
@@ -396,7 +396,7 @@
           <div class="admin-section overview-tab-section">
             <div class="section-header analytics-header-row overview-header-row">
               <div>
-                <h3 id="overviewPageTitle">📊 Tổng quan</h3>
+                <h3 id="overviewPageTitle">Tổng quan</h3>
                 <p class="analytics-tab-intro" id="overviewPageIntro">Nhìn nhanh vận hành SaaS. Đổi khoảng thời gian để làm mới widget phụ thuộc thời gian.</p>
               </div>
               <div class="analytics-toolbar overview-toolbar">
@@ -641,7 +641,7 @@
             <div class="buildings-section">
                 <div id="buildingListView">
                 <div class="section-header">
-                    <h3>🏢 Danh Sách Tòa Nhà</h3>
+                    <h3>   Danh Sách Tòa Nhà</h3>
                     <div style="display:flex; gap:8px; flex-wrap:wrap;">
                       <button type="button" class="btn-edit" onclick="openPublishJobsModal()" title="Job xuất bản / retry">Job xuất bản</button>
                     <button id="btnAddBuilding" class="btn-add" onclick="openAddBuildingModal()">+ Thêm Tòa Nhà Mới</button>
@@ -651,7 +651,7 @@
                 <!-- Personal Workspace: chỉ REGISTERED_USER -->
                 <div id="personalWsBar" style="display:none; margin-bottom:16px;">
                     <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
-                        <strong style="color:#5b3fbf; font-size:15px;">🚀 Không gian cá nhân</strong>
+                        <strong style="color:#5b3fbf; font-size:15px;">  Không gian cá nhân</strong>
                         <span id="personalPlanBadge" style="display:none; padding:2px 10px; border-radius:12px; font-size:12px; font-weight:600;"></span>
                     </div>
                     <div class="pws-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; align-items:stretch;">
@@ -673,8 +673,8 @@
                             <div style="font-size:22px; font-weight:700; color:#1d2939;">Tổ chức</div>
                             <p id="personalOrgUpgradeDesc" style="margin:8px 0 14px; font-size:13px; color:#667085; flex:1;">Tạo tổ chức để quản lý nhiều thành viên, phân quyền &amp; cộng tác — hoặc tham gia một tổ chức có sẵn.</p>
                             <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                                <button id="btnCreateOrgCheckout" class="btn-create" style="flex:1; min-width:150px;" onclick="openCreateOrgCheckout()">🏛️ Nâng cấp lên tổ chức</button>
-                                <button class="btn-add" style="background:#8e44ad;" onclick="openJoinOrgModal()">🤝 Tham gia</button>
+                                <button id="btnCreateOrgCheckout" class="btn-create" style="flex:1; min-width:150px;" onclick="openCreateOrgCheckout()">  Nâng cấp lên tổ chức</button>
+                                <button class="btn-add" style="background:#8e44ad;" onclick="openJoinOrgModal()">  Tham gia</button>
                             </div>
                         </div>
                         <div id="personalOrgLockedCard" style="background:#f8f9fb; border:1px dashed #d0d5dd; border-radius:12px; padding:16px 18px; display:none; flex-direction:column;">
@@ -683,7 +683,7 @@
                             <p style="margin:8px 0 14px; font-size:13px; color:#667085; flex:1;">Tạo tổ chức yêu cầu gói cá nhân trả phí (vd. <strong>PRO</strong>). Bạn vẫn có thể xin tham gia tổ chức có sẵn.</p>
                             <div style="display:flex; gap:8px; flex-wrap:wrap;">
                                 <button type="button" class="btn-edit" style="flex:1; min-width:150px;" onclick="document.getElementById('personalUpgradePlans')?.scrollIntoView({behavior:'smooth',block:'nearest'})">Mở khóa tạo tổ chức</button>
-                                <button class="btn-add" style="background:#8e44ad;" onclick="openJoinOrgModal()">🤝 Tham gia</button>
+                                <button class="btn-add" style="background:#8e44ad;" onclick="openJoinOrgModal()">  Tham gia</button>
                             </div>
                         </div>
                     </div>
@@ -946,7 +946,7 @@
     <div class="section-header registration-page-header">
       <div class="registration-title-row">
         <div>
-        <h3>📝 Hồ Sơ Đăng Ký Tổ Chức</h3>
+        <h3>Hồ Sơ Đăng Ký Tổ Chức</h3>
           <p>Tiếp nhận, kiểm tra và phê duyệt yêu cầu tạo tổ chức mới.</p>
       </div>
         <button class="btn-edit" onclick="fetchRegistrations()">Làm mới</button>
@@ -996,7 +996,7 @@
   <div class="admin-section">
     <div id="orgListView">
     <div class="section-header">
-      <h3>🏛️ Quản lý tổ chức</h3>
+      <h3>Quản lý tổ chức</h3>
       <button id="btnAddOrg" class="btn-add super-admin-only" onclick="openAddOrgModal()" style="background:#8e44ad; color:white;">+ Thêm Tổ Chức</button>
     </div>
     <div id="orgOverviewBlock">
@@ -1100,7 +1100,7 @@
 <div id="tab-billing" class="tab-content" style="display:none;">
   <div class="admin-section billing-tab-section">
     <div class="section-header">
-      <h3>💳 Gói & Thanh toán</h3>
+      <h3>Gói & Thanh toán</h3>
       <p class="billing-tab-intro">Quản lý subscription, hóa đơn và chu kỳ gói. Hệ thống tự theo dõi hạn qua scheduler + webhook.</p>
     </div>
     <div class="billing-tab-toolbar">
@@ -2165,7 +2165,7 @@
   <div class="admin-section analytics-tab-section finance-tab-section">
     <div class="section-header analytics-header-row finance-header-row">
       <div>
-        <h3>💰 Thu – Chi</h3>
+        <h3>Thu – Chi</h3>
         <p class="analytics-tab-intro">Theo dõi tiền vào (thu từ khách), tiền ra (chi vận hành) và lãi. Chỉ <strong>Super Admin</strong>.</p>
       </div>
       <div class="analytics-toolbar finance-toolbar">
@@ -2726,7 +2726,7 @@
     <!-- ===== MODAL: THÊM TÒA NHÀ ===== -->
     <div id="addBuildingModal" class="modal" style="display:none;">
         <div class="modal-content">
-            <h3>🏢 Thêm Tòa Nhà Mới</h3>
+            <h3>Thêm Tòa Nhà Mới</h3>
             <label>Tên Tòa Nhà:</label>
             <input type="text" id="addBuildingName" placeholder="Ví dụ: Tòa nhà A...">
             <label>Địa Chỉ:</label>
@@ -2762,7 +2762,7 @@
     <!-- ===== MODAL: TẠO TỔ CHỨC (REGISTERED_USER → ORG_ADMIN) ===== -->
     <div id="createOrgModal" class="modal" style="display:none;">
         <div class="modal-content">
-            <h3>🏛️ Tạo tổ chức mới</h3>
+            <h3>Tạo tổ chức mới</h3>
             <p style="font-size:13px; color:#666; margin-top:0;">Bạn sẽ trở thành <strong>Quản trị tổ chức (ORG_ADMIN)</strong>. Toàn bộ tòa nhà cá nhân hiện có sẽ được chuyển vào tổ chức.</p>
             <label>Tên tổ chức:</label>
             <input type="text" id="createOrgName" placeholder="Ví dụ: Công ty ABC">
@@ -2784,7 +2784,7 @@
     <!-- ===== MODAL: NÂNG CẤP PRO CÁ NHÂN (thanh toán qua ví TPTPbank) ===== -->
     <div id="personalUpgradeModal" class="modal" style="display:none;">
         <div class="modal-content">
-            <h3>⭐ Nâng cấp gói PRO cá nhân</h3>
+            <h3>Nâng cấp gói PRO cá nhân</h3>
             <p style="font-size:13px; color:#666; margin-top:0;">Mở khóa: không giới hạn tòa nhà / tầng / bản đồ / QR. Thanh toán bằng ví <strong>TPTPbank</strong>.</p>
             <div id="personalUpgradePrice" style="font-size:14px; font-weight:600; color:#5b3fbf; margin-bottom:6px;">Giá: — đ / tháng</div>
             <label>Số tháng:</label>
@@ -2807,7 +2807,7 @@
     <!-- ===== MODAL: THAM GIA TỔ CHỨC (REGISTERED_USER → chờ duyệt) ===== -->
     <div id="joinOrgModal" class="modal" style="display:none;">
         <div class="modal-content">
-            <h3>🤝 Tham gia tổ chức</h3>
+            <h3>Tham gia tổ chức</h3>
             <p style="font-size:13px; color:#666; margin-top:0;">Nhập <strong>mã tổ chức (slug)</strong> do quản trị tổ chức cung cấp. Sau khi được duyệt, bạn sẽ trở thành <strong>Quản trị tòa nhà</strong> của tổ chức đó.</p>
             <label>Mã tổ chức (slug):</label>
             <input type="text" id="joinOrgSlug" placeholder="ví dụ: cong-ty-abc">
@@ -2824,7 +2824,7 @@
     <!-- ===== MODAL: SỬA TÒA NHÀ ===== -->
     <div id="editBuildingModal" class="modal" style="display:none;">
         <div class="modal-content">
-            <h3>✏️ Sửa Thông Tin Tòa Nhà</h3>
+            <h3>Sửa Thông Tin Tòa Nhà</h3>
             <input type="hidden" id="editBuildingId">
             <label>Tên Tòa Nhà:</label>
             <input type="text" id="editBuildingName">
@@ -2875,7 +2875,7 @@
     <!-- ===== MODAL: TẠO TÀI KHOẢN MỚI (2.10) ===== -->
     <div id="createUserModal" class="modal" style="display:none;">
       <div class="modal-content">
-        <h3>➕ Thêm Tài Khoản Mới</h3>
+        <h3>Thêm Tài Khoản Mới</h3>
 
         <label>Email <span style="color:#e74c3c;">*</span>:</label>
         <input type="email" id="createUserEmail" placeholder="nhanvien@example.com">
@@ -3034,7 +3034,7 @@
     <!-- ===== MODAL: LỊCH SỬ PHIÊN BẢN BẢN ĐỒ ===== -->
     <div id="mapVersionModal" class="modal" style="display:none;">
         <div class="modal-content" style="max-width:600px;">
-            <h3>📜 Lịch Sử Phiên Bản Bản Đồ</h3>
+            <h3>Lịch Sử Phiên Bản Bản Đồ</h3>
             <p id="mapVersionTitle" style="color:#666; margin-bottom:12px;"></p>
             <div style="margin-bottom:12px;">
               <label style="font-size:13px; color:#666; margin-right:8px;">Chọn tầng:</label>
@@ -3075,7 +3075,7 @@
     <!-- ===== MODAL: THÊM TỔ CHỨC ===== -->
     <div id="addOrgModal" class="modal" style="display:none;">
       <div class="modal-content">
-        <h3>🏛️ Thêm Tổ Chức Mới</h3>
+        <h3>Thêm Tổ Chức Mới</h3>
         <p style="font-size:13px; color:#666; margin:0 0 12px 0; font-weight:600;">Thông tin tổ chức</p>
         <div class="form-group">
           <label>Tên tổ chức <span style="color:#e74c3c;">*</span>:</label>

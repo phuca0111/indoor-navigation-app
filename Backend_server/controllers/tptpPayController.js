@@ -77,7 +77,7 @@ async function poll(){
     const d=await r.json();
     if(d.status==='PAID'){
       document.getElementById('statusBox').className='status paid';
-      document.getElementById('statusBox').textContent='✅ Đã thanh toán — đang chuyển về dashboard…';
+      document.getElementById('statusBox').textContent='Đã thanh toán — đang chuyển về dashboard…';
       setTimeout(()=>location.href='/admin/dashboard.html#billing?paid=1',1500);
       return;
     }
@@ -162,7 +162,7 @@ async function getPersonalPayPage(req, res) {
 <div class="brand">TPTPbank</div>
 <div class="merchant">${esc(info.merchant)} · Gói ${esc(info.plan)} (${esc(info.months)} tháng)</div>
 ${paid
-  ? `<div class="state"><div class="ic">✅</div><h2>Đã thanh toán</h2><p style="color:#94a3b8">Giao dịch đã hoàn tất. Bạn có thể quay lại thiết bị ban đầu.</p></div>`
+  ? `<div class="state"><div class="ic">✓</div><h2>Đã thanh toán</h2><p style="color:#94a3b8">Giao dịch đã hoàn tất. Bạn có thể quay lại thiết bị ban đầu.</p></div>`
   : expired
   ? `<div class="state"><div class="ic">⌛</div><h2>Đơn đã hết hạn</h2><p style="color:#94a3b8">Vui lòng tạo lại yêu cầu thanh toán trên thiết bị ban đầu.</p></div>`
   : `<span class="plan">Gói ${esc(info.plan)}</span>
@@ -194,7 +194,7 @@ async function pay(){
     var cr=await fetch('/api/tptp-bank/pay/confirm-personal',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+ld.token},body:JSON.stringify({payment_id:PAYMENT_ID,payment_token:TOKEN})});
     var cd=await cr.json();
     if(!cr.ok){showErr(cd.message||'Thanh toán thất bại.');btn.disabled=false;btn.textContent='Xác nhận thanh toán';return;}
-    document.body.innerHTML='<div class="card" style="text-align:center"><div style="font-size:3rem">✅</div><h2 style="color:#22c55e">Thanh toán thành công!</h2><p style="color:#94a3b8">Gói PRO đã được kích hoạt. Quay lại thiết bị ban đầu để tiếp tục.</p></div>';
+    document.body.innerHTML='<div class="card" style="text-align:center"><div style="font-size:3rem">✓</div><h2 style="color:#22c55e">Thanh toán thành công!</h2><p style="color:#94a3b8">Gói PRO đã được kích hoạt. Quay lại thiết bị ban đầu để tiếp tục.</p></div>';
   }catch(e){showErr('Lỗi kết nối: '+e.message);btn.disabled=false;btn.textContent='Xác nhận thanh toán';}
 }
 </script></body></html>`);
