@@ -27,6 +27,7 @@ const { createOAuthState, verifyOAuthState } = require('../../services/oauthStat
 const {
   isSmtpConfigured,
   isMailConfigured,
+  hasTestTransporter,
   buildPasswordResetLink,
   sendPasswordResetEmail
 } = require('../../services/mailService');
@@ -499,12 +500,19 @@ async function requestPasswordResetDelivery(email, context) {
     return { ...issued, issued: true, emailSent: false, emailQueued: false };
   }
 
-  // Không chờ SMTP xong — trả HTTP nhanh; gửi mail nền (log lỗi nếu fail)
   const mailOpts = {
     to: issued.user.email,
     resetLink: buildPasswordResetLink(issued.rawToken),
     expiresAt: issued.expiresAt
   };
+
+  // Mock transporter: gửi sync để integration test assert được sendMail.
+  // Prod/dev thật: gửi nền — HTTP không treo SMTP/HTTPS.
+  if (hasTestTransporter()) {
+    await sendPasswordResetEmail(mailOpts);
+    return { ...issued, issued: true, emailSent: true, emailQueued: false };
+  }
+
   setImmediate(() => {
     sendPasswordResetEmail(mailOpts).catch((err) => {
       console.warn('[Mail] Password reset mail failed:', err && err.message ? err.message : err);

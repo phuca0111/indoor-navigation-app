@@ -27,9 +27,14 @@ function isHttpsMailConfigured() {
   return !!(process.env.RESEND_API_KEY || process.env.BREVO_API_KEY);
 }
 
-/** SMTP hoặc Resend/Brevo HTTPS */
+/** SMTP, Resend/Brevo HTTPS, hoặc mock transporter (integration test) */
 function isMailConfigured() {
-  return isHttpsMailConfigured() || isSmtpConfigured();
+  return Boolean(_testTransporter) || isHttpsMailConfigured() || isSmtpConfigured();
+}
+
+/** Test hook đang inject mock — caller có thể gửi sync để assert. */
+function hasTestTransporter() {
+  return Boolean(_testTransporter);
 }
 
 function buildPasswordResetLink(rawToken) {
@@ -155,9 +160,12 @@ async function sendViaBrevo({ from, to, subject, text, html }) {
 }
 
 /**
- * Ưu tiên HTTPS (Render), rồi SMTP (local/dev).
+ * Mock test trước; rồi HTTPS (Render); rồi SMTP (local/dev).
  */
 async function deliverMail({ from, to, subject, text, html }) {
+  if (_testTransporter) {
+    return _testTransporter.sendMail({ from, to, subject, text, html });
+  }
   if (process.env.RESEND_API_KEY) {
     return sendViaResend({ from, to, subject, text, html });
   }
@@ -327,6 +335,7 @@ module.exports = {
   isSmtpConfigured,
   isHttpsMailConfigured,
   isMailConfigured,
+  hasTestTransporter,
   getTransporter,
   getPublicBaseUrl,
   buildPasswordResetLink,
