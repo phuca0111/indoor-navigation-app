@@ -25,7 +25,7 @@ const {
 } = require('../../services/googleAuth');
 const { createOAuthState, verifyOAuthState } = require('../../services/oauthState');
 const {
-  isSmtpConfigured,
+  isHttpsMailConfigured,
   isMailConfigured,
   hasTestTransporter,
   buildPasswordResetLink,
@@ -507,12 +507,26 @@ async function requestPasswordResetDelivery(email, context) {
   };
 
   // Mock transporter: gửi sync để integration test assert được sendMail.
-  // Prod/dev thật: gửi nền — HTTP không treo SMTP/HTTPS.
   if (hasTestTransporter()) {
     await sendPasswordResetEmail(mailOpts);
     return { ...issued, issued: true, emailSent: true, emailQueued: false };
   }
 
+  // Resend/Brevo HTTPS nhanh — gửi sync để lỗi From/domain hiện ngay trên Render Logs
+  // (tránh emailSent=true trong khi nền thất bại im lặng với end-user).
+  if (isHttpsMailConfigured()) {
+    try {
+      await sendPasswordResetEmail(mailOpts);
+      return { ...issued, issued: true, emailSent: true, emailQueued: false };
+    } catch (err) {
+      console.warn('[Mail] Password reset mail failed:', err && err.message ? err.message : err);
+      if (err && err.code) console.warn('[Mail] code:', err.code);
+      if (err && err.response) console.warn('[Mail] response:', err.response);
+      return { ...issued, issued: true, emailSent: false, emailQueued: false };
+    }
+  }
+
+  // SMTP (chậm / dễ timeout trên Render): xếp hàng nền.
   setImmediate(() => {
     sendPasswordResetEmail(mailOpts).catch((err) => {
       console.warn('[Mail] Password reset mail failed:', err && err.message ? err.message : err);

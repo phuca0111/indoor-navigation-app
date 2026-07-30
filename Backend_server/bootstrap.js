@@ -76,6 +76,12 @@ async function startServer(app) {
     });
   });
 
+  try {
+    require('./services/mailService').logMailStartupConfig();
+  } catch (error) {
+    console.warn('[Mail] boot config log failed:', error && error.message ? error.message : error);
+  }
+
   return httpServer;
 }
 
