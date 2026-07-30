@@ -26,6 +26,7 @@ const {
 const { createOAuthState, verifyOAuthState } = require('../../services/oauthState');
 const {
   isSmtpConfigured,
+  isMailConfigured,
   buildPasswordResetLink,
   sendPasswordResetEmail
 } = require('../../services/mailService');
@@ -493,8 +494,8 @@ async function requestPasswordResetDelivery(email, context) {
   const issued = await issuePasswordReset(email, context);
   if (!issued) return { issued: false, emailSent: false, emailQueued: false };
 
-  if (!isSmtpConfigured()) {
-    console.warn('[Mail] Password reset skipped: SMTP chưa cấu hình (SMTP_HOST/USER/PASS).');
+  if (!isMailConfigured()) {
+    console.warn('[Mail] Password reset skipped: chưa cấu hình SMTP hoặc RESEND_API_KEY / BREVO_API_KEY.');
     return { ...issued, issued: true, emailSent: false, emailQueued: false };
   }
 
