@@ -103,8 +103,25 @@ function resetMailServiceCache() {
   _testTransporter = null;
 }
 
+function warnIfResendFromLooksRestricted(fromEmail) {
+  const email = String(fromEmail || '').toLowerCase();
+  if (!email) return;
+  // onboarding@resend.dev và Gmail From: Resend chỉ cho gửi tới email tài khoản Resend.
+  if (
+    email === 'onboarding@resend.dev' ||
+    email.endsWith('@gmail.com') ||
+    email.endsWith('@googlemail.com')
+  ) {
+    console.warn(
+      '[Mail] Resend From=', email,
+      '— chỉ gửi được tới email tài khoản Resend. Đổi SMTP_FROM sang địa chỉ domain đã verify (vd. noreply@navindoor.info).'
+    );
+  }
+}
+
 async function sendViaResend({ from, to, subject, text, html }) {
   const parsed = parseFromAddress(from);
+  warnIfResendFromLooksRestricted(parsed.email);
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -337,6 +354,8 @@ module.exports = {
   isMailConfigured,
   hasTestTransporter,
   getTransporter,
+  resolveMailFrom,
+  deliverMail,
   getPublicBaseUrl,
   buildPasswordResetLink,
   sendPasswordResetEmail,
