@@ -41,6 +41,17 @@ function buildPasswordResetLink(rawToken) {
   return getPublicBaseUrl() + '/admin/reset-password.html?token=' + encodeURIComponent(rawToken);
 }
 
+function stripEnvQuotes(value) {
+  let s = String(value || '').trim();
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
 function isResendRestrictedFromEmail(email) {
   const e = String(email || '').toLowerCase().trim();
   return (
@@ -54,7 +65,7 @@ function isResendRestrictedFromEmail(email) {
 
 /** From ưu tiên domain đã verify khi gửi qua Resend (tránh chỉ gửi được tới email tài khoản Resend). */
 function resolveVerifiedResendFrom() {
-  const explicit = String(process.env.RESEND_FROM || '').trim();
+  const explicit = stripEnvQuotes(process.env.RESEND_FROM || '');
   if (explicit && !isResendRestrictedFromEmail(parseFromAddress(explicit).email)) {
     return explicit;
   }
@@ -68,10 +79,10 @@ function resolveVerifiedResendFrom() {
 }
 
 function resolveMailFrom() {
-  const user = process.env.SMTP_USER || process.env.MAIL_FROM || '';
-  const raw = String(
+  const user = stripEnvQuotes(process.env.SMTP_USER || process.env.MAIL_FROM || '');
+  const raw = stripEnvQuotes(
     process.env.RESEND_FROM || process.env.SMTP_FROM || process.env.MAIL_FROM || user || ''
-  ).trim();
+  );
 
   if (process.env.RESEND_API_KEY) {
     const parsed = parseFromAddress(raw);
@@ -103,12 +114,31 @@ function resolveMailFrom() {
 
 /** "Name <a@b.com>" → { name, email } */
 function parseFromAddress(from) {
-  const s = String(from || '').trim();
+  const s = stripEnvQuotes(from);
   const m = s.match(/^(.*)<([^>]+)>\s*$/);
   if (m) {
     return { name: m[1].trim().replace(/^"|"$/g, '') || undefined, email: m[2].trim() };
   }
   return { email: s };
+}
+
+/** Log cấu hình mail lúc boot (không in secret). */
+function logMailStartupConfig() {
+  const from = resolveMailFrom();
+  const fromEmail = parseFromAddress(from).email || '(empty)';
+  const provider = process.env.RESEND_API_KEY
+    ? 'resend'
+    : process.env.BREVO_API_KEY
+      ? 'brevo'
+      : isSmtpConfigured()
+        ? 'smtp'
+        : 'none';
+  console.log('[Mail] boot provider=', provider, 'from=', fromEmail, 'configured=', isMailConfigured());
+  if (provider === 'resend' && isResendRestrictedFromEmail(fromEmail)) {
+    console.warn(
+      '[Mail] Resend From chưa dùng domain đã verify — end-user sẽ không nhận được mail (chỉ email tài khoản Resend).'
+    );
+  }
 }
 
 function getTransporter() {
@@ -411,5 +441,6 @@ module.exports = {
   sendBillingEventEmail,
   sendOrgInviteEmail,
   setTestTransporter,
-  resetMailServiceCache
+  resetMailServiceCache,
+  logMailStartupConfig
 };
