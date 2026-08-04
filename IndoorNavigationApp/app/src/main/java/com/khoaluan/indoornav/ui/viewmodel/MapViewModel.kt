@@ -14,6 +14,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.khoaluan.indoornav.data.api.ActiveEmergencyHazardZoneDto
 import com.khoaluan.indoornav.data.api.BuildingExplorerDto
+import com.khoaluan.indoornav.data.api.GeocodeHitDto
+import com.khoaluan.indoornav.data.api.OverpassHitDto
 import com.khoaluan.indoornav.data.api.IndoorSearchHitDto
 import com.khoaluan.indoornav.data.api.RetrofitClient
 import com.khoaluan.indoornav.data.model.MapData
@@ -25,6 +27,7 @@ import com.khoaluan.indoornav.navigation.graph.GraphModel
 import com.khoaluan.indoornav.navigation.graph.MultiFloorPathPlanner
 import com.khoaluan.indoornav.navigation.instruction.FloorTransitionDetector
 import com.khoaluan.indoornav.navigation.instruction.TurnByTurnEngine
+import com.khoaluan.indoornav.navigation.heading.MapHeadingMath
 import com.khoaluan.indoornav.navigation.pdr.PositionConfidenceEngine
 import com.khoaluan.indoornav.navigation.tpf.LocationEngine
 import com.khoaluan.indoornav.navigation.tpf.TopologicalParticle
@@ -34,10 +37,13 @@ import com.khoaluan.indoornav.data.local.ParkingManager
 import com.khoaluan.indoornav.data.model.Room
 import com.khoaluan.indoornav.data.model.SavedParkingSpot
 import com.khoaluan.indoornav.ui.navigation.buildMapSessionKey
+import kotlin.math.atan2
+import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import com.khoaluan.indoornav.navigation.emergency.BuildingActiveEmergency
 import com.khoaluan.indoornav.navigation.emergency.DefaultEmergencyRoutingAdapter
@@ -121,6 +127,16 @@ data class NavigationState(
     val nextManeuverPos: Offset? = null,
     /** TURN_LEFT / TURN_RIGHT / ARRIVE / … */
     val nextManeuverType: String? = null,
+    /** Ước lượng ngữ cảnh cầm máy / hoạt động (IMU heuristic). */
+    val phoneContextLabel: String? = null,
+    /** true khi từ trường nhiễu — app đang giữ hướng bằng gyro / canh Bắc tạm. */
+    val magneticInterference: Boolean = false,
+    /** Thông báo ngắn khi nhiễu từ trường (null khi ổn). */
+    val magneticHint: String? = null,
+    /** epoch ms — tạm dừng camera follow tới lúc này (tránh giật sau khi rẽ / soft-recover). */
+    val freezeCameraUntilMs: Long = 0L,
+    /** Tăng khi cần snap camera về user (khẩn cấp Start / sau đổi tầng). */
+    val centerOnUserRequest: Int = 0,
 )
 sealed interface BuildingListUiState {
     object Loading : BuildingListUiState
@@ -167,15 +183,107 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private var activeManeuvers: List<TurnByTurnEngine.Maneuver> = emptyList()
     private var activeFloorConnectors: List<FloorTransitionDetector.ConnectorHint> = emptyList()
 
-    /** Đồng bộ cạnh path → LocationEngine để chấm user bám đường xanh khi đi. */
+    /** Mét đã đi trên path — chỉ tăng dần, tránh nhảy tới đích rồi báo 1m. */
+    private var lastGuidanceTraveledM = 0f
+    /** Path đầy đủ lúc Bắt đầu — giữ vẽ đoạn phía sau khi reroute cắt còn stub. */
+    private var navigationFullPath: List<Offset> = emptyList()
+    /** Kẹt “Rẽ … sau 2 m” tại góc: đứng gần điểm rẽ đủ lâu → bỏ manoeuvre. */
+    private var turnDwellSinceMs = 0L
+    private var turnDwellAtMeters = Float.NaN
+    private var lastSpokenInstructionKey: String? = null
+    private var lastInstructionHoldUntilMs = 0L
+    private var lastHeldInstructionText: String? = null
+    private var lastHeldDistToManeuver = 0f
+    private var lastHeldRemain = 0f
+    private var lastHeldManeuverType: String? = null
+    /** Thanh tiến độ chỉ tăng dần — tránh nhảy 0%↔80%. */
+    private var lastUiRouteProgress = 0f
+    private var nearDestSticky = false
+    /** Phải đứng sát pin đủ lâu mới “Đã đến nơi” — tránh nhảy PDR 1 frame. */
+    private var nearPinSinceMs = 0L
+
+    /** Đồng bộ cạnh path → LocationEngine để chấm user bám đường xanh.
+     *  Bật khi đã có path (xem đường / đang đi) — không chỉ lúc Bắt đầu. */
     private fun syncRouteSnapToEngine() {
         locationEngine?.setRouteSnapEdges(
-            if (_navState.value.isNavigatingMode && activePathEdges.isNotEmpty()) {
+            if (activePathEdges.isNotEmpty() &&
+                (_navState.value.path?.isNotEmpty() == true || _navState.value.isNavigatingMode)
+            ) {
                 activePathEdges
             } else {
                 emptyList()
             },
         )
+    }
+
+    /** Chiếu chấm đứng lên polyline path (vuông góc) — hết lệch ngang khỏi đường xanh. */
+    private fun nearestPointOnPath(pos: Offset, path: List<Offset>): Offset? {
+        if (path.isEmpty()) return null
+        if (path.size == 1) return path.first()
+        var best = path.first()
+        var bestD2 = Float.MAX_VALUE
+        for (i in 0 until path.lastIndex) {
+            val a = path[i]
+            val b = path[i + 1]
+            val abx = b.x - a.x
+            val aby = b.y - a.y
+            val lenSq = abx * abx + aby * aby
+            val t = if (lenSq < 1e-4f) {
+                0f
+            } else {
+                (((pos.x - a.x) * abx + (pos.y - a.y) * aby) / lenSq).coerceIn(0f, 1f)
+            }
+            val px = a.x + t * abx
+            val py = a.y + t * aby
+            val dx = pos.x - px
+            val dy = pos.y - py
+            val d2 = dx * dx + dy * dy
+            if (d2 < bestD2) {
+                bestD2 = d2
+                best = Offset(px, py)
+            }
+        }
+        return best
+    }
+
+    /** Giữ đoạn path phía sau user khi reroute chỉ còn phần phía trước. */
+    private fun mergeTrailWithNewPath(
+        oldPath: List<Offset>,
+        user: Offset,
+        newPath: List<Offset>,
+    ): List<Offset> {
+        if (oldPath.size < 2 || newPath.isEmpty()) return newPath
+        var bestIdx = 0
+        var bestD2 = Float.MAX_VALUE
+        for (i in oldPath.indices) {
+            val dx = oldPath[i].x - user.x
+            val dy = oldPath[i].y - user.y
+            val d2 = dx * dx + dy * dy
+            if (d2 < bestD2) {
+                bestD2 = d2
+                bestIdx = i
+            }
+        }
+        val trail = oldPath.subList(0, (bestIdx + 1).coerceAtMost(oldPath.size))
+        if (trail.isEmpty()) return newPath
+        val last = trail.last()
+        val firstNew = newPath.first()
+        val gap2 = (last.x - firstNew.x).let { it * it } + (last.y - firstNew.y).let { it * it }
+        val minGap = (pixelsPerMeter * 0.4f).let { it * it }
+        return if (gap2 <= minGap) {
+            trail.dropLast(1) + newPath
+        } else {
+            trail + newPath
+        }
+    }
+
+    /** Bước chân thật → bỏ hold neo cầu thang (tránh đứng yên sau đổi tầng). */
+    private fun onRealStepAccepted() {
+        if (stairsSeedHoldPos != null) {
+            stairsSeedHoldPos = null
+            stairsSeedHoldUntilMs = 0L
+        }
+        locationEngine?.clearPositionLock()
     }
 
     // lastRerouteAtMs: thoi gian lan cuoi reroute (de cooldown 3s)
@@ -302,11 +410,43 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Seed hướng từ GPS ngoài trời (nếu có) ngay sau startWithQR / startWithPosition. */
     private fun applyOutdoorGpsHeadingHandoff(engine: LocationEngine) {
+        if (!com.khoaluan.indoornav.navigation.heading.HeadingAssistFlags.ENABLE_GPS_HEADING_ASSIST) {
+            cachedOutdoorGpsCourseDeg = null
+            return
+        }
         val course = cachedOutdoorGpsCourseDeg ?: return
         cachedOutdoorGpsCourseDeg = null
         engine.seedFromOutdoorGpsCourse(course)
         syncMapNorthOffsetFromEngine()
         Log.i("MapViewModel", "Handoff outdoor GPS course → MapHeading seed=$course°")
+    }
+
+    /**
+     * GPS nhẹ trong indoor: đã tắt qua [HeadingAssistFlags.ENABLE_GPS_HEADING_ASSIST].
+     */
+    private fun startIndoorGpsCourseAssist() {
+        if (!com.khoaluan.indoornav.navigation.heading.HeadingAssistFlags.ENABLE_GPS_HEADING_ASSIST) {
+            stopIndoorGpsCourseAssist()
+            Log.i("MapViewModel", "GPS heading assist OFF — không dùng GPS indoor cho mũi tên")
+            return
+        }
+        gpsGeofenceManager.startIndoorCourseAssist { course ->
+            val engine = locationEngine ?: return@startIndoorCourseAssist
+            if (engine.applyGpsCourseCorrection(course)) {
+                syncMapNorthOffsetFromEngine()
+                _navState.update {
+                    it.copy(
+                        userHeading = engine.currentNavigationHeadingDeg(),
+                        navHint = "Đã cập nhật hướng từ GPS (tọa độ → hướng đi)",
+                    )
+                }
+                Log.i("MapViewModel", "Indoor GPS course → heading correct=$course°")
+            }
+        }
+    }
+
+    private fun stopIndoorGpsCourseAssist() {
+        gpsGeofenceManager.stopIndoorCourseAssist()
     }
     fun getTotalFloorsForBuilding(buildingId: String): Int {
         var fromList = 1
@@ -338,6 +478,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
      * Tránh chấm xanh "dính" tọa độ map cũ giữa khoảng trống map mới.
      */
     fun clearLocalizationSession(clearCrossFloorPending: Boolean = true) {
+        stopIndoorGpsCourseAssist()
         locationEngine?.stop()
         locationEngine = null
         localizationMapKey = null
@@ -355,7 +496,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             stairsDepartHintX = null
             stairsDepartHintY = null
             buildingFloorCache.clear()
+            fullBuildingPrefetchDoneId = null
+            cachedBuildingIdForFloors = null
             _crossFloorRooms.value = emptyList()
+            _crossFloorPois.value = emptyList()
         }
         val pending = pendingCrossFloor
         val emergencyLabel = _emergencySession.value.targetLabel
@@ -445,10 +589,18 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     /** W3 — cache MapData theo floor của building đang mở. */
     private val buildingFloorCache = mutableMapOf<Int, MapData>()
     private var cachedBuildingIdForFloors: String? = null
+    /** Đã gọi GET maps/{id}/download thành công — tránh dừng sớm khi mới có 2 tầng trong cache. */
+    private var fullBuildingPrefetchDoneId: String? = null
     private val _crossFloorRooms = MutableStateFlow<List<CrossFloorRoom>>(emptyList())
     val crossFloorRooms: StateFlow<List<CrossFloorRoom>> = _crossFloorRooms.asStateFlow()
 
+    private val _crossFloorPois = MutableStateFlow<List<CrossFloorPoi>>(emptyList())
+    val crossFloorPois: StateFlow<List<CrossFloorPoi>> = _crossFloorPois.asStateFlow()
+
     data class CrossFloorRoom(val floor: Int, val room: Room)
+
+    /** POI trên mọi tầng — tìm kiếm khi đang đứng một tầng. */
+    data class CrossFloorPoi(val floor: Int, val poi: com.khoaluan.indoornav.data.model.Poi)
 
     private val _indoorEntryState = MutableStateFlow<IndoorEntryUiState>(IndoorEntryUiState.Idle)
     val indoorEntryState: StateFlow<IndoorEntryUiState> = _indoorEntryState.asStateFlow()
@@ -464,6 +616,16 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     val indoorSearchHits: StateFlow<List<IndoorSearchHitDto>> = _indoorSearchHits.asStateFlow()
     private val _indoorSearchLoading = MutableStateFlow(false)
     val indoorSearchLoading: StateFlow<Boolean> = _indoorSearchLoading.asStateFlow()
+
+    private val _geocodeHits = MutableStateFlow<List<GeocodeHitDto>>(emptyList())
+    val geocodeHits: StateFlow<List<GeocodeHitDto>> = _geocodeHits.asStateFlow()
+    private val _geocodeLoading = MutableStateFlow(false)
+    val geocodeLoading: StateFlow<Boolean> = _geocodeLoading.asStateFlow()
+
+    private val _overpassHits = MutableStateFlow<List<OverpassHitDto>>(emptyList())
+    val overpassHits: StateFlow<List<OverpassHitDto>> = _overpassHits.asStateFlow()
+    private val _overpassLoading = MutableStateFlow(false)
+    val overpassLoading: StateFlow<Boolean> = _overpassLoading.asStateFlow()
 
     /** POI cần focus sau khi load map (từ Indoor Search). */
     private var pendingFocusPoiId: Int? = null
@@ -550,6 +712,73 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     fun clearIndoorSearch() {
         _indoorSearchHits.value = emptyList()
         _indoorSearchLoading.value = false
+    }
+
+    fun clearGeocode() {
+        _geocodeHits.value = emptyList()
+        _geocodeLoading.value = false
+    }
+
+    fun clearOverpassNearby() {
+        _overpassHits.value = emptyList()
+        _overpassLoading.value = false
+    }
+
+    /** Geocode OSM qua Backend — không merge vào Building (không vào Indoor). */
+    fun fetchGeocode(query: String, lat: Double? = null, lng: Double? = null) {
+        val q = query.trim()
+        if (q.length < 2) {
+            clearGeocode()
+            return
+        }
+        viewModelScope.launch {
+            _geocodeLoading.value = true
+            try {
+                val res = RetrofitClient.getApiService().geocode(
+                    q = q,
+                    limit = 5,
+                    lat = lat,
+                    lng = lng,
+                )
+                _geocodeHits.value = if (res.isSuccessful) {
+                    res.body()?.results.orEmpty()
+                } else {
+                    emptyList()
+                }
+            } catch (_: Exception) {
+                _geocodeHits.value = emptyList()
+            } finally {
+                _geocodeLoading.value = false
+            }
+        }
+    }
+
+    /** POI OSM quanh GPS qua Backend Overpass — chỉ đường outdoor, không Indoor. */
+    fun fetchOverpassNearby(lat: Double, lng: Double, radiusM: Int = 250) {
+        if (!lat.isFinite() || !lng.isFinite()) {
+            clearOverpassNearby()
+            return
+        }
+        viewModelScope.launch {
+            _overpassLoading.value = true
+            try {
+                val res = RetrofitClient.getApiService().overpassNearby(
+                    lat = lat,
+                    lng = lng,
+                    radius = radiusM.coerceIn(50, 1000),
+                    limit = 25,
+                )
+                _overpassHits.value = if (res.isSuccessful) {
+                    res.body()?.results.orEmpty()
+                } else {
+                    emptyList()
+                }
+            } catch (_: Exception) {
+                _overpassHits.value = emptyList()
+            } finally {
+                _overpassLoading.value = false
+            }
+        }
     }
 
     fun lastFloorFor(buildingId: String): Int = indoorSessionStore.getLastFloor(buildingId)
@@ -698,10 +927,13 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     // Tham so reroute (tu dong tinh lai duong khi user lo route)
-    private val rerouteCooldownMs = 3000L // Cooldown 3s giua 2 lan reroute
-    private val offRouteThresholdMeters = 2.0f // 2.0 met = nguong "lac duong"
-private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
-    private val lowConfidenceThreshold = 0.25f // Reroute neu confidence TPF < 0.25
+    private val rerouteCooldownMs = 5500L // Cooldown dài hơn — tránh nhảy chỉ đường khi lag
+    private val offRouteThresholdMeters = 2.8f // Hơi rộng khi rẽ góc
+    private val softRecoverCooldownMs = 4000L
+    private var lastSoftRecoverAtMs = 0L
+    private var cameraFollowPausedUntilMs = 0L
+    private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.5f
+    private val lowConfidenceThreshold = 0.25f // Chỉ dùng gợi ý — không tự repath
     private val rerouteBadgeDurationMs = 1400L // Thoi gian hien badge "Dang tinh lai duong..."
     private val MAX_REROUTE_ATTEMPTS = 5 // Toi da 5 lan reroute, sau do yeu cau quet lai QR
     /** W2 — dưới ngưỡng này (mét) → Đã đến nơi. Trước 4m quá rộng với nhà nhỏ. */
@@ -711,7 +943,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     /** Early-turn: heading khớp hướng sau rẽ từ lúc nào (ms). */
     private var earlyTurnAlignSinceMs = 0L
     private var earlyTurnAlignManeuverAt = Float.NaN
-    private val earlyTurnStableMs = 280L
+    private val earlyTurnStableMs = 650L
     /** W2 — từ lần reroute này trở lên → gợi ý Sửa vị trí / Quét QR. */
     private val heavyRerouteHintAfter = 2
     private val GRID_SIZE_PX = 40f // 1 grid = 40px (tu Web Editor)
@@ -773,6 +1005,18 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     private val _mapNorthOffsetDeg = MutableStateFlow(0f)
     val mapNorthOffsetDeg: StateFlow<Float> = _mapNorthOffsetDeg.asStateFlow()
 
+    /**
+     * Góc cho kim N la bàn = device heading (Bắc địa lý), không phải map heading.
+     * Map heading chỉ theo xoay máy tương đối nếu mag trust=0.
+     */
+    fun compassNeedleRotationDeg(): Float {
+        val engine = locationEngine
+        if (engine != null) return engine.currentDeviceHeadingDeg()
+        return MapHeadingMath.normalizeDegrees(
+            _navState.value.userHeading + _mapNorthOffsetDeg.value
+        )
+    }
+
     fun toggleMapRotationMode() {
         _mapRotationMode.value = if (_mapRotationMode.value == MapRotationMode.NORTH_UP) {
             MapRotationMode.HEADING_UP
@@ -784,10 +1028,23 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     /** Xoay căn Bắc ±delta (vd. ±15°) — áp dụng cho mũi tên + PDR/TPF. */
     fun adjustMapNorthOffset(deltaDeg: Float) {
         val engine = locationEngine ?: return
-        engine.adjustHeadingCalibration(deltaDeg)
+        if (kotlin.math.abs(deltaDeg - 180f) < 0.5f || kotlin.math.abs(deltaDeg + 180f) < 0.5f) {
+            engine.invertHeading180()
+        } else {
+            engine.adjustHeadingCalibration(deltaDeg)
+        }
         syncMapNorthOffsetFromEngine()
         val mapHeading = engine.currentNavigationHeadingDeg()
-        _navState.update { it.copy(userHeading = mapHeading) }
+        _navState.update {
+            it.copy(
+                userHeading = mapHeading,
+                navHint = if (kotlin.math.abs(deltaDeg) >= 179f) {
+                    "Đã đảo 180° — dùng khi từ trường chỉ Nam thay Bắc"
+                } else {
+                    it.navHint
+                },
+            )
+        }
     }
 
     fun resetMapNorthOffsetCalibration() {
@@ -797,6 +1054,49 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         val mapHeading = engine.currentNavigationHeadingDeg()
         _navState.update { it.copy(userHeading = mapHeading) }
     }
+
+    /** Chuỗi debug ma trận Δ° lưới hướng (long-press la bàn). */
+    fun headingGridDebugSummary(): String =
+        locationEngine?.headingGridDebugSummary() ?: "lưới — (chưa có engine)"
+
+    fun resetHeadingCorrectionGrid() {
+        locationEngine?.resetHeadingCorrectionGrid()
+        syncMapNorthOffsetFromEngine()
+    }
+
+    fun currentGridHeadingDeltaDeg(): Float =
+        locationEngine?.currentGridHeadingDeltaDeg() ?: 0f
+
+    /**
+     * Bật/tắt ghi file JSONL chuyển động hướng (dev/map/nav/cal/grid).
+     * File trong Android/data/<pkg>/files/sensor_logs/heading_*.jsonl — copy gửi phân tích.
+     * @return đường dẫn file khi bắt đầu; null khi dừng (xem Toast/log).
+     */
+    fun toggleHeadingMotionLog(): String? {
+        val engine = locationEngine ?: return null
+        return if (engine.isHeadingMotionLogging()) {
+            val path = engine.stopHeadingMotionLog()
+            _navState.update {
+                it.copy(navHint = "Đã dừng ghi hướng: ${path ?: "(không có file)"}")
+            }
+            path
+        } else {
+            val path = engine.startHeadingMotionLog()
+            _navState.update {
+                it.copy(
+                    navHint = if (path != null) {
+                        "Đang ghi hướng → $path (xoay thử rồi Dừng, copy file gửi phân tích)"
+                    } else {
+                        "Không tạo được file heading log"
+                    },
+                )
+            }
+            path
+        }
+    }
+
+    fun isHeadingMotionLogging(): Boolean =
+        locationEngine?.isHeadingMotionLogging() == true
 
     /**
      * App về foreground (đổi tab / app khác): snap lại heading từ Rotation Vector,
@@ -820,7 +1120,12 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     }
 
     private fun syncMapNorthOffsetFromEngine() {
-        _mapNorthOffsetDeg.value = locationEngine?.effectiveMapNorthOffsetDeg ?: 0f
+        // Hiển thị Căn Bắc publish + calib tay; không cộng lưới (lưới chỉ lúc SEVERE).
+        val engine = locationEngine ?: return
+        _mapNorthOffsetDeg.value =
+            MapHeadingMath.normalizeDegrees(
+                engine.mapNorthOffsetBaseDeg() + engine.sessionHeadingCalibDeg(),
+            )
     }
     init {
         // Không fetchBuildings ở đây — chờ user qua Login/Guest rồi MainActivity gọi
@@ -1630,6 +1935,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         val sessionKey = buildMapSessionKey(buildingId, floorNumber)
         indoorSessionStore.saveLastFloor(buildingId, floorNumber)
         // Atomic swap: dừng engine cũ ngay trước khi gắn map mới (không để graph=null giữa chừng)
+        stopIndoorGpsCourseAssist()
         locationEngine?.stop()
         locationEngine = null
         localizationMapKey = null
@@ -1657,6 +1963,17 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                             isTpfActive = isTpf,
                             particles = getParticles()
                         )
+                        // Nhảy vị trí lớn (snap/PDR): tạm dừng camera follow rất ngắn
+                        val prev = current.userPos
+                        if (newState.isNavigatingMode && prev != null) {
+                            val jumpPx = hypot(posX - prev.x, posY - prev.y)
+                            if (jumpPx > pixelsPerMeter * 2.2f) {
+                                val until = System.currentTimeMillis() + 280L
+                                if (until > newState.freezeCameraUntilMs) {
+                                    newState = newState.copy(freezeCameraUntilMs = until)
+                                }
+                            }
+                        }
                         if (newState.isNavigatingMode && activePathEdges.isNotEmpty()) {
                             newState = applyTurnGuidance(newState, posX, posY)
                         }
@@ -1665,6 +1982,8 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                                 navHint = "Hướng la bàn lệch với hướng đi. Hãy Snap hướng hoặc Quét lại QR."
                             )
                         }
+                        // Không freeze camera khi rẽ — Google Maps vẫn follow khi xoay heading.
+                        // (Trước freeze 1.6s mỗi lần rẽ → camera đứng im cả đoạn.)
                         // Đừng reroute ngay sau đổi tầng — gây nhảy path liên tục
                         if (!holding && System.currentTimeMillis() >= emergencyArriveBlockedUntilMs) {
                             newState.destinationNodeId?.let { destinationNodeId ->
@@ -1676,7 +1995,26 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     syncMapNorthOffsetFromEngine()
                 }
             }
+            onStepEvent = { _, _, _ ->
+                onRealStepAccepted()
+            }
+            onPhoneContextChanged = { ctx ->
+                if (localizationMapKey == sessionKey) {
+                    _navState.update { it.copy(phoneContextLabel = ctx.labelVi) }
+                }
+            }
+            onMagneticInterferenceChanged = { interfered, message ->
+                if (localizationMapKey == sessionKey) {
+                    _navState.update {
+                        it.copy(
+                            magneticInterference = interfered,
+                            magneticHint = message,
+                        )
+                    }
+                }
+            }
         }
+        startIndoorGpsCourseAssist()
         _mapNorthOffsetDeg.value = mapData.mapBearingOffset
         Log.d("MapViewModel", "Tai ban do & Khoi dong Engine thanh cong! sessionKey=$sessionKey")
         buildingFloorCache[floorNumber] = mapData
@@ -1889,10 +2227,10 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     engine.startWithQR(arrivalNode.nodeId)
                 }
             }
-            engine.lockPositionFor(4_000L)
+            engine.lockPositionFor(1_200L)
             engine.requestHeadingResync(reason = "cross_floor_stairs_seed")
             stairsSeedHoldPos = visual
-            stairsSeedHoldUntilMs = System.currentTimeMillis() + 4_000L
+            stairsSeedHoldUntilMs = System.currentTimeMillis() + 1_200L
             _navState.update {
                 it.copy(
                     userPos = visual,
@@ -2038,10 +2376,10 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 engine.startWithQR(nearStairs.nodeId)
             }
         }
-        engine.lockPositionFor(4_000L)
+        engine.lockPositionFor(1_200L)
         engine.requestHeadingResync(reason = "stairs_seed")
         stairsSeedHoldPos = visual
-        stairsSeedHoldUntilMs = System.currentTimeMillis() + 4_000L
+        stairsSeedHoldUntilMs = System.currentTimeMillis() + 1_200L
 
         _navState.update {
             it.copy(
@@ -2072,8 +2410,9 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             }
             localizationMapKey = mapKey
             stairsSeedHoldPos = visual
-            stairsSeedHoldUntilMs = System.currentTimeMillis() + 4_000L
+            stairsSeedHoldUntilMs = System.currentTimeMillis() + 1_200L
         }
+        requestCenterCameraOnUser()
         Log.i(
             "MapViewModel",
             "seedAtStairs floor=${ui.floorNumber} visual=(${visual.x},${visual.y}) " +
@@ -2082,31 +2421,52 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     }
 
     private suspend fun prefetchBuildingFloors(buildingId: String) {
-        if (cachedBuildingIdForFloors == buildingId && buildingFloorCache.size > 1) {
-            rebuildCrossFloorRoomIndex()
+        // Đã download full map tòa này → chỉ rebuild index (không dừng sớm khi mới cache 2 tầng)
+        if (fullBuildingPrefetchDoneId == buildingId && buildingFloorCache.isNotEmpty()) {
+            rebuildCrossFloorIndexes()
             return
         }
         try {
             val api = RetrofitClient.getApiService()
             val resp = api.getFullBuildingMap(buildingId)
-            if (!resp.isSuccessful) return
+            if (!resp.isSuccessful) {
+                Log.w("MapViewModel", "W3 prefetch HTTP ${resp.code()} building=$buildingId")
+                rebuildCrossFloorIndexes()
+                return
+            }
             val body = resp.body() ?: return
             cachedBuildingIdForFloors = buildingId
+            fullBuildingPrefetchDoneId = buildingId
             body.floors.forEach { doc ->
                 val md = doc.map_data?.sanitized() ?: return@forEach
                 buildingFloorCache[doc.floor_number] = md
             }
-            rebuildCrossFloorRoomIndex()
-            Log.d("MapViewModel", "W3 prefetch floors=${buildingFloorCache.keys}")
+            rebuildCrossFloorIndexes()
+            Log.d(
+                "MapViewModel",
+                "W3 prefetch floors=${buildingFloorCache.keys} rooms=${_crossFloorRooms.value.size} " +
+                    "pois=${_crossFloorPois.value.size}",
+            )
         } catch (e: Exception) {
             Log.w("MapViewModel", "W3 prefetch floors failed: ${e.message}")
+            rebuildCrossFloorIndexes()
+        }
+    }
+
+    private fun rebuildCrossFloorIndexes() {
+        _crossFloorRooms.value = buildingFloorCache.flatMap { (floor, md) ->
+            md.rooms.map { CrossFloorRoom(floor, it) }
+        }
+        _crossFloorPois.value = buildingFloorCache.flatMap { (floor, md) ->
+            md.pois.mapNotNull { poi ->
+                if (poi.name.isNullOrBlank()) return@mapNotNull null
+                CrossFloorPoi(floor, poi)
+            }
         }
     }
 
     private fun rebuildCrossFloorRoomIndex() {
-        _crossFloorRooms.value = buildingFloorCache.flatMap { (floor, md) ->
-            md.rooms.map { CrossFloorRoom(floor, it) }
-        }
+        rebuildCrossFloorIndexes()
     }
 
     /**
@@ -2143,6 +2503,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             totalDistanceMeters = 0f,
             etaSeconds = 0,
             isNavigatingMode = false,
+            hasArrived = false,
             navigationError = null,
             rerouteCount = 0,
             currentInstructionText = if (targetFloor != state.floorNumber) {
@@ -2155,6 +2516,60 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             pendingDestNodeId = targetNode.nodeId,
         )
         Log.d("MapViewModel", "W3 setDestinationOnFloor floor=$targetFloor room=$roomId node=${targetNode.nodeId}")
+    }
+
+    /**
+     * Chọn POI trên tầng khác (search đa tầng). Chưa tính path đến khi previewPath.
+     */
+    fun setDestinationPoiOnFloor(targetFloor: Int, poiId: Int) {
+        val state = _uiState.value as? MapUiState.Success ?: return
+        val mapOnFloor = buildingFloorCache[targetFloor] ?: return
+        val poi = mapOnFloor.pois.find { it.id == poiId } ?: return
+        val gOnFloor = GraphModel(mapOnFloor)
+        val markerPos = Offset(poi.x.toFloat(), poi.y.toFloat())
+        val targetNode = nearestRoutableNodeId(gOnFloor, poi.x.toFloat(), poi.y.toFloat())
+            ?.let { id -> gOnFloor.nodeMap[id] }
+            ?: gOnFloor.nodeMap.values.minByOrNull {
+                val dx = it.x - poi.x
+                val dy = it.y - poi.y
+                dx * dx + dy * dy
+            }
+            ?: return
+        activePath = emptyList()
+        activePathEdges = emptyList()
+        activeManeuvers = emptyList()
+        activeFloorConnectors = emptyList()
+        pendingCrossFloor = PendingCrossFloor(
+            floor = targetFloor,
+            nodeId = targetNode.nodeId,
+            markerX = markerPos.x,
+            markerY = markerPos.y,
+        )
+        _navState.value = _navState.value.copy(
+            destinationPoiId = poiId,
+            destinationLabel = poi.name?.takeIf { it.isNotBlank() },
+            destinationNodeId = targetNode.nodeId,
+            destinationMarkerPos = if (targetFloor == state.floorNumber) markerPos else null,
+            path = null,
+            totalDistanceMeters = 0f,
+            etaSeconds = 0,
+            isNavigatingMode = false,
+            hasArrived = false,
+            navigationError = null,
+            rerouteCount = 0,
+            currentInstructionText = if (targetFloor != state.floorNumber) {
+                "Đích tầng ${if (targetFloor == 0) "GF" else targetFloor} — bấm Xem đường"
+            } else null,
+            pathHasFloorConnector = false,
+            floorTransitionHint = null,
+            suggestedTargetFloor = if (targetFloor != state.floorNumber) targetFloor else null,
+            pendingDestFloor = targetFloor,
+            pendingDestNodeId = targetNode.nodeId,
+        )
+        Log.d(
+            "MapViewModel",
+            "W3 setDestinationPoiOnFloor floor=$targetFloor poi=$poiId node=${targetNode.nodeId}",
+        )
     }
 
     // Xu ly khi user quet ma QR: goi API de lay toa do, roi bat dau dinh vi
@@ -2373,24 +2788,286 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
 
     /**
      * Node gần nhất có cạnh ra vào (không cô lập).
-     * Giới hạn bán kính ~12 m (theo pixelsPerMeter) để tránh nhảy sang phòng xa.
+     * Chiếu lên cạnh hành lang **không xuyên tường** từ điểm đứng.
+     *
+     * @param routeTowardNodeIds Khi có đích/cầu thang: chọn endpoint cạnh hành lang
+     * theo hướng đi (tránh snap về phía nhà vệ sinh rồi U-turn).
      */
-    private fun nearestRoutableNodeId(gModel: GraphModel, x: Float, y: Float): String? {
+    private fun nearestRoutableNodeId(
+        gModel: GraphModel,
+        x: Float,
+        y: Float,
+        routeTowardNodeIds: List<String> = emptyList(),
+    ): String? {
+        snapToWalkablePath(gModel, x, y, routeTowardNodeIds)?.third?.let { return it }
+
         val maxDistPx = (pixelsPerMeter * 12f).coerceIn(80f, 800f)
         val maxDist2 = maxDistPx * maxDistPx
-        return gModel.nodeMap.values
+        val candidates = gModel.nodeMap.values
             .asSequence()
             .filter { gModel.adjacency[it.nodeId].orEmpty().isNotEmpty() }
             .map { node ->
                 val dx = node.x.toFloat() - x
                 val dy = node.y.toFloat() - y
-                node to (dx * dx + dy * dy)
+                val d2 = dx * dx + dy * dy
+                val wallOk = !gModel.crossesWall(x, y, node.x.toFloat(), node.y.toFloat())
+                node to (if (wallOk) d2 else d2 + maxDist2 * 4f)
             }
-            .filter { it.second <= maxDist2 }
-            .minByOrNull { it.second }
-            ?.first
-            ?.nodeId
+            .filter { it.second <= maxDist2 * 5f }
+            .sortedBy { it.second }
+            .take(6)
+            .map { it.first }
+            .toList()
+        if (candidates.isEmpty()) return null
+        val nearest = candidates.first()
+        val nearBand2 = (pixelsPerMeter * 1.2f).let { it * it }
+        fun d2(nx: Float, ny: Float): Float {
+            val dx = nx - x
+            val dy = ny - y
+            return dx * dx + dy * dy
+        }
+        val nearestD2 = d2(nearest.x.toFloat(), nearest.y.toFloat())
+        val localIds = candidates
+            .filter { d2(it.x.toFloat(), it.y.toFloat()) <= nearestD2 + nearBand2 }
+            .map { it.nodeId }
+        return pickBestStartAmong(gModel, localIds, routeTowardNodeIds)
+            ?: nearest.nodeId
     }
+
+    /** Gợi ý hướng snap gần nhất (cầu thang/đích) — dùng khi vẽ path. */
+    private var lastRouteTowardHints: List<String> = emptyList()
+
+    /**
+     * Chiếu điểm đứng lên cạnh đi được (không cắt tường).
+     * Khi có đích: xét **mọi** cạnh trong bán kính, chọn cạnh+endpoint
+     * có quãng đường tới đích ngắn — tránh bám spur vào WC chỉ vì gần cửa hơn.
+     * @return (projX, projY, nodeId) hoặc null
+     */
+    private fun snapToWalkablePath(
+        gModel: GraphModel,
+        x: Float,
+        y: Float,
+        routeTowardNodeIds: List<String> = emptyList(),
+    ): Triple<Float, Float, String>? {
+        val maxDistPx = (pixelsPerMeter * 8f).coerceIn(60f, 600f)
+        val maxDist2 = maxDistPx * maxDistPx
+        val toward = routeTowardNodeIds.filter { it in gModel.nodeMap }.distinct()
+        val toiletAvoid = toiletSpurNodeIds(gModel, toward)
+
+        data class EdgeSnap(
+            val projX: Float,
+            val projY: Float,
+            val dist2: Float,
+            val nodeId: String,
+            val routeM: Float,
+            val spurPenalty: Float,
+        )
+
+        val snaps = ArrayList<EdgeSnap>(16)
+        val seen = HashSet<String>()
+        for (edge in gModel.edges) {
+            val key = if (edge.sourceNodeId <= edge.targetNodeId) {
+                "${edge.sourceNodeId}|${edge.targetNodeId}"
+            } else {
+                "${edge.targetNodeId}|${edge.sourceNodeId}"
+            }
+            if (!seen.add(key)) continue
+            val edx = edge.targetX - edge.sourceX
+            val edy = edge.targetY - edge.sourceY
+            val lenSq = edx * edx + edy * edy
+            if (lenSq < 1e-4f) continue
+            val t = (((x - edge.sourceX) * edx + (y - edge.sourceY) * edy) / lenSq)
+                .coerceIn(0f, 1f)
+            val projX = edge.sourceX + t * edx
+            val projY = edge.sourceY + t * edy
+            if (gModel.crossesWall(x, y, projX, projY)) continue
+            val pdx = projX - x
+            val pdy = projY - y
+            val d2 = pdx * pdx + pdy * pdy
+            if (d2 > maxDist2) continue
+            val nodeId = pickEndpointOnEdge(gModel, edge, projX, projY, toward, toiletAvoid)
+                ?: continue
+            if (nodeId in toiletAvoid) continue
+            val routeM = routeMetersToHints(gModel, nodeId, toward)
+            val deg = gModel.adjacency[nodeId].orEmpty().size
+            val spurPenalty = when {
+                deg <= 1 && nodeId !in toward -> 25f
+                edge.sourceNodeId in toiletAvoid || edge.targetNodeId in toiletAvoid -> 8f
+                else -> 0f
+            }
+            snaps.add(EdgeSnap(projX, projY, d2, nodeId, routeM, spurPenalty))
+        }
+        if (snaps.isEmpty()) return null
+
+        // Ưu tiên cạnh gần chỗ đứng (tránh nhảy tới node gần đích → mất đoạn chỗ chấm).
+        // Trong vành gần nhất (~1.2 m), mới tie-break bằng quãng tới đích + phạt spur WC.
+        val nearBand2 = (pixelsPerMeter * 1.2f).let { it * it }
+        val closestDist2 = snaps.minOf { it.dist2 }
+        val local = snaps.filter { it.dist2 <= closestDist2 + nearBand2 }
+        val pool = if (local.isNotEmpty()) local else snaps
+        val best = pool.minWith(
+            compareBy<EdgeSnap> { it.spurPenalty }
+                .thenBy { it.dist2 }
+                .thenBy { if (toward.isNotEmpty()) it.routeM else 0f },
+        )
+        return Triple(best.projX, best.projY, best.nodeId)
+    }
+
+    /** Node dead-end nằm gần POI nhà vệ sinh — không dùng làm start khi không đi tới WC. */
+    private fun toiletSpurNodeIds(
+        gModel: GraphModel,
+        routeTowardNodeIds: List<String>,
+    ): Set<String> {
+        val ui = _uiState.value as? MapUiState.Success ?: return emptySet()
+        val toilets = ui.mapData.pois.filter {
+            it.resolveCategory() == PoiCategory.TOILET
+        }
+        if (toilets.isEmpty()) return emptySet()
+        val radius = (pixelsPerMeter * 2.2f).coerceIn(40f, 160f)
+        val r2 = radius * radius
+        val goingToToilet = routeTowardNodeIds.any { id ->
+            val n = gModel.nodeMap[id] ?: return@any false
+            toilets.any { t ->
+                val dx = n.x.toFloat() - t.x.toFloat()
+                val dy = n.y.toFloat() - t.y.toFloat()
+                dx * dx + dy * dy <= r2
+            }
+        }
+        if (goingToToilet) return emptySet()
+        return gModel.nodeMap.values.mapNotNull { node ->
+            val deg = gModel.adjacency[node.nodeId].orEmpty().size
+            if (deg > 1) return@mapNotNull null
+            val nearToilet = toilets.any { t ->
+                val dx = node.x.toFloat() - t.x.toFloat()
+                val dy = node.y.toFloat() - t.y.toFloat()
+                dx * dx + dy * dy <= r2
+            }
+            if (nearToilet) node.nodeId else null
+        }.toSet()
+    }
+
+    private fun routeMetersToHints(
+        gModel: GraphModel,
+        fromNodeId: String,
+        toward: List<String>,
+    ): Float {
+        if (toward.isEmpty()) return 0f
+        val finder = pathfinder ?: return geometricMetersToHints(gModel, fromNodeId, toward)
+        var best = Float.MAX_VALUE
+        for (goal in toward) {
+            val d = finder.findPath(fromNodeId, goal)?.totalDistanceMeters ?: continue
+            if (d < best) best = d
+        }
+        return if (best < Float.MAX_VALUE) best else geometricMetersToHints(gModel, fromNodeId, toward)
+    }
+
+    private fun geometricMetersToHints(
+        gModel: GraphModel,
+        fromNodeId: String,
+        toward: List<String>,
+    ): Float {
+        val n = gModel.nodeMap[fromNodeId] ?: return 1e6f
+        var best = Float.MAX_VALUE
+        for (goalId in toward) {
+            val g = gModel.nodeMap[goalId] ?: continue
+            val dx = (n.x - g.x).toFloat()
+            val dy = (n.y - g.y).toFloat()
+            val m = gModel.pixelsToMeters(hypot(dx.toDouble(), dy.toDouble()).toFloat())
+            if (m < best) best = m
+        }
+        return if (best < Float.MAX_VALUE) best else 1e6f
+    }
+
+    /** Chọn endpoint trên cạnh chiếu: hướng đích / tránh dead-end / gần điểm chiếu. */
+    private fun pickEndpointOnEdge(
+        gModel: GraphModel,
+        edge: GraphEdge,
+        projX: Float,
+        projY: Float,
+        routeTowardNodeIds: List<String>,
+        toiletAvoid: Set<String> = emptySet(),
+    ): String? {
+        fun usable(id: String): Boolean =
+            gModel.adjacency[id].orEmpty().isNotEmpty()
+
+        val ends = listOf(edge.sourceNodeId, edge.targetNodeId)
+            .filter(::usable)
+            .filter { it !in toiletAvoid || it in routeTowardNodeIds }
+        if (ends.isEmpty()) {
+            val fallback = listOf(edge.sourceNodeId, edge.targetNodeId).filter(::usable)
+            if (fallback.isEmpty()) return null
+            return pickBestStartAmong(gModel, fallback, routeTowardNodeIds)
+                ?: nearestEndpointToProj(edge, projX, projY)
+        }
+        if (ends.size == 1) return ends.first()
+
+        // Endpoint gần điểm chiếu trước; route chỉ chọn khi hai đầu gần tương đương
+        val byDist = ends.map { id ->
+            val n = gModel.nodeMap[id] ?: return@map id to Float.MAX_VALUE
+            val dx = n.x.toFloat() - projX
+            val dy = n.y.toFloat() - projY
+            id to (dx * dx + dy * dy)
+        }.sortedBy { it.second }
+        val nearestD2 = byDist.first().second
+        val band2 = (pixelsPerMeter * 0.8f).let { it * it }
+        val close = byDist.filter { it.second <= nearestD2 + band2 }.map { it.first }
+        return pickBestStartAmong(gModel, close, routeTowardNodeIds)
+            ?: byDist.first().first
+    }
+
+    private fun nearestEndpointToProj(edge: GraphEdge, projX: Float, projY: Float): String {
+        val dSrc = (edge.sourceX - projX).let { it * it } +
+            (edge.sourceY - projY).let { it * it }
+        val dTgt = (edge.targetX - projX).let { it * it } +
+            (edge.targetY - projY).let { it * it }
+        return if (dSrc <= dTgt) edge.sourceNodeId else edge.targetNodeId
+    }
+
+    /**
+     * Trong các ứng viên start, chọn node đi tới đích/cầu thang ngắn nhất.
+     * Không có đích: tránh dead-end (degree 1) — thường là spur vào WC/phòng.
+     */
+    private fun pickBestStartAmong(
+        gModel: GraphModel,
+        candidates: List<String>,
+        routeTowardNodeIds: List<String>,
+    ): String? {
+        if (candidates.isEmpty()) return null
+        if (candidates.size == 1) return candidates.first()
+
+        fun degree(id: String) = gModel.adjacency[id].orEmpty().size
+        val toward = routeTowardNodeIds.filter { it in gModel.nodeMap }.distinct()
+        val nonDead = candidates.filter { degree(it) > 1 || it in toward }
+        val pool = if (nonDead.isNotEmpty()) nonDead else candidates
+
+        val finder = pathfinder
+        if (finder != null && toward.isNotEmpty()) {
+            var bestId: String? = null
+            var bestScore = Float.MAX_VALUE
+            for (cand in pool) {
+                var score = Float.MAX_VALUE
+                for (goal in toward) {
+                    val d = finder.findPath(cand, goal)?.totalDistanceMeters ?: continue
+                    if (d < score) score = d
+                }
+                if (score < bestScore) {
+                    bestScore = score
+                    bestId = cand
+                }
+            }
+            if (bestId != null) return bestId
+        }
+
+        if (toward.isNotEmpty()) {
+            return pool.minByOrNull { cand ->
+                geometricMetersToHints(gModel, cand, toward)
+            }
+        }
+
+        // Không có đích: tránh dead-end; còn lại giữ khoảng cách gần user (đã sort sẵn)
+        return pool.minByOrNull { -degree(it).toFloat() } ?: pool.first()
+    }
+
     private fun findNearestNodeId(x: Float, y: Float, mapData: MapData): String? {
         return findNearestNodeIdWithConnectivity(mapData, graphModel, x, y)
     }
@@ -2434,6 +3111,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             totalDistanceMeters = 0f,
             etaSeconds = 0,
             isNavigatingMode = false,
+            hasArrived = false,
             navigationError = null,
             rerouteCount = 0,
             rerouteSourceNodeId = null,
@@ -2483,6 +3161,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             totalDistanceMeters = 0f,
             etaSeconds = 0,
             isNavigatingMode = false,
+            hasArrived = false,
             navigationError = null,
             rerouteCount = 0,
             rerouteSourceNodeId = null,
@@ -2523,7 +3202,16 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         }
         // Chỉ bật mode nếu có path hợp lệ
         if (activePath.isNotEmpty() || !nav.path.isNullOrEmpty()) {
-            var next = _navState.value.copy(isNavigatingMode = true)
+            nearDestSticky = false
+            nearPinSinceMs = 0L
+            lastHeldInstructionText = null
+            lastHeldManeuverType = null
+            lastInstructionHoldUntilMs = 0L
+            var next = _navState.value.copy(
+                isNavigatingMode = true,
+                hasArrived = false,
+                rerouteCount = 0,
+            )
             val pos = next.userPos
             if (pos != null && activePathEdges.isNotEmpty()) {
                 next = applyTurnGuidance(next, pos.x, pos.y)
@@ -2556,6 +3244,9 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     /**
      * Bật màn hình cảnh báo full-screen (chưa tính path).
      * [buildingId] dùng khi đang outdoor — MainActivity sẽ mở indoor trước.
+     * [openSystemTakeover]: false khi Main đã nhận intent (vd. bấm Chỉ đường) —
+     * không mở lại EmergencyAlertActivity (tránh vòng lặp màn đỏ).
+     * [startSiren]: false khi resume banner sau Đóng — không hú còi lại.
      */
     fun triggerEmergencyAlert(
         incidentType: String,
@@ -2566,11 +3257,17 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         blockedNodeIds: Set<String> = emptySet(),
         blockedEdgeKeys: Set<String> = emptySet(),
         hazardZones: List<HazardZoneDraw> = emptyList(),
+        openSystemTakeover: Boolean = true,
+        startSiren: Boolean = true,
     ) {
         val type = incidentType.trim().uppercase().ifBlank { "FIRE" }
         val ui = _uiState.value as? MapUiState.Success
         val incomingId = incidentId?.takeIf { it.isNotBlank() }
         val current = _emergencySession.value
+
+        val resolvedTitle = EmergencySession.defaultTitle(type, title)
+        val resolvedBody = body?.takeIf { it.isNotBlank() } ?: EmergencySession.bodyForType(type)
+        val resolvedBuildingId = buildingId ?: ui?.buildingId
 
         // Admin gửi lại broadcast cùng sự cố khi user đã nhận / đang sơ tán → không reset màn hình
         if (current.active &&
@@ -2579,17 +3276,44 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         ) {
             _emergencySession.update {
                 it.copy(
-                    title = EmergencySession.defaultTitle(type, title).ifBlank { it.title },
+                    title = resolvedTitle.ifBlank { it.title },
                     body = body?.takeIf { b -> b.isNotBlank() } ?: it.body,
                     blockedNodeIds = if (blockedNodeIds.isNotEmpty()) blockedNodeIds else it.blockedNodeIds,
                     blockedEdgeKeys = if (blockedEdgeKeys.isNotEmpty()) blockedEdgeKeys else it.blockedEdgeKeys,
                     hazardZones = if (hazardZones.isNotEmpty()) hazardZones else it.hazardZones,
                 )
             }
-            Log.i(
-                "MapViewModel",
-                "Emergency rebroadcast ignored (same incident=$incomingId phase=${current.phase})",
-            )
+            val pastAlert = current.phase != EmergencyPhase.ALERT
+            if (pastAlert) {
+                // Đang chọn tầng / vị trí / sơ tán — chỉ giữ còi, không mở lại màn đỏ
+                if (!com.khoaluan.indoornav.fcm.EmergencySirenPlayer.isPlaying) {
+                    com.khoaluan.indoornav.fcm.EmergencySirenPlayer.start(getApplication())
+                }
+                Log.i(
+                    "MapViewModel",
+                    "Same incident=$incomingId phase=${current.phase} — skip re-takeover",
+                )
+            } else if (openSystemTakeover &&
+                !com.khoaluan.indoornav.fcm.EmergencySirenPlayer.isPlaying
+            ) {
+                Log.i(
+                    "MapViewModel",
+                    "Same incident=$incomingId but siren stopped — re-takeover",
+                )
+                com.khoaluan.indoornav.fcm.EmergencyNotifier.launchTakeover(
+                    context = getApplication(),
+                    type = type,
+                    title = resolvedTitle,
+                    body = resolvedBody,
+                    buildingId = resolvedBuildingId,
+                    incidentId = incomingId,
+                )
+            } else {
+                Log.i(
+                    "MapViewModel",
+                    "Emergency rebroadcast ignored (same incident=$incomingId phase=${current.phase})",
+                )
+            }
             return
         }
 
@@ -2597,9 +3321,9 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             active = true,
             phase = EmergencyPhase.ALERT,
             incidentType = type,
-            title = EmergencySession.defaultTitle(type, title),
-            body = body?.takeIf { it.isNotBlank() } ?: EmergencySession.bodyForType(type),
-            buildingId = buildingId ?: ui?.buildingId,
+            title = resolvedTitle,
+            body = resolvedBody,
+            buildingId = resolvedBuildingId,
             incidentId = incomingId,
             needsQr = true,
             floorConfirmed = false,
@@ -2612,21 +3336,41 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             _buildingActiveEmergency.value = BuildingActiveEmergency(
                 incidentId = incomingId,
                 incidentType = type,
-                title = EmergencySession.defaultTitle(type, title),
-                body = body?.takeIf { it.isNotBlank() } ?: EmergencySession.bodyForType(type),
-                buildingId = buildingId ?: ui?.buildingId ?: "",
+                title = resolvedTitle,
+                body = resolvedBody,
+                buildingId = resolvedBuildingId ?: "",
             )
         }
         if (hazardZones.isNotEmpty()) {
             _mapHazardZones.value = hazardZones
         }
-        com.khoaluan.indoornav.fcm.EmergencyNotifier.markActiveIncident(getApplication(), incomingId)
-        com.khoaluan.indoornav.fcm.EmergencySirenPlayer.start(getApplication())
+        if (openSystemTakeover) {
+            com.khoaluan.indoornav.fcm.EmergencyNotifier.launchTakeover(
+                context = getApplication(),
+                type = type,
+                title = resolvedTitle,
+                body = resolvedBody,
+                buildingId = resolvedBuildingId,
+                incidentId = incomingId,
+            )
+        } else {
+            // Main in-app xử lý — đánh dấu incident; còi tùy [startSiren]
+            com.khoaluan.indoornav.fcm.EmergencyNotifier.markActiveIncidentQuiet(
+                getApplication(),
+                type,
+                resolvedTitle,
+                resolvedBody,
+                resolvedBuildingId,
+                incomingId,
+                startSiren = startSiren,
+            )
+            Log.i("MapViewModel", "Emergency alert in-app only (no AlertActivity re-open)")
+        }
         if (!incomingId.isNullOrBlank()) {
             com.khoaluan.indoornav.fcm.EmergencyConsentHelper.startHeartbeatIfAllowed(
                 context = getApplication(),
                 incidentId = incomingId,
-                buildingId = buildingId ?: ui?.buildingId,
+                buildingId = resolvedBuildingId,
                 floor = ui?.floorNumber,
             )
         }
@@ -2634,10 +3378,45 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
 
     fun dismissEmergency() {
         _emergencySession.value.incidentId?.let { dismissedIncidentIds += it }
+        // Trước khi xóa session: nếu chưa có summary tòa → giữ để banner “mở lại sau”
+        val closing = _emergencySession.value
+        if (closing.active &&
+            !closing.incidentId.isNullOrBlank() &&
+            _buildingActiveEmergency.value == null
+        ) {
+            _buildingActiveEmergency.value = BuildingActiveEmergency(
+                incidentId = closing.incidentId!!,
+                incidentType = closing.incidentType,
+                title = closing.title,
+                body = closing.body,
+                buildingId = closing.buildingId.orEmpty(),
+            )
+        }
         _emergencySession.value = EmergencySession()
         stairsSeedHoldPos = null
         stairsSeedHoldUntilMs = 0L
         emergencyArriveBlockedUntilMs = 0L
+        // Thoát mode sơ tán — trả lại nav thường (giữ userPos nếu còn)
+        activePath = emptyList()
+        activePathEdges = emptyList()
+        activeManeuvers = emptyList()
+        _navState.update {
+            it.copy(
+                path = null,
+                isNavigatingMode = false,
+                hasArrived = false,
+                destinationNodeId = null,
+                destinationMarkerPos = null,
+                destinationLabel = null,
+                destinationPoiId = null,
+                navigationError = null,
+                navHint = null,
+                pendingDestFloor = null,
+                pendingDestNodeId = null,
+                suggestedTargetFloor = null,
+                readyForFloorSwitch = false,
+            )
+        }
         // Giữ _mapHazardZones + _buildingActiveEmergency nếu sự cố vẫn ACTIVE
         // → user bấm banner để chỉ đường thoát hiểm lại
         com.khoaluan.indoornav.fcm.EmergencyNotifier.clearActiveIncident(getApplication())
@@ -2647,22 +3426,106 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     }
 
     /**
-     * User đã Đóng overlay nhưng sự cố vẫn ACTIVE → mở lại cảnh báo / chỉ đường thoát hiểm.
+     * Đóng màn đỏ từ AlertActivity — không thoát app, không hiện ALERT lại.
+     * Giữ banner “Chỉ đường thoát hiểm” trên map.
      */
-    fun resumeEmergencyGuidance() {
-        val summary = _buildingActiveEmergency.value ?: return
+    fun snoozeEmergencyAlert(
+        incidentType: String,
+        title: String? = null,
+        body: String? = null,
+        buildingId: String? = null,
+        incidentId: String? = null,
+    ) {
+        val type = incidentType.trim().uppercase().ifBlank { "FIRE" }
+        val id = incidentId?.takeIf { it.isNotBlank() }
+        val bid = buildingId ?: (_uiState.value as? MapUiState.Success)?.buildingId
+        if (!id.isNullOrBlank()) {
+            dismissedIncidentIds += id
+            _buildingActiveEmergency.value = BuildingActiveEmergency(
+                incidentId = id,
+                incidentType = type,
+                title = EmergencySession.defaultTitle(type, title),
+                body = body?.takeIf { it.isNotBlank() } ?: EmergencySession.bodyForType(type),
+                buildingId = bid.orEmpty(),
+            )
+        }
+        _emergencySession.value = EmergencySession()
+        stairsSeedHoldPos = null
+        stairsSeedHoldUntilMs = 0L
+        emergencyArriveBlockedUntilMs = 0L
+        activePath = emptyList()
+        activePathEdges = emptyList()
+        activeManeuvers = emptyList()
+        _navState.update {
+            it.copy(
+                path = null,
+                isNavigatingMode = false,
+                hasArrived = false,
+                destinationNodeId = null,
+                destinationMarkerPos = null,
+                destinationLabel = null,
+                destinationPoiId = null,
+                navigationError = null,
+                navHint = null,
+            )
+        }
+        com.khoaluan.indoornav.fcm.EmergencyNotifier.setSuppressAlertUi(getApplication(), true)
+        com.khoaluan.indoornav.fcm.EmergencySirenPlayer.stop()
+        com.khoaluan.indoornav.fcm.EmergencyHeartbeat.stop(getApplication())
+        com.khoaluan.indoornav.fcm.EmergencyNotifier.cancel(getApplication())
+        Log.i("MapViewModel", "Emergency snoozed — banner on map, no AlertActivity")
+    }
+
+    /**
+     * User đã Đóng overlay nhưng sự cố vẫn ACTIVE → bật lại chỉ đường thoát hiểm.
+     * @return true nếu đã bắt đầu sơ tán (đã có vị trí trên map) — Main không cần hỏi tầng lại.
+     */
+    fun resumeEmergencyGuidance(): Boolean {
+        val summary = _buildingActiveEmergency.value ?: return false
         dismissedIncidentIds.remove(summary.incidentId)
         val zones = _mapHazardZones.value
         val blocked = blockedNodesFromHazardDraws(zones)
-        triggerEmergencyAlert(
+        val nav = _navState.value
+        val ui = _uiState.value as? MapUiState.Success
+        val hasStanding = nav.userPos != null || nav.startAnchorPos != null
+        val onIndoorMap = ui != null
+        val resolvedBuilding = summary.buildingId.takeIf { it.isNotBlank() } ?: ui?.buildingId
+
+        // Không mở AlertActivity, không hú lại còi sau khi user đã Đóng
+        _emergencySession.value = EmergencySession(
+            active = true,
+            phase = EmergencyPhase.ALERT,
             incidentType = summary.incidentType,
             title = summary.title,
             body = summary.body,
-            buildingId = summary.buildingId,
+            buildingId = resolvedBuilding,
             incidentId = summary.incidentId,
+            needsQr = !hasStanding,
+            // Đã đứng trên map tầng hiện tại → tin tầng đó, khỏi hỏi lại
+            floorConfirmed = onIndoorMap,
             blockedNodeIds = blocked,
             hazardZones = zones,
         )
+        if (zones.isNotEmpty()) {
+            _mapHazardZones.value = zones
+        }
+        com.khoaluan.indoornav.fcm.EmergencyNotifier.markActiveIncidentQuiet(
+            getApplication(),
+            summary.incidentType,
+            summary.title,
+            summary.body,
+            resolvedBuilding,
+            summary.incidentId,
+            startSiren = false,
+        )
+        Log.i(
+            "MapViewModel",
+            "resumeEmergencyGuidance onMap=$onIndoorMap hasStanding=$hasStanding",
+        )
+        if (onIndoorMap && hasStanding) {
+            return startEmergencyEvacuation()
+        }
+        return false
     }
 
     /**
@@ -2710,7 +3573,17 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     /** Chưa chắc tầng (máy túi / chưa QR) → hỏi chọn tầng trước khi sơ tán. */
     fun requestEmergencyFloorConfirm() {
         if (!_emergencySession.value.active) return
-        if (_emergencySession.value.floorConfirmed) return
+        com.khoaluan.indoornav.fcm.EmergencyNotifier.stopTakeoverAudio(getApplication())
+        com.khoaluan.indoornav.fcm.EmergencyNotifier.setSuppressAlertUi(getApplication(), true)
+        if (_emergencySession.value.floorConfirmed) {
+            // Đã xác nhận tầng + đã có vị trí → giữ nguyên (Main sẽ startEmergencyEvacuation)
+            val nav = _navState.value
+            val hasStanding = nav.userPos != null || nav.startAnchorPos != null
+            if (_emergencySession.value.phase == EmergencyPhase.ALERT && !hasStanding) {
+                requestEmergencyStandingPick()
+            }
+            return
+        }
         _emergencySession.update {
             it.copy(
                 phase = EmergencyPhase.AWAITING_FLOOR,
@@ -2730,6 +3603,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
      */
     fun confirmEmergencyFloor(floor: Int) {
         if (!_emergencySession.value.active) return
+        com.khoaluan.indoornav.fcm.EmergencyNotifier.stopTakeoverAudio(getApplication())
         val session = _emergencySession.value
         val ui = _uiState.value as? MapUiState.Success
         val bid = session.buildingId ?: ui?.buildingId ?: return
@@ -3026,6 +3900,8 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     fun startEmergencyEvacuation(forceRecalculate: Boolean = false): Boolean {
         val session = _emergencySession.value
         if (!session.active) return false
+        // Bắt đầu tính đường → chắc chắn tắt còi (kể cả FGS watchdog)
+        com.khoaluan.indoornav.fcm.EmergencyNotifier.stopTakeoverAudio(getApplication())
         // Đã đang sơ tán + còn path → không tính lại (tránh “Đã tự tính lại lộ trình”)
         // Sau đổi tầng phải forceRecalculate vì path/cạnh thuộc tầng cũ.
         if (!forceRecalculate && session.phase == EmergencyPhase.EVACUATING) {
@@ -3125,9 +4001,9 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     val mapKey = buildMapSessionKey(ui.buildingId, ui.floorNumber)
                     localizationMapKey = mapKey
                     eng.startWithPosition(stairsPt.x, stairsPt.y)
-                    eng.lockPositionFor(4_000L)
+                    eng.lockPositionFor(1_200L)
                     stairsSeedHoldPos = stairsPt
-                    stairsSeedHoldUntilMs = System.currentTimeMillis() + 4_000L
+                    stairsSeedHoldUntilMs = System.currentTimeMillis() + 1_200L
                     _navState.update {
                         it.copy(userPos = stairsPt, startAnchorPos = stairsPt, confidence = 0.5f)
                     }
@@ -3150,10 +4026,20 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 return false
             }
         }
-        val startNodeId = findNearestNodeIdFromCurrentPosition(gModel)
+        // Ưu tiên điểm đứng vừa chạm (startAnchor) — tránh userPos đã bị snap sang cầu thang
+        val anchor = _navState.value.startAnchorPos
+        val startNodeId = anchor?.let { a ->
+            findNearestNodeIdWithConnectivity(
+                (_uiState.value as? MapUiState.Success)?.mapData ?: return@let null,
+                gModel,
+                a.x,
+                a.y,
+            )
+        }
+            ?: findNearestNodeIdFromCurrentPosition(gModel)
             ?: locationEngine?.getParticles()?.firstOrNull()?.edgeId?.split("->")?.firstOrNull()
-            ?: _navState.value.startAnchorPos?.let { anchor ->
-                SafePoiLocator.nearestNodeIdFromPosition(gModel, anchor.x, anchor.y)
+            ?: anchor?.let { a ->
+                SafePoiLocator.nearestNodeIdFromPosition(gModel, a.x, a.y)
             }
             ?: findStairsArrivalNode(gModel)?.nodeId
             ?: _navState.value.userPos?.let { pos ->
@@ -3461,6 +4347,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 navigationError = if (throughHazardWarning) warn else null,
             )
         }
+        requestCenterCameraOnUser()
         if (_navState.value.path.isNullOrEmpty() && activePath.isEmpty()) {
             startNavigationMode()
         } else {
@@ -3783,6 +4670,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 navigationError = if (throughHazardWarning) warn else null,
             )
         }
+        requestCenterCameraOnUser()
         if (_navState.value.path.isNullOrEmpty() && activePath.isEmpty()) {
             startNavigationMode()
         } else {
@@ -4002,16 +4890,17 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 else -> "connector"
             }
             val label = "$poiName · $kindLabel (tầng $floorLabel)"
-            val finalExitMarker = Offset(
-                pendingCrossFloor!!.markerX,
-                pendingCrossFloor!!.markerY,
-            )
+            // Pin trên tầng hiện tại = điểm cầu thang/connector (không dùng XY tầng khác)
+            val stairsPin = activePath.lastOrNull()
+                ?: _navState.value.path?.lastOrNull()
+                ?: plan.via?.let { via ->
+                    gModel.nodeMap[via.fromNodeId]?.let { Offset(it.x.toFloat(), it.y.toFloat()) }
+                }
             _navState.update {
                 it.copy(
                     destinationPoiId = best.poi.id,
                     destinationLabel = label,
-                    // Pin đỏ = lối thoát thật (đích cuối), không phải cầu thang
-                    destinationMarkerPos = finalExitMarker,
+                    destinationMarkerPos = stairsPin,
                     isNavigatingMode = true,
                     hasArrived = false,
                     rerouteCount = 0,
@@ -4023,8 +4912,10 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                     pendingDestFloor = plan.targetFloor,
                     pendingDestNodeId = plan.destNodeId,
                     pathHasFloorConnector = true,
+                    readyForFloorSwitch = true,
                 )
             }
+            requestCenterCameraOnUser()
             if (_navState.value.path.isNullOrEmpty() && activePath.isEmpty()) {
                 startNavigationMode()
             } else {
@@ -4325,6 +5216,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 currentInstructionText = "Ra khỏi vùng nguy hiểm",
             )
         }
+        requestCenterCameraOnUser()
         if (_navState.value.path.isNullOrEmpty() && activePath.isEmpty()) {
             startNavigationMode()
         } else {
@@ -4465,12 +5357,48 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
     }
 
     /**
-     * Chọn tầng từ sheet GF▼ khi đang khẩn cấp — giữ phiên sơ tán, neo cầu thang, chỉ đường lại.
+     * Chọn tầng từ sheet GF▼ khi đang khẩn cấp.
+     * Đang chờ chọn tầng/vị trí → chỉ đổi map, giữ phase (không nhảy EVACUATING sớm).
+     * Đã sơ tán → neo cầu thang + chỉ đường lại.
      */
     fun switchFloorDuringEmergency(targetFloor: Int) {
         if (!_emergencySession.value.active) return
         val ui = _uiState.value as? MapUiState.Success ?: return
         val target = targetFloor.coerceAtLeast(0)
+        val phase = _emergencySession.value.phase
+        val awaitingPick = phase == EmergencyPhase.AWAITING_FLOOR ||
+            phase == EmergencyPhase.AWAITING_LOCATION ||
+            phase == EmergencyPhase.ALERT
+        if (awaitingPick) {
+            // User đổi tầng từ UI map trong lúc chưa xác nhận vị trí — không ép sơ tán
+            _emergencySession.update {
+                it.copy(
+                    suggestedExitFloor = null,
+                    error = null,
+                )
+            }
+            if (target == ui.floorNumber) {
+                if (phase == EmergencyPhase.AWAITING_FLOOR) {
+                    confirmEmergencyFloor(target)
+                }
+                return
+            }
+            viewModelScope.launch {
+                loadFloorMapInPlace(ui.buildingId, target, reason = "switchFloorAwaitingPick")
+                if (_emergencySession.value.phase == EmergencyPhase.AWAITING_FLOOR ||
+                    _emergencySession.value.phase == EmergencyPhase.ALERT
+                ) {
+                    confirmEmergencyFloor(target)
+                } else {
+                    _navState.update {
+                        it.copy(
+                            navHint = "Chạm bản đồ (hoặc quét QR) để chọn vị trí đang đứng trên tầng mới",
+                        )
+                    }
+                }
+            }
+            return
+        }
         _emergencySession.update {
             it.copy(
                 suggestedExitFloor = target,
@@ -4657,14 +5585,6 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         val pFinder = pathfinder ?: return
         val gModel = graphModel ?: return
         val ui = _uiState.value as? MapUiState.Success ?: return
-        val currentUserNodeId = findNearestNodeIdFromCurrentPosition(gModel)
-            ?: locationEngine
-                ?.getParticles()
-                ?.firstOrNull()
-                ?.edgeId
-                ?.split("->")
-                ?.firstOrNull()
-            ?: return
         if (!force && _navState.value.destinationNodeId == targetNodeId && activePath.isNotEmpty()) {
             return
         }
@@ -4673,6 +5593,42 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             ?: pendingCrossFloor?.floor
             ?: ui.floorNumber
         val destNode = _navState.value.pendingDestNodeId ?: targetNodeId
+
+        // Hướng snap start: cùng tầng → đích; đa tầng → cầu thang/thang máy trên tầng hiện tại
+        // (tránh chọn endpoint phía WC rồi U-turn).
+        val routeTowardHints: List<String> = if (destFloor != ui.floorNumber) {
+            val connectors = MultiFloorPathPlanner.connectorsOf(gModel).map { it.nodeId }
+            if (connectors.isNotEmpty()) {
+                connectors
+            } else {
+                ui.mapData.pois.mapNotNull { poi ->
+                    when (poi.resolveCategory()) {
+                        PoiCategory.STAIRS, PoiCategory.ELEVATOR, PoiCategory.ESCALATOR -> {
+                            nearestRoutableNodeId(gModel, poi.x.toFloat(), poi.y.toFloat())
+                        }
+                        else -> null
+                    }
+                }.distinct()
+            }
+        } else {
+            listOf(destNode)
+        }
+        lastRouteTowardHints = routeTowardHints
+
+        val userPos = _navState.value.userPos
+        val currentUserNodeId = if (userPos != null) {
+            nearestRoutableNodeId(gModel, userPos.x, userPos.y, routeTowardHints)
+                ?: findNearestNodeIdFromCurrentPosition(gModel)
+        } else {
+            findNearestNodeIdFromCurrentPosition(gModel)
+        }
+            ?: locationEngine
+                ?.getParticles()
+                ?.firstOrNull()
+                ?.edgeId
+                ?.split("->")
+                ?.firstOrNull()
+            ?: return
 
         if (destFloor != ui.floorNumber) {
             val destMap = buildingFloorCache[destFloor]
@@ -4844,6 +5800,261 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         }
     }
 
+    /**
+     * Nối path từ chỗ đứng → lộ trình A*.
+     * - Cắt phần phía sau lưng (không để đuôi xanh / manoeuvre sai)
+     * - Không nối ngược về node start phía sau
+     * - Nếu sát góc rẽ: giữ vertex góc trong path để còn “Rẽ trái/phải”
+     */
+    private data class StandingAttachedPath(
+        val points: List<Offset>,
+        val edges: List<GraphEdge>,
+        val extraMeters: Float,
+    )
+
+    private fun attachStandingToPath(
+        pathPts: List<Offset>,
+        pathEdges: List<GraphEdge>,
+        gModel: GraphModel,
+        startNodeId: String,
+    ): StandingAttachedPath {
+        if (pathPts.isEmpty()) {
+            return StandingAttachedPath(pathPts, pathEdges, 0f)
+        }
+        val standing = _navState.value.userPos
+            ?: return StandingAttachedPath(pathPts, pathEdges, 0f)
+        val minSep = (pixelsPerMeter * 0.35f).coerceIn(10f, 48f)
+        fun dist2(ax: Float, ay: Float, bx: Float, by: Float): Float {
+            val dx = ax - bx
+            val dy = ay - by
+            return dx * dx + dy * dy
+        }
+
+        var bestSeg = 0
+        var bestT = 0f
+        var bestD2 = Float.MAX_VALUE
+        for (i in 0 until pathPts.lastIndex) {
+            val a = pathPts[i]
+            val b = pathPts[i + 1]
+            val abx = b.x - a.x
+            val aby = b.y - a.y
+            val lenSq = abx * abx + aby * aby
+            val t = if (lenSq < 1e-4f) {
+                0f
+            } else {
+                (((standing.x - a.x) * abx + (standing.y - a.y) * aby) / lenSq).coerceIn(0f, 1f)
+            }
+            val px = a.x + t * abx
+            val py = a.y + t * aby
+            val d2 = dist2(standing.x, standing.y, px, py)
+            if (d2 < bestD2) {
+                bestD2 = d2
+                bestSeg = i
+                bestT = t
+            }
+        }
+
+        // Gần vertex kế (góc rẽ): kéo điểm bắt đầu về trước góc một chút để giữ manoeuvre rẽ
+        var startSeg = bestSeg
+        var startT = bestT
+        val nearNextVertexM = 0.9f * pixelsPerMeter
+        val aSeg = pathPts[bestSeg]
+        val bSeg = pathPts[bestSeg + 1]
+        val segLenPx = hypot(bSeg.x - aSeg.x, bSeg.y - aSeg.y)
+        val distToNextVertexPx = (1f - bestT) * segLenPx
+        if (distToNextVertexPx <= nearNextVertexM && bestSeg + 1 < pathPts.lastIndex) {
+            // Đứng sát góc phía trước → bắt đầu ngay trước góc (giữ chân vào + chân ra)
+            startSeg = bestSeg
+            startT = bestT.coerceAtMost(0.85f)
+        }
+        // Vừa vượt vertex góc (bestT nhỏ trên cạnh sau): lùi về vertex để còn “Rẽ …”
+        if (bestT <= 0.22f && bestSeg > 0) {
+            val turnPx = (pixelsPerMeter * 1.2f).coerceIn(24f, 100f)
+            val prev = pathPts[bestSeg - 1]
+            val vtx = pathPts[bestSeg]
+            val nxt = pathPts.getOrNull(bestSeg + 1)
+            if (nxt != null) {
+                val ix = vtx.x - prev.x
+                val iy = vtx.y - prev.y
+                val ox = nxt.x - vtx.x
+                val oy = nxt.y - vtx.y
+                val delta = abs(
+                    com.khoaluan.indoornav.navigation.heading.MapHeadingMath.shortestDeltaDegrees(
+                        TurnByTurnEngine.bearingDegFromDelta(ix, iy),
+                        TurnByTurnEngine.bearingDegFromDelta(ox, oy),
+                    ),
+                )
+                if (delta >= TurnByTurnEngine.STRAIGHT_THRESHOLD_DEG &&
+                    hypot(ix, iy) >= 16f && hypot(ox, oy) >= 16f
+                ) {
+                    startSeg = bestSeg - 1
+                    val prevLen = hypot(vtx.x - prev.x, vtx.y - prev.y).coerceAtLeast(1f)
+                    startT = ((prevLen - turnPx) / prevLen).coerceIn(0.05f, 0.92f)
+                }
+            }
+        }
+
+        val s0 = pathPts[startSeg]
+        val s1 = pathPts[(startSeg + 1).coerceAtMost(pathPts.lastIndex)]
+        val onPath = Offset(
+            s0.x + startT * (s1.x - s0.x),
+            s0.y + startT * (s1.y - s0.y),
+        )
+
+        val forwardRaw = ArrayList<Offset>(pathPts.size - startSeg + 2)
+        if (startT < 0.95f) forwardRaw.add(onPath)
+        for (i in (startSeg + 1) until pathPts.size) {
+            forwardRaw.add(pathPts[i])
+        }
+        if (forwardRaw.isEmpty()) forwardRaw.add(pathPts.last())
+
+        val forward = ArrayList<Offset>(forwardRaw.size)
+        for (p in forwardRaw) {
+            if (forward.isEmpty() ||
+                dist2(forward.last().x, forward.last().y, p.x, p.y) > minSep * minSep
+            ) {
+                forward.add(p)
+            }
+        }
+        if (forward.size < 2) {
+            return StandingAttachedPath(
+                listOf(standing, pathPts.last()).distinct(),
+                pathEdges,
+                0f,
+            )
+        }
+
+        fun synthEdge(from: Offset, to: Offset, fromId: String, toId: String): GraphEdge {
+            val dx = to.x - from.x
+            val dy = to.y - from.y
+            val distPx = hypot(dx.toDouble(), dy.toDouble()).toFloat()
+            val distM = gModel.pixelsToMeters(distPx)
+            val angle = atan2(dx, -dy)
+            val rev = atan2(-dx, dy)
+            return GraphEdge(
+                id = "stand:$fromId→$toId",
+                sourceNodeId = fromId,
+                targetNodeId = toId,
+                sourceX = from.x,
+                sourceY = from.y,
+                targetX = to.x,
+                targetY = to.y,
+                angleRad = angle,
+                reverseAngleRad = rev,
+                distanceMeters = distM,
+            )
+        }
+
+        val first = forward.first()
+        val routeDx = forward[1].x - first.x
+        val routeDy = forward[1].y - first.y
+        val bridgeDx = first.x - standing.x
+        val bridgeDy = first.y - standing.y
+        val routeLen = hypot(routeDx, routeDy).coerceAtLeast(1e-3f)
+        val bridgeLen = hypot(bridgeDx, bridgeDy)
+        val dotRoute = (bridgeDx * routeDx + bridgeDy * routeDy) / routeLen
+        // Nối đứng → first chỉ khi lệch ngang (không đi ngược chiều path = đuôi phía sau)
+        val lateralOnly = bridgeLen > minSep &&
+            dotRoute > -0.15f * bridgeLen && // không backtrack rõ
+            !gModel.crossesWall(standing.x, standing.y, first.x, first.y)
+
+        if (!lateralOnly || bridgeLen <= minSep) {
+            val edges = rebuildEdgesAlongPoints(forward, pathEdges, gModel, startNodeId)
+            return StandingAttachedPath(forward, edges, 0f)
+        }
+
+        // Chỉ lệch ngang nhỏ: đứng → chiếu trên path (không về node sau lưng)
+        val prefixEdge = synthEdge(standing, first, "__stand__", "__path0__")
+        val points = listOf(standing) + forward
+        val edges = listOf(prefixEdge) + rebuildEdgesAlongPoints(forward, pathEdges, gModel, startNodeId)
+        return StandingAttachedPath(points, edges, prefixEdge.distanceMeters)
+    }
+
+    /** Ghép lại cạnh A* khớp đoạn polyline còn lại (ước lượng theo node gần điểm). */
+    private fun rebuildEdgesAlongPoints(
+        points: List<Offset>,
+        originalEdges: List<GraphEdge>,
+        gModel: GraphModel,
+        fallbackStartId: String,
+    ): List<GraphEdge> {
+        if (points.size < 2) return emptyList()
+        if (originalEdges.isEmpty()) {
+            // Fallback: cạnh tổng hợp giữa các điểm
+            val out = ArrayList<GraphEdge>(points.lastIndex)
+            for (i in 0 until points.lastIndex) {
+                val a = points[i]
+                val b = points[i + 1]
+                val dx = b.x - a.x
+                val dy = b.y - a.y
+                val distPx = hypot(dx, dy)
+                out.add(
+                    GraphEdge(
+                        id = "trim:$i",
+                        sourceNodeId = if (i == 0) fallbackStartId else "trim$i",
+                        targetNodeId = "trim${i + 1}",
+                        sourceX = a.x,
+                        sourceY = a.y,
+                        targetX = b.x,
+                        targetY = b.y,
+                        angleRad = atan2(dx, -dy),
+                        reverseAngleRad = atan2(-dx, dy),
+                        distanceMeters = gModel.pixelsToMeters(distPx),
+                    ),
+                )
+            }
+            return out
+        }
+        // Giữ cạnh gốc có điểm gần polyline còn lại
+        val head = points.first()
+        var cutIdx = 0
+        var cutT = 0f
+        var bestD = Float.MAX_VALUE
+        for (i in originalEdges.indices) {
+            val e = originalEdges[i]
+            val (d, t) = run {
+                val abX = e.targetX - e.sourceX
+                val abY = e.targetY - e.sourceY
+                val abLenSq = abX * abX + abY * abY
+                if (abLenSq <= 1e-6f) {
+                    hypot(head.x - e.sourceX, head.y - e.sourceY) to 0f
+                } else {
+                    val t0 = (
+                        ((head.x - e.sourceX) * abX + (head.y - e.sourceY) * abY) / abLenSq
+                        ).coerceIn(0f, 1f)
+                    val px = e.sourceX + t0 * abX
+                    val py = e.sourceY + t0 * abY
+                    hypot(head.x - px, head.y - py) to t0
+                }
+            }
+            if (d < bestD) {
+                bestD = d
+                cutIdx = i
+                cutT = t
+            }
+        }
+        val out = ArrayList<GraphEdge>(originalEdges.size - cutIdx)
+        val first = originalEdges[cutIdx]
+        if (cutT < 0.95f) {
+            val sx = first.sourceX + cutT * (first.targetX - first.sourceX)
+            val sy = first.sourceY + cutT * (first.targetY - first.sourceY)
+            val remain = first.distanceMeters * (1f - cutT)
+            if (remain > 0.05f) {
+                out.add(
+                    first.copy(
+                        id = "${first.id}#cut",
+                        sourceX = sx,
+                        sourceY = sy,
+                        distanceMeters = remain,
+                    ),
+                )
+            }
+        }
+        for (i in (cutIdx + 1) until originalEdges.size) {
+            out.add(originalEdges[i])
+        }
+        return if (out.isNotEmpty()) out else originalEdges
+    }
+
     private fun applyComputedPath(
         result: AStarPathfinder.PathResult,
         gModel: GraphModel,
@@ -4855,39 +6066,95 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         pendingFloor: Int? = null,
         pendingNode: String? = null,
     ) {
-        val pathOffsets = if (result.edges.isEmpty()) {
+        // A* trên node/edge Editor + nối từ chỗ đứng (đặt bất kỳ đâu vẫn có đường)
+        val pathResult = result
+        val pathOffsetsRaw = if (pathResult.edges.isEmpty()) {
             val node = gModel.nodeMap[targetNodeId]
-            if (node != null) listOf(Offset(node.x.toFloat(), node.y.toFloat())) else emptyList()
+                ?: pathResult.nodeIds.firstOrNull()?.let { gModel.nodeMap[it] }
+            if (node != null) {
+                listOf(Offset(node.x.toFloat(), node.y.toFloat()))
+            } else {
+                emptyList()
+            }
         } else {
-            result.edges.map { edge ->
-                Offset(edge.sourceX, edge.sourceY)
-            } + Offset(result.edges.last().targetX, result.edges.last().targetY)
+            val pts = ArrayList<Offset>(pathResult.nodeIds.size)
+            for (id in pathResult.nodeIds) {
+                val n = gModel.nodeMap[id] ?: continue
+                pts.add(Offset(n.x.toFloat(), n.y.toFloat()))
+            }
+            if (pts.size < 2 && pathResult.edges.isNotEmpty()) {
+                pathResult.edges.map { Offset(it.sourceX, it.sourceY) } +
+                    Offset(pathResult.edges.last().targetX, pathResult.edges.last().targetY)
+            } else {
+                pts
+            }
         }
-        activePath = pathOffsets
-        activePathEdges = result.edges
-        activeManeuvers = TurnByTurnEngine.buildManeuvers(result.edges)
+        val attached = attachStandingToPath(
+            pathPts = pathOffsetsRaw,
+            pathEdges = pathResult.edges,
+            gModel = gModel,
+            startNodeId = currentUserNodeId,
+        )
+        val wasNavigating = _navState.value.isNavigatingMode
+        var drawablePath = attached.points
+        // Không merge trail phía sau khi reroute — đuôi sau lưng làm manoeuvre “Rẽ …” sai.
+        if (!wasNavigating || !force) {
+            navigationFullPath = drawablePath
+        } else if (navigationFullPath.isEmpty()) {
+            navigationFullPath = drawablePath
+        }
+        activePath = drawablePath
+        activePathEdges = attached.edges
+        // Chỉ dẫn theo polyline đang vẽ (khớp mắt) — tránh trái/phải ngược edge.angleRad
+        activeManeuvers = TurnByTurnEngine.buildManeuversFromPoints(drawablePath) { px ->
+            gModel.pixelsToMeters(px)
+        }
+        if (activeManeuvers.size <= 1 && attached.edges.isNotEmpty()) {
+            activeManeuvers = TurnByTurnEngine.buildManeuvers(attached.edges)
+        }
         earlyTurnAlignSinceMs = 0L
         earlyTurnAlignManeuverAt = Float.NaN
+        lastGuidanceTraveledM = 0f
+        turnDwellSinceMs = 0L
+        turnDwellAtMeters = Float.NaN
+        lastSpokenInstructionKey = null
+        lastInstructionHoldUntilMs = 0L
+        lastUiRouteProgress = 0f
+        nearDestSticky = false
+        nearPinSinceMs = 0L
+        TurnByTurnEngine.resetInstructionSticky()
         activeFloorConnectors = FloorTransitionDetector.findConnectorsOnPath(
-            result.edges,
+            pathResult.edges,
             gModel.nodeMap,
         )
-        val totalDist = totalDistanceOverride ?: result.totalDistanceMeters
+        val totalDist = activeManeuvers.lastOrNull()?.atDistanceMeters?.takeIf { it > 0.2f }
+            ?: ((totalDistanceOverride ?: pathResult.totalDistanceMeters) + attached.extraMeters)
         Log.d(
             "MapViewModel",
-            "Path computed: startNode=$currentUserNodeId, targetNode=$targetNodeId, dist=${"%.2f".format(totalDist.toDouble())}m, nodes=${result.nodeIds.size}, edges=${result.edges.size}"
+            "Path computed: startNode=$currentUserNodeId, targetNode=$targetNodeId, " +
+                "dist=${"%.2f".format(totalDist.toDouble())}m, nodes=${pathResult.nodeIds.size}, " +
+                "edges=${attached.edges.size}, drawPts=${drawablePath.size}, " +
+                "bridgeM=${"%.2f".format(attached.extraMeters.toDouble())}"
         )
         val etaSeconds = estimateEtaSeconds(totalDist, _navState.value.confidence)
-        val rerouteCount = if (force) _navState.value.rerouteCount + 1 else _navState.value.rerouteCount
+        // Chỉ đếm reroute khi ĐANG điều hướng + force (Tính lại đường / off-route).
+        // Xem đường / path đầu không được hiện “Đã tự tính lại 1 lần”.
+        val rerouteCount = if (force && wasNavigating) {
+            _navState.value.rerouteCount + 1
+        } else if (!wasNavigating) {
+            0
+        } else {
+            _navState.value.rerouteCount
+        }
         // Đa tầng: giữ pin đỏ = đích cuối (EXIT), không đổi thành điểm cầu thang trên path
         val isCrossFloorLeg = suggestedFloor != null || pendingFloor != null
         val markerPos = when {
             isCrossFloorLeg && _navState.value.destinationMarkerPos != null ->
                 _navState.value.destinationMarkerPos
-            else -> pathOffsets.lastOrNull() ?: _navState.value.destinationMarkerPos
+            else -> drawablePath.lastOrNull() ?: _navState.value.destinationMarkerPos
         }
         var next = _navState.value.copy(
-            path = pathOffsets,
+            path = drawablePath,
             // Cross-floor: destinationNodeId tạm = connector; giữ pendingDestNodeId làm đích thật
             destinationNodeId = if (isCrossFloorLeg) {
                 _navState.value.pendingDestNodeId ?: pendingNode ?: targetNodeId
@@ -4917,22 +6184,54 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         } else if (activeManeuvers.isNotEmpty()) {
             val g = TurnByTurnEngine.guidance(
                 activeManeuvers,
-                result.totalDistanceMeters,
-                0f,
+                totalDist,
+                traveledMeters = 0f,
                 edges = activePathEdges,
             )
             val mPos = if (g.nextManeuverMapX != null && g.nextManeuverMapY != null) {
                 Offset(g.nextManeuverMapX, g.nextManeuverMapY)
             } else null
             next = next.copy(
-                currentInstructionText = g.instructionText,
+                currentInstructionText = when {
+                    g.nextType == TurnByTurnEngine.ManeuverType.ARRIVE && totalDist > 3f ->
+                        "Đi thẳng ${totalDist.roundToInt().coerceAtLeast(1)} m"
+                    else -> g.instructionText
+                },
                 distanceToNextManeuverMeters = g.distanceToNextManeuverMeters,
                 remainingDistanceMeters = totalDist,
+                hasArrived = false,
                 nextManeuverPos = mPos,
-                nextManeuverType = g.nextType.name,
+                nextManeuverType = when {
+                    g.nextType == TurnByTurnEngine.ManeuverType.ARRIVE && totalDist > 3f ->
+                        TurnByTurnEngine.ManeuverType.STRAIGHT.name
+                    else -> g.nextType.name
+                },
             )
+        } else {
+            next = next.copy(hasArrived = false, currentInstructionText = null)
         }
         _navState.value = next
+        // Chỉ căn chấm nhẹ khi xem đường (chưa Bắt đầu) — không nhảy xa gây giật camera.
+        if (!wasNavigating) {
+            val alignPos = next.userPos
+            if (alignPos != null && drawablePath.size >= 2) {
+                val onPath = nearestPointOnPath(alignPos, drawablePath)
+                if (onPath != null) {
+                    val adx = alignPos.x - onPath.x
+                    val ady = alignPos.y - onPath.y
+                    val gap = sqrt(adx * adx + ady * ady)
+                    val maxAlign = (pixelsPerMeter * 1.2f).coerceIn(20f, 100f)
+                    if (gap > 2f && gap <= maxAlign) {
+                        locationEngine?.relocatePreservingHeading(onPath.x, onPath.y)
+                        _navState.value = _navState.value.copy(
+                            userPos = onPath,
+                            startAnchorPos = onPath,
+                            freezeCameraUntilMs = System.currentTimeMillis() + 800L,
+                        )
+                    }
+                }
+            }
+        }
         syncRouteSnapToEngine()
         if (force) {
             lastRerouteAtMs = System.currentTimeMillis()
@@ -4944,10 +6243,165 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         }
     }
 
+    /** Cắt điểm path đã đi qua (đuôi sau lưng) — chỉ để vẽ / khớp mắt. */
+    private fun trimPathPointsFromUser(points: List<Offset>, x: Float, y: Float): List<Offset> {
+        if (points.size < 2) return points
+        var bestSeg = 0
+        var bestT = 0f
+        var bestD2 = Float.MAX_VALUE
+        for (i in 0 until points.lastIndex) {
+            val a = points[i]
+            val b = points[i + 1]
+            val abx = b.x - a.x
+            val aby = b.y - a.y
+            val lenSq = abx * abx + aby * aby
+            val t = if (lenSq < 1e-4f) {
+                0f
+            } else {
+                (((x - a.x) * abx + (y - a.y) * aby) / lenSq).coerceIn(0f, 1f)
+            }
+            val px = a.x + t * abx
+            val py = a.y + t * aby
+            val d2 = (x - px) * (x - px) + (y - py) * (y - py)
+            if (d2 < bestD2) {
+                bestD2 = d2
+                bestSeg = i
+                bestT = t
+            }
+        }
+        // Sắp tới / vừa qua góc: giữ chân trước góc để còn thấy đường vào ngã
+        var startSeg = bestSeg
+        var startT = bestT
+        if (bestT <= 0.2f && bestSeg > 0) {
+            startSeg = bestSeg - 1
+            startT = 0.88f
+        }
+        val a0 = points[startSeg]
+        val b0 = points[startSeg + 1]
+        val onPath = Offset(
+            a0.x + startT * (b0.x - a0.x),
+            a0.y + startT * (b0.y - a0.y),
+        )
+        val out = ArrayList<Offset>(points.size - startSeg + 1)
+        out.add(onPath)
+        for (i in (startSeg + 1) until points.size) out.add(points[i])
+        return if (out.size >= 2) out else points
+    }
+
+    /**
+     * Đứng gần góc trên map (≤2.2m) mà heading chưa khớp đoạn sau → bắt buộc nhắc rẽ,
+     * không nhảy sang “Đi thẳng Xm rồi rẽ …” đoạn kế.
+     */
+    private fun forceCornerTurnIfNearby(
+        g: TurnByTurnEngine.Guidance,
+        x: Float,
+        y: Float,
+        headingDeg: Float,
+    ): TurnByTurnEngine.Guidance {
+        if (activeManeuvers.isEmpty() || activePathEdges.isEmpty()) return g
+        val maxDistM = 2.2f
+        for (m in activeManeuvers) {
+            if (m.type != TurnByTurnEngine.ManeuverType.TURN_LEFT &&
+                m.type != TurnByTurnEngine.ManeuverType.TURN_RIGHT
+            ) {
+                continue
+            }
+            val pos = TurnByTurnEngine.maneuverMapPosition(activePathEdges, m.atDistanceMeters)
+                ?: continue
+            val distM = hypot(x - pos.first, y - pos.second) / pixelsPerMeter
+            if (distM > maxDistM) continue
+            val outBearing = TurnByTurnEngine.outgoingBearingDeg(activePathEdges, m.atDistanceMeters)
+            val headingOk = outBearing != null &&
+                abs(
+                    com.khoaluan.indoornav.navigation.heading.MapHeadingMath.shortestDeltaDegrees(
+                        headingDeg,
+                        outBearing,
+                    ),
+                ) <= TurnByTurnEngine.EARLY_TURN_ALIGN_DEG
+            if (headingOk) continue
+            val label = if (m.type == TurnByTurnEngine.ManeuverType.TURN_LEFT) {
+                "Rẽ trái"
+            } else {
+                "Rẽ phải"
+            }
+            return g.copy(
+                instructionText = label,
+                distanceToNextManeuverMeters = distM,
+                nextType = m.type,
+                nextManeuverAtMeters = m.atDistanceMeters,
+                nextManeuverMapX = pos.first,
+                nextManeuverMapY = pos.second,
+            )
+        }
+        return g
+    }
+
     private fun applyTurnGuidance(state: NavigationState, x: Float, y: Float): NavigationState {
         if (activePathEdges.isEmpty() || activeManeuvers.isEmpty()) return state
-        val rawTraveled = TurnByTurnEngine.traveledMetersAlongEdges(activePathEdges, x, y)
+        // Cắt đuôi vẽ phía sau chỗ đứng (path cũ / node start sau lưng)
+        val displayPath = if (activePath.size >= 2) {
+            trimPathPointsFromUser(activePath, x, y)
+        } else {
+            state.path ?: activePath
+        }
+        val rawTraveledUncapped = if (activePath.size >= 2) {
+            TurnByTurnEngine.traveledMetersAlongPoints(
+                activePath,
+                x,
+                y,
+            ) { px -> px / pixelsPerMeter }
+        } else {
+            TurnByTurnEngine.traveledMetersAlongEdges(activePathEdges, x, y)
+        }
+        // Không cho mét đã đi nhảy vọt (tránh còn xa pin mà báo 1m / Sắp đến nơi)
+        var rawTraveled = when {
+            lastGuidanceTraveledM <= 0f -> rawTraveledUncapped
+            rawTraveledUncapped < lastGuidanceTraveledM - 2f -> lastGuidanceTraveledM - 0.35f
+            rawTraveledUncapped > lastGuidanceTraveledM + 2.5f -> lastGuidanceTraveledM + 2.5f
+            else -> rawTraveledUncapped
+        }.coerceIn(0f, state.totalDistanceMeters.coerceAtLeast(0f))
+
+        // Không auto-skip manoeuvre khi đứng góc (trước đây dwell 1.2s → nhảy chỉ dẫn đoạn sau).
+        // Chỉ bỏ rẽ khi heading đã khớp hướng đoạn sau.
+        val nextTurn = activeManeuvers.firstOrNull {
+            (it.type == TurnByTurnEngine.ManeuverType.TURN_LEFT ||
+                it.type == TurnByTurnEngine.ManeuverType.TURN_RIGHT) &&
+                it.atDistanceMeters > rawTraveled - TurnByTurnEngine.TURN_HOLD_BEFORE_M &&
+                it.atDistanceMeters < rawTraveled + TurnByTurnEngine.TURN_HOLD_AFTER_M
+        }
         val heading = state.userHeading
+        if (nextTurn != null) {
+            val outBearing = TurnByTurnEngine.outgoingBearingDeg(activePathEdges, nextTurn.atDistanceMeters)
+            val headingOk = outBearing != null &&
+                kotlin.math.abs(
+                    com.khoaluan.indoornav.navigation.heading.MapHeadingMath.shortestDeltaDegrees(
+                        heading,
+                        outBearing,
+                    ),
+                ) <= TurnByTurnEngine.EARLY_TURN_ALIGN_DEG
+            if (headingOk && rawTraveled >= nextTurn.atDistanceMeters - 0.15f) {
+                rawTraveled = (nextTurn.atDistanceMeters + TurnByTurnEngine.MANEUVER_HYSTERESIS_M + 0.05f)
+                    .coerceAtMost(state.totalDistanceMeters.coerceAtLeast(0f))
+                turnDwellSinceMs = 0L
+                turnDwellAtMeters = Float.NaN
+            } else {
+                // Giữ gần điểm rẽ — khỏi projection nhảy sang cạnh sau làm mất “Rẽ trái”
+                if (rawTraveled > nextTurn.atDistanceMeters + 0.4f && !headingOk) {
+                    rawTraveled = nextTurn.atDistanceMeters
+                }
+            }
+        } else {
+            turnDwellSinceMs = 0L
+            turnDwellAtMeters = Float.NaN
+        }
+
+        lastGuidanceTraveledM = rawTraveled
+        val redPinEarly = state.destinationMarkerPos
+        val distToRedPinEarly = if (redPinEarly != null) {
+            hypot(x - redPinEarly.x, y - redPinEarly.y) / pixelsPerMeter
+        } else {
+            Float.MAX_VALUE
+        }
         val aligned = TurnByTurnEngine.isEarlyTurnHeadingAligned(
             maneuvers = activeManeuvers,
             edges = activePathEdges,
@@ -4956,10 +6410,23 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             totalDistanceMeters = state.totalDistanceMeters,
         )
         val nowAlign = System.currentTimeMillis()
-        val nextAhead = activeManeuvers.firstOrNull {
-            it.atDistanceMeters > rawTraveled + TurnByTurnEngine.MANEUVER_HYSTERESIS_M
-        }
-        val skipConfirmed = if (aligned && nextAhead != null) {
+        val nextAhead = TurnByTurnEngine.selectActiveManeuver(
+            maneuvers = activeManeuvers,
+            traveled = rawTraveled,
+            edges = activePathEdges,
+            userHeadingDeg = heading,
+        )
+        // Không early-skip vào ARRIVE khi còn xa pin — tránh 0m / “Sắp đến nơi” giả + TTS spam
+        val skipWouldArriveEarly = nextAhead.type == TurnByTurnEngine.ManeuverType.ARRIVE &&
+            distToRedPinEarly > 5f
+        // Early-turn chỉ khi còn cách góc (đang tiến tới) — không skip lúc đã đứng tại góc
+        val distToAhead = nextAhead.atDistanceMeters - rawTraveled
+        val skipConfirmed = if (aligned &&
+            (nextAhead.type == TurnByTurnEngine.ManeuverType.TURN_LEFT ||
+                nextAhead.type == TurnByTurnEngine.ManeuverType.TURN_RIGHT) &&
+            distToAhead in 0.6f..TurnByTurnEngine.EARLY_TURN_MAX_DIST_M &&
+            !skipWouldArriveEarly
+        ) {
             if (earlyTurnAlignManeuverAt != nextAhead.atDistanceMeters) {
                 earlyTurnAlignManeuverAt = nextAhead.atDistanceMeters
                 earlyTurnAlignSinceMs = nowAlign
@@ -4970,7 +6437,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             earlyTurnAlignManeuverAt = Float.NaN
             false
         }
-        val g = TurnByTurnEngine.guidance(
+        val g0 = TurnByTurnEngine.guidance(
             maneuvers = activeManeuvers,
             totalDistanceMeters = state.totalDistanceMeters,
             traveledMeters = rawTraveled,
@@ -4978,7 +6445,10 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             userHeadingDeg = heading,
             skipEarlyTurnConfirmed = skipConfirmed,
         )
+        // Nếu đứng sát vertex góc trên map mà guidance đã nhảy đoạn sau → ép “Rẽ …”
+        val g = forceCornerTurnIfNearby(g0, x, y, heading)
         val traveled = g.effectiveTraveledMeters
+        lastGuidanceTraveledM = max(lastGuidanceTraveledM, traveled)
         val maneuverPos = if (g.nextManeuverMapX != null && g.nextManeuverMapY != null) {
             Offset(g.nextManeuverMapX, g.nextManeuverMapY)
         } else {
@@ -5008,22 +6478,74 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         } else {
             Float.MAX_VALUE
         }
+        // Còn xa pin đỏ thì không lấy remaining path stub làm “0 m / Sắp đến nơi”
+        val pathRemain = g.remainingDistanceMeters
+        var displayRemain = if (redPin != null && distToRedPinM > 3f) {
+            max(pathRemain, distToRedPinM * 0.9f)
+        } else {
+            pathRemain
+        }.coerceAtLeast(if (redPin != null && distToRedPinM > 3f) 1f else 0f)
+
+        // Gần đích: sticky “Sắp đến nơi” — chỉ khi thực sự sát pin
+        if (redPin != null && distToRedPinM <= 2.5f && displayRemain <= 2.5f) {
+            nearDestSticky = true
+        } else if (nearDestSticky && (redPin == null || distToRedPinM > 5f)) {
+            nearDestSticky = false
+        }
+        if (nearDestSticky && redPin != null && distToRedPinM <= 5f) {
+            displayRemain = min(displayRemain, distToRedPinM).coerceAtLeast(0f)
+        }
+
+        var instructionText = if (nearDestSticky) {
+            "Sắp đến nơi"
+        } else if (redPin != null && distToRedPinM > 3f &&
+            (g.nextType == TurnByTurnEngine.ManeuverType.ARRIVE || pathRemain <= 5f)
+        ) {
+            "Đi thẳng ${displayRemain.roundToInt().coerceAtLeast(1)} m"
+        } else {
+            g.instructionText
+        }
+        // Xa pin mà engine chỉ còn ARRIVE → TTS/UI coi STRAIGHT (tránh nói “Sắp đến nơi”)
+        val guidanceTypeName = when {
+            nearDestSticky -> TurnByTurnEngine.ManeuverType.ARRIVE.name
+            redPin != null && distToRedPinM > 3f &&
+                g.nextType == TurnByTurnEngine.ManeuverType.ARRIVE ->
+                TurnByTurnEngine.ManeuverType.STRAIGHT.name
+            else -> g.nextType.name
+        }
         val destNode = state.destinationNodeId?.let { graphModel?.nodeMap?.get(it) }
         val distToDestNodeM = if (destNode != null) {
             hypot(x - destNode.x.toFloat(), y - destNode.y.toFloat()) / pixelsPerMeter
         } else {
             distToRedPinM
         }
-        // Phải gần pin đỏ + gần node đích + còn ít mét trên path (tránh đứng hành lang ~3–4m báo đến)
-        val nearRedPin = redPin != null &&
+        // Phải gần pin đỏ + gần node đích + còn ít mét trên path (tránh đứng hành lang báo đến)
+        val pinCloseEnough = redPin != null &&
+            distToRedPinM <= minOf(arriveTh, 1.2f) &&
+            distToDestNodeM <= minOf(arriveTh * 1.15f, 1.5f) &&
+            pathRemain <= minOf(arriveTh * 1.15f, 1.6f) &&
+            displayRemain <= 1.8f
+        val walkedEnough = state.totalDistanceMeters < 3.5f ||
+            traveled >= minOf(2.5f, state.totalDistanceMeters * 0.5f)
+        // Còn xa pin tuyệt đối → không bao giờ đến (kể cả pathRemain nhiễu = 0)
+        val farFromPin = redPin != null && distToRedPinM > 2.2f
+        val nowPin = System.currentTimeMillis()
+        if (pinCloseEnough && walkedEnough && progressedEnough && !farFromPin) {
+            if (nearPinSinceMs == 0L) nearPinSinceMs = nowPin
+        } else {
+            nearPinSinceMs = 0L
+        }
+        val nearRedPin = !farFromPin &&
+            pinCloseEnough &&
+            walkedEnough &&
             progressedEnough &&
-            distToRedPinM <= arriveTh &&
-            distToDestNodeM <= arriveTh * 1.35f &&
-            g.remainingDistanceMeters <= arriveTh * 1.4f
+            nearPinSinceMs > 0L &&
+            (nowPin - nearPinSinceMs) >= 700L
 
         val nearPathEnd = progressedEnough &&
-            g.remainingDistanceMeters <= arriveTh &&
-            distToPathEndM <= arriveTh
+            pathRemain <= arriveTh &&
+            distToPathEndM <= arriveTh &&
+            distToRedPinM <= arriveTh * 2.5f
 
         val uiFloor = (_uiState.value as? MapUiState.Success)?.floorNumber
         val crossFloorPending = state.suggestedTargetFloor != null ||
@@ -5061,41 +6583,64 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             )
         }
 
-        // Hết path nhưng chưa sát pin đỏ → giữ chỉ đường, tính lại tới đích (tránh spam)
+        // Hết polyline A* nhưng chưa sát pin đỏ: giữ chỉ đường, KHÔNG auto repath (tránh giật).
         if (state.isNavigatingMode && nearPathEnd && !nearRedPin && !stillNeedFloorChange) {
-            val destId = state.destinationNodeId ?: state.pendingDestNodeId
-            val now = System.currentTimeMillis()
-            if (destId != null && now - lastRepathToPinAtMs > 2500L) {
-                lastRepathToPinAtMs = now
-                Log.i(
-                    "MapViewModel",
-                    "Path end but not at red pin (pin=${distToRedPinM}m) → repath $destId",
-                )
-                updatePath(destId, force = true)
-            }
             return state.copy(
-                currentInstructionText = "Tiếp tục tới điểm đến (pin đỏ)",
+                currentInstructionText = "Tiếp tục tới điểm đến",
                 hasArrived = false,
                 isNavigatingMode = true,
                 remainingDistanceMeters = distToRedPinM.coerceAtLeast(0.1f),
-                navHint = "Chưa tới pin đỏ — đang tính lại đường",
+                navHint = "Chưa tới đích — chạm 「Tính lại đường」 nếu lệch",
                 nextManeuverPos = maneuverPos,
                 nextManeuverType = maneuverTypeName,
             )
         }
 
         // Chỉ “Đã đến nơi” khi đứng gần pin đỏ đích
-        // Khẩn cấp: không auto-arrive khi còn đổi tầng / vừa neo / path quá ngắn / vừa đổi tầng
+        // Khẩn cấp: không auto-arrive khi còn đổi tầng / cầu thang / vừa thoát zone đỏ / vừa neo
         val nowMs = System.currentTimeMillis()
+        val destLabel = state.destinationLabel.orEmpty()
+        val isHazardEscapeWaypoint = destLabel.contains("vùng nguy hiểm", ignoreCase = true) ||
+            destLabel.contains("Thoát vùng", ignoreCase = true)
+        val isFloorConnectorDest = state.pathHasFloorConnector ||
+            destLabel.contains("cầu thang", ignoreCase = true) ||
+            destLabel.contains("thang máy", ignoreCase = true) ||
+            destLabel.contains("connector", ignoreCase = true)
         val emergencyBlockArrive = _emergencySession.value.active && (
             state.suggestedTargetFloor != null ||
                 state.readyForFloorSwitch ||
                 state.pendingDestFloor != null ||
                 pendingCrossFloor != null ||
+                isFloorConnectorDest ||
+                isHazardEscapeWaypoint ||
                 traveled < 1.5f ||
                 state.totalDistanceMeters < 2.0f ||
                 nowMs < emergencyArriveBlockedUntilMs
             )
+
+        // Escape zone đỏ → tới điểm an toàn tạm: tiếp tục sơ tán EXIT, không “Đã đến nơi”
+        if (state.isNavigatingMode &&
+            nearRedPin &&
+            _emergencySession.value.active &&
+            isHazardEscapeWaypoint
+        ) {
+            viewModelScope.launch {
+                delay(120)
+                if (_emergencySession.value.active) {
+                    startEmergencyEvacuation(forceRecalculate = true)
+                    requestCenterCameraOnUser()
+                }
+            }
+            return state.copy(
+                currentInstructionText = "Tiếp tục tới lối thoát hiểm",
+                hasArrived = false,
+                isNavigatingMode = true,
+                navHint = "Đã ra khỏi vùng đỏ — đang tính đường tới lối thoát",
+                nextManeuverPos = null,
+                nextManeuverType = null,
+            )
+        }
+
         if (state.isNavigatingMode && nearRedPin && !stillNeedFloorChange && !emergencyBlockArrive) {
             Log.i(
                 "MapViewModel",
@@ -5109,6 +6654,10 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
             pendingCrossFloor = null
             earlyTurnAlignSinceMs = 0L
             earlyTurnAlignManeuverAt = Float.NaN
+            nearDestSticky = false
+            nearPinSinceMs = 0L
+            lastHeldInstructionText = null
+            lastHeldManeuverType = null
             return state.copy(
                 isNavigatingMode = false,
                 path = null,
@@ -5141,28 +6690,155 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         val readySwitch = targetFloor != null &&
             distToConnector != null &&
             distToConnector <= 2f
-        val instruction = floorHint ?: g.instructionText
-        val eta = estimateEtaSeconds(g.remainingDistanceMeters, state.confidence)
+        val instruction = floorHint ?: instructionText
+        val eta = estimateEtaSeconds(displayRemain, state.confidence)
+        val rawProgress = when {
+            nearDestSticky || displayRemain <= 3f -> {
+                if (state.totalDistanceMeters > 1e-3f) {
+                    (1f - (displayRemain / state.totalDistanceMeters)).coerceIn(0.82f, 0.99f)
+                } else {
+                    0.95f
+                }
+            }
+            redPin != null && distToRedPinM > 5f && state.totalDistanceMeters > 1e-3f -> {
+                val approxTotal = max(state.totalDistanceMeters, displayRemain + traveled)
+                ((approxTotal - displayRemain) / approxTotal).coerceIn(0f, 0.95f)
+            }
+            else -> g.routeProgress.coerceIn(0f, 1f)
+        }
+        // Thanh tiến độ chỉ tăng — không nhảy tụt khi lag/reroute
+        val progressForUi = max(lastUiRouteProgress, rawProgress)
+        if (progressForUi > lastUiRouteProgress + 0.01f) {
+            lastUiRouteProgress = progressForUi
+        }
+
+        // Giữ chữ chỉ dẫn lâu; mét còn lại chỉ đổi khi lệch ≥ 3 m
+        // Nhưng vào góc rẽ (Rẽ trái/phải ngay) → luôn cập nhật, không giữ câu đoạn sau
+        val nowHold = System.currentTimeMillis()
+        val typeName = guidanceTypeName
+        val immediateTurnNow =
+            (typeName == TurnByTurnEngine.ManeuverType.TURN_LEFT.name ||
+                typeName == TurnByTurnEngine.ManeuverType.TURN_RIGHT.name) &&
+                (instruction == "Rẽ trái" || instruction == "Rẽ phải" ||
+                    g.distanceToNextManeuverMeters <= TurnByTurnEngine.IMMEDIATE_TURN_EXIT_METERS)
+        val holdActive = !immediateTurnNow &&
+            lastHeldManeuverType != null &&
+            nowHold < lastInstructionHoldUntilMs
+        val remainInt = displayRemain.roundToInt()
+        val heldRemainInt = lastHeldRemain.roundToInt()
+        val remainDeltaOk = kotlin.math.abs(remainInt - heldRemainInt) >= 3
+
+        val finalInstruction: String
+        val finalDist: Float
+        val finalRemain: Float
+        val finalType: String?
+        if (nearDestSticky) {
+            // Khóa cứng gần đích — không nhấp Rẽ phải / mét / type
+            finalInstruction = "Sắp đến nơi"
+            finalDist = 0f
+            finalRemain = if (!remainDeltaOk && lastHeldRemain > 0f) {
+                min(lastHeldRemain, displayRemain)
+            } else {
+                displayRemain
+            }
+            finalType = TurnByTurnEngine.ManeuverType.ARRIVE.name
+            lastSpokenInstructionKey = finalType
+            lastInstructionHoldUntilMs = nowHold + 4500L
+            lastHeldInstructionText = finalInstruction
+            lastHeldDistToManeuver = finalDist
+            lastHeldRemain = finalRemain
+            lastHeldManeuverType = finalType
+        } else if (immediateTurnNow) {
+            finalInstruction = instruction
+            finalDist = g.distanceToNextManeuverMeters
+            finalRemain = displayRemain
+            finalType = typeName
+            lastSpokenInstructionKey = typeName
+            lastInstructionHoldUntilMs = nowHold + 2000L
+            lastHeldInstructionText = instruction
+            lastHeldDistToManeuver = finalDist
+            lastHeldRemain = finalRemain
+            lastHeldManeuverType = finalType
+        } else if (
+            (typeName == TurnByTurnEngine.ManeuverType.TURN_LEFT.name ||
+                typeName == TurnByTurnEngine.ManeuverType.TURN_RIGHT.name) &&
+            lastHeldManeuverType != typeName
+        ) {
+            // Đổi sang rẽ → luôn cập nhật, không giữ câu đoạn sau
+            finalInstruction = instruction
+            finalDist = g.distanceToNextManeuverMeters
+            finalRemain = displayRemain
+            finalType = typeName
+            lastSpokenInstructionKey = typeName
+            lastInstructionHoldUntilMs = nowHold + 2500L
+            lastHeldInstructionText = instruction
+            lastHeldDistToManeuver = finalDist
+            lastHeldRemain = finalRemain
+            lastHeldManeuverType = finalType
+        } else if (holdActive && lastHeldInstructionText != null &&
+            (lastHeldManeuverType == typeName || !remainDeltaOk)
+        ) {
+            // Giữ nguyên câu đang hiện — khỏi nhấp
+            finalInstruction = lastHeldInstructionText!!
+            finalDist = lastHeldDistToManeuver
+            finalRemain = if (remainDeltaOk) displayRemain else lastHeldRemain
+            if (remainDeltaOk) lastHeldRemain = finalRemain
+            finalType = lastHeldManeuverType
+        } else if (holdActive && lastHeldManeuverType != typeName &&
+            lastHeldInstructionText != null
+        ) {
+            // Type flip trong cửa sổ hold → bỏ qua (trừ TURN đã xử lý trên)
+            finalInstruction = lastHeldInstructionText!!
+            finalDist = lastHeldDistToManeuver
+            finalRemain = lastHeldRemain
+            finalType = lastHeldManeuverType
+        } else {
+            finalInstruction = instruction
+            finalDist = g.distanceToNextManeuverMeters
+            finalRemain = displayRemain
+            finalType = typeName
+            lastSpokenInstructionKey = typeName
+            lastInstructionHoldUntilMs = nowHold + 4500L
+            lastHeldInstructionText = instruction
+            lastHeldDistToManeuver = finalDist
+            lastHeldRemain = finalRemain
+            lastHeldManeuverType = finalType
+        }
         return state.copy(
-            currentInstructionText = instruction,
-            distanceToNextManeuverMeters = g.distanceToNextManeuverMeters,
-            remainingDistanceMeters = g.remainingDistanceMeters,
-            routeProgress = g.routeProgress,
+            path = displayPath,
+            currentInstructionText = finalInstruction,
+            distanceToNextManeuverMeters = finalDist,
+            remainingDistanceMeters = finalRemain,
+            routeProgress = progressForUi,
             etaSeconds = eta,
             hasArrived = false,
             floorTransitionHint = floorHint,
             pathHasFloorConnector = activeFloorConnectors.isNotEmpty() || stillNeedFloorChange,
             readyForFloorSwitch = readySwitch || (stillNeedFloorChange && nearPathEnd),
-            nextManeuverPos = maneuverPos,
-            nextManeuverType = maneuverTypeName,
+            nextManeuverPos = if (nearDestSticky) null else maneuverPos,
+            nextManeuverType = finalType,
         )
+    }
+
+    private fun requestCenterCameraOnUser() {
+        _navState.update { it.copy(centerOnUserRequest = it.centerOnUserRequest + 1) }
     }
 
     /** UI gọi sau khi đã hiện snackbar “Đã đến nơi”. */
     fun clearArrivalFlag() {
-        if (_navState.value.hasArrived) {
-            _navState.value = _navState.value.copy(hasArrived = false)
-        }
+        val s = _navState.value
+        if (!s.hasArrived && s.currentInstructionText != "Đã đến nơi") return
+        nearDestSticky = false
+        lastHeldInstructionText = null
+        lastHeldManeuverType = null
+        lastInstructionHoldUntilMs = 0L
+        _navState.value = s.copy(
+            hasArrived = false,
+            // Không giữ chữ “Đã đến nơi” trên panel Xem đường / Bắt đầu
+            currentInstructionText = null,
+            nextManeuverType = null,
+            nextManeuverPos = null,
+        )
     }
 
     /** #15 History — ghi “Đã điều hướng” khi tới đích. */
@@ -5190,70 +6866,34 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         val userPos = nav.userPos ?: return
         val now = System.currentTimeMillis()
         if (now - lastRerouteAtMs < rerouteCooldownMs) return
-        // CHECK 1: Max reroute attempts
-        if (nav.rerouteCount >= MAX_REROUTE_ATTEMPTS) {
-            Log.w("MapViewModel", "Max reroute attempts (${MAX_REROUTE_ATTEMPTS}) reached. Forcing QR re-scan.")
-            _qrScanError.value = "Đã thử tìm đường quá nhiều lần. Vui lòng quét lại mã QR."
-            com.khoaluan.indoornav.ui.error.ErrorCenter.routeFail("Đã thử tìm đường quá nhiều lần. Vui lòng quét lại mã QR.")
-            _navState.value = _navState.value.copy(isNavigatingMode = false)
-            return
-        }
-        if (activePath.size < 2) {
-            updatePath(destinationNodeId, force = true)
-            return
-        }
+        if (activePath.size < 2) return
+
         val minDistToPathPx = distanceToPath(userPos, activePath)
         val minDistToPathMeters = minDistToPathPx / pixelsPerMeter
-        // FIX 4: Relax off-route threshold during heading changes (user turning)
- val effectiveOffRouteThreshold = if (locationEngine?.isHeadingChangeRelaxed() == true) {
- offRouteThresholdMeters * HEADING_CHANGE_OFFROUTE_MULTIPLIER
- } else {
- offRouteThresholdMeters
- }
- val isOffRoute = minDistToPathMeters > effectiveOffRouteThreshold
-        val isLowConfidence = nav.confidence < lowConfidenceThreshold
-        if (isOffRoute || isLowConfidence) {
-            val reason = if (isOffRoute) "off_route" else "low_confidence"
-            Log.w(
-                "MapViewModel",
-                "Trigger re-route reason=$reason, distM=${minDistToPathMeters.roundTo(1)}, conf=${nav.confidence}, count=${nav.rerouteCount}"
-            )
-            // CHECK 2: Kiểm tra xem new path có khác old path không
-            val gModel = graphModel ?: run {
-                Log.w("MapViewModel", "graphModel null, cannot check path similarity")
-                triggerReroutingPulse()
-                updatePath(destinationNodeId, force = true)
-                return
-            }
-            val currentUserNodeId = findNearestNodeIdFromCurrentPosition(gModel)
-            if (currentUserNodeId != null) {
-        // CHECK 3: Skip reroute if nearest node unchanged since last reroute
-        // Prevents infinite loops when coordinate mismatch selects same wrong node
-        val lastRerouteNodeId = nav.rerouteSourceNodeId
-        if (currentUserNodeId == lastRerouteNodeId) {
-            Log.w("MapViewModel", "Reroute skipped: nearest node unchanged (" + currentUserNodeId + ")")
-            return
+        val turning = locationEngine?.isHeadingChangeRelaxed() == true
+        val effectiveOffRouteThreshold = if (turning) {
+            offRouteThresholdMeters * HEADING_CHANGE_OFFROUTE_MULTIPLIER
+        } else {
+            offRouteThresholdMeters
         }
-                val newPathResult = pathfinder?.findPath(currentUserNodeId, destinationNodeId)
-                if (newPathResult != null) {
-                    val newPathOffsets = if (newPathResult.edges.isEmpty()) {
-                        val node = gModel.nodeMap[destinationNodeId]
-                        if (node != null) listOf(Offset(node.x.toFloat(), node.y.toFloat())) else emptyList()
-                    } else {
-                        newPathResult.edges.map { edge ->
-                            Offset(edge.sourceX, edge.sourceY)
-                        } + Offset(newPathResult.edges.last().targetX, newPathResult.edges.last().targetY)
-                    }
-                    // Kiểm tra similarity
-                    val pathSimilarity = calculatePathSimilarity(activePath, newPathOffsets)
-                    if (pathSimilarity > 0.9f) {
-                        Log.i("MapViewModel", "Path similar (${(pathSimilarity*100).toInt()}%), skipping reroute")
-                        return
-                    }
-                }
+        if (minDistToPathMeters <= effectiveOffRouteThreshold) return
+
+        // Đang điều hướng: KHÔNG auto relocate / KHÔNG auto repath.
+        // Soft-recover + repath làm chữ chỉ dẫn, thanh tiến độ và camera nhảy liên tục.
+        if (turning) return
+        if (now - lastSoftRecoverAtMs < softRecoverCooldownMs) return
+        lastSoftRecoverAtMs = now
+        lastRerouteAtMs = now
+        // Chỉ gợi ý — để user bấm "Tính lại đường" / "Sửa vị trí"
+        if (minDistToPathMeters > offRouteThresholdMeters * 1.5f) {
+            val hint = if (nav.rerouteCount >= 1) {
+                "Lệch đường nhiều lần. Hãy Sửa vị trí hoặc Quét lại QR."
+            } else {
+                "Có vẻ lệch đường — bấm Sửa vị trí hoặc Tính lại đường."
             }
-            triggerReroutingPulse()
-            updatePath(destinationNodeId, force = true)
+            if (nav.navHint != hint) {
+                _navState.value = nav.copy(navHint = hint)
+            }
         }
     }
     private fun triggerReroutingPulse() {
@@ -5463,6 +7103,7 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 totalDistanceMeters = 0f,
                 etaSeconds = 0,
                 isNavigatingMode = false,
+                hasArrived = false,
                 navigationError = null,
                 rerouteCount = 0,
                 currentInstructionText = null,
@@ -5497,12 +7138,85 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
         val mapKey = buildMapSessionKey(state.buildingId, state.floorNumber)
         localizationMapKey = mapKey
 
-        val nearest = findNearestNodeId(x, y, state.mapData)
-        var anchoredX = x
-        var anchoredY = y
+        // Trong phòng: giữ đúng chỗ chạm (path sẽ nối ra hành lang khi chỉ đường).
+        // Ngoài phòng: mới snap lên cạnh đi được — tránh neo xuyên tường.
+        val tapInsideRoom = state.mapData.rooms.any { room ->
+            val left = room.x.toFloat()
+            val top = room.y.toFloat()
+            val right = left + room.width.toFloat()
+            val bottom = top + room.height.toFloat()
+            x in left..right && y in top..bottom
+        }
+        val keepExact = preferExactPosition || tapInsideRoom
+
+        val gModel = graphModel
+        var placeX = x
+        var placeY = y
+        if (!keepExact && gModel != null) {
+            val snap = snapToWalkablePath(gModel, x, y)
+            if (snap != null) {
+                placeX = snap.first
+                placeY = snap.second
+                Log.i(
+                    "MapViewModel",
+                    "Standing snapped to walkable ($placeX,$placeY) from tap ($x,$y) node=${snap.third}",
+                )
+            }
+        }
+
+        // Đã chạy định vị: chỉ đổi chỗ đứng, giữ la bàn — tránh nhảy 90°/270° khi chạm map
+        if (engine.isRunning) {
+            engine.relocatePreservingHeading(placeX, placeY)
+            // Giữ điểm neo vài giây — PDR không kéo lệch ngay
+            engine.lockPositionFor(1_200L)
+            val anchor = Offset(placeX, placeY)
+            stairsSeedHoldPos = anchor
+            stairsSeedHoldUntilMs = System.currentTimeMillis() + 1_200L
+            _navState.update {
+                it.copy(
+                    userPos = anchor,
+                    startAnchorPos = anchor,
+                    userHeading = engine.currentNavigationHeadingDeg(),
+                    confidence = maxOf(it.confidence, 0.4f),
+                    navigationError = null,
+                    navHint = hint ?: "Đã đặt vị trí đứng (giữ hướng)",
+                )
+            }
+            if (resumeEmergency && _emergencySession.value.active) {
+                com.khoaluan.indoornav.fcm.EmergencyHeartbeat.updateIndoorContext(
+                    buildingId = state.buildingId,
+                    floor = state.floorNumber,
+                    qrAnchor = null,
+                )
+                _emergencySession.update { it.copy(floorConfirmed = true) }
+                tryResumeEmergencyEvacuationAfterLocalize()
+            } else if (_emergencySession.value.active) {
+                com.khoaluan.indoornav.fcm.EmergencyHeartbeat.updateIndoorContext(
+                    buildingId = state.buildingId,
+                    floor = state.floorNumber,
+                    qrAnchor = null,
+                )
+                _emergencySession.update { it.copy(needsQr = false, error = null, floorConfirmed = true) }
+            }
+            indoorPresenceClaimed = true
+            com.khoaluan.indoornav.fcm.PresenceSync.update(
+                context = getApplication(),
+                buildingId = state.buildingId,
+                floor = state.floorNumber,
+                indoorSessionOpen = true,
+                touchIndoor = true,
+                includeRadio = true,
+            )
+            Log.i("MapViewModel", "Manual relocate preserve heading at ($placeX,$placeY)")
+            return
+        }
+
+        val nearest = findNearestNodeId(placeX, placeY, state.mapData)
+        var anchoredX = placeX
+        var anchoredY = placeY
         var usedNode = false
-        if (preferExactPosition) {
-            // Neo đúng điểm (POI cầu thang) — không snap 80px sang phòng khác
+        if (keepExact) {
+            // Trong phòng / cầu thang: neo đúng điểm chạm — không kéo sang node hành lang
             engine.startWithPosition(x, y)
             anchoredX = x
             anchoredY = y
@@ -5512,24 +7226,24 @@ private val HEADING_CHANGE_OFFROUTE_MULTIPLIER = 2.0f
                 usedNode = true
                 val node = graphModel?.nodeMap?.get(nearest)
                 if (node != null) {
-                    val dx = node.x.toFloat() - x
-                    val dy = node.y.toFloat() - y
+                    val dx = node.x.toFloat() - placeX
+                    val dy = node.y.toFloat() - placeY
                     val dist2 = dx * dx + dy * dy
                     if (dist2 < 80f * 80f) {
                         anchoredX = node.x.toFloat()
                         anchoredY = node.y.toFloat()
                     } else {
-                        engine.startWithPosition(x, y)
+                        engine.startWithPosition(placeX, placeY)
                         usedNode = false
-                        anchoredX = x
-                        anchoredY = y
+                        anchoredX = placeX
+                        anchoredY = placeY
                     }
                 }
             } else {
-                engine.startWithPosition(x, y)
+                engine.startWithPosition(placeX, placeY)
             }
         } else {
-            engine.startWithPosition(x, y)
+            engine.startWithPosition(placeX, placeY)
         }
 
         applyOutdoorGpsHeadingHandoff(engine)

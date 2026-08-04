@@ -7,9 +7,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -20,20 +20,19 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Star
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -44,7 +43,9 @@ import androidx.compose.ui.unit.sp
 import com.khoaluan.indoornav.data.api.IndoorReviewItemDto
 import com.khoaluan.indoornav.data.api.IndoorTargetSummaryDto
 import com.khoaluan.indoornav.ui.i18n.tr
+import kotlinx.coroutines.launch
 
+private val GmapsTeal = Color(0xFF006D77)
 private val GmapsBlue = Color(0xFF1A73E8)
 private val GmapsInk = Color(0xFF202124)
 private val GmapsMuted = Color(0xFF5F6368)
@@ -52,7 +53,7 @@ private val GmapsStar = Color(0xFFF9AB00)
 private val GmapsCard = Color(0xFFF1F3F4)
 
 /**
- * Sheet phòng/POI trong nhà — chỉ đường + đánh giá/lưu/báo cáo (kiểu Google Maps outdoor).
+ * Sheet phòng/POI trong nhà — kéo mượt Peek ↔ Expanded kiểu Google Maps.
  */
 data class PlaceCardModel(
     val name: String,
@@ -84,7 +85,12 @@ fun PlaceDetailSheet(
     /** Có khi mở sheet từ chạm map — neo đứng tại điểm vừa chạm. */
     onSetStandingLocation: (() -> Unit)? = null,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    // false = cho phép PartiallyExpanded (kéo mượt như Google Maps)
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = false,
+        confirmValueChange = { true },
+    )
     val canEngage = !place.entityKind.isNullOrBlank() && !place.entityId.isNullOrBlank()
     val ratingAvg = summary?.ratingAvg?.toFloat() ?: place.rating
     val ratingCount = when {
@@ -98,183 +104,270 @@ fun PlaceDetailSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = Color.White,
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp, bottom = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(40.dp)
+                        .height(4.dp)
+                        .background(Color(0xFFDADCE0), RoundedCornerShape(2.dp)),
+                )
+            }
+        },
     ) {
+        // Không bọc cả sheet bằng verticalScroll — tránh gesture scroll kéo sheet nhảy xuống.
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 560.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp),
         ) {
-            Text(place.name, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = GmapsInk)
-            Text(typeLabel, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // —— Peek: tiêu đề + meta + CTA ——
+            Text(
+                place.name,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = GmapsInk,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                typeLabel,
+                fontSize = 13.sp,
+                color = GmapsMuted,
+                modifier = Modifier.padding(top = 2.dp),
+            )
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = 6.dp),
+            ) {
                 val avgText = if (ratingAvg != null && ratingCount > 0) {
                     String.format("%.1f", ratingAvg).replace('.', ',')
                 } else {
                     "—"
                 }
-                Text(avgText, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = GmapsInk)
+                Text(avgText, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = GmapsInk)
                 Icon(
                     imageVector = Icons.Rounded.Star,
                     contentDescription = null,
                     tint = GmapsStar,
                     modifier = Modifier
                         .padding(horizontal = 4.dp)
-                        .size(18.dp),
+                        .size(16.dp),
                 )
-                Text("($ratingCount)", fontSize = 14.sp, color = GmapsMuted)
+                Text("($ratingCount)", fontSize = 13.sp, color = GmapsMuted)
             }
 
             place.openingHours?.takeIf { it.isNotBlank() }?.let {
-                Text(tr("Giờ mở: $it", "Hours: $it"), fontSize = 13.sp, color = GmapsMuted)
-            }
-            (summary?.description ?: place.description)?.takeIf { it.isNotBlank() }?.let {
-                Text(it, fontSize = 14.sp, color = GmapsInk)
+                Text(
+                    tr("Giờ mở: $it", "Hours: $it"),
+                    fontSize = 13.sp,
+                    color = GmapsMuted,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
             }
 
             if (!notice.isNullOrBlank() && !notice.contains("lỗi", ignoreCase = true)) {
-                Text(notice, fontSize = 12.sp, color = Color(0xFF188038))
-            } else if (!notice.isNullOrBlank()) {
-                Text(notice, fontSize = 12.sp, color = Color(0xFFD93025))
-            }
-
-            if (canEngage) {
-                HorizontalDivider(
-                    color = Color(0xFFE8EAED),
-                    modifier = Modifier.padding(vertical = 4.dp),
-                )
-
                 Text(
-                    tr("Bài đánh giá", "Reviews"),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = GmapsInk,
-                )
-
-                when {
-                    reviews.isEmpty() -> {
-                        Text(
-                            tr(
-                                "Chưa có bài đánh giá. Hãy là người đầu tiên!",
-                                "No reviews yet. Be the first!",
-                            ),
-                            fontSize = 13.sp,
-                            color = GmapsMuted,
-                        )
-                    }
-                    else -> {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            reviews.take(8).forEach { review ->
-                                IndoorReviewCard(review)
-                            }
-                        }
-                    }
-                }
-
-                Text(
-                    text = tr("Xếp hạng và đánh giá", "Rate and review"),
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                    color = GmapsInk,
+                    notice,
+                    fontSize = 12.sp,
+                    color = Color(0xFF188038),
                     modifier = Modifier.padding(top = 4.dp),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    (1..5).forEach { n ->
-                        val filled = (summary?.myReview?.rating ?: 0) >= n
-                        Text(
-                            text = if (filled) "★" else "☆",
-                            fontSize = 30.sp,
-                            color = if (filled) GmapsStar else Color(0xFF9AA0A6),
-                            modifier = Modifier
-                                .clickable {
-                                    if (!isLoggedIn) onLoginRequired() else onRate(n)
-                                }
-                                .padding(2.dp),
-                        )
-                    }
-                }
+            } else if (!notice.isNullOrBlank()) {
                 Text(
-                    text = if (isLoggedIn) {
-                        tr("Chạm sao để viết đánh giá", "Tap a star to write a review")
-                    } else {
-                        tr("Đăng nhập để đánh giá / lưu / báo cáo", "Sign in to rate, save, or report")
-                    },
+                    notice,
                     fontSize = 12.sp,
-                    color = GmapsMuted,
+                    color = Color(0xFFD93025),
+                    modifier = Modifier.padding(top = 4.dp),
                 )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            if (!isLoggedIn) onLoginRequired() else onToggleFavorite()
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(
-                            imageVector = if (isFavorite) {
-                                Icons.Rounded.Favorite
-                            } else {
-                                Icons.Rounded.FavoriteBorder
-                            },
-                            contentDescription = null,
-                            tint = if (isFavorite) Color(0xFFD93025) else GmapsBlue,
-                            modifier = Modifier
-                                .padding(end = 6.dp)
-                                .size(18.dp),
-                        )
-                        Text(if (isFavorite) tr("Đã lưu", "Saved") else tr("Lưu", "Save"))
-                    }
-                    TextButton(onClick = {
-                        if (!isLoggedIn) onLoginRequired() else onReport()
-                    }) {
-                        Text(tr("Báo cáo", "Report"), color = Color(0xFFD93025))
-                    }
-                }
             }
 
-            if (onSetStandingLocation != null) {
-                OutlinedButton(
-                    onClick = onSetStandingLocation,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(tr("Đặt vị trí đứng", "Set my location"))
-                }
-            }
+            Spacer(modifier = Modifier.height(12.dp))
 
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 4.dp),
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedButton(onClick = onPreviewPath, modifier = Modifier.weight(1f)) {
-                    Text(tr("Xem đường", "Preview"))
-                }
-                Button(
+                GmapsPill(
+                    label = tr("Đường đi", "Directions"),
+                    icon = Icons.Rounded.Place,
+                    filled = true,
+                    onClick = onPreviewPath,
+                )
+                GmapsPill(
+                    label = tr("Bắt đầu", "Start"),
+                    icon = Icons.Rounded.Place,
+                    filled = false,
                     onClick = onStartNavigation,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = GmapsBlue),
-                ) {
-                    Text(tr("Bắt đầu", "Start"))
+                )
+                if (onSetStandingLocation != null) {
+                    GmapsPill(
+                        label = tr("Đứng đây", "Stand here"),
+                        icon = Icons.Rounded.Place,
+                        filled = false,
+                        onClick = onSetStandingLocation,
+                    )
+                }
+                if (canEngage) {
+                    GmapsPill(
+                        label = if (isFavorite) tr("Đã lưu", "Saved") else tr("Lưu", "Save"),
+                        icon = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                        filled = false,
+                        onClick = {
+                            if (!isLoggedIn) onLoginRequired() else onToggleFavorite()
+                        },
+                    )
                 }
             }
-            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                Text(tr("Đóng", "Close"))
+
+            Text(
+                text = tr("Kéo lên để xem thêm", "Swipe up for more"),
+                color = GmapsMuted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .padding(top = 12.dp, bottom = 4.dp)
+                    .clickable {
+                        scope.launch {
+                            sheetState.expand()
+                        }
+                    },
+            )
+
+            // —— Phần mở rộng: chỉ scroll khối này ——
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(320.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider(color = Color(0xFFE8EAED))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                (summary?.description ?: place.description)?.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        tr("Mô tả", "Description"),
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        color = GmapsInk,
+                    )
+                    Text(
+                        it,
+                        fontSize = 14.sp,
+                        color = GmapsInk,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+                    )
+                }
+
+                if (canEngage) {
+                    Text(
+                        tr("Bài đánh giá", "Reviews"),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = GmapsInk,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    when {
+                        reviews.isEmpty() -> {
+                            Text(
+                                tr(
+                                    "Chưa có bài đánh giá. Hãy là người đầu tiên!",
+                                    "No reviews yet. Be the first!",
+                                ),
+                                fontSize = 13.sp,
+                                color = GmapsMuted,
+                            )
+                        }
+                        else -> {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                reviews.take(8).forEach { review ->
+                                    IndoorReviewCard(review)
+                                }
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = tr("Xếp hạng và đánh giá", "Rate and review"),
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        color = GmapsInk,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(top = 6.dp),
+                    ) {
+                        (1..5).forEach { n ->
+                            val filled = (summary?.myReview?.rating ?: 0) >= n
+                            Text(
+                                text = if (filled) "★" else "☆",
+                                fontSize = 30.sp,
+                                color = if (filled) GmapsStar else Color(0xFF9AA0A6),
+                                modifier = Modifier
+                                    .clickable {
+                                        if (!isLoggedIn) onLoginRequired() else onRate(n)
+                                    }
+                                    .padding(2.dp),
+                            )
+                        }
+                    }
+                    Text(
+                        text = if (isLoggedIn) {
+                            tr("Chạm sao để viết đánh giá", "Tap a star to write a review")
+                        } else {
+                            tr(
+                                "Đăng nhập để đánh giá / lưu / báo cáo",
+                                "Sign in to rate, save, or report",
+                            )
+                        },
+                        fontSize = 12.sp,
+                        color = GmapsMuted,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+
+                    TextButton(
+                        onClick = {
+                            if (!isLoggedIn) onLoginRequired() else onReport()
+                        },
+                        modifier = Modifier.padding(top = 4.dp),
+                    ) {
+                        Text(tr("Báo cáo", "Report"), color = Color(0xFFD93025))
+                    }
+                }
+
+                if (sheetState.currentValue == SheetValue.Expanded) {
+                    TextButton(
+                        onClick = {
+                            scope.launch { sheetState.partialExpand() }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(tr("Thu gọn", "Collapse"), color = GmapsTeal)
+                    }
+                }
+
+                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                    Text(tr("Đóng", "Close"), color = GmapsMuted)
+                }
             }
-            Box(modifier = Modifier.height(12.dp))
         }
     }
 }

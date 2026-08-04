@@ -1,82 +1,115 @@
 package com.khoaluan.indoornav.ui.screens
 
-import android.graphics.Color as AndroidColor
-import android.graphics.Paint
-import android.graphics.drawable.BitmapDrawable
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color as AndroidColor
+import android.graphics.Paint
+import com.khoaluan.indoornav.data.api.OutdoorLatLng
 import com.khoaluan.indoornav.data.api.OutdoorRouteResponse
-import org.osmdroid.util.BoundingBox
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.Polyline
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.geometry.LatLngBounds
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.Property
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.layers.SymbolLayer
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.Feature
+import org.maplibre.geojson.FeatureCollection
+import org.maplibre.geojson.LineString
+import org.maplibre.geojson.Point
 
-internal const val OUTDOOR_ROUTE_ID = "outdoor_route"
-internal const val OUTDOOR_DEST_ID = "outdoor_dest"
+/**
+ * Đường đi bộ ngoài trời (outdoor route) + ghim điểm đến — GeoJsonSource + LineLayer/SymbolLayer.
+ * Thay thế Polyline/Marker overlay của osmdroid.
+ */
+internal object OutdoorRouteMapHelpers {
+    private const val ROUTE_SOURCE_ID = "outdoor_route_source"
+    private const val ROUTE_LAYER_ID = "outdoor_route_layer"
+    private const val DEST_SOURCE_ID = "outdoor_dest_source"
+    private const val DEST_LAYER_ID = "outdoor_dest_layer"
+    private const val DEST_ICON_ID = "outdoor_dest_pin_icon"
 
-internal fun clearOutdoorRouteOverlays(map: MapView) {
-    val remove = map.overlays.filter { o ->
-        (o is Polyline && o.id == OUTDOOR_ROUTE_ID) ||
-            (o is Marker && (o.id == OUTDOOR_DEST_ID || o.id == OUTDOOR_ROUTE_ID))
-    }
-    map.overlays.removeAll(remove)
-    map.invalidate()
-}
+    private fun emptyCollection() = FeatureCollection.fromFeatures(emptyList())
 
-internal fun drawOutdoorRouteOnMap(
-    context: Context,
-    map: MapView,
-    route: OutdoorRouteResponse,
-    fitBounds: Boolean = true,
-) {
-    clearOutdoorRouteOverlays(map)
-    val pts = route.polyline.mapNotNull { p ->
-        if (p.lat == 0.0 && p.lng == 0.0) null else GeoPoint(p.lat, p.lng)
-    }
-    if (pts.size < 2) return
-
-    val line = Polyline().apply {
-        id = OUTDOOR_ROUTE_ID
-        setPoints(pts)
-        outlinePaint.color = AndroidColor.parseColor("#1A73E8")
-        outlinePaint.strokeWidth = 14f
-        outlinePaint.strokeCap = Paint.Cap.ROUND
-        outlinePaint.strokeJoin = Paint.Join.ROUND
-        outlinePaint.isAntiAlias = true
-    }
-    map.overlays.add(0, line)
-
-    val dest = route.to ?: route.polyline.lastOrNull()?.let {
-        com.khoaluan.indoornav.data.api.OutdoorLatLng(it.lat, it.lng)
-    }
-    if (dest != null) {
-        val marker = Marker(map).apply {
-            id = OUTDOOR_DEST_ID
-            position = GeoPoint(dest.lat, dest.lng)
-            title = "Đích"
-            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-            icon = BitmapDrawable(context.resources, createDestPinBitmap())
-            setInfoWindow(null)
+    fun ensureLayers(style: Style) {
+        if (style.getImage(DEST_ICON_ID) == null) {
+            style.addImage(DEST_ICON_ID, createDestPinBitmap())
         }
-        map.overlays.add(marker)
+        if (style.getSource(ROUTE_SOURCE_ID) == null) {
+            style.addSource(GeoJsonSource(ROUTE_SOURCE_ID, emptyCollection()))
+        }
+        if (style.getLayer(ROUTE_LAYER_ID) == null) {
+            style.addLayerBelow(
+                LineLayer(ROUTE_LAYER_ID, ROUTE_SOURCE_ID).withProperties(
+                    PropertyFactory.lineColor(AndroidColor.parseColor("#1A73E8")),
+                    PropertyFactory.lineWidth(6f),
+                    PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                    PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+                    PropertyFactory.lineOpacity(0.95f),
+                ),
+                OutdoorMapLayers.PLACE_LAYER_ID,
+            )
+        }
+        if (style.getSource(DEST_SOURCE_ID) == null) {
+            style.addSource(GeoJsonSource(DEST_SOURCE_ID, emptyCollection()))
+        }
+        if (style.getLayer(DEST_LAYER_ID) == null) {
+            style.addLayer(
+                SymbolLayer(DEST_LAYER_ID, DEST_SOURCE_ID).withProperties(
+                    PropertyFactory.iconImage(DEST_ICON_ID),
+                    PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+                    PropertyFactory.iconAllowOverlap(true),
+                    PropertyFactory.iconIgnorePlacement(true),
+                ),
+            )
+        }
     }
 
-    if (fitBounds) {
-        map.zoomToBoundingBox(BoundingBox.fromGeoPoints(pts), true, 120)
+    fun clearRoute(style: Style) {
+        (style.getSource(ROUTE_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(emptyCollection())
+        (style.getSource(DEST_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(emptyCollection())
     }
-    map.invalidate()
-}
 
-private fun createDestPinBitmap(): Bitmap {
-    val size = 72
-    val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bmp)
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    paint.color = AndroidColor.parseColor("#EA4335")
-    canvas.drawCircle(size / 2f, size / 2.4f, size / 3.2f, paint)
-    paint.color = AndroidColor.WHITE
-    canvas.drawCircle(size / 2f, size / 2.4f, size / 7f, paint)
-    return bmp
+    /** Vẽ đường đi + ghim đích; trả về bounds để fit camera (null nếu route rỗng). */
+    fun drawRoute(style: Style, route: OutdoorRouteResponse): LatLngBounds? {
+        ensureLayers(style)
+        val pts = route.polyline.mapNotNull { p ->
+            if (p.lat == 0.0 && p.lng == 0.0) null else LatLng(p.lat, p.lng)
+        }
+        if (pts.size < 2) {
+            clearRoute(style)
+            return null
+        }
+
+        val lineString = LineString.fromLngLats(pts.map { Point.fromLngLat(it.longitude, it.latitude) })
+        (style.getSource(ROUTE_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(
+            FeatureCollection.fromFeature(Feature.fromGeometry(lineString)),
+        )
+
+        val dest = route.to ?: route.polyline.lastOrNull()?.let { OutdoorLatLng(it.lat, it.lng) }
+        (style.getSource(DEST_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(
+            if (dest != null) {
+                FeatureCollection.fromFeature(Feature.fromGeometry(Point.fromLngLat(dest.lng, dest.lat)))
+            } else {
+                emptyCollection()
+            },
+        )
+
+        val boundsBuilder = LatLngBounds.Builder()
+        pts.forEach { boundsBuilder.include(it) }
+        return boundsBuilder.build()
+    }
+
+    private fun createDestPinBitmap(): Bitmap {
+        val size = 72
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.color = AndroidColor.parseColor("#EA4335")
+        canvas.drawCircle(size / 2f, size / 2.4f, size / 3.2f, paint)
+        paint.color = AndroidColor.WHITE
+        canvas.drawCircle(size / 2f, size / 2.4f, size / 7f, paint)
+        return bmp
+    }
 }

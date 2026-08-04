@@ -55,6 +55,25 @@ interface ApiService {
     @POST("places/search")
     suspend fun searchPlaces(@Body body: PlaceSearchBody): Response<PlaceSearchResponse>
 
+    /** Geocode OSM qua Backend (Nominatim proxy + cache). */
+    @GET("geocode")
+    suspend fun geocode(
+        @Query("q") q: String,
+        @Query("limit") limit: Int = 5,
+        @Query("lat") lat: Double? = null,
+        @Query("lng") lng: Double? = null,
+    ): Response<GeocodeResponse>
+
+    /** POI OSM quanh tọa độ qua Backend (Overpass proxy + cache). */
+    @GET("overpass/nearby")
+    suspend fun overpassNearby(
+        @Query("lat") lat: Double,
+        @Query("lng") lng: Double,
+        @Query("radius") radius: Int = 250,
+        @Query("limit") limit: Int = 30,
+        @Query("amenities") amenities: String? = null,
+    ): Response<OverpassNearbyResponse>
+
     @POST("place-platform/reviews")
     suspend fun upsertPlaceReview(@Body body: PlaceReviewBody): Response<PlaceReviewResponse>
 

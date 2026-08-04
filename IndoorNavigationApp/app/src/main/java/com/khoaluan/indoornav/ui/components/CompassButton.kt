@@ -45,6 +45,7 @@ fun CompassButton(
     mapRotationMode: MapRotationMode = MapRotationMode.NORTH_UP,
     onClick: () -> Unit = {},
     onLongClick: (() -> Unit)? = null,
+    magneticInterference: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     var unwrappedRotation by remember { mutableFloatStateOf(0f) }
@@ -57,7 +58,7 @@ fun CompassButton(
 
     val animatedRotation by animateFloatAsState(
         targetValue = unwrappedRotation,
-        animationSpec = tween(durationMillis = 50),
+        animationSpec = tween(durationMillis = 40),
         label = "CompassRotation"
     )
 
@@ -69,7 +70,7 @@ fun CompassButton(
             .shadow(4.dp, CircleShape)
             .size(56.dp)
             .clip(CircleShape)
-            .background(Color.White)
+            .background(if (magneticInterference) Color(0xFFFFF3E0) else Color.White)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick,
@@ -84,6 +85,16 @@ fun CompassButton(
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 2.dp)
                     .background(NavBlue, CircleShape)
+            )
+        }
+
+        if (magneticInterference) {
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .align(Alignment.TopEnd)
+                    .padding(top = 4.dp, end = 4.dp)
+                    .background(Color(0xFFE65100), CircleShape)
             )
         }
 

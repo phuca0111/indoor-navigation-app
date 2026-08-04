@@ -1,5 +1,6 @@
 /**
  * Outdoor Platform — OSM experience (search · filter · cluster · deep-link · Maps CTA)
+ * Mirror Leaflet cũ (giữ file). Runtime: app-leaflet.js (?map=leaflet) hoặc app-maplibre.js (mặc định).
  */
 (function () {
   const API = '/api/places';
@@ -8,10 +9,14 @@
   const GEOFENCE_M = 150;
 
   const map = L.map('map').setView(DEFAULT_CENTER, 13);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-  }).addTo(map);
+  if (typeof installVietnamBasemap === 'function') {
+    installVietnamBasemap(map);
+  } else {
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+  }
 
   const markersLayer = (typeof L.markerClusterGroup === 'function')
     ? L.markerClusterGroup()

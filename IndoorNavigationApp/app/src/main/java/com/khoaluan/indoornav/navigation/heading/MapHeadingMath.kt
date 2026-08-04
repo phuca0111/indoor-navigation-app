@@ -3,8 +3,9 @@ package com.khoaluan.indoornav.navigation.heading
 /**
  * Phase 0.5 — chuyển Device Heading (la bàn thế giới) → Map Heading (trục map).
  *
- * Công thức chuẩn: mapHeading = deviceHeading − mapNorthOffset
- * mapNorthOffset = map_bearing_offset (từ Web Editor) + hiệu chỉnh tay.
+ * Công thức chuẩn:
+ * mapHeading = deviceHeading − (map_bearing_offset + calib_tay + gridDelta(x,y))
+ * xem [HeadingReferenceFrame] / [MagHeadingCorrectionGrid].
  * Navigation Heading = Map Heading + Movement Correction (OrientationManager).
  */
 object MapHeadingMath {

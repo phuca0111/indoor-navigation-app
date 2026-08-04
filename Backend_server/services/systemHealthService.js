@@ -186,6 +186,20 @@ async function buildSystemHealth() {
     storage: disk,
     object_storage: objectStorage,
     worker_queue: queue,
+    fcm: (() => {
+      try {
+        const { getFcmRuntimeStatus } = require('./fcmPushAdapter');
+        const s = getFcmRuntimeStatus();
+        return {
+          mode: s.mode,
+          ready: !!s.ready,
+          project_id: s.project_id,
+          message: s.message,
+        };
+      } catch (e) {
+        return { mode: 'unknown', ready: false, message: e.message };
+      }
+    })(),
     api: {
       ok: true,
       latency_ms: db.latency_ms != null ? round(db.latency_ms, 2) : null

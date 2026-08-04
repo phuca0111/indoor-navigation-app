@@ -14,10 +14,8 @@ import kotlin.math.sqrt
  */
 class RotationEngine {
 
-    // alpha=0.95 (giảm từ 0.98): L1 phản ứng nhanh hơn ~3x khi quay
-    // minAlpha=0.75 (giảm từ 0.88): L2 đáp ứng góc cua nhanh hơn ~2x
-    private val headingEstimator = HeadingEstimator(alpha = 0.95f)
-    private val rotationSmoother = RotationSmoother(minAlpha = 0.75f, maxAlpha = 0.97f)
+    private val headingEstimator = HeadingEstimator(alpha = 0.88f)
+    private val rotationSmoother = RotationSmoother(minAlpha = 0.50f, maxAlpha = 0.90f)
 
     private val _smoothHeading = MutableStateFlow(0f)
     val smoothHeading: StateFlow<Float> = _smoothHeading.asStateFlow()
@@ -47,6 +45,15 @@ class RotationEngine {
     val isHeadAxisUsableForWalk: Boolean
         get() = headingEstimator.isHeadAxisUsableForWalk
 
+    /** 0 = gyro-only khi nhiễu từ trường; 1 = tin RV bình thường. */
+    var magneticTrust: Float
+        get() = headingEstimator.magneticTrust
+        set(value) {
+            val t = value.coerceIn(0f, 1f)
+            headingEstimator.magneticTrust = t
+            rotationSmoother.gyroPriorityMode = t < 0.5f
+        }
+
     /** rad/s — dùng gate xoay tại chỗ / bước ảo khi quay vòng. */
     val gyroMagnitude: Float
         get() = lastGyroMagnitude
@@ -59,6 +66,14 @@ class RotationEngine {
         updateOutput()
     }
 
+    /** Khi nhiễu mag: bám delta Game RV (không mag) — xoay máy không lệch như gyro thô. */
+    fun updateGameRotationVector(values: FloatArray) {
+        headingEstimator.updateGameRotationVector(values)
+        if (magneticTrust < 0.5f) {
+            updateOutput(minIntervalNs = 4_000_000L)
+        }
+    }
+
     /**
      * Cập nhật từ Gyroscope (Vận tốc góc)
      */
@@ -68,7 +83,14 @@ class RotationEngine {
         // Tính độ lớn gyro (để biết máy đang xoay nhanh hay chậm)
         lastGyroMagnitude = sqrt(values[0] * values[0] + values[1] * values[1] + values[2] * values[2])
         
-        updateOutput()
+        // Khi nhiễu từ trường: đừng throttle chặt — cần bám tay xoay
+        updateOutput(minIntervalNs = if (magneticTrust < 0.5f) 4_000_000L else 10_000_000L)
+    }
+
+    /** Trọng lực từ accel — yaw gyro khi nhiễu mag không phụ thuộc RV. */
+    fun updateGravity(ax: Float, ay: Float, az: Float) {
+        headingEstimator.updateGravity(ax, ay, az)
+        headingEstimator.seedRelativeHeadingIfNeeded()
     }
 
     /** G3: WALKING → smoother bám heading nhanh hơn (HEADING_UP ít lệch khi đi). */
@@ -76,26 +98,51 @@ class RotationEngine {
         rotationSmoother.isWalking = walking
     }
 
-    private fun updateOutput() {
+    private fun updateOutput(minIntervalNs: Long = 10_000_000L) {
         val now = System.nanoTime()
-        // Chỉ update nếu đã qua ít nhất 10ms so với lần cuối
-        if (now - lastOutputTimeNs < 10_000_000L) {
+        // Xoay nhanh: xuất heading dày hơn (tránh mũi tên cập nhật thưa → lệch như ảnh)
+        val interval = if (lastGyroMagnitude >= 0.45f) {
+            minOf(minIntervalNs, 4_000_000L)
+        } else {
+            minIntervalNs
+        }
+        if (now - lastOutputTimeNs < interval) {
             return
         }
         lastOutputTimeNs = now
 
         val rawHeading = headingEstimator.getHeading()
-        val smoothHeading = rotationSmoother.getSmoothRotation(rawHeading, lastGyroMagnitude)
+        var smoothHeading = rotationSmoother.getSmoothRotation(rawHeading, lastGyroMagnitude)
+        // Đứng yên mà smoother còn lệch raw → ép khớp (la bàn đã đúng, mũi tên không được lệch)
+        if (lastGyroMagnitude < 0.18f) {
+            var d = (smoothHeading - rawHeading) % 360f
+            if (d > 180f) d -= 360f
+            if (d < -180f) d += 360f
+            if (kotlin.math.abs(d) >= 12f) {
+                snapToRawHeading()
+                return
+            }
+        }
         _smoothHeading.value = smoothHeading
     }
 
     fun reset() {
         headingEstimator.reset()
+        // Không ép trust=1 — LocationEngine giữ 0 đến khi mag OK.
         rotationSmoother.reset()
         lastGyroMagnitude = 0f
         lastOutputTimeNs = 0L
         _smoothHeading.value = 0f
     }
+
+    /** Neo heading sau QR/đặt vị trí khi nhiễu — tránh 0° = hướng máy. */
+    fun seedHeading(deg: Float) {
+        headingEstimator.forceSeedHeading(deg)
+        snapToRawHeading()
+    }
+
+    val hasSeededHeading: Boolean
+        get() = headingEstimator.hasAbsoluteOrSeededHeading
 
     /** Sau QR trong map: nhảy ngay về azimuth thô (bỏ trễ smoother ~10°). */
     fun snapToRawHeading() {

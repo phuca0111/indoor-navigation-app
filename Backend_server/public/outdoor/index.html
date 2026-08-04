@@ -5,10 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Outdoor — Indoor Mapping Platform</title>
   <link rel="stylesheet" href="/css/outdoor-tokens.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <!-- CSS map engine (Leaflet / MapLibre) nạp động bởi outdoor-boot.js -->
   <style>
     * { box-sizing: border-box; }
     body {
@@ -48,6 +45,103 @@
     }
     button.secondary { background: var(--outdoor-surface-2); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .map-engine-bar {
+      font-size: 0.75rem;
+      color: var(--outdoor-muted);
+    }
+    .map-engine-bar a {
+      color: var(--outdoor-accent);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .map-engine-bar a:hover { text-decoration: underline; }
+    .ml-basemap-switch-wrap {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 2;
+    }
+    .ml-basemap-switch {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 6px;
+      border-radius: 8px;
+      background: rgba(15, 20, 28, 0.88);
+      border: 1px solid var(--outdoor-border);
+      box-shadow: 0 2px 8px rgba(0,0,0,.35);
+    }
+    .ml-basemap-label {
+      font-size: 0.7rem;
+      color: var(--outdoor-muted);
+      padding: 0 4px;
+    }
+    .ml-basemap-switch button {
+      width: auto;
+      padding: 0.28rem 0.55rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      border-radius: 6px;
+      background: var(--outdoor-surface-2);
+      color: var(--outdoor-text);
+    }
+    .ml-basemap-switch button.is-active {
+      background: var(--outdoor-accent);
+      color: #fff;
+    }
+    .vn-sea-label-wrap {
+      background: transparent !important;
+      border: none !important;
+    }
+    .vn-sea-cover {
+      transform: translate(-50%, -50%);
+      background: #ffffff;
+      border-radius: 4px;
+      pointer-events: none;
+      box-shadow: 0 0 0 2px #ffffff;
+    }
+    .vn-sea-cover--white {
+      background: #ffffff;
+      box-shadow: 0 0 0 3px #ffffff;
+    }
+    .vn-sea-label {
+      background: #ffffff;
+      border: 1px solid #94a3b8;
+      border-radius: 8px;
+      padding: 7px 12px;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.22);
+      white-space: nowrap;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      font-family: "Segoe UI", system-ui, sans-serif;
+    }
+    /* Leaflet divIcon cần translate; MapLibre Marker thì không */
+    .leaflet-div-icon .vn-sea-label,
+    .leaflet-div-icon .vn-sea-cover {
+      transform: translate(-50%, -50%);
+    }
+    .vn-sea-label--strong {
+      border-color: #1a73e8;
+      background: #ffffff;
+      padding: 8px 14px;
+      min-width: 148px;
+    }
+    .vn-sea-title {
+      color: #0f172a;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+    .vn-sea-label--strong .vn-sea-title { font-size: 15px; }
+    .vn-sea-sub {
+      color: #1a73e8;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
     a.btn-link {
       display: inline-flex;
       align-items: center;
@@ -98,6 +192,36 @@
     }
     #detail h2 { margin: 0 0 0.35rem; font-size: 1rem; }
     #statusLine { color: var(--outdoor-muted); font-size: 0.75rem; }
+    .od-ml-marker {
+      position: relative;
+      width: 22px;
+      height: 22px;
+      border: 0;
+      padding: 0;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      background: #2d8cff;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+      cursor: pointer;
+    }
+    .od-ml-marker::after {
+      content: '';
+      position: absolute;
+      left: 6px;
+      top: 6px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #fff;
+    }
+    .od-ml-user {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #2563eb;
+      border: 3px solid #fff;
+      box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.2);
+    }
     @media (max-width: 800px) {
       body { grid-template-columns: 1fr; grid-template-rows: 45vh 55vh; }
     }
@@ -107,7 +231,7 @@
   <aside>
     <div>
       <h1>Outdoor</h1>
-      <p class="sub">OSM · Search · Cluster · <a href="/get-app" style="color:inherit">Android App</a></p>
+      <p class="sub">Đang tải map engine… · <a href="/get-app" style="color:inherit">Android App</a></p>
     </div>
     <input id="q" type="search" placeholder="Autocomplete — tên, địa chỉ…" autocomplete="off" />
     <select id="category" aria-label="Category">
@@ -121,6 +245,7 @@
     <div style="display:flex; gap:0.4rem;">
       <button type="button" id="btnSearch">Tìm</button>
       <button type="button" id="btnGps" class="secondary">Nearby GPS</button>
+      <button type="button" id="btnOverpass" class="secondary">POI quanh đây</button>
     </div>
     <div id="statusLine">Đang tải Place…</div>
     <div id="detail"><p class="sub">Chọn marker hoặc kết quả tìm kiếm.</p></div>
@@ -128,9 +253,7 @@
   </aside>
   <div id="map" aria-label="Bản đồ ngoài trời"></div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-  <script src="/outdoor/app.js?v=20260729propose1"></script>
+  <!-- MapLibre GL JS — outdoor-boot.js -->
+  <script src="/outdoor/outdoor-boot.js?v=20260801op1"></script>
 </body>
 </html>

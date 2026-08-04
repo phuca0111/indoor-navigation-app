@@ -1,4 +1,6 @@
 // Outdoor Explore — Leaflet + OSM + Place Registry (PHASE 4 / 4c polish)
+// Mirror bản Leaflet cũ (giữ file). Runtime dùng explore-leaflet.js qua ?map=leaflet.
+// Xem explore-maplibre.js cho bản MapLibre mặc định.
 (function () {
   const API = '/api';
   const DEFAULT_CENTER = [10.7769, 106.7009];
@@ -6,10 +8,14 @@
   const DEBOUNCE_MS = 400;
 
   const map = L.map('ex-map', { zoomControl: true }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-  }).addTo(map);
+  if (typeof installVietnamBasemap === 'function') {
+    installVietnamBasemap(map);
+  } else {
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+  }
 
   const markersLayer = L.layerGroup().addTo(map);
   let userMarker = null;

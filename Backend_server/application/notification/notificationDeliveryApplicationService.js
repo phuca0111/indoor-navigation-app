@@ -155,13 +155,26 @@ async function smtpAdapter(delivery) {
 }
 
 async function deferredCredential(channel, delivery) {
-  const configured = channel === 'PUSH'
-    ? Boolean(process.env.FCM_PROJECT_ID && process.env.FCM_SERVICE_ACCOUNT_JSON)
-    : Boolean(process.env.SMS_PROVIDER_URL && process.env.SMS_API_KEY);
+  let configured = false;
+  if (channel === 'PUSH') {
+    try {
+      const { isFcmConfigured } = require('../../services/fcmPushAdapter');
+      configured = isFcmConfigured();
+    } catch {
+      configured = Boolean(
+        process.env.FCM_PROJECT_ID &&
+          (process.env.FCM_SERVICE_ACCOUNT_JSON ||
+            process.env.FCM_SERVICE_ACCOUNT_PATH ||
+            process.env.FCM_SERVICE_ACCOUNT_BASE64),
+      );
+    }
+  } else {
+    configured = Boolean(process.env.SMS_PROVIDER_URL && process.env.SMS_API_KEY);
+  }
   return {
     deferred: true,
     reason: configured ? `${channel}_ADAPTER_NOT_INSTALLED` : `${channel}_CREDENTIALS_MISSING`,
-    recipient_present: Boolean(delivery.recipient)
+    recipient_present: Boolean(delivery.recipient),
   };
 }
 

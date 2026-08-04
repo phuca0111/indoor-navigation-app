@@ -21,6 +21,7 @@ object OutdoorTurnByTurn {
         val etaSeconds: Int,
         val arrived: Boolean,
         val progress: Float,
+        val maneuver: String? = null,
     )
 
     fun haversineMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Float {
@@ -55,6 +56,15 @@ object OutdoorTurnByTurn {
             else -> if (d > 0) "Đi thẳng $d m" else "Đi thẳng"
         }
     }
+
+    fun arriveThresholdMeters(activationRadiusM: Int?): Float {
+        val r = (activationRadiusM ?: 50).coerceIn(25, 80)
+        return maxOf(25f, minOf(r.toFloat(), 45f))
+    }
+
+    /** Gần đích — gợi ý chuẩn bị handoff Indoor (chưa arrived). */
+    fun approachThresholdMeters(activationRadiusM: Int?): Float =
+        maxOf(70f, arriveThresholdMeters(activationRadiusM) * 2f)
 
     /**
      * Chọn bước tiếp theo phía trước user; tới đích khi < [arriveThresholdM].
@@ -91,6 +101,7 @@ object OutdoorTurnByTurn {
                 etaSeconds = 0,
                 arrived = true,
                 progress = 1f,
+                maneuver = "arrive",
             )
         }
 
@@ -104,6 +115,7 @@ object OutdoorTurnByTurn {
                 etaSeconds = eta,
                 arrived = false,
                 progress = (1f - remainingFromDest / total).coerceIn(0f, 1f),
+                maneuver = "straight",
             )
         }
 
@@ -148,6 +160,7 @@ object OutdoorTurnByTurn {
             etaSeconds = eta,
             arrived = false,
             progress = (1f - remainingFromDest / total).coerceIn(0f, 1f),
+            maneuver = step.maneuver,
         )
     }
 }

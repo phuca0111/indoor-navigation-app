@@ -22,6 +22,12 @@ class RotationSmoother(
     var isWalking: Boolean = false
 
     /**
+     * true khi nhiễu từ trường (gyro-only): bám target nhanh hơn, dead-zone nhỏ hơn
+     * để mũi tên xoay mượt theo tay.
+     */
+    var gyroPriorityMode: Boolean = false
+
+    /**
      * @param targetRotation Góc xoay mục tiêu từ cảm biến (độ)
      * @param gyroMagnitude Độ lớn vận tốc góc (rad/s) để điều chỉnh alpha
      */
@@ -32,24 +38,46 @@ class RotationSmoother(
             return currentSmoothRotation
         }
 
-        // Đi bộ: vẫn mượt (tránh mũi tên rung theo từng bước); quay nhanh → alpha thấp hơn
-        val effectiveMaxAlpha = if (isWalking) minOf(maxAlpha, 0.93f) else maxAlpha
-        val effectiveMinAlpha = if (isWalking) minOf(minAlpha, 0.78f) else minAlpha
-        val deadZoneDeg = if (isWalking) 1.0f else 0.4f
+        if (gyroPriorityMode) {
+            val delta = shortestAngleDelta(currentSmoothRotation, targetRotation)
+            if (abs(delta) < 0.15f) return currentSmoothRotation
+            currentSmoothRotation = normalize(currentSmoothRotation + 0.92f * delta)
+            return currentSmoothRotation
+        }
 
-        // 1. Adaptive Alpha — gyro lớn → tin cảm biến mới hơn
-        val gyroThreshold = 0.5f // rad/s
+        // Đi bộ: vẫn mượt; quay nhanh → bám gần raw
+        val effectiveMaxAlpha = if (isWalking) minOf(maxAlpha, 0.90f) else maxAlpha
+        val effectiveMinAlpha = if (isWalking) minOf(minAlpha, 0.55f) else minAlpha
+        val deadZoneDeg = if (isWalking) 0.8f else 0.35f
+
+        // 1. Adaptive Alpha — gyro lớn → tin cảm biến mới hơn (ngưỡng thấp hơn = nhạy xoay nhanh)
+        val gyroThreshold = 0.35f // rad/s
         val normalizedGyro = (gyroMagnitude / gyroThreshold).coerceIn(0f, 1f)
         val alpha = effectiveMaxAlpha - (effectiveMaxAlpha - effectiveMinAlpha) * normalizedGyro
 
         // 2. Độ chênh ngắn nhất (0–360)
         val delta = shortestAngleDelta(currentSmoothRotation, targetRotation)
 
-        // 3. Dead zone — đi bộ hơi rộng hơn để lọc rung bước, vẫn theo cua
+        // Xoay nhanh: bám gần như raw (tránh tụt hàng chục độ)
+        if (gyroMagnitude >= 0.55f) {
+            currentSmoothRotation = normalize(currentSmoothRotation + 0.92f * delta)
+            return currentSmoothRotation
+        }
+
+        // Đứng yên mà còn lệch → snap
+        if (abs(delta) >= 12f && gyroMagnitude < 0.18f) {
+            currentSmoothRotation = normalize(targetRotation)
+            return currentSmoothRotation
+        }
+
         if (abs(delta) < deadZoneDeg) return currentSmoothRotation
 
-        // 4. Low-pass
-        currentSmoothRotation = normalize(currentSmoothRotation + (1f - alpha) * delta)
+        val follow = if (gyroMagnitude < 0.18f) {
+            maxOf(1f - alpha, 0.28f)
+        } else {
+            maxOf(1f - alpha, 0.35f)
+        }
+        currentSmoothRotation = normalize(currentSmoothRotation + follow * delta)
 
         return currentSmoothRotation
     }
@@ -58,6 +86,7 @@ class RotationSmoother(
         currentSmoothRotation = 0f
         isInitialized = false
         isWalking = false
+        gyroPriorityMode = false
     }
 
     private fun shortestAngleDelta(from: Float, to: Float): Float {

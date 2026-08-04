@@ -40,12 +40,28 @@ class SensorCollector(context: Context) : SensorEventListener {
     var linearAccelTimestamp = 0L
         private set
 
+    /** Từ trường (μT) — dùng phát hiện nhiễu la bàn. */
+    var magneticValues = FloatArray(3)
+        private set
+
+    var magneticTimestamp = 0L
+        private set
+
+    /** SensorManager.SENSOR_STATUS_* của TYPE_MAGNETIC_FIELD. */
+    var magneticAccuracy: Int = SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM
+        private set
+
     // ── Callbacks ─────────────────────────────────────────────────────────────
     var onAccelUpdate: ((values: FloatArray, timestampNs: Long) -> Unit)? = null
     var onGyroUpdate: ((values: FloatArray, timestampNs: Long) -> Unit)? = null
     var onRotationUpdate: ((values: FloatArray, timestampNs: Long) -> Unit)? = null
+    /** GAME_ROTATION_VECTOR — yaw không dùng mag; dùng khi nhiễu từ để xoay không lệch. */
+    var onGameRotationUpdate: ((values: FloatArray, timestampNs: Long) -> Unit)? = null
     var onLinearAccelUpdate: ((values: FloatArray, timestampNs: Long) -> Unit)? = null
     var onStepSensorUpdate: (() -> Unit)? = null
+    var onMagneticUpdate: ((values: FloatArray, timestampNs: Long) -> Unit)? = null
+    var onMagneticAccuracyChanged: ((accuracy: Int) -> Unit)? = null
+    var onRotationAccuracyChanged: ((accuracy: Int) -> Unit)? = null
 
     /** Phase 0.0 — optional JSONL logger (null = không ghi). */
     var sensorLogger: SensorSessionLogger? = null
@@ -77,18 +93,23 @@ class SensorCollector(context: Context) : SensorEventListener {
         }
         val gameRv = sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
         val rotRv = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-        // Compass-assist: ưu tiên ROTATION_VECTOR (có tham chiếu từ trường/Bắc),
-        // chỉ fallback GAME_ROTATION_VECTOR khi máy không hỗ trợ.
-        val rotationSensor = rotRv ?: gameRv
-        usingGameRotationVector = (rotationSensor?.type == Sensor.TYPE_GAME_ROTATION_VECTOR)
-        rotationSensor?.let {
-            sensorManager.registerListener(this, it, currentDelay)
+        // Đăng ký cả hai khi có: RV (Bắc/mag) + Game RV (xoay khi nhiễu từ, không mag).
+        usingGameRotationVector = rotRv == null && gameRv != null
+        rotRv?.let { sensorManager.registerListener(this, it, currentDelay) }
+        gameRv?.let { sensorManager.registerListener(this, it, currentDelay) }
+        // Máy chỉ có Game RV → dùng làm nguồn rotation chính
+        if (rotRv == null) {
+            usingGameRotationVector = gameRv != null
         }
         sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)?.let {
             sensorManager.registerListener(this, it, currentDelay)
         }
         sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_FASTEST)
+        }
+        // UI rate đủ cho |B| + accuracy — không cần GAME rate
+        sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)?.let {
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
         }
     }
 
@@ -121,10 +142,21 @@ class SensorCollector(context: Context) : SensorEventListener {
                 sensorLogger?.logSensor("gyro", gyroValues, event.timestamp)
                 onGyroUpdate?.invoke(gyroValues, event.timestamp)
             }
-            Sensor.TYPE_ROTATION_VECTOR, Sensor.TYPE_GAME_ROTATION_VECTOR -> {
+            Sensor.TYPE_ROTATION_VECTOR -> {
                 rotationValues = event.values.clone()
                 sensorLogger?.logSensor("rotation_vector", rotationValues, event.timestamp)
                 onRotationUpdate?.invoke(rotationValues, event.timestamp)
+            }
+            Sensor.TYPE_GAME_ROTATION_VECTOR -> {
+                val v = event.values.clone()
+                sensorLogger?.logSensor("game_rotation_vector", v, event.timestamp)
+                if (onGameRotationUpdate != null) {
+                    onGameRotationUpdate?.invoke(v, event.timestamp)
+                } else if (usingGameRotationVector) {
+                    // Fallback: máy không có RV mag → Game RV thay rotation chính
+                    rotationValues = v
+                    onRotationUpdate?.invoke(v, event.timestamp)
+                }
             }
             Sensor.TYPE_LINEAR_ACCELERATION -> {
                 linearAccelValues = event.values.clone()
@@ -141,10 +173,24 @@ class SensorCollector(context: Context) : SensorEventListener {
                 )
                 onStepSensorUpdate?.invoke()
             }
+            Sensor.TYPE_MAGNETIC_FIELD -> {
+                magneticValues = event.values.clone()
+                magneticTimestamp = event.timestamp
+                sensorLogger?.logSensor("magnetic", magneticValues, event.timestamp)
+                onMagneticUpdate?.invoke(magneticValues, event.timestamp)
+            }
         }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        // Không cần xử lý cho PDR
+        when (sensor?.type) {
+            Sensor.TYPE_MAGNETIC_FIELD -> {
+                magneticAccuracy = accuracy
+                onMagneticAccuracyChanged?.invoke(accuracy)
+            }
+            Sensor.TYPE_ROTATION_VECTOR, Sensor.TYPE_GAME_ROTATION_VECTOR -> {
+                onRotationAccuracyChanged?.invoke(accuracy)
+            }
+        }
     }
 }

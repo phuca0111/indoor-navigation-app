@@ -46,6 +46,8 @@ const routes = {
   community: require('./communityRoutes'),
   notifications: require('./notificationRoutes'),
   navigation: require('./navigationRoutes'),
+  geocode: require('./geocodeRoutes'),
+  overpass: require('./overpassRoutes'),
   emergency: require('./emergencyRoutes'),
   eventAdmin: require('./eventAdminRoutes'),
   featureFlags: require('./featureFlagRoutes'),
@@ -107,6 +109,8 @@ function mountRoutes(app, middleware = {}) {
 
   app.use('/api/maps', routes.maps);
   app.use('/api/navigation', routes.navigation);
+  app.use('/api/geocode', routes.geocode);
+  app.use('/api/overpass', routes.overpass);
   app.use('/api/emergency', routes.emergency);
   app.use('/api/users', routes.users);
   app.use('/api/qr', routes.qr);

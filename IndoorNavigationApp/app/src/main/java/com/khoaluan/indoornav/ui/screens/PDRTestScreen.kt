@@ -260,6 +260,11 @@ fun PDRTestScreen(onBack: () -> Unit) {
                 HudRow("Mode", "PDR (no map)", Color(0xFF90CAF9))
             }
             HudRow("Log events", "${NavigationLogger.getCount()}", Color.Gray)
+            HudRow(
+                "Context (ước lượng)",
+                testState.phoneContextLabel ?: "—",
+                Color(0xFFB3E5FC),
+            )
 
             if (exportMessage.isNotEmpty()) {
                 Text(exportMessage, color = Color(0xFF4CAF50), fontSize = 10.sp,
