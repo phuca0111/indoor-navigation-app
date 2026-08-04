@@ -241,7 +241,7 @@
         (gmaps
           ? '<a class="btn-link" id="btnMaps" href="' + gmaps +
             '" target="_blank" rel="noopener">Đi tới (Google Maps)</a>' +
-            '<button type="button" class="secondary" id="btnOsrm" style="width:auto;">Chỉ đường (OSM)</button>'
+            '<button type="button" class="secondary" id="btnOsrm" style="width:auto;">Chỉ đường ngoài trời</button>'
           : '') +
         '<button type="button" class="secondary" id="btnCopy" style="width:auto;">Copy link</button>' +
         '<a href="/get-app" style="font-size:0.8rem;align-self:center;">Android App</a>' +

@@ -119,8 +119,8 @@ fun SearchResultPanel(
                     Spacer(modifier.height(4.dp))
                     Text(
                         text = tr(
-                            "Thử từ khóa POI (ATM, WC…), tên Place, hoặc địa chỉ OSM.",
-                            "Try a POI keyword, place name, or OSM address.",
+                            "Thử từ khóa POI (ATM, WC…), tên Place, hoặc địa chỉ.",
+                            "Try a POI keyword, place name, or address.",
                         ),
                         color = Color(0xFF5F6368),
                         fontSize = 13.sp,
@@ -172,8 +172,8 @@ fun SearchResultPanel(
                         item {
                             Text(
                                 text = tr(
-                                    "Bản đồ OSM · ${osmHits.size}",
-                                    "OSM map · ${osmHits.size}",
+                                    "Địa điểm · ${osmHits.size}",
+                                    "Places · ${osmHits.size}",
                                 ),
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                                 fontSize = 12.sp,
@@ -298,7 +298,7 @@ private fun OsmSearchResultRow(
                 )
             }
             Text(
-                text = tr("Chỉ đường ngoài trời (OSM) →", "Outdoor directions (OSM) →"),
+                text = tr("Chỉ đường ngoài trời →", "Outdoor directions →"),
                 fontSize = 11.sp,
                 color = Color(0xFF93370D),
                 modifier = Modifier.padding(top = 2.dp),

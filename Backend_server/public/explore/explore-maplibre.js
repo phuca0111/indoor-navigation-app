@@ -167,7 +167,7 @@
     }
     if (osm.length) {
       html +=
-        '<p class="ex-meta" style="padding:12px 8px 4px;">Bản đồ OSM · ' + osm.length + '</p>';
+        '<p class="ex-meta" style="padding:12px 8px 4px;">Địa điểm · ' + osm.length + '</p>';
       html += osm
         .map(function (hit, idx) {
           return (
@@ -176,7 +176,7 @@
             '">' +
             '<strong>' +
             escapeHtml(hit.name || '') +
-            ' <span class="ex-badge">OSM</span></strong>' +
+            '</strong>' +
             '<span>' +
             escapeHtml(hit.display_name || '') +
             '</span>' +
@@ -294,7 +294,7 @@
     renderList();
     map.easeTo({ center: [lng, lat], zoom: Math.max(map.getZoom(), 15), duration: 500 });
     if (el.detail) el.detail.hidden = false;
-    if (el.title) el.title.textContent = hit.name || 'OSM';
+    if (el.title) el.title.textContent = hit.name || 'Địa điểm';
     if (el.addr) el.addr.textContent = hit.display_name || '';
     if (el.meta) el.meta.textContent = 'OpenStreetMap — chỉ đường ngoài trời, không Indoor';
     const gmaps =
@@ -303,7 +303,7 @@
     if (el.indoor) {
       el.indoor.innerHTML =
         '<div style="display:flex;gap:0.4rem;margin-top:0.5rem;flex-wrap:wrap;">' +
-        '<button type="button" class="ex-btn ex-btn-primary" id="exOsrmOsm">Chỉ đường (OSM)</button>' +
+        '<button type="button" class="ex-btn ex-btn-primary" id="exOsrmOsm">Chỉ đường ngoài trời</button>' +
         '<a class="ex-btn" href="' +
         gmaps +
         '" target="_blank" rel="noopener">Google Maps</a>' +
@@ -367,7 +367,7 @@
       const elMarker = document.createElement('button');
       elMarker.type = 'button';
       elMarker.className = 'ex-ml-marker ex-ml-marker--osm';
-      elMarker.title = hit.name || 'OSM';
+      elMarker.title = hit.name || 'Địa điểm';
       const marker = new maplibregl.Marker({ element: elMarker, anchor: 'bottom' })
         .setLngLat([lng, lat])
         .addTo(map);
@@ -722,7 +722,7 @@
       setStatus(
         places.length +
           ' địa điểm' +
-          (osmHits.length ? ' · OSM ' + osmHits.length : ''),
+          (osmHits.length ? ' · địa điểm ngoài ' + osmHits.length : ''),
       );
       renderList();
       renderMarkers();
