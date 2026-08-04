@@ -128,7 +128,7 @@
       const radius = Math.max(20, Number(p.radius) || 80);
       const circle = L.circle([lat, lng], {
         radius,
-        color: '#0d9488',
+        color: '#0f766e',
         weight: 1,
         fillColor: '#14b8a6',
         fillOpacity: 0.12

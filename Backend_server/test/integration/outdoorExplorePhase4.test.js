@@ -43,13 +43,14 @@ describe('Outdoor Explore PHASE 4', () => {
       path.join(__dirname, '../../public/explore/index.html'),
       'utf8'
     );
-    expect(html).toMatch(/leaflet/i);
-    expect(html).toMatch(/explore\.js/);
+    // Engine nạp qua explore-boot.js (Leaflet / MapLibre); vẫn giữ explore.js làm engine leaflet.
+    expect(html).toMatch(/explore(?:-boot)?\.js/);
     expect(html).toMatch(/exCat/);
-    const js = fs.readFileSync(
-      path.join(__dirname, '../../public/explore/explore.js'),
-      'utf8'
-    );
+    expect(html).toMatch(/leaflet|maplibre/i);
+    const jsPath = fs.existsSync(path.join(__dirname, '../../public/explore/explore-leaflet.js'))
+      ? path.join(__dirname, '../../public/explore/explore-leaflet.js')
+      : path.join(__dirname, '../../public/explore/explore.js');
+    const js = fs.readFileSync(jsPath, 'utf8');
     expect(js).toMatch(/places\/search/);
     expect(js).toMatch(/geolocation/);
     expect(js).toMatch(/DEBOUNCE_MS|scheduleSearch/);

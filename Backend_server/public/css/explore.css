@@ -4,7 +4,7 @@
   --ex-panel: #ffffff;
   --ex-ink: #0f172a;
   --ex-muted: #64748b;
-  --ex-accent: #0d9488;
+  /* --ex-accent khai báo trong outdoor-tokens.css */
   --ex-border: #e2e8f0;
   --ex-danger: #b91c1c;
 }
@@ -244,7 +244,7 @@ html, body {
   padding: 0;
   border-radius: 50% 50% 50% 0;
   transform: rotate(-45deg);
-  background: #0d9488;
+  background: var(--ex-accent);
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.35);
   cursor: pointer;
 }

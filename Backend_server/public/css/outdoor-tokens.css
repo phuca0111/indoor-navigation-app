@@ -10,4 +10,7 @@
   --outdoor-border: #2a3548;
   --outdoor-surface: #121a26;
   --outdoor-surface-2: #243044;
+
+  /* Explore map (dùng chung file token outdoor) */
+  --ex-accent: #0d9488;
 }

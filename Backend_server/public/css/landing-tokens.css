@@ -13,6 +13,10 @@
   --landing-primary: var(--ds-landing-color-brand);
   --landing-secondary: var(--ds-landing-color-navy);
   --landing-radius: var(--ds-landing-radius-md);
+
+  /* Auth / reset-password success banner */
+  --landing-success-ink: #0f5132;
+  --landing-success-bg: #d1e7dd;
 }
 
 .skip-link {
