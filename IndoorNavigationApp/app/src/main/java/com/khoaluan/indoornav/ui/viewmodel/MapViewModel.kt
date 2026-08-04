@@ -16,6 +16,7 @@ import com.khoaluan.indoornav.data.api.ActiveEmergencyHazardZoneDto
 import com.khoaluan.indoornav.data.api.BuildingExplorerDto
 import com.khoaluan.indoornav.data.api.GeocodeHitDto
 import com.khoaluan.indoornav.data.api.OverpassHitDto
+import com.khoaluan.indoornav.data.api.WeatherCurrentResponse
 import com.khoaluan.indoornav.data.api.IndoorSearchHitDto
 import com.khoaluan.indoornav.data.api.RetrofitClient
 import com.khoaluan.indoornav.data.model.MapData
@@ -627,6 +628,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _overpassLoading = MutableStateFlow(false)
     val overpassLoading: StateFlow<Boolean> = _overpassLoading.asStateFlow()
 
+    private val _weatherCurrent = MutableStateFlow<WeatherCurrentResponse?>(null)
+    val weatherCurrent: StateFlow<WeatherCurrentResponse?> = _weatherCurrent.asStateFlow()
+    private var lastWeatherFetchAtMs: Long = 0L
+    private var lastWeatherKey: String? = null
+
     /** POI cần focus sau khi load map (từ Indoor Search). */
     private var pendingFocusPoiId: Int? = null
 
@@ -777,6 +783,37 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 _overpassHits.value = emptyList()
             } finally {
                 _overpassLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Thời tiết outdoor (OpenWeatherMap qua backend).
+     * Thiếu key / lỗi → null im lặng, không ảnh hưởng map/OSRM.
+     */
+    fun fetchWeatherCurrent(lat: Double, lng: Double, force: Boolean = false) {
+        if (!lat.isFinite() || !lng.isFinite()) return
+        val key = "${"%.2f".format(lat)},${"%.2f".format(lng)}"
+        val now = System.currentTimeMillis()
+        if (!force &&
+            key == lastWeatherKey &&
+            now - lastWeatherFetchAtMs < 10 * 60_000L &&
+            _weatherCurrent.value != null
+        ) {
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val res = RetrofitClient.getApiService().weatherCurrent(lat = lat, lng = lng)
+                if (res.isSuccessful) {
+                    _weatherCurrent.value = res.body()
+                    lastWeatherKey = key
+                    lastWeatherFetchAtMs = now
+                } else if (res.code() == 503) {
+                    _weatherCurrent.value = null
+                }
+            } catch (_: Exception) {
+                // Giữ weather cũ nếu có; không toast
             }
         }
     }

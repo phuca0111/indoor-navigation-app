@@ -31,12 +31,17 @@ internal object OutdoorMapLayers {
     const val PLACE_LAYER_ID = "outdoor_places_layer"
     const val PROP_BUILDING_ID = "buildingId"
 
+    const val OVERPASS_SOURCE_ID = "outdoor_overpass_source"
+    const val OVERPASS_LAYER_ID = "outdoor_overpass_layer"
+    const val PROP_OVERPASS_ID = "overpassId"
+
     private const val USER_SOURCE_ID = "outdoor_user_source"
     private const val USER_LAYER_ID = "outdoor_user_layer"
     private const val USER_ACCURACY_SOURCE_ID = "outdoor_user_accuracy_source"
     private const val USER_ACCURACY_LAYER_ID = "outdoor_user_accuracy_layer"
 
     private const val ICON_PLACE_PIN = "outdoor_place_pin_icon"
+    private const val ICON_OVERPASS_PIN = "outdoor_overpass_pin_icon"
     private const val ICON_USER_DOT = "outdoor_user_dot_icon"
     private const val ICON_USER_ARROW = "outdoor_user_arrow_icon"
 
@@ -48,6 +53,9 @@ internal object OutdoorMapLayers {
     fun ensureLayers(style: Style) {
         if (style.getImage(ICON_PLACE_PIN) == null) {
             style.addImage(ICON_PLACE_PIN, createPlacePinBitmap())
+        }
+        if (style.getImage(ICON_OVERPASS_PIN) == null) {
+            style.addImage(ICON_OVERPASS_PIN, createOverpassPinBitmap())
         }
         if (style.getImage(ICON_USER_DOT) == null) {
             style.addImage(ICON_USER_DOT, createBlueDotBitmap())
@@ -70,6 +78,23 @@ internal object OutdoorMapLayers {
             )
         }
 
+        if (style.getSource(OVERPASS_SOURCE_ID) == null) {
+            style.addSource(GeoJsonSource(OVERPASS_SOURCE_ID, emptyCollection()))
+        }
+        if (style.getLayer(OVERPASS_LAYER_ID) == null) {
+            // Dưới place pin registry — POI OSM phụ, không đè địa điểm hệ thống
+            style.addLayerBelow(
+                SymbolLayer(OVERPASS_LAYER_ID, OVERPASS_SOURCE_ID).withProperties(
+                    PropertyFactory.iconImage(ICON_OVERPASS_PIN),
+                    PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+                    PropertyFactory.iconAllowOverlap(true),
+                    PropertyFactory.iconIgnorePlacement(true),
+                    PropertyFactory.iconSize(0.85f),
+                ),
+                PLACE_LAYER_ID,
+            )
+        }
+
         if (style.getSource(USER_ACCURACY_SOURCE_ID) == null) {
             style.addSource(GeoJsonSource(USER_ACCURACY_SOURCE_ID, emptyCollection()))
         }
@@ -79,7 +104,7 @@ internal object OutdoorMapLayers {
                     PropertyFactory.fillColor(AndroidColor.parseColor("#332D8CFF")),
                     PropertyFactory.fillOutlineColor(AndroidColor.parseColor("#882D8CFF")),
                 ),
-                PLACE_LAYER_ID,
+                OVERPASS_LAYER_ID,
             )
         }
 
@@ -108,6 +133,19 @@ internal object OutdoorMapLayers {
             }
         }
         (style.getSource(PLACE_SOURCE_ID) as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(features))
+    }
+
+    /** POI Overpass quanh GPS — chỉ vẽ khi search mở / có hits; không thay place registry. */
+    fun updateOverpassHits(style: Style, hits: List<com.khoaluan.indoornav.data.api.OverpassHitDto>) {
+        val features = hits.mapNotNull { hit ->
+            if (!hit.lat.isFinite() || !hit.lng.isFinite()) return@mapNotNull null
+            if (hit.lat == 0.0 && hit.lng == 0.0) return@mapNotNull null
+            Feature.fromGeometry(Point.fromLngLat(hit.lng, hit.lat)).apply {
+                addStringProperty(PROP_OVERPASS_ID, hit.id)
+            }
+        }
+        (style.getSource(OVERPASS_SOURCE_ID) as? GeoJsonSource)
+            ?.setGeoJson(FeatureCollection.fromFeatures(features))
     }
 
     fun updateUserLocation(style: Style, point: LatLng, headingDeg: Float?, showArrow: Boolean) {
@@ -237,6 +275,39 @@ internal object OutdoorMapLayers {
             style = Paint.Style.FILL
         }
         canvas.drawCircle(cx, size * 0.32f, size * 0.11f, dot)
+        return bmp
+    }
+
+    /** Pin POI Overpass — màu teal, phân biệt pin registry xanh Google. */
+    private fun createOverpassPinBitmap(): Bitmap {
+        val size = 64
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val cx = size / 2f
+        val topR = size * 0.28f
+        val path = Path().apply {
+            moveTo(cx - topR, size * 0.32f)
+            cubicTo(cx - topR, size * 0.14f, cx + topR, size * 0.14f, cx + topR, size * 0.32f)
+            cubicTo(cx + topR, size * 0.50f, cx, size * 0.60f, cx, size * 0.92f)
+            cubicTo(cx, size * 0.60f, cx - topR, size * 0.50f, cx - topR, size * 0.32f)
+            close()
+        }
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFF0F766E.toInt()
+            style = Paint.Style.FILL
+        }
+        val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFFFFFFF.toInt()
+            style = Paint.Style.STROKE
+            strokeWidth = 2.5f
+        }
+        canvas.drawPath(path, fill)
+        canvas.drawPath(path, stroke)
+        val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFFFFFFF.toInt()
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(cx, size * 0.32f, size * 0.10f, dot)
         return bmp
     }
 }

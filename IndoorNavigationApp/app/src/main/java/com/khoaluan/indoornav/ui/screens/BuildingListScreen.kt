@@ -176,6 +176,7 @@ fun BuildingListScreen(
     val osmLoading by viewModel.geocodeLoading.collectAsState()
     val overpassHits by viewModel.overpassHits.collectAsState()
     val overpassLoading by viewModel.overpassLoading.collectAsState()
+    val weatherCurrent by viewModel.weatherCurrent.collectAsState()
     var query by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Building?>(null) }
@@ -225,7 +226,7 @@ fun BuildingListScreen(
         return ((prev + delta * 0.35f) % 360f + 360f) % 360f
     }
 
-    /** Google: đang nav + follow → heading-up; còn lại → north-up. */
+    /** Đang nav + follow → heading-up; browse / tắt follow → giữ bearing user xoay tay. */
     fun headingUpActive(): Boolean = outdoorNavigating && outdoorFollowCamera
 
     fun animateFollowTo(point: LatLng, zoom: Double? = null) {
@@ -233,6 +234,25 @@ fun BuildingListScreen(
         val builder = CameraPosition.Builder(map.cameraPosition).target(point)
         if (zoom != null) builder.zoom(zoom)
         map.easeCamera(CameraUpdateFactory.newCameraPosition(builder.build()), 450)
+    }
+
+    /**
+     * Một lần easeCamera gắn target (+ bearing khi heading-up).
+     * Tránh GPS follow và la bàn mỗi bên easeCamera riêng → hủy nhau / giật / khó xoay tay.
+     */
+    fun easeOutdoorFollowCamera(bearingDeg: Float? = null) {
+        val map = maplibreMap ?: return
+        if (!outdoorFollowCamera) return
+        val pt = userPoint ?: return
+        try {
+            map.cancelTransitions()
+        } catch (_: Exception) {
+        }
+        val builder = CameraPosition.Builder(map.cameraPosition).target(pt)
+        if (bearingDeg != null) {
+            builder.bearing((((bearingDeg % 360f) + 360f) % 360f).toDouble())
+        }
+        map.easeCamera(CameraUpdateFactory.newCameraPosition(builder.build()), 280)
     }
     DisposableEffect(Unit) {
         onDispose { outdoorTts.shutdown() }
@@ -296,6 +316,7 @@ fun BuildingListScreen(
     val searchLoading = placeListState is PlaceListUiState.Loading
     // Đọc giá trị mới nhất bên trong OnMapClickListener (được gắn 1 lần trong factory).
     val filteredState = rememberUpdatedState(filtered)
+    val overpassHitsState = rememberUpdatedState(overpassHits)
 
     fun enterIndoor(building: Building) {
         val pid = building.placeId
@@ -527,6 +548,13 @@ fun BuildingListScreen(
         viewModel.fetchOverpassNearby(p.latitude, p.longitude, radiusM = 250)
     }
 
+    // Weather chip — chỉ gọi khi có GPS; thiếu API key → backend 503, UI ẩn
+    LaunchedEffect(userPoint?.latitude, userPoint?.longitude) {
+        val p = userPoint ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(800)
+        viewModel.fetchWeatherCurrent(p.latitude, p.longitude)
+    }
+
     LaunchedEffect(selected?.id) {
         val id = selected?.id
         if (id.isNullOrBlank() || id.startsWith("place:")) {
@@ -632,8 +660,10 @@ fun BuildingListScreen(
                     )
                 }
                 if (outdoorFollowCamera) {
-                    // Google nav: heading-up + camera follow
-                    animateFollowTo(LatLng(loc.latitude, loc.longitude))
+                    // Gộp target + bearing (nếu heading-up) — không ease riêng với LaunchedEffect la bàn
+                    easeOutdoorFollowCamera(
+                        bearingDeg = if (headingUpActive()) outdoorHeadingDeg else null,
+                    )
                 }
             }
         }
@@ -698,8 +728,9 @@ fun BuildingListScreen(
                 if (outdoorSpeedMps >= 1.2f) return
                 SensorManager.getRotationMatrixFromVector(rotMat, event.values)
                 SensorManager.getOrientation(rotMat, orient)
-                // Android azimuth Đông=-90°; bearing map Đông=90° → đảo dấu
-                val azimuthDeg = -Math.toDegrees(orient[0].toDouble()).toFloat()
+                // Android azimuth & MapLibre bearing: 0=N, +90=E — cùng chiều, không đảo dấu
+                // (trước đây `-azimuth` làm trái/phải ngược khi đi chậm / đứng yên).
+                val azimuthDeg = Math.toDegrees(orient[0].toDouble()).toFloat()
                 outdoorHeadingDeg = smoothHeading(azimuthDeg, outdoorHeadingDeg)
             }
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -710,29 +741,11 @@ fun BuildingListScreen(
         }
     }
 
-    // Heading-up: xoay camera ngay khi hướng đổi (khi đang follow nav); bearing map-aligned
-    // của icon người dùng (OutdoorMapLayers) tự bù trừ nên chỉ cần xoay camera ở đây.
-    LaunchedEffect(outdoorHeadingDeg, outdoorNavigating, outdoorFollowCamera, maplibreMap) {
-        val map = maplibreMap ?: return@LaunchedEffect
-        if (headingUpActive()) {
-            outdoorHeadingDeg?.let { heading ->
-                map.easeCamera(
-                    CameraUpdateFactory.newCameraPosition(
-                        CameraPosition.Builder(map.cameraPosition).bearing(heading.toDouble()).build(),
-                    ),
-                    250,
-                )
-            }
-        } else if (!outdoorNavigating) {
-            // Duyệt map / hết nav → north-up
-            if (map.cameraPosition.bearing != 0.0) {
-                map.easeCamera(
-                    CameraUpdateFactory.newCameraPosition(
-                        CameraPosition.Builder(map.cameraPosition).bearing(0.0).build(),
-                    ),
-                    250,
-                )
-            }
+    // Heading-up: cùng helper với GPS follow (một easeCamera). Browse không đụng bearing.
+    LaunchedEffect(outdoorHeadingDeg, outdoorNavigating, outdoorFollowCamera, maplibreMap, userPoint) {
+        if (!headingUpActive()) return@LaunchedEffect
+        outdoorHeadingDeg?.let { heading ->
+            easeOutdoorFollowCamera(bearingDeg = heading)
         }
     }
 
@@ -898,6 +911,13 @@ fun BuildingListScreen(
         }
     }
 
+    // Marker Overpass: chỉ hiện khi có hits (search/nearby); đóng search → xóa pin phụ
+    LaunchedEffect(overpassHits, mapStyle, showSearchResults) {
+        val style = mapStyle ?: return@LaunchedEffect
+        val hits = if (showSearchResults) overpassHits else emptyList()
+        OutdoorMapLayers.updateOverpassHits(style, hits)
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         when (state) {
             is BuildingListUiState.Loading -> {
@@ -1038,17 +1058,31 @@ fun BuildingListScreen(
 
                                 map.addOnMapClickListener { latLng ->
                                     val screenPoint = map.projection.toScreenLocation(latLng)
-                                    val features = map.queryRenderedFeatures(
+                                    val placeFeatures = map.queryRenderedFeatures(
                                         screenPoint,
                                         OutdoorMapLayers.PLACE_LAYER_ID,
                                     )
-                                    val clickedId = features.firstOrNull()
+                                    val clickedId = placeFeatures.firstOrNull()
                                         ?.getStringProperty(OutdoorMapLayers.PROP_BUILDING_ID)
                                     val building = clickedId?.let { id ->
                                         filteredState.value.firstOrNull { it.id == id }
                                     }
                                     if (building != null) {
                                         selected = building
+                                        showSearchResults = false
+                                        return@addOnMapClickListener true
+                                    }
+                                    val overpassFeatures = map.queryRenderedFeatures(
+                                        screenPoint,
+                                        OutdoorMapLayers.OVERPASS_LAYER_ID,
+                                    )
+                                    val overpassId = overpassFeatures.firstOrNull()
+                                        ?.getStringProperty(OutdoorMapLayers.PROP_OVERPASS_ID)
+                                    val overpassHit = overpassId?.let { id ->
+                                        overpassHitsState.value.firstOrNull { it.id == id }
+                                    }
+                                    if (overpassHit != null) {
+                                        selected = buildingFromOverpassHit(overpassHit)
                                         showSearchResults = false
                                     } else {
                                         selected = null
@@ -1379,6 +1413,28 @@ fun BuildingListScreen(
                 )
             }
         }
+        }
+
+        weatherCurrent?.tempC?.let { temp ->
+            val desc = weatherCurrent?.description?.takeIf { it.isNotBlank() }
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 88.dp, end = 12.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = Color.White.copy(alpha = 0.92f),
+                shadowElevation = 2.dp,
+            ) {
+                Text(
+                    text = buildString {
+                        append("${temp.toInt()}°C")
+                        if (!desc.isNullOrBlank()) append(" · $desc")
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    fontSize = 12.sp,
+                    color = Color(0xFF202124),
+                )
+            }
         }
 
         FloatingActionButton(
