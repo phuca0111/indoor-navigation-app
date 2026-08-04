@@ -212,6 +212,31 @@ describe('Rendering Engine — poi renderer', function () {
         expect(renderedRadius).toBe(12);
         expect(calls.some(function (c) { return c.indexOf('fillText:WC 1') === 0; })).toBe(true);
     });
+
+    it('icon font scale theo poiRadius (không cố định 12/zoom)', function () {
+        var { renderPoi } = require('../core/rendering/poi-renderer.js');
+        var fonts = [];
+        var ctx = {
+            beginPath: function () {},
+            arc: function () {},
+            fill: function () {},
+            stroke: function () {},
+            fillStyle: '', strokeStyle: '', lineWidth: 0,
+            font: '', textAlign: '', textBaseline: '',
+            fillText: function () {
+                fonts.push(this.font);
+            }
+        };
+        renderPoi(ctx, { zoom: 1 }, { name: 'ATM', x: 0, y: 0 }, false, {
+            poiRadius: 40,
+            typeInfo: { icon: '🏧', color: '#27ae60' }
+        });
+        // fillText đầu = icon; fontSize ≈ radius * 1.35 = 54
+        expect(fonts.length).toBeGreaterThanOrEqual(1);
+        var iconFontPx = parseFloat(fonts[0]);
+        expect(iconFontPx).toBeGreaterThanOrEqual(50);
+        expect(iconFontPx).toBeLessThanOrEqual(60);
+    });
 });
 
 describe('Rendering Engine — qr renderer', function () {

@@ -1,12 +1,9 @@
 package com.khoaluan.indoornav.ui.screens
 
 import android.Manifest
+import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.drawable.BitmapDrawable
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -69,6 +66,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,15 +77,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.khoaluan.indoornav.data.api.GeocodeHitDto
+import com.khoaluan.indoornav.data.api.OutdoorRouteResponse
+import com.khoaluan.indoornav.data.api.OverpassHitDto
+import com.khoaluan.indoornav.data.api.RetrofitClient
 import com.khoaluan.indoornav.data.model.Building
+import com.khoaluan.indoornav.data.model.GPSLocation
 import android.widget.Toast
 import androidx.compose.runtime.rememberCoroutineScope
-import com.khoaluan.indoornav.data.api.OutdoorRouteResponse
-import com.khoaluan.indoornav.data.api.RetrofitClient
 import com.khoaluan.indoornav.navigation.outdoor.OutdoorTurnByTurn
 import com.khoaluan.indoornav.navigation.voice.NavigationTtsController
 import com.khoaluan.indoornav.ui.i18n.trStatic
@@ -106,22 +108,16 @@ import com.khoaluan.indoornav.ui.search.BuildingSearchText
 import com.khoaluan.indoornav.ui.viewmodel.BuildingListUiState
 import com.khoaluan.indoornav.ui.viewmodel.MapViewModel
 import com.khoaluan.indoornav.ui.viewmodel.PlaceListUiState
-import org.osmdroid.config.Configuration
-import org.osmdroid.events.MapEventsReceiver
-import org.osmdroid.events.MapListener
-import org.osmdroid.events.ScrollEvent
-import org.osmdroid.events.ZoomEvent
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.BoundingBox
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.overlay.MapEventsOverlay
-import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.Polygon
-import org.osmdroid.views.MapView as OsmMapView
 import kotlinx.coroutines.delay
-
-private const val USER_MARKER_ID = "user_location"
-private const val USER_ACCURACY_ID = "user_accuracy"
+import org.maplibre.android.MapLibre
+import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.geometry.LatLngBounds
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.MapLibreMapOptions
+import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.Style
 
 private fun ContextHasLocationPermission(context: android.content.Context): Boolean {
     val fine = ContextCompat.checkSelfPermission(
@@ -136,7 +132,7 @@ private fun ContextHasLocationPermission(context: android.content.Context): Bool
 }
 
 /**
- * Màn Địa điểm — OSM map + con trỏ GPS (chấm xanh) kiểu Google Maps.
+ * Màn Địa điểm — MapLibre (vector, OpenFreeMap Liberty) + con trỏ GPS (chấm xanh) kiểu Google Maps.
  */
 @Composable
 fun BuildingListScreen(
@@ -157,6 +153,11 @@ fun BuildingListScreen(
     /** GĐ4 — vào indoor với tầng + focus POI */
     onIndoorSearchEnter: (buildingId: String, floor: Int, poiId: Int?, totalFloors: Int) -> Unit =
         { id, _, _, _ -> onBuildingClick(id) },
+    /**
+     * false khi bị che bởi indoor / PDR / User Hub — pause MapLibre GL nhưng
+     * không destroy View (tránh màn trắng khi quay lại).
+     */
+    mapSurfaceActive: Boolean = true,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -171,6 +172,10 @@ fun BuildingListScreen(
     val placeReviewsLoading by viewModel.placeReviewsLoading.collectAsState()
     val indoorHits by viewModel.indoorSearchHits.collectAsState()
     val indoorSearchLoading by viewModel.indoorSearchLoading.collectAsState()
+    val osmHits by viewModel.geocodeHits.collectAsState()
+    val osmLoading by viewModel.geocodeLoading.collectAsState()
+    val overpassHits by viewModel.overpassHits.collectAsState()
+    val overpassLoading by viewModel.overpassLoading.collectAsState()
     var query by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Building?>(null) }
@@ -181,8 +186,10 @@ fun BuildingListScreen(
     var reviewInitialRating by remember { mutableStateOf(5) }
     var showReportDialog by remember { mutableStateOf(false) }
     var showProposeDialog by remember { mutableStateOf(false) }
-    var mapViewRef by remember { mutableStateOf<OsmMapView?>(null) }
-    var userPoint by remember { mutableStateOf<GeoPoint?>(null) }
+    var mapView by remember { mutableStateOf<MapView?>(null) }
+    var maplibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
+    var mapStyle by remember { mutableStateOf<Style?>(null) }
+    var userPoint by remember { mutableStateOf<LatLng?>(null) }
     var userAccuracyM by remember { mutableStateOf(0f) }
     var didCenterOnUser by remember { mutableStateOf(false) }
     var didFitBuildings by remember { mutableStateOf(false) }
@@ -193,14 +200,18 @@ fun BuildingListScreen(
     var outdoorRoute by remember { mutableStateOf<OutdoorRouteResponse?>(null) }
     var outdoorDestBuilding by remember { mutableStateOf<Building?>(null) }
     var outdoorNavigating by remember { mutableStateOf(false) }
+    var outdoorRoutePreviewing by remember { mutableStateOf(false) }
     var outdoorLoading by remember { mutableStateOf(false) }
     var outdoorInstruction by remember { mutableStateOf<String?>(null) }
     var outdoorRemainingM by remember { mutableStateOf(0f) }
+    var outdoorDistanceToNextM by remember { mutableStateOf(0f) }
+    var outdoorManeuver by remember { mutableStateOf<String?>(null) }
     var outdoorEtaS by remember { mutableStateOf(0) }
     var outdoorArrived by remember { mutableStateOf(false) }
+    var outdoorApproachingIndoor by remember { mutableStateOf(false) }
+    var showHandoffDialog by remember { mutableStateOf(false) }
+    var handoffPrompted by remember { mutableStateOf(false) }
     var outdoorFollowCamera by remember { mutableStateOf(true) }
-    /** Đang animateTo programmatic → bỏ qua scroll (tránh tắt follow nhầm). */
-    var suppressScrollPause by remember { mutableStateOf(false) }
     /** Hướng đi (độ, 0=Bắc). */
     var outdoorHeadingDeg by remember { mutableStateOf<Float?>(null) }
     /** Tốc độ GPS gần nhất (m/s) — chọn GPS bearing vs la bàn. */
@@ -217,16 +228,11 @@ fun BuildingListScreen(
     /** Google: đang nav + follow → heading-up; còn lại → north-up. */
     fun headingUpActive(): Boolean = outdoorNavigating && outdoorFollowCamera
 
-    fun animateFollowTo(point: GeoPoint, zoom: Double? = null) {
-        val map = mapViewRef ?: return
-        suppressScrollPause = true
-        outdoorHeadingDeg?.takeIf { headingUpActive() }?.let { map.mapOrientation = it }
-        map.controller.animateTo(point)
-        if (zoom != null) map.controller.setZoom(zoom)
-        scope.launch {
-            delay(450)
-            suppressScrollPause = false
-        }
+    fun animateFollowTo(point: LatLng, zoom: Double? = null) {
+        val map = maplibreMap ?: return
+        val builder = CameraPosition.Builder(map.cameraPosition).target(point)
+        if (zoom != null) builder.zoom(zoom)
+        map.easeCamera(CameraUpdateFactory.newCameraPosition(builder.build()), 450)
     }
     DisposableEffect(Unit) {
         onDispose { outdoorTts.shutdown() }
@@ -288,6 +294,8 @@ fun BuildingListScreen(
         else BuildingSearchText.filterRanked(query = q, items = base, limit = 40)
     }
     val searchLoading = placeListState is PlaceListUiState.Loading
+    // Đọc giá trị mới nhất bên trong OnMapClickListener (được gắn 1 lần trong factory).
+    val filteredState = rememberUpdatedState(filtered)
 
     fun enterIndoor(building: Building) {
         val pid = building.placeId
@@ -321,23 +329,90 @@ fun BuildingListScreen(
 
     fun stopOutdoorNav() {
         outdoorNavigating = false
+        outdoorRoutePreviewing = false
         outdoorRoute = null
         outdoorDestBuilding = null
         outdoorInstruction = null
+        outdoorDistanceToNextM = 0f
+        outdoorManeuver = null
         outdoorArrived = false
+        outdoorApproachingIndoor = false
+        showHandoffDialog = false
+        handoffPrompted = false
         outdoorLoading = false
         outdoorFollowCamera = true
         outdoorHeadingDeg = null
         outdoorSpeedMps = 0f
         outdoorTts.resetLastSpoken()
-        mapViewRef?.let { map ->
-            clearOutdoorRouteOverlays(map)
-            map.mapOrientation = 0f
-            map.invalidate()
+        outdoorTts.setEnabled(false)
+        mapStyle?.let { style ->
+            OutdoorRouteMapHelpers.clearRoute(style)
+        }
+        maplibreMap?.let { map ->
+            map.easeCamera(
+                CameraUpdateFactory.newCameraPosition(
+                    CameraPosition.Builder(map.cameraPosition).bearing(0.0).build(),
+                ),
+                300,
+            )
         }
     }
 
-    fun openDirections(building: Building) {
+    fun startOutdoorNavigation() {
+        val route = outdoorRoute ?: return
+        val dest = outdoorDestBuilding ?: return
+        val origin = userPoint ?: return
+        outdoorRoutePreviewing = false
+        outdoorNavigating = true
+        outdoorArrived = false
+        outdoorApproachingIndoor = false
+        handoffPrompted = false
+        showHandoffDialog = false
+        outdoorFollowCamera = true
+        selected = null
+        val arriveTh = OutdoorTurnByTurn.arriveThresholdMeters(dest.activationRadius)
+        val g0 = OutdoorTurnByTurn.guidance(
+            route,
+            origin.latitude,
+            origin.longitude,
+            arriveThresholdM = arriveTh,
+        )
+        outdoorInstruction = g0.instruction
+        outdoorRemainingM = g0.remainingM
+        outdoorDistanceToNextM = g0.distanceToNextM
+        outdoorManeuver = g0.maneuver
+        outdoorEtaS = g0.etaSeconds
+        outdoorTts.setEnabled(true)
+        outdoorTts.resetLastSpoken()
+        outdoorTts.speakTurnByTurn(
+            instruction = g0.instruction,
+            distanceM = g0.distanceToNextM,
+            segmentId = "step-${g0.stepIndex}",
+            scale = NavigationTtsController.Scale.OUTDOOR,
+        )
+        animateFollowTo(LatLng(origin.latitude, origin.longitude), zoom = 17.0)
+    }
+
+    /** Điểm OSM/Nominatim → Building giả để tái dùng OSRM + OutdoorNavPanel (không Indoor). */
+    fun buildingFromOsmHit(hit: GeocodeHitDto): Building =
+        Building(
+            id = "osm:${hit.id}",
+            name = hit.name,
+            address = hit.displayName,
+            gpsLocation = GPSLocation(lat = hit.lat, lng = hit.lng),
+            hasPublishedIndoor = false,
+        )
+
+    fun buildingFromOverpassHit(hit: OverpassHitDto): Building =
+        Building(
+            id = hit.id,
+            name = hit.name,
+            address = hit.displayName,
+            gpsLocation = GPSLocation(lat = hit.lat, lng = hit.lng),
+            hasPublishedIndoor = false,
+        )
+
+    fun openDirections(building: Building, autoStart: Boolean = false) {
         val gps = building.gpsLocation ?: return
         val origin = userPoint
         if (origin == null) {
@@ -361,6 +436,8 @@ fun BuildingListScreen(
         outdoorLoading = true
         outdoorDestBuilding = building
         showPlaceDetail = false
+        outdoorNavigating = false
+        outdoorRoutePreviewing = false
         scope.launch {
             try {
                 val res = withContext(Dispatchers.IO) {
@@ -388,27 +465,27 @@ fun BuildingListScreen(
                     return@launch
                 }
                 outdoorRoute = body
-                outdoorNavigating = true
+                outdoorRemainingM = body.distanceM
+                outdoorEtaS = body.durationS
                 outdoorArrived = false
-                outdoorFollowCamera = true
+                outdoorApproachingIndoor = false
+                handoffPrompted = false
+                showHandoffDialog = false
                 selected = null
-                mapViewRef?.let { drawOutdoorRouteOnMap(context, it, body, fitBounds = true) }
-                val g0 = OutdoorTurnByTurn.guidance(
-                    body,
-                    origin.latitude,
-                    origin.longitude,
-                )
-                outdoorInstruction = g0.instruction
-                outdoorRemainingM = g0.remainingM
-                outdoorEtaS = g0.etaSeconds
-                outdoorTts.setEnabled(true)
-                outdoorTts.resetLastSpoken()
-                outdoorTts.speakTurnByTurn(
-                    instruction = g0.instruction,
-                    distanceM = g0.distanceToNextM,
-                    segmentId = "step-${g0.stepIndex}",
-                    scale = NavigationTtsController.Scale.OUTDOOR,
-                )
+                mapStyle?.let { style ->
+                    val bounds = OutdoorRouteMapHelpers.drawRoute(style, body)
+                    val map = maplibreMap
+                    if (bounds != null && map != null) {
+                        map.easeCamera(CameraUpdateFactory.newLatLngBounds(bounds, 120), 500)
+                    }
+                }
+                if (autoStart) {
+                    startOutdoorNavigation()
+                } else {
+                    outdoorRoutePreviewing = true
+                    outdoorNavigating = false
+                    outdoorFollowCamera = false
+                }
             } catch (_: Exception) {
                 Toast.makeText(
                     context,
@@ -430,8 +507,24 @@ fun BuildingListScreen(
             category = category.trim().ifEmpty { null },
         )
         val q = query.trim()
-        if (q.length >= 2) viewModel.searchIndoorPois(q)
-        else viewModel.clearIndoorSearch()
+        if (q.length >= 2) {
+            viewModel.searchIndoorPois(q)
+            viewModel.fetchGeocode(
+                query = q,
+                lat = userPoint?.latitude,
+                lng = userPoint?.longitude,
+            )
+        } else {
+            viewModel.clearIndoorSearch()
+            viewModel.clearGeocode()
+        }
+    }
+
+    LaunchedEffect(showSearchResults, userPoint?.latitude, userPoint?.longitude) {
+        if (!showSearchResults) return@LaunchedEffect
+        val p = userPoint ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(400)
+        viewModel.fetchOverpassNearby(p.latitude, p.longitude, radiusM = 250)
     }
 
     LaunchedEffect(selected?.id) {
@@ -454,9 +547,8 @@ fun BuildingListScreen(
         viewModel.openPlaceDeepLink(slug) { b ->
             selected = b
             val g = b.gpsLocation
-            if (g != null && mapViewRef != null) {
-                mapViewRef?.controller?.animateTo(GeoPoint(g.lat, g.lng))
-                mapViewRef?.controller?.setZoom(17.0)
+            if (g != null && maplibreMap != null) {
+                animateFollowTo(LatLng(g.lat, g.lng), zoom = 17.0)
             }
             if (floorHint != null && b.hasPublishedIndoor == true && !b.id.startsWith("place:")) {
                 onDeepLinkEnterIndoor(b.id, floorHint)
@@ -473,11 +565,6 @@ fun BuildingListScreen(
     }
 
     LaunchedEffect(Unit) {
-        Configuration.getInstance().load(
-            context,
-            context.getSharedPreferences("osmdroid", 0),
-        )
-        Configuration.getInstance().userAgentValue = context.packageName
         // Chưa có quyền → xin ngay khi vào map
         if (!hasLocationPermission) {
             requestLocationPermission()
@@ -498,7 +585,7 @@ fun BuildingListScreen(
             ?: return@DisposableEffect onDispose { }
 
         fun applyFix(loc: Location) {
-            userPoint = GeoPoint(loc.latitude, loc.longitude)
+            userPoint = LatLng(loc.latitude, loc.longitude)
             userAccuracyM = loc.accuracy.coerceAtLeast(8f)
             if (loc.hasSpeed()) outdoorSpeedMps = loc.speed
 
@@ -511,18 +598,31 @@ fun BuildingListScreen(
 
             val route = outdoorRoute
             if (outdoorNavigating && route != null) {
+                val dest = outdoorDestBuilding
+                val canHandoff = dest?.hasPublishedIndoor == true
+                val arriveTh = OutdoorTurnByTurn.arriveThresholdMeters(dest?.activationRadius)
+                val approachTh = OutdoorTurnByTurn.approachThresholdMeters(dest?.activationRadius)
                 val g = OutdoorTurnByTurn.guidance(
                     route,
                     loc.latitude,
                     loc.longitude,
+                    arriveThresholdM = arriveTh,
                 )
                 outdoorInstruction = g.instruction
                 outdoorRemainingM = g.remainingM
+                outdoorDistanceToNextM = g.distanceToNextM
+                outdoorManeuver = g.maneuver
                 outdoorEtaS = g.etaSeconds
+                outdoorApproachingIndoor =
+                    canHandoff && !g.arrived && g.remainingM <= approachTh
                 if (g.arrived && !outdoorArrived) {
                     outdoorArrived = true
                     outdoorTts.resetLastSpoken()
                     outdoorTts.speakInstruction("Đã đến nơi")
+                    if (canHandoff && !handoffPrompted) {
+                        handoffPrompted = true
+                        showHandoffDialog = true
+                    }
                 } else if (!g.arrived) {
                     outdoorTts.speakTurnByTurn(
                         instruction = g.instruction,
@@ -533,7 +633,7 @@ fun BuildingListScreen(
                 }
                 if (outdoorFollowCamera) {
                     // Google nav: heading-up + camera follow
-                    animateFollowTo(GeoPoint(loc.latitude, loc.longitude))
+                    animateFollowTo(LatLng(loc.latitude, loc.longitude))
                 }
             }
         }
@@ -610,85 +710,187 @@ fun BuildingListScreen(
         }
     }
 
-    // Heading-up: cập nhật xoay map ngay khi hướng đổi (khi đang follow nav)
-    LaunchedEffect(outdoorHeadingDeg, outdoorNavigating, outdoorFollowCamera, mapViewRef) {
-        val map = mapViewRef ?: return@LaunchedEffect
+    // Heading-up: xoay camera ngay khi hướng đổi (khi đang follow nav); bearing map-aligned
+    // của icon người dùng (OutdoorMapLayers) tự bù trừ nên chỉ cần xoay camera ở đây.
+    LaunchedEffect(outdoorHeadingDeg, outdoorNavigating, outdoorFollowCamera, maplibreMap) {
+        val map = maplibreMap ?: return@LaunchedEffect
         if (headingUpActive()) {
-            outdoorHeadingDeg?.let {
-                map.mapOrientation = it
-                map.invalidate()
+            outdoorHeadingDeg?.let { heading ->
+                map.easeCamera(
+                    CameraUpdateFactory.newCameraPosition(
+                        CameraPosition.Builder(map.cameraPosition).bearing(heading.toDouble()).build(),
+                    ),
+                    250,
+                )
             }
         } else if (!outdoorNavigating) {
             // Duyệt map / hết nav → north-up
-            if (map.mapOrientation != 0f) {
-                map.mapOrientation = 0f
-                map.invalidate()
+            if (map.cameraPosition.bearing != 0.0) {
+                map.easeCamera(
+                    CameraUpdateFactory.newCameraPosition(
+                        CameraPosition.Builder(map.cameraPosition).bearing(0.0).build(),
+                    ),
+                    250,
+                )
             }
         }
     }
 
-    DisposableEffect(Unit) {
+    // Lifecycle MapView — pause khi mapSurfaceActive=false; không destroy khi chỉ bị overlay che.
+    DisposableEffect(lifecycleOwner, mapView, mapSurfaceActive) {
+        val mv = mapView
+        if (mv == null) {
+            onDispose { }
+        } else {
+            fun reviveMapGl(reason: String) {
+                if (!mapSurfaceActive) return
+                try {
+                    val life = lifecycleOwner.lifecycle.currentState
+                    if (life.isAtLeast(Lifecycle.State.STARTED)) mv.onStart()
+                    if (life.isAtLeast(Lifecycle.State.RESUMED)) mv.onResume()
+                    val map = maplibreMap
+                    if (map != null && mv.width > 0 && mv.height > 0) {
+                        map.triggerRepaint()
+                        val cam = map.cameraPosition
+                        map.moveCamera(
+                            CameraUpdateFactory.newCameraPosition(
+                                CameraPosition.Builder(cam).build(),
+                            ),
+                        )
+                    }
+                    android.util.Log.d("OutdoorMap", "reviveMapGl ($reason)")
+                } catch (e: Exception) {
+                    android.util.Log.w("OutdoorMap", "reviveMapGl: ${e.message}")
+                }
+            }
+            val observer = LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_START -> {
+                        if (mapSurfaceActive) mv.onStart()
+                    }
+                    Lifecycle.Event.ON_RESUME -> {
+                        if (mapSurfaceActive) {
+                            mv.onResume()
+                            mv.post { reviveMapGl("lifecycle_resume") }
+                            mv.postDelayed({ reviveMapGl("lifecycle_resume_delay") }, 200)
+                        }
+                    }
+                    Lifecycle.Event.ON_PAUSE -> mv.onPause()
+                    Lifecycle.Event.ON_STOP -> mv.onStop()
+                    else -> Unit
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            if (mapSurfaceActive) {
+                val life = lifecycleOwner.lifecycle.currentState
+                if (life.isAtLeast(Lifecycle.State.STARTED)) mv.onStart()
+                if (life.isAtLeast(Lifecycle.State.RESUMED)) mv.onResume()
+                mv.post { reviveMapGl("attach") }
+                mv.postDelayed({ reviveMapGl("attach_delay") }, 250)
+            } else {
+                try {
+                    mv.onPause()
+                    mv.onStop()
+                } catch (_: Exception) {
+                }
+            }
+            val componentCallbacks = object : ComponentCallbacks2 {
+                override fun onLowMemory() {
+                    mv.onLowMemory()
+                }
+                override fun onTrimMemory(level: Int) = Unit
+                override fun onConfigurationChanged(newConfig: android.content.res.Configuration) = Unit
+            }
+            context.applicationContext.registerComponentCallbacks(componentCallbacks)
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
+                context.applicationContext.unregisterComponentCallbacks(componentCallbacks)
+            }
+        }
+    }
+
+    DisposableEffect(mapView) {
+        val mv = mapView
         onDispose {
-            mapViewRef?.onPause()
-            mapViewRef?.onDetach()
-            mapViewRef = null
+            if (mv == null) return@onDispose
+            try {
+                mv.onPause()
+                mv.onStop()
+            } catch (_: Exception) {
+            }
+            try {
+                mv.onDestroy()
+            } catch (_: Exception) {
+            }
+            if (mapView === mv) {
+                mapView = null
+                maplibreMap = null
+                mapStyle = null
+            }
+        }
+    }
+
+    LaunchedEffect(mapSurfaceActive, mapView) {
+        val mv = mapView ?: return@LaunchedEffect
+        if (mapSurfaceActive) {
+            try {
+                val life = lifecycleOwner.lifecycle.currentState
+                if (life.isAtLeast(Lifecycle.State.STARTED)) mv.onStart()
+                if (life.isAtLeast(Lifecycle.State.RESUMED)) mv.onResume()
+                maplibreMap?.triggerRepaint()
+                kotlinx.coroutines.delay(120)
+                maplibreMap?.triggerRepaint()
+                kotlinx.coroutines.delay(350)
+                maplibreMap?.let { map ->
+                    map.triggerRepaint()
+                    val cam = map.cameraPosition
+                    map.moveCamera(
+                        CameraUpdateFactory.newCameraPosition(CameraPosition.Builder(cam).build()),
+                    )
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("OutdoorMap", "resume after overlay: ${e.message}")
+            }
+        } else {
+            try {
+                mv.onPause()
+                mv.onStop()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    // Sau overlay đầy màn (chi tiết địa điểm / route preview) — ép MapLibre vẽ lại
+    LaunchedEffect(showPlaceDetail, outdoorRoutePreviewing, outdoorNavigating, outdoorLoading, mapSurfaceActive) {
+        if (!mapSurfaceActive) return@LaunchedEffect
+        kotlinx.coroutines.delay(80)
+        val mv = mapView ?: return@LaunchedEffect
+        try {
+            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                mv.onResume()
+                maplibreMap?.triggerRepaint()
+            }
+        } catch (_: Exception) {
         }
     }
 
     LaunchedEffect(
         userPoint,
         userAccuracyM,
-        mapViewRef,
+        mapStyle,
         outdoorNavigating,
-        outdoorFollowCamera,
         outdoorHeadingDeg,
     ) {
-        val map = mapViewRef ?: return@LaunchedEffect
+        val style = mapStyle ?: return@LaunchedEffect
         val point = userPoint ?: return@LaunchedEffect
 
-        val toRemove = map.overlays.filter { o ->
-            (o is Marker && o.id == USER_MARKER_ID) ||
-                (o is Polygon && o.id == USER_ACCURACY_ID)
-        }
-        map.overlays.removeAll(toRemove.toSet())
-
-        val accuracy = Polygon(map).apply {
-            id = USER_ACCURACY_ID
-            points = Polygon.pointsAsCircle(point, userAccuracyM.toDouble())
-            fillPaint.color = 0x332D8CFF.toInt()
-            outlinePaint.color = 0x882D8CFF.toInt()
-            outlinePaint.strokeWidth = 2f
-        }
-        map.overlays.add(0, accuracy)
-
-        val headingUp = headingUpActive()
-        val heading = outdoorHeadingDeg ?: 0f
-        val userMarker = Marker(map).apply {
-            id = USER_MARKER_ID
-            position = point
-            title = "Bạn đang ở đây"
-            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-            if (headingUp) {
-                // Map đã xoay theo hướng → mũi tên luôn chỉ lên màn hình (không flat)
-                setFlat(false)
-                rotation = 0f
-            } else {
-                // North-up: mũi tên xoay theo hướng trên map
-                setFlat(true)
-                rotation = heading
-            }
-            icon = BitmapDrawable(
-                context.resources,
-                if (outdoorNavigating || outdoorHeadingDeg != null) {
-                    createNavArrowBitmap()
-                } else {
-                    createBlueDotBitmap()
-                },
-            )
-            setInfoWindow(null)
-        }
-        map.overlays.add(userMarker)
-        map.invalidate()
+        OutdoorMapLayers.updateUserAccuracy(style, point, userAccuracyM.toDouble())
+        OutdoorMapLayers.updateUserLocation(
+            style = style,
+            point = point,
+            headingDeg = outdoorHeadingDeg,
+            showArrow = outdoorNavigating || outdoorHeadingDeg != null,
+        )
 
         if (!didCenterOnUser) {
             didCenterOnUser = true
@@ -717,64 +919,182 @@ fun BuildingListScreen(
             }
             is BuildingListUiState.Success -> {
                 AndroidView(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onSizeChanged { size ->
+                            // Compose đổi size (mở search, dialog…) → ép MapLibre vẽ lại
+                            if (mapSurfaceActive && size.width > 0 && size.height > 0) {
+                                mapView?.post {
+                                    try {
+                                        mapView?.onResume()
+                                        maplibreMap?.triggerRepaint()
+                                    } catch (_: Exception) {
+                                    }
+                                }
+                            }
+                        },
                     factory = { ctx ->
-                        OsmMapView(ctx).apply {
-                            setTileSource(TileSourceFactory.MAPNIK)
-                            setMultiTouchControls(true)
-                            controller.setZoom(14.0)
-                            controller.setCenter(GeoPoint(10.762622, 106.660172))
-                            mapViewRef = this
+                        MapLibre.getInstance(ctx)
+                        // textureMode: bắt buộc với Compose overlay — SurfaceView hay trắng
+                        // đến khi UI khác gây relayout (vd. mở ô tìm kiếm).
+                        val mapOptions = MapLibreMapOptions.createFromAttributes(ctx)
+                            .textureMode(true)
+                        MapView(ctx, mapOptions).apply {
+                            onCreate(null)
+                            onStart()
                             onResume()
+                            mapView = this
 
-                            overlays.add(
-                                MapEventsOverlay(object : MapEventsReceiver {
-                                    override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
+                            fun kickRender(map: MapLibreMap) {
+                                if (width <= 0 || height <= 0) return
+                                try {
+                                    onResume()
+                                    map.triggerRepaint()
+                                    // Nudge camera → native resize framebuffer sau layout đầu
+                                    val cam = map.cameraPosition
+                                    map.moveCamera(CameraUpdateFactory.zoomTo(cam.zoom))
+                                } catch (e: Exception) {
+                                    android.util.Log.w("OutdoorMap", "kickRender: ${e.message}")
+                                }
+                            }
+
+                            addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                                maplibreMap?.let { kickRender(it) }
+                            }
+
+                            getMapAsync { map ->
+                                maplibreMap = map
+                                map.uiSettings.isAttributionEnabled = true
+                                map.cameraPosition = CameraPosition.Builder()
+                                    .target(LatLng(10.762622, 106.660172))
+                                    .zoom(14.0)
+                                    .build()
+
+                                fun onStyleReady(style: Style, usedFallback: Boolean) {
+                                    try {
+                                        OutdoorMapLayers.ensureLayers(style)
+                                        OutdoorRouteMapHelpers.ensureLayers(style)
+                                        if (!usedFallback) {
+                                            OutdoorBasemapTiles.preferVietnameseLabels(style)
+                                            VietnamSovereigntyMapLabels.ensureLabels(style)
+                                        }
+                                        OutdoorMapLayers.updatePlaces(style, filteredState.value)
+                                        val cam = map.cameraPosition
+                                        val target = cam.target
+                                        if (target != null && !usedFallback) {
+                                            OutdoorBasemapTiles.setBasemapSymbolsVisible(
+                                                style,
+                                                visible = !OutdoorBasemapTiles.isEastSeaCloseZoom(
+                                                    target,
+                                                    cam.zoom,
+                                                ),
+                                            )
+                                        }
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("OutdoorMap", "onStyleReady: ${e.message}", e)
+                                    }
+                                    mapStyle = style
+                                    if (usedFallback) {
+                                        Toast.makeText(
+                                            ctx,
+                                            trStatic(
+                                                "Nền Liberty lỗi — dùng bản đồ raster",
+                                                "Liberty failed — using raster basemap",
+                                            ),
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                    post { kickRender(map) }
+                                    postDelayed({ kickRender(map) }, 150)
+                                    postDelayed({ kickRender(map) }, 600)
+                                }
+
+                                fun loadRasterFallback() {
+                                    map.setStyle(
+                                        Style.Builder().fromJson(OutdoorBasemapTiles.RASTER_FALLBACK_STYLE_JSON),
+                                    ) { style -> onStyleReady(style, usedFallback = true) }
+                                }
+
+                                var libertyFailed = false
+                                addOnDidFailLoadingMapListener { message ->
+                                    android.util.Log.e("OutdoorMap", "Map load fail: $message")
+                                    if (!libertyFailed) {
+                                        libertyFailed = true
+                                        loadRasterFallback()
+                                    }
+                                }
+
+                                map.setStyle(Style.Builder().fromUri(OutdoorBasemapTiles.LIBERTY_STYLE_URL)) { style ->
+                                    onStyleReady(style, usedFallback = false)
+                                }
+
+                                postDelayed({
+                                    if (mapStyle == null && !libertyFailed) {
+                                        libertyFailed = true
+                                        android.util.Log.w("OutdoorMap", "Style timeout → raster fallback")
+                                        loadRasterFallback()
+                                    }
+                                }, 8_000L)
+
+                                map.addOnMapClickListener { latLng ->
+                                    val screenPoint = map.projection.toScreenLocation(latLng)
+                                    val features = map.queryRenderedFeatures(
+                                        screenPoint,
+                                        OutdoorMapLayers.PLACE_LAYER_ID,
+                                    )
+                                    val clickedId = features.firstOrNull()
+                                        ?.getStringProperty(OutdoorMapLayers.PROP_BUILDING_ID)
+                                    val building = clickedId?.let { id ->
+                                        filteredState.value.firstOrNull { it.id == id }
+                                    }
+                                    if (building != null) {
+                                        selected = building
+                                        showSearchResults = false
+                                    } else {
                                         selected = null
                                         showPlaceDetail = false
-                                        return true
                                     }
-                                    override fun longPressHelper(p: GeoPoint?): Boolean = false
-                                }),
-                            )
-                            // Kéo map tay khi đang nav → tạm dừng follow (giống Google)
-                            addMapListener(object : MapListener {
-                                override fun onScroll(event: ScrollEvent?): Boolean {
-                                    if (!suppressScrollPause && outdoorNavigating && outdoorFollowCamera) {
+                                    true
+                                }
+
+                                map.addOnCameraIdleListener {
+                                    val style = map.style ?: return@addOnCameraIdleListener
+                                    if (style.getLayer("carto-raster") != null) return@addOnCameraIdleListener
+                                    val cam = map.cameraPosition
+                                    val target = cam.target ?: return@addOnCameraIdleListener
+                                    OutdoorBasemapTiles.setBasemapSymbolsVisible(
+                                        style,
+                                        visible = !OutdoorBasemapTiles.isEastSeaCloseZoom(
+                                            target,
+                                            cam.zoom,
+                                        ),
+                                    )
+                                }
+
+                                map.addOnCameraMoveStartedListener { reason ->
+                                    if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE &&
+                                        outdoorNavigating &&
+                                        outdoorFollowCamera
+                                    ) {
                                         outdoorFollowCamera = false
                                     }
-                                    return false
                                 }
-                                override fun onZoom(event: ZoomEvent?): Boolean = false
-                            })
+
+                                post { kickRender(map) }
+                            }
                         }
                     },
-                    update = { map ->
-                        val keep = map.overlays.filter { o ->
-                            o is MapEventsOverlay ||
-                                (o is Marker && o.id == USER_MARKER_ID) ||
-                                (o is Polygon && o.id == USER_ACCURACY_ID)
-                        }
-                        map.overlays.clear()
-                        map.overlays.addAll(keep)
-
-                        filtered.forEach { building ->
-                            val gps = building.gpsLocation ?: return@forEach
-                            if (gps.lat == 0.0 && gps.lng == 0.0) return@forEach
-                            val marker = Marker(map)
-                            marker.position = GeoPoint(gps.lat, gps.lng)
-                            marker.title = building.name
-                            marker.snippet = building.address
-                            marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                            marker.relatedObject = building
-                            marker.setOnMarkerClickListener { m, _ ->
-                                selected = m.relatedObject as? Building
-                                showSearchResults = false
-                                true
+                    update = { view ->
+                        if (mapSurfaceActive) {
+                            try {
+                                view.onResume()
+                                maplibreMap?.triggerRepaint()
+                            } catch (_: Exception) {
                             }
-                            map.overlays.add(marker)
                         }
-                        map.invalidate()
+                        mapStyle?.let { style ->
+                            OutdoorMapLayers.updatePlaces(style, filtered)
+                        }
                     },
                 )
             }
@@ -816,6 +1136,7 @@ fun BuildingListScreen(
             }
         }
 
+        if (!outdoorRoutePreviewing && !outdoorNavigating) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -832,8 +1153,7 @@ fun BuildingListScreen(
                         value = query,
                         onValueChange = {
                             query = it
-                            showSearchResults = it.isNotBlank()
-                            if (it.isBlank()) showSearchResults = false
+                            showSearchResults = true
                         },
                         modifier = Modifier.weight(1f),
                         placeholder = {
@@ -857,7 +1177,9 @@ fun BuildingListScreen(
                             if (query.isNotEmpty()) {
                                 IconButton(onClick = {
                                     query = ""
-                                    showSearchResults = false
+                                    showSearchResults = true
+                                    viewModel.clearGeocode()
+                                    viewModel.clearIndoorSearch()
                                 }) {
                                     Icon(
                                         imageVector = Icons.Rounded.Close,
@@ -951,20 +1273,22 @@ fun BuildingListScreen(
                                     )
                                 }
                                 // Fit camera tới kết quả
-                                val map = mapViewRef
+                                val map = maplibreMap
                                 if (map != null && n > 0) {
                                     val pts = buildings.mapNotNull { b ->
                                         if (!PlaceCategoryLabels.matchesFilter(value, b.category, b.name, b.address)) {
                                             return@mapNotNull null
                                         }
                                         val g = b.gpsLocation ?: return@mapNotNull null
-                                        if (g.lat == 0.0 && g.lng == 0.0) null else GeoPoint(g.lat, g.lng)
+                                        if (g.lat == 0.0 && g.lng == 0.0) null else LatLng(g.lat, g.lng)
                                     }
                                     if (pts.size == 1) {
-                                        map.controller.animateTo(pts.first())
-                                        map.controller.setZoom(16.0)
+                                        animateFollowTo(pts.first(), zoom = 16.0)
                                     } else if (pts.isNotEmpty()) {
-                                        map.zoomToBoundingBox(BoundingBox.fromGeoPoints(pts), true, 120)
+                                        val bounds = LatLngBounds.Builder().apply {
+                                            pts.forEach { include(it) }
+                                        }.build()
+                                        map.easeCamera(CameraUpdateFactory.newLatLngBounds(bounds, 120), 500)
                                     }
                                 }
                             }
@@ -1002,7 +1326,10 @@ fun BuildingListScreen(
                 }
             }
 
-            if (showSearchResults && (query.isNotBlank() || category.isNotBlank()) && selected == null && !showPlaceDetail) {
+            if (showSearchResults && selected == null && !showPlaceDetail &&
+                !outdoorRoutePreviewing && !outdoorNavigating &&
+                (query.isNotBlank() || category.isNotBlank() || overpassHits.isNotEmpty() || overpassLoading)
+            ) {
                 Spacer(modifier = Modifier.height(8.dp))
                 SearchResultPanel(
                     query = query.trim(),
@@ -1010,13 +1337,16 @@ fun BuildingListScreen(
                     loading = searchLoading,
                     indoorHits = indoorHits,
                     indoorLoading = indoorSearchLoading,
+                    osmHits = osmHits,
+                    osmLoading = osmLoading,
+                    overpassHits = overpassHits,
+                    overpassLoading = overpassLoading,
                     onSelect = { b ->
                         selected = b
                         showSearchResults = false
                         val g = b.gpsLocation
-                        if (g != null && mapViewRef != null) {
-                            mapViewRef?.controller?.animateTo(GeoPoint(g.lat, g.lng))
-                            mapViewRef?.controller?.setZoom(17.0)
+                        if (g != null && maplibreMap != null) {
+                            animateFollowTo(LatLng(g.lat, g.lng), zoom = 17.0)
                         }
                     },
                     onSelectIndoor = { hit ->
@@ -1030,8 +1360,25 @@ fun BuildingListScreen(
                             hit.totalFloors.coerceAtLeast(1),
                         )
                     },
+                    onSelectOsm = { hit ->
+                        showSearchResults = false
+                        query = ""
+                        viewModel.clearGeocode()
+                        selected = null
+                        animateFollowTo(LatLng(hit.lat, hit.lng), zoom = 16.0)
+                        openDirections(buildingFromOsmHit(hit))
+                    },
+                    onSelectOverpass = { hit ->
+                        showSearchResults = false
+                        query = ""
+                        viewModel.clearOverpassNearby()
+                        selected = null
+                        animateFollowTo(LatLng(hit.lat, hit.lng), zoom = 16.0)
+                        openDirections(buildingFromOverpassHit(hit))
+                    },
                 )
             }
+        }
         }
 
         FloatingActionButton(
@@ -1040,7 +1387,7 @@ fun BuildingListScreen(
                     requestLocationPermission()
                     return@FloatingActionButton
                 }
-                val map = mapViewRef ?: return@FloatingActionButton
+                if (maplibreMap == null) return@FloatingActionButton
                 // Google: bấm vị trí của tôi → bật lại follow + heading-up (nếu đang nav)
                 outdoorFollowCamera = true
                 val point = userPoint
@@ -1053,17 +1400,20 @@ fun BuildingListScreen(
                 val last = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
                     ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
                 if (last != null) {
-                    val gp = GeoPoint(last.latitude, last.longitude)
+                    val gp = LatLng(last.latitude, last.longitude)
                     userPoint = gp
                     userAccuracyM = last.accuracy.coerceAtLeast(8f)
                     animateFollowTo(gp, zoom = 17.0)
-                } else {
-                    map.invalidate()
                 }
             },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = if (outdoorNavigating) 200.dp else if (selected != null) 180.dp else 100.dp),
+                .padding(end = 16.dp, bottom = when {
+                    outdoorNavigating -> 220.dp
+                    outdoorRoutePreviewing -> 260.dp
+                    selected != null -> 200.dp
+                    else -> 100.dp
+                }),
             containerColor = Color.White,
             contentColor = Color(0xFF1A73E8),
         ) {
@@ -1106,6 +1456,29 @@ fun BuildingListScreen(
             }
         }
 
+        if (outdoorRoutePreviewing && outdoorRoute != null && !outdoorNavigating) {
+            OutdoorRouteEndpointsBar(
+                destinationName = outdoorDestBuilding?.name ?: tr("Điểm đến", "Destination"),
+                onClose = { stopOutdoorNav() },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .zIndex(46f)
+                    .padding(top = 8.dp),
+            )
+            OutdoorRoutePreviewPanel(
+                destinationName = outdoorDestBuilding?.name ?: tr("Điểm đến", "Destination"),
+                distanceM = outdoorRoute?.distanceM ?: outdoorRemainingM,
+                durationS = outdoorRoute?.durationS ?: outdoorEtaS,
+                onStart = { startOutdoorNavigation() },
+                onShare = { outdoorDestBuilding?.let { sharePlace(it) } },
+                onOpenGoogleMaps = { outdoorDestBuilding?.let { openGoogleMapsFallback(it) } },
+                onClose = { stopOutdoorNav() },
+                panelModifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .zIndex(45f),
+            )
+        }
+
         if (outdoorNavigating && outdoorRoute != null) {
             OutdoorNavPanel(
                 buildingName = outdoorDestBuilding?.name ?: tr("Điểm đến", "Destination"),
@@ -1113,11 +1486,10 @@ fun BuildingListScreen(
                 remainingM = outdoorRemainingM,
                 etaSeconds = outdoorEtaS,
                 arrived = outdoorArrived,
-                canEnterIndoor = outdoorDestBuilding?.let { b ->
-                    b.hasPublishedIndoor == true ||
-                        !b.placeId.isNullOrBlank() ||
-                        b.id.startsWith("place:")
-                } == true,
+                canEnterIndoor = outdoorDestBuilding?.hasPublishedIndoor == true,
+                approachingIndoor = outdoorApproachingIndoor,
+                distanceToNextM = outdoorDistanceToNextM,
+                maneuver = outdoorManeuver,
                 onCancel = { stopOutdoorNav() },
                 onOpenGoogleMaps = {
                     outdoorDestBuilding?.let { openGoogleMapsFallback(it) }
@@ -1133,7 +1505,42 @@ fun BuildingListScreen(
             )
         }
 
-        if (chosen != null && !showPlaceDetail && !outdoorNavigating) {
+        if (showHandoffDialog && outdoorDestBuilding?.hasPublishedIndoor == true) {
+            val destName = outdoorDestBuilding?.name ?: tr("địa điểm", "place")
+            AlertDialog(
+                onDismissRequest = { showHandoffDialog = false },
+                title = {
+                    Text(tr("Đã tới lối vào", "Arrived at entrance"))
+                },
+                text = {
+                    Text(
+                        tr(
+                            "Bạn đang gần \"$destName\". Chuyển sang bản đồ trong nhà?",
+                            "You are near \"$destName\". Switch to the indoor map?",
+                        ),
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val b = outdoorDestBuilding
+                            showHandoffDialog = false
+                            stopOutdoorNav()
+                            if (b != null) enterIndoor(b)
+                        },
+                    ) {
+                        Text(tr("Vào trong nhà", "Enter indoor"))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showHandoffDialog = false }) {
+                        Text(tr("Tiếp tục ngoài trời", "Stay outdoors"))
+                    }
+                },
+            )
+        }
+
+        if (chosen != null && !outdoorNavigating && !outdoorRoutePreviewing) {
             PlacePreviewSheet(
                 building = chosen,
                 explorer = explorer,
@@ -1141,11 +1548,15 @@ fun BuildingListScreen(
                 isFollowing = chosen.placeId?.let { it in followingIds } == true,
                 notice = placeNotice,
                 isLoggedIn = isLoggedIn,
+                sheetExpanded = showPlaceDetail,
+                onSheetExpandedChange = { showPlaceDetail = it },
                 onDismiss = {
                     selected = null
+                    showPlaceDetail = false
                     viewModel.clearBuildingExplorer()
                 },
-                onDirections = { openDirections(chosen) },
+                onDirections = { openDirections(chosen, autoStart = false) },
+                onStart = { openDirections(chosen, autoStart = true) },
                 onToggleFavorite = {
                     val pid = chosen.placeId ?: return@PlacePreviewSheet
                     viewModel.toggleFavorite(pid, chosen.name)
@@ -1159,51 +1570,46 @@ fun BuildingListScreen(
                 onPropose = { showProposeDialog = true },
                 onEnterIndoor = { enterIndoor(chosen) },
                 onLoginRequired = onLoginClick,
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
-        }
-
-        if (showPlaceDetail && chosen != null) {
-            Box(
+                expandedContent = {
+                    PlaceDetailScreen(
+                        building = chosen,
+                        explorer = explorer,
+                        explorerLoading = explorerLoading,
+                        reviews = placeReviews,
+                        reviewsLoading = placeReviewsLoading,
+                        isFavorite = chosen.placeId?.let { it in favoriteIds } == true,
+                        isFollowing = chosen.placeId?.let { it in followingIds } == true,
+                        isLoggedIn = isLoggedIn,
+                        embeddedInSheet = true,
+                        onBack = {
+                            showAllReviews = false
+                            showPlaceDetail = false
+                        },
+                        onDirections = { openDirections(chosen, autoStart = false) },
+                        onToggleFavorite = {
+                            val pid = chosen.placeId ?: return@PlaceDetailScreen
+                            viewModel.toggleFavorite(pid, chosen.name)
+                        },
+                        onShare = { sharePlace(chosen) },
+                        onToggleFollow = {
+                            val pid = chosen.placeId ?: return@PlaceDetailScreen
+                            viewModel.toggleFollowPlace(pid)
+                        },
+                        onReview = { stars ->
+                            reviewInitialRating = stars.coerceIn(1, 5)
+                            showReviewDialog = true
+                        },
+                        onReport = { showReportDialog = true },
+                        onPropose = { showProposeDialog = true },
+                        onSeeAllReviews = { showAllReviews = true },
+                        onEnterIndoor = { enterIndoor(chosen) },
+                        onLoginRequired = onLoginClick,
+                    )
+                },
                 modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(40f)
-                    .background(Color(0xFFF8F9FA)),
-            ) {
-                PlaceDetailScreen(
-                    building = chosen,
-                    explorer = explorer,
-                    explorerLoading = explorerLoading,
-                    reviews = placeReviews,
-                    reviewsLoading = placeReviewsLoading,
-                    isFavorite = chosen.placeId?.let { it in favoriteIds } == true,
-                    isFollowing = chosen.placeId?.let { it in followingIds } == true,
-                    isLoggedIn = isLoggedIn,
-                    onBack = {
-                        showAllReviews = false
-                        showPlaceDetail = false
-                    },
-                    onDirections = { openDirections(chosen) },
-                    onToggleFavorite = {
-                        val pid = chosen.placeId ?: return@PlaceDetailScreen
-                        viewModel.toggleFavorite(pid, chosen.name)
-                    },
-                    onShare = { sharePlace(chosen) },
-                    onToggleFollow = {
-                        val pid = chosen.placeId ?: return@PlaceDetailScreen
-                        viewModel.toggleFollowPlace(pid)
-                    },
-                    onReview = { stars ->
-                        reviewInitialRating = stars.coerceIn(1, 5)
-                        showReviewDialog = true
-                    },
-                    onReport = { showReportDialog = true },
-                    onPropose = { showProposeDialog = true },
-                    onSeeAllReviews = { showAllReviews = true },
-                    onEnterIndoor = { enterIndoor(chosen) },
-                    onLoginRequired = onLoginClick,
-                )
-            }
+                    .align(Alignment.BottomCenter)
+                    .zIndex(40f),
+            )
         }
 
         if (showAllReviews && chosen != null) {
@@ -1341,81 +1747,21 @@ fun BuildingListScreen(
         }
     }
 
-    LaunchedEffect(filtered, mapViewRef, userPoint) {
+    LaunchedEffect(filtered, maplibreMap, userPoint) {
         if (didFitBuildings || didCenterOnUser || userPoint != null) return@LaunchedEffect
-        val map = mapViewRef ?: return@LaunchedEffect
+        val map = maplibreMap ?: return@LaunchedEffect
         val pts = filtered.mapNotNull { b ->
             val g = b.gpsLocation ?: return@mapNotNull null
-            if (g.lat == 0.0 && g.lng == 0.0) null else GeoPoint(g.lat, g.lng)
+            if (g.lat == 0.0 && g.lng == 0.0) null else LatLng(g.lat, g.lng)
         }
         if (pts.isEmpty()) return@LaunchedEffect
         didFitBuildings = true
         if (pts.size == 1) {
-            map.controller.animateTo(pts.first())
-            map.controller.setZoom(16.0)
+            animateFollowTo(pts.first(), zoom = 16.0)
         } else {
-            map.zoomToBoundingBox(BoundingBox.fromGeoPoints(pts), true, 100)
+            val bounds = LatLngBounds.Builder().apply { pts.forEach { include(it) } }.build()
+            map.easeCamera(CameraUpdateFactory.newLatLngBounds(bounds, 100), 500)
         }
     }
 }
 
-private fun createBlueDotBitmap(): Bitmap {
-    val size = 64
-    val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bmp)
-    val cx = size / 2f
-    val cy = size / 2f
-
-    val halo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0x332D8CFF.toInt()
-        style = Paint.Style.FILL
-    }
-    canvas.drawCircle(cx, cy, size * 0.48f, halo)
-
-    val white = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFFFFFFF.toInt()
-        style = Paint.Style.FILL
-    }
-    canvas.drawCircle(cx, cy, size * 0.28f, white)
-
-    val blue = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF1A73E8.toInt()
-        style = Paint.Style.FILL
-    }
-    canvas.drawCircle(cx, cy, size * 0.18f, blue)
-    return bmp
-}
-
-/** Mũi tên hướng đi (đỉnh = Bắc / hướng di chuyển trên map). */
-private fun createNavArrowBitmap(): Bitmap {
-    val size = 96
-    val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bmp)
-    val cx = size / 2f
-    val cy = size / 2f
-    val halo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0x332D8CFF.toInt()
-        style = Paint.Style.FILL
-    }
-    canvas.drawCircle(cx, cy, size * 0.42f, halo)
-    val arrow = android.graphics.Path().apply {
-        moveTo(cx, cy - size * 0.38f)
-        lineTo(cx - size * 0.22f, cy + size * 0.28f)
-        lineTo(cx, cy + size * 0.12f)
-        lineTo(cx + size * 0.22f, cy + size * 0.28f)
-        close()
-    }
-    val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF1A73E8.toInt()
-        style = Paint.Style.FILL
-    }
-    val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFFFFFFF.toInt()
-        style = Paint.Style.STROKE
-        strokeWidth = 4f
-        strokeJoin = Paint.Join.ROUND
-    }
-    canvas.drawPath(arrow, fill)
-    canvas.drawPath(arrow, stroke)
-    return bmp
-}

@@ -20,6 +20,9 @@ import com.khoaluan.indoornav.ui.theme.IndoorNavigationAppTheme
  */
 class EmergencyAlertActivity : ComponentActivity() {
 
+    /** false khi bấm Chỉ đường — Main giữ còi; true khi Đóng / Back. */
+    private var stopSirenOnDestroy: Boolean = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         EmergencyNotifier.prepareActivityForLockScreen(this)
@@ -55,7 +58,11 @@ class EmergencyAlertActivity : ComponentActivity() {
                     EmergencyTakeoverOverlay(
                         session = session,
                         onStartEvacuation = {
-                            // Mở map + hỏi tầng/vị trí — KHÔNG tự chỉ đường ngay (tránh sai tầng)
+                            // Không mở lại màn đỏ; Main hỏi tầng / vị trí — tắt còi ngay
+                            stopSirenOnDestroy = false
+                            EmergencySirenPlayer.stop()
+                            EmergencyNotifier.stopTakeoverAudio(this@EmergencyAlertActivity)
+                            EmergencyNotifier.setSuppressAlertUi(this@EmergencyAlertActivity, true)
                             startActivity(
                                 EmergencyNotifier.buildLaunchIntent(
                                     context = this@EmergencyAlertActivity,
@@ -70,8 +77,23 @@ class EmergencyAlertActivity : ComponentActivity() {
                             finish()
                         },
                         onDismiss = {
+                            // Không finish() vào trống — mở Main + banner “mở lại sau”
+                            stopSirenOnDestroy = true
+                            EmergencyNotifier.setSuppressAlertUi(this@EmergencyAlertActivity, true)
                             EmergencySirenPlayer.stop()
                             EmergencyNotifier.cancel(this@EmergencyAlertActivity)
+                            startActivity(
+                                EmergencyNotifier.buildLaunchIntent(
+                                    context = this@EmergencyAlertActivity,
+                                    type = type,
+                                    title = title,
+                                    body = body,
+                                    buildingId = buildingId,
+                                    incidentId = incidentId,
+                                    autoEvacuate = false,
+                                    snoozeOverlay = true,
+                                )
+                            )
                             finish()
                         },
                     )
@@ -82,14 +104,18 @@ class EmergencyAlertActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // Đang sơ tán / suppress → không recreate màn đỏ
+        if (EmergencyNotifier.isAlertUiSuppressed(this)) {
+            setIntent(intent)
+            finish()
+            return
+        }
         setIntent(intent)
         recreate()
     }
 
     override fun onDestroy() {
-        // Back / vuốt đóng Activity: bảo đảm tắt còi (tránh sót khi chỉ finish()).
-        // "Bắt đầu sơ tán" cũng finish — MainActivity sẽ bật lại còi nếu còn ALERT.
-        if (isFinishing) {
+        if (isFinishing && stopSirenOnDestroy) {
             EmergencySirenPlayer.stop()
         }
         super.onDestroy()
@@ -103,5 +129,7 @@ class EmergencyAlertActivity : ComponentActivity() {
         const val EXTRA_INCIDENT = "emergency_incident"
         /** Bấm "Chỉ đường" trên AlertActivity → Main tự sơ tán, không hiện lại màn ALERT. */
         const val EXTRA_AUTO_EVACUATE = "emergency_auto_evacuate"
+        /** Bấm "Đóng — mở lại sau" → Main + banner, không hiện màn đỏ / không thoát app. */
+        const val EXTRA_SNOOZE_OVERLAY = "emergency_snooze_overlay"
     }
 }

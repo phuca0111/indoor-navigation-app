@@ -104,8 +104,8 @@ dependencies {
     implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.googleid)
 
-    // Outdoor discovery map (OSM tiles — không cần Google Maps API key)
-    implementation(libs.osmdroid.android)
+    // Outdoor discovery map — MapLibre Native (vector, OpenFreeMap Liberty, không cần API key)
+    implementation(libs.maplibre.android.sdk)
 
     // Firebase Cloud Messaging — push khẩn cấp full-screen (P3)
     implementation(platform(libs.firebase.bom))

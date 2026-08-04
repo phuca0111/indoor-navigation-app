@@ -20,16 +20,15 @@ import kotlin.math.sin
 import kotlin.math.tanh
 
 /**
- * Còi hú cảnh báo khẩn cấp — STREAM_ALARM, khóa volume thấp khi đang phát.
- * Hiện tại ~3% (tăng lại khi được yêu cầu).
+ * Còi hú cảnh báo khẩn cấp — STREAM_ALARM, khóa volume khi đang phát.
  */
 object EmergencySirenPlayer {
     private const val TAG = "EmergencySiren"
     private const val SAMPLE_RATE = 22_050
     /** Biên độ vừa phải — đủ nghe rõ, tránh đẩy loa sát clip (dễ ù / hại loa). */
     private const val AMP = 0.62
-    /** Khóa volume ALARM ~3% max (tạm thời — tăng khi user yêu cầu). */
-    private const val ALARM_VOLUME_RATIO = 0.03f
+    /** Khóa volume ALARM ~95% max. */
+    private const val ALARM_VOLUME_RATIO = 0.95f
 
     private val lock = Any()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -45,6 +44,10 @@ object EmergencySirenPlayer {
     private var savedAlarmVolume: Int = -1
     private var volumeLockReceiver: BroadcastReceiver? = null
     private var volumeGuardRunnable: Runnable? = null
+
+    /** True khi còi đang phát trong process hiện tại. */
+    val isPlaying: Boolean
+        get() = playing
 
     fun start(context: Context) {
         synchronized(lock) {
@@ -85,7 +88,7 @@ object EmergencySirenPlayer {
                         .setTransferMode(AudioTrack.MODE_STREAM)
                         .build()
 
-                    // Gain track đầy; mức nghe do STREAM_ALARM (~3%)
+                    // Gain track đầy; mức nghe do STREAM_ALARM (~95%)
                     runCatching { track.setVolume(1f) }
 
                     synchronized(lock) { audioTrack = track }
@@ -158,7 +161,7 @@ object EmergencySirenPlayer {
         audioManager = am
         runCatching {
             val max = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
-            // 3% có thể làm tròn về 0 trên thang volume thấp — giữ tối thiểu 1 nếu max > 0
+            // Tránh làm tròn về 0 trên thang volume thấp — giữ tối thiểu 1 nếu max > 0
             val target = (max * ALARM_VOLUME_RATIO).toInt().coerceIn(0, max).let {
                 if (it == 0 && max > 0) 1 else it
             }
@@ -190,7 +193,7 @@ object EmergencySirenPlayer {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
                 if (!playing) return
-                // User vặn volume → ép lại mức khóa (~3%)
+                // User vặn volume → ép lại mức khóa (~95%)
                 forceMaxAlarmVolume(context)
             }
         }

@@ -73,6 +73,9 @@ IndoorNavigationApp.zip
 # Firebase / Google — giữ local, không commit (có thể chứa API key)
 **/google-services.json
 **/GoogleService-Info.plist
+Backend_server/secrets/**
+!Backend_server/secrets/*.example
+!Backend_server/secrets/**/*.example
 
 # Stitch / design export (nguồn thiết kế, không cần runtime)
 stitch_indoornav_premium_landing_page/

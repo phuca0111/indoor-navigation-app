@@ -31,6 +31,12 @@ async function startServer(app) {
   startMapLifecycleScheduler();
   const { startUsgsEarthquakeScheduler } = require('./services/usgsEarthquakeScheduler');
   startUsgsEarthquakeScheduler();
+  try {
+    const { logStartupStatus } = require('./services/fcmPushAdapter');
+    logStartupStatus();
+  } catch (e) {
+    console.warn('[fcm-push] không log được trạng thái:', e.message);
+  }
   if (String(process.env.PUBLISH_WORKER_IN_PROCESS || 'false') === 'true') {
     const { startWorker } = require('./services/publishQueueBull');
     await startWorker();

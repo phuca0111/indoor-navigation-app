@@ -13,16 +13,18 @@ import kotlin.math.sqrt
  * Lớp 2 Map Heading     → Device − mapNorthOffset
  * Lớp 3 Movement Heading → hướng đi thật (sau vài bước ổn định)
  *
- * Navigation Heading = Map + hiệu chỉnh Movement nhẹ, luôn qua EMA
- * để mũi tên không nhảy khi STILL/WALKING nhấp nháy.
+ * Navigation Heading = Map (+ tùy chọn blend Movement nhẹ qua EMA).
+ *
+ * **2026-08:** UI blend Movement tạm **TẮT** ([ENABLE_MOVEMENT_HEADING_BLEND]) —
+ * tránh trộn mũi tên. Recalib cal theo hướng đi vẫn bật ([ENABLE_TRAVEL_HEADING_RECALIB]).
  */
 class OrientationManager(
     private val minStepsForMovement: Int = 3,
     private val maxStepsForFullBlend: Int = 5,
     /** Blend Movement tối đa — giữ nhẹ để mũi tên bám cảm biến, không giật. */
     private val maxMovementBlend: Float = 0.22f,
-    /** EMA đầu ra Navigation (cao = mượt hơn, chậm hơn). */
-    private val navOutputEma: Float = 0.82f,
+    /** EMA đầu ra Navigation (cao = mượt hơn, chậm hơn). Thấp hơn → xoay nhanh ít tụt. */
+    private val navOutputEma: Float = 0.55f,
     /** H10 — lệch Map vs Movement vượt ngưỡng → conflict. */
     private val conflictEnterDeg: Float = 55f,
     private val conflictExitDeg: Float = 40f,
@@ -63,8 +65,15 @@ class OrientationManager(
         com.khoaluan.indoornav.navigation.pdr.DevicePoseClassifier.Pose.PORTRAIT_HAND
         private set
 
+    /** Đong đưa máy → giảm tin heading (bổ sung pose túi/flat). */
+    private var swingHeadingUnreliable: Boolean = false
+
     fun updateAccelForPose(ax: Float, ay: Float, az: Float) {
         devicePose = com.khoaluan.indoornav.navigation.pdr.DevicePoseClassifier.classify(ax, ay, az)
+    }
+
+    fun setSwingHeadingUnreliable(unreliable: Boolean) {
+        swingHeadingUnreliable = unreliable
     }
 
     fun setMapNorthOffset(offsetDeg: Float) {
@@ -116,9 +125,15 @@ class OrientationManager(
     /**
      * Đề xuất recalibrate khi Movement ổn định và lệch Map.
      * Caller nên áp dụng từ từ (slew), không snap một phát.
+     *
+     * [requireOfferGate]: true = chỉ đề xuất một lần đến [markRecalibrationDone]
+     * (mag OK). false = đề xuất liên tục khi còn lệch (mag nhiễu / travel neo).
      */
-    fun peekMovementRecalibrationTarget(minDisagreeDeg: Float = 35f): Float? {
-        if (recalibOffered) return null
+    fun peekMovementRecalibrationTarget(
+        minDisagreeDeg: Float = 35f,
+        requireOfferGate: Boolean = true,
+    ): Float? {
+        if (requireOfferGate && recalibOffered) return null
         val moveH = movementHeadingDeg ?: return null
         if (totalMovementSamples < maxStepsForFullBlend) return null
         if (!movementSamplesConsistent()) return null
@@ -143,10 +158,12 @@ class OrientationManager(
         walking: Boolean,
         turning: Boolean = false,
         nowMs: Long = System.currentTimeMillis(),
+        /** Nhiễu từ: bám tay xoay nhanh hơn, giảm cảm giác «xoay lệch / trễ». */
+        magneticHold: Boolean = false,
     ): Float {
         val mapH = mapHeadingDeg
-        var target = mapH
 
+        // Luôn theo dõi conflict Map↔Movement (gợi ý QR) — kể cả khi không blend UI.
         val moveH = movementHeadingDeg
         val disagree = if (moveH != null && totalMovementSamples >= minStepsForMovement &&
             movementSamplesConsistent()
@@ -155,15 +172,26 @@ class OrientationManager(
         } else {
             0f
         }
-
         updateConflictState(disagree = disagree, walking = walking, turning = turning, nowMs = nowMs)
 
-        if (!turning && !isHeadingConflict && moveH != null && totalMovementSamples >= minStepsForMovement &&
+        // Movement blend tắt: mũi tên = Map Heading (travel chỉ dùng để recalib calib ở LocationEngine).
+        if (!ENABLE_MOVEMENT_HEADING_BLEND) {
+            smoothedNavDeg = mapH
+            return mapH
+        }
+
+        var target = mapH
+
+        if (!turning && !magneticHold && !isHeadingConflict && moveH != null &&
+            totalMovementSamples >= minStepsForMovement &&
             movementSamplesConsistent()
         ) {
             if (disagree <= conflictEnterDeg) {
                 val baseBlend = if (walking) maxMovementBlend else maxMovementBlend * 0.45f
-                val blend = if (com.khoaluan.indoornav.navigation.pdr.DevicePoseClassifier.headingUnreliable(devicePose)) {
+                val blend = if (
+                    com.khoaluan.indoornav.navigation.pdr.DevicePoseClassifier.headingUnreliable(devicePose) ||
+                    swingHeadingUnreliable
+                ) {
                     baseBlend * 0.25f
                 } else {
                     baseBlend
@@ -176,8 +204,14 @@ class OrientationManager(
         smoothedNavDeg = if (prev == null) {
             target
         } else {
-            val follow = if (turning) 0.55f else (1f - navOutputEma)
-            lerpAngleDeg(prev, target, follow)
+            val jump = kotlin.math.abs(MapHeadingMath.shortestDeltaDegrees(prev, target))
+            when {
+                jump >= 20f -> target // snap — không tụt hàng chục độ
+                magneticHold -> lerpAngleDeg(prev, target, 0.85f)
+                turning -> lerpAngleDeg(prev, target, 0.80f)
+                jump >= 8f -> lerpAngleDeg(prev, target, 0.90f)
+                else -> lerpAngleDeg(prev, target, 1f - navOutputEma)
+            }
         }
         return smoothedNavDeg!!
     }
@@ -260,6 +294,17 @@ class OrientationManager(
     }
 
     companion object {
+        /**
+         * Blend Movement vào Navigation Heading (UI). Tắt — mũi tên bám Map/Device.
+         */
+        const val ENABLE_MOVEMENT_HEADING_BLEND = false
+
+        /**
+         * Slew calib theo hướng đi (Δ bước PDR) — xem [HeadingAssistFlags.ENABLE_TRAVEL_HEADING_RECALIB].
+         * @deprecated Dùng HeadingAssistFlags; giữ tên để chỗ cũ compile.
+         */
+        const val ENABLE_TRAVEL_HEADING_RECALIB = HeadingAssistFlags.ENABLE_TRAVEL_HEADING_RECALIB
+
         fun circularMeanDeg(angles: Collection<Float>): Float {
             if (angles.isEmpty()) return 0f
             var sx = 0.0

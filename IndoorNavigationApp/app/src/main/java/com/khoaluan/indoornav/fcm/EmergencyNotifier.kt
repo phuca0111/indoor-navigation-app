@@ -31,6 +31,12 @@ object EmergencyNotifier {
     private const val TAG = "EmergencyNotifier"
     private const val PREFS = "emergency_session_prefs"
     private const val KEY_ACTIVE_INCIDENT = "active_incident_id"
+    private const val KEY_TYPE = "session_type"
+    private const val KEY_TITLE = "session_title"
+    private const val KEY_BODY = "session_body"
+    private const val KEY_BUILDING = "session_building"
+    /** User đã bấm Chỉ đường / đang sơ tán trên Main — không mở lại AlertActivity. */
+    private const val KEY_SUPPRESS_ALERT_UI = "suppress_alert_ui"
 
     fun markActiveIncident(context: Context, incidentId: String?) {
         val id = incidentId?.takeIf { it.isNotBlank() } ?: return
@@ -41,11 +47,89 @@ object EmergencyNotifier {
             .apply()
     }
 
+    /** Persist session, không mở EmergencyAlertActivity (Main in-app). */
+    fun markActiveIncidentQuiet(
+        context: Context,
+        type: String,
+        title: String,
+        body: String,
+        buildingId: String?,
+        incidentId: String?,
+        /** false khi resume từ banner sau Đóng — không hú lại còi. */
+        startSiren: Boolean = true,
+    ) {
+        val appCtx = context.applicationContext
+        setSuppressAlertUi(appCtx, true)
+        persistSession(appCtx, type, title, body, buildingId, incidentId)
+        if (startSiren && !EmergencySirenPlayer.isPlaying) {
+            EmergencySirenPlayer.start(appCtx)
+        }
+    }
+
+    fun setSuppressAlertUi(context: Context, suppress: Boolean) {
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_SUPPRESS_ALERT_UI, suppress)
+            .apply()
+    }
+
+    fun isAlertUiSuppressed(context: Context): Boolean =
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_SUPPRESS_ALERT_UI, false)
+
+    fun persistSession(
+        context: Context,
+        type: String,
+        title: String,
+        body: String,
+        buildingId: String?,
+        incidentId: String?,
+    ) {
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_ACTIVE_INCIDENT, incidentId)
+            .putString(KEY_TYPE, type)
+            .putString(KEY_TITLE, title)
+            .putString(KEY_BODY, body)
+            .putString(KEY_BUILDING, buildingId)
+            .apply()
+    }
+
+    fun readPersistedSession(context: Context): EmergencySessionSnapshot? {
+        val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val incidentId = prefs.getString(KEY_ACTIVE_INCIDENT, null)?.takeIf { it.isNotBlank() }
+            ?: return null
+        return EmergencySessionSnapshot(
+            incidentId = incidentId,
+            type = prefs.getString(KEY_TYPE, "FIRE") ?: "FIRE",
+            title = prefs.getString(KEY_TITLE, "CẢNH BÁO KHẨN CẤP") ?: "CẢNH BÁO KHẨN CẤP",
+            body = prefs.getString(KEY_BODY, null)
+                ?: "Có sự cố khẩn cấp. Làm theo hướng dẫn sơ tán.",
+            buildingId = prefs.getString(KEY_BUILDING, null),
+        )
+    }
+
+    data class EmergencySessionSnapshot(
+        val incidentId: String,
+        val type: String,
+        val title: String,
+        val body: String,
+        val buildingId: String?,
+    )
+
     fun clearActiveIncident(context: Context) {
         context.applicationContext
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .remove(KEY_ACTIVE_INCIDENT)
+            .remove(KEY_TYPE)
+            .remove(KEY_TITLE)
+            .remove(KEY_BODY)
+            .remove(KEY_BUILDING)
+            .putBoolean(KEY_SUPPRESS_ALERT_UI, false)
             .apply()
     }
 
@@ -104,6 +188,8 @@ object EmergencyNotifier {
         buildingId: String?,
         incidentId: String?,
         autoEvacuate: Boolean = false,
+        /** Đóng màn đỏ → về Main + banner, không hiện lại ALERT. */
+        snoozeOverlay: Boolean = false,
     ): Intent = Intent(context, MainActivity::class.java).apply {
         action = Intent.ACTION_VIEW
         data = buildDeepLink(type, title, body, buildingId, incidentId)
@@ -114,6 +200,7 @@ object EmergencyNotifier {
         putExtra(EmergencyAlertActivity.EXTRA_BUILDING, buildingId)
         putExtra(EmergencyAlertActivity.EXTRA_INCIDENT, incidentId)
         putExtra(EmergencyAlertActivity.EXTRA_AUTO_EVACUATE, autoEvacuate)
+        putExtra(EmergencyAlertActivity.EXTRA_SNOOZE_OVERLAY, snoozeOverlay)
         addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_CLEAR_TOP or
@@ -172,14 +259,28 @@ object EmergencyNotifier {
         incidentId: String?,
     ) {
         val appCtx = context.applicationContext
-        // Admin gửi lại cùng sự cố → vẫn đẩy thông báo nhắc, không mở lại màn đỏ / còi
-        if (isSameActiveIncident(appCtx, incidentId)) {
-            Log.i(TAG, "Same incident active — reminder push only: $incidentId")
+        // Cùng sự cố + còi còn kêu:
+        // - Đang sơ tán (suppress) → không mở lại màn đỏ
+        // - Còn đang hiện cảnh báo → chỉ notification nhắc
+        // Còi đã tắt (Đóng/snooze / process chết) → fallthrough takeover lại đầy đủ
+        if (isSameActiveIncident(appCtx, incidentId) && EmergencySirenPlayer.isPlaying) {
+            if (isAlertUiSuppressed(appCtx)) {
+                Log.i(TAG, "Same incident + evacuating — keep siren, skip AlertActivity: $incidentId")
+                persistSession(appCtx, type, title, body, buildingId, incidentId)
+                return
+            }
+            Log.i(TAG, "Same incident active + siren playing — reminder push only: $incidentId")
             postReminderNotification(appCtx, type, title, body, buildingId, incidentId)
             return
         }
+        if (isSameActiveIncident(appCtx, incidentId)) {
+            Log.i(TAG, "Same incident but siren stopped — re-takeover: $incidentId")
+        }
         ensureChannel(appCtx)
+        // Takeover mới từ FCM → cho phép AlertActivity
+        setSuppressAlertUi(appCtx, false)
         markActiveIncident(appCtx, incidentId)
+        persistSession(appCtx, type, title, body, buildingId, incidentId)
         EmergencySirenPlayer.start(appCtx)
         EmergencyTakeoverService.start(
             context = appCtx,
@@ -253,6 +354,13 @@ object EmergencyNotifier {
         EmergencySirenPlayer.start(appCtx)
         wakeScreen(appCtx)
 
+        if (isAlertUiSuppressed(appCtx)) {
+            Log.i(TAG, "launchTakeoverUi suppressed — notification only (user đang sơ tán)")
+            // Vẫn cập nhật FSI notification nhưng không start Activity đỏ
+            postReminderNotification(appCtx, type, title, body, buildingId, incidentId)
+            return
+        }
+
         val alertIntent = buildAlertIntent(appCtx, type, title, body, buildingId, incidentId)
         try {
             appCtx.startActivity(alertIntent)
@@ -312,9 +420,21 @@ object EmergencyNotifier {
         nm?.cancel(SERVICE_NOTIFICATION_ID)
         nm?.cancel(NOTIFICATION_REMINDER_ID)
         EmergencyOverlayController.dismiss()
-        runCatching {
-            appCtx.stopService(Intent(appCtx, EmergencyTakeoverService::class.java))
-        }
+        EmergencyTakeoverService.stop(appCtx)
+    }
+
+    /**
+     * Tắt còi + FGS khi user đã bấm Chỉ đường / chọn tầng —
+     * giữ session sự cố trên map (không clearActiveIncident).
+     */
+    fun stopTakeoverAudio(context: Context) {
+        val appCtx = context.applicationContext
+        EmergencySirenPlayer.stop()
+        EmergencyTakeoverService.stop(appCtx)
+        val nm = appCtx.getSystemService(NotificationManager::class.java)
+        nm?.cancel(NOTIFICATION_ID)
+        nm?.cancel(SERVICE_NOTIFICATION_ID)
+        Log.i(TAG, "Takeover audio stopped (session kept)")
     }
 
     /** Spec D — Stop Emergency: tắt overlay/FGS (giữ notification nếu user chưa xóa — tùy product; ở đây tắt session). */

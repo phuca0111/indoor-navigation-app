@@ -194,10 +194,10 @@ fun SettingsScreen(
                 Spacer(Modifier.height(12.dp))
                 Text(
                     tr(
-                        "Mô phỏng màn hình cảnh báo full-screen rồi chỉ đường tới lối thoát. " +
-                            "Push FCM thật sẽ gắn sau khi cấu hình Firebase.",
-                        "Simulate full-screen alert then route to the nearest exit. " +
-                            "Real FCM push comes after Firebase setup.",
+                        com.khoaluan.indoornav.fcm.FcmAvailability.statusLabelVi(ctx) +
+                            ". Mô phỏng full-screen vẫn dùng được khi chưa gắn Firebase.",
+                        com.khoaluan.indoornav.fcm.FcmAvailability.statusLabelEn(ctx) +
+                            ". Full-screen simulation still works without Firebase.",
                     ),
                     fontSize = 12.sp,
                     color = Color.Gray,

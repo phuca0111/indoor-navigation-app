@@ -1,35 +1,61 @@
 package com.khoaluan.indoornav.ui.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.khoaluan.indoornav.ui.i18n.tr
 import com.khoaluan.indoornav.ui.icons.QrScanIcon
 import com.khoaluan.indoornav.ui.theme.NavBlue
 import com.khoaluan.indoornav.ui.theme.NavLightBlue
+import com.khoaluan.indoornav.ui.theme.adaptiveReadableWidth
+
+/** Trạng thái kéo panel chỉ đường (kiểu Google Maps). */
+private enum class NavCardSheetState {
+    /** Đầy đủ thông tin. */
+    Expanded,
+    /** Chỉ chỉ dẫn ngắn + khoảng cách. */
+    Peek,
+    /** Chỉ thanh kéo — gần như ẩn. */
+    Hidden,
+}
 
 /**
  * Card thông tin điều hướng phía dưới màn hình.
+ *
+ * Khi đang xem đường / điều hướng: kéo xuống để thu (Peek → Hidden), kéo lên để mở lại.
  *
  * @param rerouteCount     Số lần hệ thống đã tự tính lại đường
  * @param isRerouting      True trong lúc hệ thống vừa trigger tính lại đường
@@ -93,17 +119,189 @@ fun BottomInfoCard(
         label = "rerouteAlpha",
     )
 
-    Surface(
+    val sheetEnabled = isNavigating || isPathPreview
+    var sheetState by remember { mutableStateOf(NavCardSheetState.Expanded) }
+    var dragAccumPx by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current
+
+    // Đổi đích / bắt đầu chỉ đường → mở lại panel đầy đủ
+    LaunchedEffect(destination, isNavigating, isPathPreview) {
+        sheetState = NavCardSheetState.Expanded
+    }
+    LaunchedEffect(sheetEnabled) {
+        if (!sheetEnabled) sheetState = NavCardSheetState.Expanded
+    }
+
+    fun snapSheetAfterDrag(totalDy: Float) {
+        val threshold = with(density) { 40.dp.toPx() }
+        sheetState = when {
+            totalDy > threshold -> when (sheetState) {
+                NavCardSheetState.Expanded -> NavCardSheetState.Peek
+                NavCardSheetState.Peek -> NavCardSheetState.Hidden
+                NavCardSheetState.Hidden -> NavCardSheetState.Hidden
+            }
+            totalDy < -threshold -> when (sheetState) {
+                NavCardSheetState.Hidden -> NavCardSheetState.Peek
+                NavCardSheetState.Peek -> NavCardSheetState.Expanded
+                NavCardSheetState.Expanded -> NavCardSheetState.Expanded
+            }
+            else -> sheetState
+        }
+    }
+
+    fun expandOneLevel() {
+        sheetState = when (sheetState) {
+            NavCardSheetState.Hidden -> NavCardSheetState.Peek
+            NavCardSheetState.Peek -> NavCardSheetState.Expanded
+            NavCardSheetState.Expanded -> NavCardSheetState.Expanded
+        }
+    }
+
+    Box(
         modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+    Surface(
+        modifier = Modifier
+            .adaptiveReadableWidth()
+            .animateContentSize(animationSpec = tween(220))
+            .then(
+                if (sheetEnabled) {
+                    Modifier.pointerInput(sheetState) {
+                        detectVerticalDragGestures(
+                            onDragStart = { dragAccumPx = 0f },
+                            onVerticalDrag = { change, dragAmount ->
+                                change.consume()
+                                dragAccumPx += dragAmount
+                            },
+                            onDragEnd = {
+                                snapSheetAfterDrag(dragAccumPx)
+                                dragAccumPx = 0f
+                            },
+                            onDragCancel = { dragAccumPx = 0f },
+                        )
+                    }
+                } else {
+                    Modifier
+                },
+            ),
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
         color = Color.White,
         shadowElevation = 12.dp,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 18.dp, top = 14.dp, bottom = 12.dp, end = 16.dp),
-        ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Thanh kéo (Google-style)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                    ) {
+                        if (sheetEnabled && sheetState != NavCardSheetState.Expanded) {
+                            expandOneLevel()
+                        }
+                    }
+                    .padding(top = 8.dp, bottom = 4.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(40.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color(0xFFBDBDBD)),
+                )
+            }
+
+            when {
+                sheetEnabled && sheetState == NavCardSheetState.Hidden -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { expandOneLevel() }
+                            .padding(start = 16.dp, end = 12.dp, bottom = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = instructionText?.takeIf { it.isNotBlank() }
+                                ?: destination,
+                            modifier = Modifier.weight(1f),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = NavBlue,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowUp,
+                            contentDescription = tr("Kéo lên", "Expand"),
+                            tint = Color(0xFF9E9E9E),
+                        )
+                    }
+                }
+                sheetEnabled && sheetState == NavCardSheetState.Peek -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { expandOneLevel() }
+                            .padding(start = 18.dp, end = 12.dp, bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = instructionText?.takeIf { it.isNotBlank() }
+                                    ?: destination,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF1A73E8),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = if (isNavigating) {
+                                    "ETA $etaLabel · $distanceLabel"
+                                } else {
+                                    "$distanceLabel · $destination"
+                                },
+                                fontSize = 12.sp,
+                                color = Color(0xFF9E9E9E),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (onStopNavigation != null) {
+                            IconButton(onClick = onStopNavigation, modifier = Modifier.size(36.dp)) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = tr("Đóng xem đường", "Close route"),
+                                    tint = Color(0xFF5F6368),
+                                )
+                            }
+                        }
+                        FloatingActionButton(
+                            onClick = onQrScan,
+                            modifier = Modifier.size(44.dp),
+                            shape = CircleShape,
+                            containerColor = NavBlue,
+                            contentColor = Color.White,
+                            elevation = FloatingActionButtonDefaults.elevation(4.dp),
+                        ) {
+                            Icon(
+                                imageVector = QrScanIcon,
+                                contentDescription = tr("Quét QR", "Scan QR"),
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                }
+                else -> {
+                    // Expanded — nội dung đầy đủ
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 18.dp, top = 6.dp, bottom = 12.dp, end = 16.dp),
+                    ) {
             // X đóng xem đường / hủy điều hướng — góc phải trên
             if ((isNavigating || isPathPreview) && onStopNavigation != null) {
                 IconButton(
@@ -348,9 +546,14 @@ fun BottomInfoCard(
                     }
                     isPathPreview -> {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (!instructionText.isNullOrBlank() && distanceMeters > 0f) {
+                            val previewInstruction = instructionText?.takeIf { text ->
+                                text.isNotBlank() &&
+                                    !text.equals("Đã đến nơi", ignoreCase = true) &&
+                                    !text.equals("Sắp đến nơi", ignoreCase = true)
+                            }
+                            if (!previewInstruction.isNullOrBlank() && distanceMeters > 0f) {
                                 Text(
-                                    text = instructionText,
+                                    text = previewInstruction,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = Color(0xFF1A73E8),
@@ -471,6 +674,10 @@ fun BottomInfoCard(
                     )
                 }
             }
-        }
-    }
+                    } // Box expanded
+                } // else Expanded
+            } // when
+        } // Column
+    } // Surface
+    } // Box
 }

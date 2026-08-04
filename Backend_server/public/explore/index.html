@@ -4,19 +4,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Khám phá địa điểm — IndoorNav Outdoor Map</title>
-  <meta name="description" content="Bản đồ ngoài trời OSM + Place Registry: tìm địa điểm, xem marker, mở bản đồ trong nhà.">
+  <meta name="description" content="Bản đồ ngoài trời Place Registry (MapLibre).">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="/css/explore.css?v=20260723ex4">
+  <!-- CSS map engine (Leaflet / MapLibre) được explore-boot.js nạp động -->
+  <link rel="stylesheet" href="/css/outdoor-tokens.css?v=20260804ex1">
+  <link rel="stylesheet" href="/css/explore.css?v=20260804ex1">
 </head>
 <body>
   <div class="ex-shell">
     <aside class="ex-sidebar">
       <div class="ex-brand">
         <a href="/">IndoorNav</a>
-        <p>Outdoor Map · OSM + Place Registry<br>Tìm địa điểm → xem Indoor (nếu có)</p>
+        <p>Outdoor Map · đang tải engine…<br>Tìm địa điểm → xem Indoor (nếu có)</p>
       </div>
       <div class="ex-search">
         <input id="exQ" type="search" placeholder="Tìm Vincom, AEON, bệnh viện…" autocomplete="off">
@@ -45,10 +46,9 @@
         <div id="exDetailIndoor"></div>
       </div>
     </aside>
-    <main id="ex-map" aria-label="Bản đồ OpenStreetMap"></main>
+    <main id="ex-map" aria-label="Bản đồ ngoài trời"></main>
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/explore/explore.js?v=20260723ex4"></script>
+  <script src="/explore/explore-boot.js?v=20260801op1"></script>
 </body>
 </html>

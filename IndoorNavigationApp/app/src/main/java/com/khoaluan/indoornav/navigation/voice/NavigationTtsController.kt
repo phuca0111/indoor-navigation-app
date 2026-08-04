@@ -9,12 +9,13 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * W5 — Đọc chỉ dẫn tiếng Việt kiểu Google Maps:
- * - Nói **một lần** khi vào đoạn mới (vd. “Rẽ trái sau 30 m”)
- * - Nhắc **một lần** khi sắp tới điểm rẽ (vd. “Rẽ trái sau 5 m” / “Rẽ trái”)
- * - Không spam mỗi mét khi UI cập nhật instruction
+ * W5 — Đọc chỉ dẫn tiếng Việt kiểu Google Maps (hành vi e86ee98):
+ * - Nói **một lần** khi vào đoạn mới (đổi loại manoeuvre)
+ * - Nhắc **một lần** khi sắp tới điểm rẽ (APPROACH / IMMINENT)
+ * - Không spam mỗi mét / mỗi lần UI cập nhật
  *
- * Ưu tiên engine Google TTS + voice `vi-VN`.
+ * Khác bản lỗi gần đây: **không** reset đoạn chỉ vì distance nhảy lên
+ * (PDR/lag trên đường thẳng từng làm nói lại liên tục).
  */
 class NavigationTtsController(
     context: Context,
@@ -28,6 +29,9 @@ class NavigationTtsController(
     private var lastSpoken: String? = null
     private var usingVietnamese = false
     private var promptedInstall = false
+    /** Khóa không đổi segment trong vài giây đầu sau lần nói — tránh loạn lúc Bắt đầu. */
+    private var segmentLockUntilMs: Long = 0L
+    private var arriveAnnounced = false
 
     /** Khóa đoạn hiện tại (loại rẽ / bước), không gồm số mét. */
     private var segmentKey: String? = null
@@ -38,9 +42,7 @@ class NavigationTtsController(
     private enum class Phase { START, APPROACH, IMMINENT }
 
     enum class Scale {
-        /** Trong nhà — đoạn ngắn. */
         INDOOR,
-        /** Ngoài trời / đi bộ đường dài. */
         OUTDOOR,
     }
 
@@ -169,9 +171,6 @@ class NavigationTtsController(
         return usingVietnamese
     }
 
-    /**
-     * Đọc một câu tùy ý (đến nơi, lỗi…) — không theo pha turn-by-turn.
-     */
     fun speakInstruction(text: String?) {
         if (!enabled || !ready || text.isNullOrBlank()) return
         val cleaned = clean(text)
@@ -180,11 +179,8 @@ class NavigationTtsController(
     }
 
     /**
-     * Turn-by-turn kiểu Google: chỉ nói đầu đoạn + khi gần điểm rẽ.
-     *
-     * @param instruction text UI (có thể đổi từng mét)
-     * @param distanceM khoảng cách tới manoeuvre tiếp theo
-     * @param segmentId khóa ổn định (stepIndex / loại rẽ); nếu null sẽ suy từ instruction
+     * @param segmentId khóa ổn định: TURN_LEFT / TURN_RIGHT / ARRIVE / STRAIGHT
+     *        (không lấy từ text có số mét — tránh spam).
      */
     fun speakTurnByTurn(
         instruction: String?,
@@ -196,22 +192,97 @@ class NavigationTtsController(
         if (instruction.isNullOrBlank() && distanceM <= 0f) return
 
         val action = extractAction(instruction)
-        val key = (segmentId?.takeIf { it.isNotBlank() } ?: action).ifBlank { "nav" }
+        val key = normalizeKey(segmentId?.takeIf { it.isNotBlank() } ?: action)
+        if (key.isBlank()) return
         val dist = distanceM.coerceAtLeast(0f)
+        val now = System.currentTimeMillis()
 
-        // Đoạn mới: đổi khóa, hoặc khoảng cách nhảy lên (sang manoeuvre kế)
-        val newSegment = key != segmentKey || dist > lastDistM + 5f
+        // Đã báo sắp đến / đến nơi trong phiên này → im lặng (tránh nói liên tục gần đích)
+        if (arriveAnnounced) return
+
+        // Chỉ đoạn mới khi ĐỔI loại manoeuvre — không vì dist nhảy (lag PDR).
+        val newSegment = key != segmentKey
         if (newSegment) {
+            // Đang trong lock sau câu đầu / vừa nói → bỏ qua nhấp type lúc Start
+            if (segmentKey != null && now < segmentLockUntilMs) {
+                return
+            }
             segmentKey = key
             segmentInitialDistM = dist
             lastDistM = dist
             spokenPhases.clear()
-            val startText = instruction?.let { clean(it) }?.takeIf { it.isNotBlank() }
-                ?: phraseFor(action, dist)
+
+            // Đường thẳng / sắp đến: nói 1 lần trong cả phiên (không lặp khi gần đích)
+            if (isStraightOrArrive(key, action)) {
+                if (arriveAnnounced ||
+                    action.contains("đến", ignoreCase = true) ||
+                    key.contains("ARRIVE")
+                ) {
+                    if (arriveAnnounced &&
+                        (action.contains("đến", ignoreCase = true) || key.contains("ARRIVE"))
+                    ) {
+                        spokenPhases += Phase.START
+                        spokenPhases += Phase.APPROACH
+                        spokenPhases += Phase.IMMINENT
+                        return
+                    }
+                }
+                val startText = when {
+                    // Chỉ “Sắp đến nơi” khi câu UI thật sự nói đến nơi — không vì segmentId=ARRIVE
+                    action.contains("sắp đến", ignoreCase = true) ||
+                        action.contains("đã đến", ignoreCase = true) ||
+                        (instruction?.contains("Sắp đến nơi", ignoreCase = true) == true) ||
+                        (instruction?.contains("Đã đến nơi", ignoreCase = true) == true) -> {
+                        arriveAnnounced = true
+                        "Sắp đến nơi"
+                    }
+                    key.contains("ARRIVE") &&
+                        (instruction?.contains("thẳng", ignoreCase = true) == true) -> {
+                        val m = Regex("""(\d+)\s*m""", RegexOption.IGNORE_CASE)
+                            .find(instruction ?: "")
+                            ?.groupValues?.getOrNull(1)
+                        if (m != null) "Đi thẳng $m m" else "Đi thẳng"
+                    }
+                    // Giữ đủ câu “Đi thẳng Xm rồi rẽ …”
+                    (instruction?.contains("rồi rẽ", ignoreCase = true) == true) ->
+                        clean(instruction)
+                    else -> {
+                        val m = Regex("""(\d+)\s*m""", RegexOption.IGNORE_CASE)
+                            .find(instruction ?: "")
+                            ?.groupValues?.getOrNull(1)
+                        if (m != null) "Đi thẳng $m m" else "Đi thẳng"
+                    }
+                }
+                speakPhase(Phase.START, startText)
+                spokenPhases += Phase.APPROACH
+                spokenPhases += Phase.IMMINENT
+                segmentLockUntilMs = now + SEGMENT_LOCK_MS
+                return
+            }
+
+            // Ngã rẽ gần (<7m): một câu “Rẽ trái/phải”, đủ pha
+            if (scale == Scale.INDOOR && dist < 7f) {
+                val turnText = action.ifBlank { "Rẽ" }
+                speakPhase(Phase.START, turnText)
+                spokenPhases += Phase.APPROACH
+                spokenPhases += Phase.IMMINENT
+                segmentLockUntilMs = now + SEGMENT_LOCK_MS
+                return
+            }
+
+            val startText = phraseFor(action, dist)
             speakPhase(Phase.START, startText)
+            segmentLockUntilMs = now + SEGMENT_LOCK_MS
             return
         }
-        lastDistM = dist
+
+        // Cùng đoạn: chỉ giảm dần dist (bỏ qua nhiễu tăng đột ngột)
+        if (dist <= lastDistM + 1.5f) {
+            lastDistM = dist
+        } else {
+            // Dist tăng do nhiễu — bỏ qua, không nói lại
+            return
+        }
 
         val init = segmentInitialDistM
         val (approachAt, imminentAt) = thresholds(scale, init)
@@ -222,6 +293,10 @@ class NavigationTtsController(
                 action.isNotBlank() -> action
                 else -> clean(instruction ?: "Rẽ")
             }
+            if (clean(text) == lastSpoken) {
+                spokenPhases += Phase.IMMINENT
+                return
+            }
             speakPhase(Phase.IMMINENT, text)
             return
         }
@@ -231,7 +306,12 @@ class NavigationTtsController(
             dist > imminentAt &&
             Phase.APPROACH !in spokenPhases
         ) {
-            speakPhase(Phase.APPROACH, phraseFor(action, dist))
+            val phrase = phraseFor(action, dist)
+            if (clean(phrase) == lastSpoken) {
+                spokenPhases += Phase.APPROACH
+                return
+            }
+            speakPhase(Phase.APPROACH, phrase)
         }
     }
 
@@ -241,6 +321,9 @@ class NavigationTtsController(
         spokenPhases.clear()
         segmentInitialDistM = 0f
         lastDistM = Float.MAX_VALUE
+        segmentLockUntilMs = 0L
+        arriveAnnounced = false
+        tts?.stop()
     }
 
     fun shutdown() {
@@ -266,11 +349,22 @@ class NavigationTtsController(
                     initialDist >= 25f -> 8f
                     initialDist >= 12f -> 5f
                     initialDist >= 7f -> 3.5f
-                    else -> -1f // đoạn quá ngắn: chỉ START + IMMINENT
+                    else -> -1f
                 }
-                approach to 2.2f
+                // Chỉ nhắc rẽ sát ngã (~1.2 m) — một lần IMMINENT
+                approach to 1.2f
             }
         }
+    }
+
+    private fun normalizeKey(raw: String): String =
+        raw.replace(Regex("""\s+"""), " ").trim().uppercase(Locale.ROOT)
+
+    private fun isStraightOrArrive(key: String, action: String): Boolean {
+        val k = key.uppercase(Locale.ROOT)
+        return k.contains("STRAIGHT") || k.contains("ARRIVE") ||
+            action.contains("thẳng", ignoreCase = true) ||
+            action.contains("đến", ignoreCase = true)
     }
 
     private fun speakPhase(phase: Phase, text: String) {
@@ -303,7 +397,6 @@ class NavigationTtsController(
             .replace("—", ",")
             .trim()
 
-    /** “Rẽ trái sau 30 m” → “Rẽ trái” */
     private fun extractAction(instruction: String?): String {
         if (instruction.isNullOrBlank()) return ""
         val t = clean(instruction)
@@ -313,7 +406,10 @@ class NavigationTtsController(
         val cut2 = Regex("""\s+\d+\s*m.*""", RegexOption.IGNORE_CASE)
             .replace(cut, "")
             .trim()
-        return cut2.ifBlank { t }
+        val cut3 = Regex("""\s*[,·]\s*còn.*""", RegexOption.IGNORE_CASE)
+            .replace(cut2, "")
+            .trim()
+        return cut3.ifBlank { t }
     }
 
     private fun phraseFor(action: String, distanceM: Float): String {
@@ -321,13 +417,14 @@ class NavigationTtsController(
         val a = action.ifBlank { "Đi thẳng" }
         return when {
             a.contains("đến", ignoreCase = true) -> a
-            a.contains("thẳng", ignoreCase = true) -> "Đi thẳng $d m"
-            else -> "$a sau $d m"
+            a.contains("thẳng", ignoreCase = true) -> "Đi thẳng"
+            else -> if (distanceM < 7f) a else "$a sau $d m"
         }
     }
 
     companion object {
         private const val TAG = "NavTTS"
         const val GOOGLE_TTS_ENGINE = "com.google.android.tts"
+        private const val SEGMENT_LOCK_MS = 3500L
     }
 }

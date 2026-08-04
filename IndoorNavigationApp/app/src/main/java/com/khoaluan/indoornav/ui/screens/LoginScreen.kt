@@ -4,7 +4,9 @@ import android.app.Activity
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,6 +33,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -47,7 +52,9 @@ import com.khoaluan.indoornav.data.api.RetrofitClient
 import com.khoaluan.indoornav.data.local.SessionManager
 import com.khoaluan.indoornav.ui.i18n.tr
 import com.khoaluan.indoornav.ui.i18n.trStatic
+import com.khoaluan.indoornav.ui.theme.AdaptiveDimens
 import com.khoaluan.indoornav.ui.theme.NavBlue
+import com.khoaluan.indoornav.ui.theme.adaptiveReadableWidth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -82,19 +89,47 @@ fun LoginScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+    val logoSize = AdaptiveDimens.loginLogoSize()
+    val titleSp = AdaptiveDimens.loginTitleSize()
+    val hPad = AdaptiveDimens.screenHorizontalPadding()
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter,
     ) {
-        Text(tr("Điều hướng trong nhà", "Indoor Navigation"), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = NavBlue)
+        Column(
+            modifier = Modifier
+                .adaptiveReadableWidth()
+                .padding(horizontal = hPad)
+                .padding(top = 56.dp, bottom = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+        // Dùng drawable foreground (webp) — không dùng mipmap adaptive-icon (gây crash Compose)
+        Box(
+            modifier = Modifier
+                .size(logoSize)
+                .clip(CircleShape)
+                .background(Color(0xFF1D1D1F)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_launcher_foreground),
+                contentDescription = tr("Logo ứng dụng", "App logo"),
+                modifier = Modifier.size(logoSize * 0.85f),
+            )
+        }
+        Spacer(Modifier.height(20.dp))
+        Text(
+            tr("Điều hướng trong nhà", "Indoor Navigation"),
+            fontSize = titleSp,
+            fontWeight = FontWeight.Bold,
+            color = NavBlue,
+        )
         Text(
             tr("Đăng nhập để lưu tài khoản (tuỳ chọn)", "Sign in to save your account (optional)"),
             fontSize = 13.sp,
         )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(28.dp))
         OutlinedTextField(
             value = email,
             onValueChange = { email = it },
@@ -200,7 +235,8 @@ fun LoginScreen(
                 Text(tr("Tiếp tục với tư cách khách", "Continue as guest"))
             }
         }
-    }
+        } // Column
+    } // Box
 }
 
 private suspend fun completeGoogleSignIn(

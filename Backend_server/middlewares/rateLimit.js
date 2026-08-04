@@ -97,6 +97,34 @@ const contactLimiter = makeLimiter({
   message: { message: 'Bạn đã gửi quá nhiều liên hệ. Vui lòng thử lại sau 1 giờ.' }
 });
 
+/** Geocode (Nominatim proxy) — giới hạn theo IP; Nominatim còn throttle 1 req/s trong service. */
+const geocodeLimiter = makeLimiter({
+  prefix: 'rl:geocode:',
+  windowMs: 60 * 1000,
+  max: Math.max(5, Number(process.env.GEOCODE_RATE_LIMIT_PER_MIN) || 30),
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => !!process.env.JEST_WORKER_ID,
+  message: {
+    message: 'Quá nhiều yêu cầu geocode. Vui lòng thử lại sau.',
+    code: 'GEOCODE_RATE_LIMIT',
+  },
+});
+
+/** Overpass nearby POI — chặt hơn geocode (query nặng). */
+const overpassLimiter = makeLimiter({
+  prefix: 'rl:overpass:',
+  windowMs: 60 * 1000,
+  max: Math.max(3, Number(process.env.OVERPASS_RATE_LIMIT_PER_MIN) || 20),
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => !!process.env.JEST_WORKER_ID,
+  message: {
+    message: 'Quá nhiều yêu cầu Overpass. Vui lòng thử lại sau.',
+    code: 'OVERPASS_RATE_LIMIT',
+  },
+});
+
 module.exports = {
   loginLimiter,
   publicRegisterLimiter,
@@ -104,5 +132,7 @@ module.exports = {
   forgotPasswordLimiter,
   resetPasswordLimiter,
   publishLimiter,
-  contactLimiter
+  contactLimiter,
+  geocodeLimiter,
+  overpassLimiter,
 };

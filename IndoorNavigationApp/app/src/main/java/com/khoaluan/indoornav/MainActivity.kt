@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -93,7 +94,12 @@ class MainActivity : ComponentActivity() {
                 com.khoaluan.indoornav.fcm.EmergencyAlertActivity.EXTRA_AUTO_EVACUATE,
                 false,
             ) == true
+            val snoozeOverlay = intent?.getBooleanExtra(
+                com.khoaluan.indoornav.fcm.EmergencyAlertActivity.EXTRA_SNOOZE_OVERLAY,
+                false,
+            ) == true
             intent?.putExtra("_pending_emergency_auto_evacuate", autoEvacuate)
+            intent?.putExtra("_pending_emergency_snooze", snoozeOverlay)
             emergencyIntentTick++
             return
         }
@@ -300,6 +306,10 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun beginEmergencyEvacuationFlow() {
+                    // Vào chỉ đường / chọn tầng → tắt còi + FGS (không chờ tới khi có path)
+                    com.khoaluan.indoornav.fcm.EmergencyNotifier.stopTakeoverAudio(context)
+                    // Đã vào luồng sơ tán — chặn FGS/FCM mở lại màn đỏ
+                    com.khoaluan.indoornav.fcm.EmergencyNotifier.setSuppressAlertUi(context, true)
                     viewModel.dismissGeofence()
                     isScanningQR = false
                     val session = viewModel.emergencySession.value
@@ -335,7 +345,7 @@ class MainActivity : ComponentActivity() {
                         }
                         return
                     }
-                    // Luôn hỏi tầng trước — không tự chỉ đường khi chưa xác nhận tầng/vị trí
+                    // Hỏi tầng chỉ khi chưa xác nhận; đã có vị trí trên map → chỉ đường ngay
                     viewModel.requestEmergencyFloorConfirm()
                     val afterFloor = viewModel.emergencySession.value
                     if (afterFloor.phase == EmergencyPhase.AWAITING_FLOOR) {
@@ -348,7 +358,7 @@ class MainActivity : ComponentActivity() {
                     }
                     val nav = viewModel.navState.value
                     val needsStanding = nav.userPos == null && nav.startAnchorPos == null
-                    if (needsStanding || afterFloor.phase == EmergencyPhase.ALERT) {
+                    if (needsStanding) {
                         viewModel.requestEmergencyStandingPick()
                         Toast.makeText(
                             context,
@@ -392,25 +402,64 @@ class MainActivity : ComponentActivity() {
                     val buildingId = intent?.getStringExtra("_pending_emergency_building")
                         ?: pendingEmergencyBuildingId
                     val autoEvacuate = intent?.getBooleanExtra("_pending_emergency_auto_evacuate", false) == true
+                    val snoozeOverlay = intent?.getBooleanExtra("_pending_emergency_snooze", false) == true
                     intent?.removeExtra("_pending_emergency_type")
                     intent?.removeExtra("_pending_emergency_title")
                     intent?.removeExtra("_pending_emergency_body")
                     intent?.removeExtra("_pending_emergency_incident")
                     intent?.removeExtra("_pending_emergency_building")
                     intent?.removeExtra("_pending_emergency_auto_evacuate")
+                    intent?.removeExtra("_pending_emergency_snooze")
                     intent?.removeExtra(com.khoaluan.indoornav.fcm.EmergencyAlertActivity.EXTRA_AUTO_EVACUATE)
-                    viewModel.triggerEmergencyAlert(
-                        incidentType = type,
-                        title = title,
-                        body = body,
-                        buildingId = buildingId,
-                        incidentId = incidentId,
-                    )
-                    if (!buildingId.isNullOrBlank() && currentBuildingId == null) {
-                        openIndoor(buildingId, resolveTotalFloors(buildingId))
+                    intent?.removeExtra(com.khoaluan.indoornav.fcm.EmergencyAlertActivity.EXTRA_SNOOZE_OVERLAY)
+
+                    if (snoozeOverlay) {
+                        // Đóng màn đỏ → giữ sự cố trên map (banner), không hiện lại ALERT, không thoát app
+                        viewModel.snoozeEmergencyAlert(
+                            incidentType = type,
+                            title = title,
+                            body = body,
+                            buildingId = buildingId,
+                            incidentId = incidentId,
+                        )
+                        if (!buildingId.isNullOrBlank() && currentBuildingId == null) {
+                            openIndoor(buildingId, resolveTotalFloors(buildingId))
+                        }
+                        Toast.makeText(
+                            context,
+                            "Đã đóng cảnh báo — mở lại chỉ đường trên map khi cần",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        return
                     }
+
                     if (autoEvacuate) {
+                        // Không hú lại còi khi đã bấm Chỉ đường từ màn đỏ
+                        viewModel.triggerEmergencyAlert(
+                            incidentType = type,
+                            title = title,
+                            body = body,
+                            buildingId = buildingId,
+                            incidentId = incidentId,
+                            openSystemTakeover = false,
+                            startSiren = false,
+                        )
+                        if (!buildingId.isNullOrBlank() && currentBuildingId == null) {
+                            openIndoor(buildingId, resolveTotalFloors(buildingId))
+                        }
                         beginEmergencyEvacuationFlow()
+                    } else {
+                        viewModel.triggerEmergencyAlert(
+                            incidentType = type,
+                            title = title,
+                            body = body,
+                            buildingId = buildingId,
+                            incidentId = incidentId,
+                            openSystemTakeover = true,
+                        )
+                        if (!buildingId.isNullOrBlank() && currentBuildingId == null) {
+                            openIndoor(buildingId, resolveTotalFloors(buildingId))
+                        }
                     }
                 }
 
@@ -548,9 +597,70 @@ class MainActivity : ComponentActivity() {
 
                 Surface(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
                     Box(modifier = Modifier.fillMaxSize()) {
-                        when {
-                            indoorEntry is IndoorEntryUiState.Entering ||
-                                indoorEntry is IndoorEntryUiState.Failed -> {
+                        // Login chỉ khi chưa vào app / chưa indoor
+                        val showingLogin =
+                            showLogin && currentBuildingId == null && !showPDRTest && !isScanningQR
+
+                        if (showingLogin) {
+                            LoginScreen(
+                                sessionManager = sessionManager,
+                                onContinueGuest = { enterAppAfterAuth(asGuest = true) },
+                                onLoggedIn = { enterAppAfterAuth(asGuest = false) },
+                            )
+                        } else {
+                            // Outdoor MapLibre luôn giữ composition (kể cả khi vào indoor/PDR/Hub)
+                            // → tránh destroy MapView → màn trắng khi quay lại.
+                            val outdoorMapActive =
+                                currentBuildingId == null &&
+                                    !showPDRTest &&
+                                    userHubDest == null &&
+                                    indoorEntry !is IndoorEntryUiState.Entering &&
+                                    indoorEntry !is IndoorEntryUiState.Failed
+                            BuildingListScreen(
+                                viewModel = viewModel,
+                                mapSurfaceActive = outdoorMapActive,
+                                onBuildingClick = { id ->
+                                    openIndoor(id, resolveTotalFloors(id))
+                                },
+                                onTestPDR = { showPDRTest = true },
+                                isLoggedIn = isLoggedIn,
+                                accountLabel = accountLabel,
+                                avatarUrl = avatarUrl,
+                                onLoginClick = { showLogin = true },
+                                onLogoutClick = { logoutToLogin() },
+                                onOpenProfile = {
+                                    if (isLoggedIn) userHubDest = UserHubDest.Profile
+                                    else showLogin = true
+                                },
+                                pendingPlaceSlug = pendingPlaceSlug,
+                                pendingFloor = pendingFloor,
+                                onPendingPlaceConsumed = {
+                                    pendingPlaceSlug = null
+                                    pendingFloor = null
+                                },
+                                onDeepLinkEnterIndoor = { id, floor ->
+                                    openIndoor(id, resolveTotalFloors(id), floor)
+                                },
+                                onIndoorSearchEnter = { id, floor, poiId, totalFloors ->
+                                    openIndoor(
+                                        buildingId = id,
+                                        totalFloors = totalFloors,
+                                        preferredFloor = floor,
+                                        focusPoiId = poiId,
+                                    )
+                                },
+                            )
+                        }
+
+                        if (indoorEntry is IndoorEntryUiState.Entering ||
+                            indoorEntry is IndoorEntryUiState.Failed
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .zIndex(90f)
+                                    .background(Color(0xFFF8F9FA)),
+                            ) {
                                 val entering = indoorEntry as? IndoorEntryUiState.Entering
                                 val failed = indoorEntry as? IndoorEntryUiState.Failed
                                 IndoorTransitionOverlay(
@@ -569,17 +679,64 @@ class MainActivity : ComponentActivity() {
                                     },
                                 )
                             }
-                            showLogin && currentBuildingId == null && !showPDRTest && !isScanningQR -> {
-                                LoginScreen(
-                                    sessionManager = sessionManager,
-                                    onContinueGuest = { enterAppAfterAuth(asGuest = true) },
-                                    onLoggedIn = { enterAppAfterAuth(asGuest = false) },
+                        }
+
+                        val indoorBuildingId = currentBuildingId
+                        if (indoorBuildingId != null && !showingLogin) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .zIndex(60f)
+                                    .background(Color.White),
+                            ) {
+                                MapScreen(
+                                    buildingId = indoorBuildingId,
+                                    viewModel = viewModel,
+                                    suppressEmptyState = isScanningQR || awaitingQrLocalization || isResolvingQr,
+                                    onBack = {
+                                        currentBuildingId = null
+                                        isScanningQR = false
+                                        awaitingQrLocalization = false
+                                        viewModel.exitIndoorNavigation()
+                                    },
+                                    onScanQR = { isScanningQR = true },
                                 )
+                                if (isScanningQR) {
+                                    QRScanScreen(
+                                        onResult = { qrId ->
+                                            awaitingQrLocalization = true
+                                            viewModel.startNavigation(qrId)
+                                        },
+                                        onBack = {
+                                            isScanningQR = false
+                                            awaitingQrLocalization = false
+                                            viewModel.clearQrError()
+                                        },
+                                        isProcessing = isResolvingQr || awaitingQrLocalization,
+                                        errorMessage = qrError,
+                                    )
+                                }
                             }
-                            showPDRTest -> {
+                        }
+
+                        // Overlay: PDR / User Hub — outdoor map vẫn sống dưới (pause GL khi bị che).
+                        if (showPDRTest) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .zIndex(80f)
+                                    .background(Color(0xFF0D1B2A)),
+                            ) {
                                 PDRTestScreen(onBack = { showPDRTest = false })
                             }
-                            userHubDest != null && currentBuildingId == null -> {
+                        }
+                        if (userHubDest != null && currentBuildingId == null && !showPDRTest && !showingLogin) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .zIndex(70f)
+                                    .background(Color.White),
+                            ) {
                                 when (val dest = userHubDest) {
                                     UserHubDest.Profile -> ProfileScreen(
                                         viewModel = userHub,
@@ -665,73 +822,6 @@ class MainActivity : ComponentActivity() {
                                     null -> Unit
                                 }
                             }
-                            currentBuildingId == null -> {
-                                BuildingListScreen(
-                                    viewModel = viewModel,
-                                    onBuildingClick = { id ->
-                                        openIndoor(id, resolveTotalFloors(id))
-                                    },
-                                    onTestPDR = { showPDRTest = true },
-                                    isLoggedIn = isLoggedIn,
-                                    accountLabel = accountLabel,
-                                    avatarUrl = avatarUrl,
-                                    onLoginClick = { showLogin = true },
-                                    onLogoutClick = { logoutToLogin() },
-                                    onOpenProfile = {
-                                        if (isLoggedIn) userHubDest = UserHubDest.Profile
-                                        else showLogin = true
-                                    },
-                                    pendingPlaceSlug = pendingPlaceSlug,
-                                    pendingFloor = pendingFloor,
-                                    onPendingPlaceConsumed = {
-                                        pendingPlaceSlug = null
-                                        pendingFloor = null
-                                    },
-                                    onDeepLinkEnterIndoor = { id, floor ->
-                                        openIndoor(id, resolveTotalFloors(id), floor)
-                                    },
-                                    onIndoorSearchEnter = { id, floor, poiId, totalFloors ->
-                                        openIndoor(
-                                            buildingId = id,
-                                            totalFloors = totalFloors,
-                                            preferredFloor = floor,
-                                            focusPoiId = poiId,
-                                        )
-                                    },
-                                )
-                            }
-                            else -> {
-                                val indoorBuildingId = currentBuildingId
-                                if (indoorBuildingId != null) {
-                                MapScreen(
-                                    buildingId = indoorBuildingId,
-                                    viewModel = viewModel,
-                                    suppressEmptyState = isScanningQR || awaitingQrLocalization || isResolvingQr,
-                                    onBack = {
-                                        currentBuildingId = null
-                                        isScanningQR = false
-                                        awaitingQrLocalization = false
-                                        viewModel.exitIndoorNavigation()
-                                    },
-                                    onScanQR = { isScanningQR = true }
-                                )
-                                if (isScanningQR) {
-                                    QRScanScreen(
-                                        onResult = { qrId ->
-                                            awaitingQrLocalization = true
-                                            viewModel.startNavigation(qrId)
-                                        },
-                                        onBack = {
-                                            isScanningQR = false
-                                            awaitingQrLocalization = false
-                                            viewModel.clearQrError()
-                                        },
-                                        isProcessing = isResolvingQr || awaitingQrLocalization,
-                                        errorMessage = qrError,
-                                    )
-                                }
-                                }
-                            }
                         }
 
                         // Dialog geofence — chỉ sau Login/Guest; không che Login / QR / khẩn cấp
@@ -810,6 +900,60 @@ class MainActivity : ComponentActivity() {
                             },
                         )
 
+                        // Overlay khẩn cấp PHẢI trên MapScreen (zIndex 60).
+                        // Full-screen chỉ ALERT / chọn tầng; banner không fillMaxSize (tránh chặn chạm map).
+                        if (emergencySession.active && emergencySession.phase == EmergencyPhase.ALERT) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .zIndex(100f),
+                            ) {
+                                EmergencyTakeoverOverlay(
+                                    session = emergencySession,
+                                    onStartEvacuation = { beginEmergencyEvacuationFlow() },
+                                    onDismiss = { viewModel.dismissEmergency() },
+                                    onSwitchToExitFloor = { viewModel.switchEmergencyToExitFloor() },
+                                )
+                            }
+                        } else if (emergencySession.active &&
+                            emergencySession.phase == EmergencyPhase.AWAITING_FLOOR
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .zIndex(100f),
+                            ) {
+                                val bid = emergencySession.buildingId ?: currentBuildingId
+                                val floors = bid?.let {
+                                    maxOf(
+                                        resolveTotalFloors(it),
+                                        viewModel.getTotalFloorsForBuilding(it),
+                                    )
+                                } ?: 1
+                                val curFloor = (mapUi as? com.khoaluan.indoornav.ui.viewmodel.MapUiState.Success)
+                                    ?.floorNumber
+                                LaunchedEffect(bid) {
+                                    if (!bid.isNullOrBlank()) {
+                                        viewModel.prefetchFloorsForEmergencyUi(bid)
+                                    }
+                                }
+                                EmergencyFloorPickOverlay(
+                                    session = emergencySession,
+                                    currentFloor = curFloor,
+                                    totalFloors = floors,
+                                    onFloorSelected = { floor ->
+                                        viewModel.confirmEmergencyFloor(floor)
+                                        Toast.makeText(
+                                            context,
+                                            "Đang mở tầng ${if (floor == 0) "GF" else floor} — chạm map chọn vị trí",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    },
+                                    onDismiss = { viewModel.dismissEmergency() },
+                                )
+                            }
+                        }
+
                         // Đã Đóng cảnh báo nhưng sự cố vẫn ACTIVE → banner mở lại chỉ đường thoát hiểm
                         val resumeEmergency = buildingActiveEmergency
                         if (!emergencySession.active &&
@@ -821,6 +965,7 @@ class MainActivity : ComponentActivity() {
                             Column(
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)
+                                    .zIndex(100f)
                                     .padding(top = 12.dp, start = 12.dp, end = 12.dp)
                                     .background(
                                         Color(0xCC7F1D1D),
@@ -847,8 +992,11 @@ class MainActivity : ComponentActivity() {
                                 )
                                 Button(
                                     onClick = {
-                                        viewModel.resumeEmergencyGuidance()
-                                        beginEmergencyEvacuationFlow()
+                                        // Đã có vị trí trên map → chỉ đường ngay, không hỏi tầng / không hú còi
+                                        val started = viewModel.resumeEmergencyGuidance()
+                                        if (!started) {
+                                            beginEmergencyEvacuationFlow()
+                                        }
                                     },
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -868,51 +1016,13 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        if (emergencySession.active && emergencySession.phase == EmergencyPhase.ALERT) {
-                            EmergencyTakeoverOverlay(
-                                session = emergencySession,
-                                onStartEvacuation = { beginEmergencyEvacuationFlow() },
-                                onDismiss = { viewModel.dismissEmergency() },
-                                onSwitchToExitFloor = { viewModel.switchEmergencyToExitFloor() },
-                            )
-                        } else if (emergencySession.active &&
-                            emergencySession.phase == EmergencyPhase.AWAITING_FLOOR
-                        ) {
-                            val bid = emergencySession.buildingId ?: currentBuildingId
-                            val floors = bid?.let {
-                                maxOf(
-                                    resolveTotalFloors(it),
-                                    viewModel.getTotalFloorsForBuilding(it),
-                                )
-                            } ?: 1
-                            val curFloor = (mapUi as? com.khoaluan.indoornav.ui.viewmodel.MapUiState.Success)
-                                ?.floorNumber
-                            // Prefetch để sheet có đủ tầng (không chỉ totalFloors=1)
-                            LaunchedEffect(bid) {
-                                if (!bid.isNullOrBlank()) {
-                                    viewModel.prefetchFloorsForEmergencyUi(bid)
-                                }
-                            }
-                            EmergencyFloorPickOverlay(
-                                session = emergencySession,
-                                currentFloor = curFloor,
-                                totalFloors = floors,
-                                onFloorSelected = { floor ->
-                                    viewModel.confirmEmergencyFloor(floor)
-                                    Toast.makeText(
-                                        context,
-                                        "Đang mở tầng ${if (floor == 0) "GF" else floor} — chạm map chọn vị trí",
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                },
-                                onDismiss = { viewModel.dismissEmergency() },
-                            )
-                        } else if (emergencySession.active &&
+                        if (emergencySession.active &&
                             emergencySession.phase == EmergencyPhase.AWAITING_LOCATION
                         ) {
                             Column(
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)
+                                    .zIndex(100f)
                                     .padding(top = 12.dp, start = 12.dp, end = 12.dp)
                                     .background(
                                         Color(0xCC7F1D1D),
@@ -961,6 +1071,7 @@ class MainActivity : ComponentActivity() {
                             Column(
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)
+                                    .zIndex(100f)
                                     .padding(top = 12.dp, start = 12.dp, end = 12.dp)
                                     .background(
                                         Color(0xCC7F1D1D),

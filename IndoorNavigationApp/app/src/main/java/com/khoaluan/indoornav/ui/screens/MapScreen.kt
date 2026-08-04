@@ -37,6 +37,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -110,12 +111,13 @@ fun MapScreen(
     val savedParking by viewModel.savedParking.collectAsState()
     val emergencySession by viewModel.emergencySession.collectAsState()
     val mapHazardZones by viewModel.mapHazardZones.collectAsState()
+    val buildingActiveEmergency by viewModel.buildingActiveEmergency.collectAsState()
+    /** Khẩn cấp (đang phiên hoặc banner sự cố còn ACTIVE) → ẩn overlay “Xác định vị trí”. */
+    val hideEmptyStateForEmergency =
+        emergencySession.active || buildingActiveEmergency != null
     val awaitingEmergencyStanding =
         emergencySession.active &&
             emergencySession.phase == com.khoaluan.indoornav.navigation.emergency.EmergencyPhase.AWAITING_LOCATION
-    val emergencyEvacuating =
-        emergencySession.active &&
-            emergencySession.phase == com.khoaluan.indoornav.navigation.emergency.EmergencyPhase.EVACUATING
 
     val snackbarHostState = remember { SnackbarHostState() }
     val mapScope = rememberCoroutineScope()
@@ -208,19 +210,25 @@ fun MapScreen(
             ttsController.resetLastSpoken()
         }
     }
-    // Chỉ đọc đầu đoạn + khi gần điểm rẽ (không spam mỗi mét)
+    // Một nguồn TTS: chỉ khi đổi loại manoeuvre (đã debounce). Không bucket mét.
     LaunchedEffect(
         navState.isNavigatingMode,
         voiceEnabled,
-        navState.currentInstructionText,
-        navState.distanceToNextManeuverMeters,
+        navState.nextManeuverType,
     ) {
         if (!navState.isNavigatingMode || !voiceEnabled) return@LaunchedEffect
+        val type = navState.nextManeuverType?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        // Gần đích: debounce dài hơn — tránh nói lại khi type nhấp ARRIVE↔TURN
+        val settleMs = if (type.contains("ARRIVE", ignoreCase = true)) 900L else 650L
+        kotlinx.coroutines.delay(settleMs)
+        if (!navState.isNavigatingMode || !voiceEnabled) return@LaunchedEffect
+        val stableType = navState.nextManeuverType?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        if (stableType != type) return@LaunchedEffect
         val text = navState.currentInstructionText ?: return@LaunchedEffect
         ttsController.speakTurnByTurn(
             instruction = text,
             distanceM = navState.distanceToNextManeuverMeters,
-            segmentId = Regex("""[^\d]+""").find(text)?.value?.trim(),
+            segmentId = stableType,
             scale = NavigationTtsController.Scale.INDOOR,
         )
     }
@@ -367,6 +375,28 @@ fun MapScreen(
                     }
                     var centerTrigger    by remember { mutableStateOf(0) }
                     var centerDestTrigger by remember { mutableStateOf(0) }
+                    fun focusCameraOnDestination() {
+                        centerDestTrigger++
+                    }
+                    // ViewModel yêu cầu snap camera về user (Start / sơ tán / đổi tầng)
+                    LaunchedEffect(navState.centerOnUserRequest) {
+                        if (navState.centerOnUserRequest > 0) {
+                            centerTrigger++
+                        }
+                    }
+                    // Chọn cửa ra / phòng / POI → camera nhảy tới pin đỏ (không chỉ khi bấm nút pin)
+                    // Khẩn cấp: không zoom pin (thường là cầu thang/EXIT xa) — giữ follow user
+                    LaunchedEffect(
+                        navState.destinationNodeId,
+                        navState.destinationMarkerPos,
+                        navState.destinationPoiId,
+                        emergencySession.active,
+                    ) {
+                        if (emergencySession.active) return@LaunchedEffect
+                        if (navState.destinationMarkerPos != null && !navState.isNavigatingMode) {
+                            focusCameraOnDestination()
+                        }
+                    }
                     val currentFloor = state.floorNumber
                     var showFloorSheet   by remember { mutableStateOf(false) }
                     var mapLayers by remember { mutableStateOf(MapLayerVisibility()) }
@@ -414,10 +444,16 @@ fun MapScreen(
                     var lastMapTapPos by remember {
                         mutableStateOf<androidx.compose.ui.geometry.Offset?>(null)
                     }
-                    LaunchedEffect(navState.userPos != null, awaitingEmergencyStanding) {
+                    LaunchedEffect(navState.userPos != null, hideEmptyStateForEmergency) {
                         showEmptyState = navState.userPos == null &&
                             pendingMapPick == null &&
-                            !awaitingEmergencyStanding
+                            !hideEmptyStateForEmergency
+                    }
+                    LaunchedEffect(hideEmptyStateForEmergency) {
+                        if (hideEmptyStateForEmergency) {
+                            showEmptyState = false
+                            pendingMapPick = null
+                        }
                     }
                     LaunchedEffect(awaitingEmergencyStanding) {
                         if (awaitingEmergencyStanding) {
@@ -474,13 +510,19 @@ fun MapScreen(
                     )
 
                     val crossFloorRooms by viewModel.crossFloorRooms.collectAsState()
-                    val knownFloorsFromCache = crossFloorRooms
-                        .maxOfOrNull { it.floor }
-                        ?.plus(1)
-                        ?: 0
+                    val crossFloorPois by viewModel.crossFloorPois.collectAsState()
+                    val knownFloorsFromCache = maxOf(
+                        crossFloorRooms.maxOfOrNull { it.floor }?.plus(1) ?: 0,
+                        crossFloorPois.maxOfOrNull { it.floor }?.plus(1) ?: 0,
+                    )
 
-                    // Danh sach tim kiem: gop Rooms + POIs (tầng hiện tại) + phòng các tầng khác (W3)
-                    val searchItems = remember(state.mapData, crossFloorRooms, state.floorNumber) {
+                    // Tìm kiếm: Rooms + POIs tầng hiện tại + Rooms/POIs mọi tầng khác
+                    val searchItems = remember(
+                        state.mapData,
+                        crossFloorRooms,
+                        crossFloorPois,
+                        state.floorNumber,
+                    ) {
                         val roomItems = state.mapData.rooms.map {
                             SearchItem(it.id, it.name, true, state.floorNumber)
                         }
@@ -501,7 +543,7 @@ fun MapScreen(
                                 )
                             }
                         }
-                        val otherFloor = crossFloorRooms
+                        val otherFloorRooms = crossFloorRooms
                             .filter { it.floor != state.floorNumber }
                             .map {
                                 SearchItem(
@@ -511,7 +553,33 @@ fun MapScreen(
                                     floor = it.floor,
                                 )
                             }
-                        roomItems + poiItems + otherFloor
+                        val otherFloorPois = crossFloorPois
+                            .filter { it.floor != state.floorNumber }
+                            .mapNotNull { entry ->
+                                val poi = entry.poi
+                                val poiName = poi.name?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                                val category = poi.resolveCategory()
+                                SearchItem(
+                                    id = poi.id,
+                                    name = poiName,
+                                    isRoom = false,
+                                    floor = entry.floor,
+                                    keywords = buildList {
+                                        add(category.labelVi)
+                                        add(category.labelEn)
+                                        poi.description?.takeIf { it.isNotBlank() }?.let { add(it) }
+                                        poi.searchTags.orEmpty().forEach { add(it) }
+                                    },
+                                )
+                            }
+                        roomItems + poiItems + otherFloorRooms + otherFloorPois
+                    }
+
+                    // Mở ô tìm kiếm → đảm bảo đã prefetch đủ tầng
+                    LaunchedEffect(isSearchActive, buildingId) {
+                        if (isSearchActive) {
+                            viewModel.prefetchFloorsForEmergencyUi(buildingId)
+                        }
                     }
 
                     val filteredItems = remember(searchQuery, searchItems) {
@@ -529,14 +597,43 @@ fun MapScreen(
                     val locale = LocalAppLocale.current
                     val scanToLocate = tr("Quét QR để xác định vị trí", "Scan QR to locate yourself")
                     val locating = tr("Đang xác định...", "Locating...")
-                    val currentLocationLabel = remember(navState.userPos, state.mapData.rooms, locale) {
+                    val hallwayLabel = tr("Hành lang / khu vực chung", "Hallway / common area")
+                    val nearPrefix = tr("Gần", "Near")
+                    val currentLocationLabel = remember(
+                        navState.userPos,
+                        state.mapData.rooms,
+                        locale,
+                        scanToLocate,
+                        locating,
+                        hallwayLabel,
+                        nearPrefix,
+                    ) {
                         val pos = navState.userPos
                             ?: return@remember scanToLocate
-                        state.mapData.rooms.minByOrNull { room ->
-                            val dx = (room.x + room.width / 2.0) - pos.x
-                            val dy = (room.y + room.height / 2.0) - pos.y
+                        val inside = state.mapData.rooms.firstOrNull { room ->
+                            val left = room.x.toFloat()
+                            val top = room.y.toFloat()
+                            val right = left + room.width
+                            val bottom = top + room.height
+                            pos.x in left..right && pos.y in top..bottom
+                        }
+                        if (inside != null) return@remember inside.name
+                        val nearest = state.mapData.rooms.minByOrNull { room ->
+                            val cx = room.x + room.width / 2f
+                            val cy = room.y + room.height / 2f
+                            val dx = cx - pos.x
+                            val dy = cy - pos.y
                             dx * dx + dy * dy
-                        }?.name ?: locating
+                        }
+                        if (nearest == null) return@remember locating
+                        val cx = nearest.x + nearest.width / 2f
+                        val cy = nearest.y + nearest.height / 2f
+                        val dist = kotlin.math.hypot((cx - pos.x).toDouble(), (cy - pos.y).toDouble())
+                        if (dist < 120.0) {
+                            "$nearPrefix ${nearest.name}"
+                        } else {
+                            hallwayLabel
+                        }
                     }
 
                     val navProgress = when {
@@ -627,6 +724,7 @@ fun MapScreen(
                                                     selectedRoomId = hitRoom.id
                                                     selectedRoomName = hitRoom.name
                                                     viewModel.setDestination(hitRoom.id)
+                                                    focusCameraOnDestination()
                                                     val roomName = hitRoom.name.trim()
                                                     placeCard = PlaceCardModel(
                                                         name = hitRoom.name,
@@ -664,6 +762,7 @@ fun MapScreen(
                                                     val poiName = hitPoi.name?.trim().orEmpty()
                                                     selectedRoomName = poiName.ifBlank { "POI" }
                                                     viewModel.setDestinationPoi(hitPoi.id)
+                                                    focusCameraOnDestination()
                                                     placeCard = PlaceCardModel(
                                                         name = poiName.ifBlank { "POI" },
                                                         kindLabel = hitPoi.type
@@ -723,42 +822,44 @@ fun MapScreen(
                                 )
                             }
 
-                            // GĐ3 — banner gợi ý đổi tầng (chạm = chuyển tầng)
-                            navState.floorTransitionHint?.takeIf { it.isNotBlank() }?.let { hint ->
-                                val canTapSwitch = navState.suggestedTargetFloor != null ||
-                                    navState.readyForFloorSwitch
-                                Text(
-                                    text = hint,
-                                    modifier = Modifier
-                                        .align(Alignment.TopCenter)
-                                        .padding(top = 56.dp, start = 16.dp, end = 16.dp)
-                                        .background(Color(0xE01A73E8), RoundedCornerShape(10.dp))
-                                        .then(
-                                            if (canTapSwitch) {
-                                                Modifier.clickable {
-                                                    viewModel.switchToSuggestedFloor()
-                                                    mapScope.launch {
-                                                        val f = navState.suggestedTargetFloor
-                                                        val label = when (f) {
-                                                            null -> "tầng đích"
-                                                            0 -> "GF"
-                                                            else -> "tầng $f"
+                            // GĐ3 — banner gợi ý đổi tầng (chỉ khi đang điều hướng; dưới hàng chip)
+                            if (navState.isNavigatingMode) {
+                                navState.floorTransitionHint?.takeIf { it.isNotBlank() }?.let { hint ->
+                                    val canTapSwitch = navState.suggestedTargetFloor != null ||
+                                        navState.readyForFloorSwitch
+                                    Text(
+                                        text = hint,
+                                        modifier = Modifier
+                                            .align(Alignment.TopCenter)
+                                            .padding(top = 112.dp, start = 16.dp, end = 16.dp)
+                                            .background(Color(0xE01A73E8), RoundedCornerShape(10.dp))
+                                            .then(
+                                                if (canTapSwitch) {
+                                                    Modifier.clickable {
+                                                        viewModel.switchToSuggestedFloor()
+                                                        mapScope.launch {
+                                                            val f = navState.suggestedTargetFloor
+                                                            val label = when (f) {
+                                                                null -> "tầng đích"
+                                                                0 -> "GF"
+                                                                else -> "tầng $f"
+                                                            }
+                                                            snackbarHostState.showSnackbar(
+                                                                message = "Đã chuyển $label — neo cầu thang rồi chỉ đường tiếp",
+                                                                duration = SnackbarDuration.Short,
+                                                            )
                                                         }
-                                                        snackbarHostState.showSnackbar(
-                                                            message = "Đã chuyển $label — neo cầu thang rồi chỉ đường tiếp",
-                                                            duration = SnackbarDuration.Short,
-                                                        )
                                                     }
-                                                }
-                                            } else {
-                                                Modifier
-                                            },
-                                        )
-                                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                                    color = Color.White,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium,
-                                )
+                                                } else {
+                                                    Modifier
+                                                },
+                                            )
+                                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                }
                             }
 
                             // #9 Layer toggle — chips POI đặt sau search bar (không bị che touch)
@@ -785,12 +886,11 @@ fun MapScreen(
                                 )
                             }
 
-                            // UX fix 1: EmptyStateOverlay
+                            // UX fix 1: EmptyStateOverlay — ẩn toàn bộ khi khẩn cấp
                             EmptyStateOverlay(
                                 visible = showEmptyState &&
                                     !suppressEmptyState &&
-                                    !awaitingEmergencyStanding &&
-                                    !emergencyEvacuating &&
+                                    !hideEmptyStateForEmergency &&
                                     pendingMapPick == null,
                                 onQrScan = {
                                     showEmptyState = false
@@ -831,6 +931,7 @@ fun MapScreen(
                                             TextButton(
                                                 onClick = {
                                                     viewModel.setDestinationAtMapPoint(pick.x, pick.y)
+                                                    focusCameraOnDestination()
                                                     selectedRoomId = null
                                                     selectedRoomName = pickedPointLabel
                                                     pendingMapPick = null
@@ -972,6 +1073,7 @@ fun MapScreen(
                                                     } else {
                                                         viewModel.setDestination(item.id)
                                                     }
+                                                    focusCameraOnDestination()
                                                     val room = if (destFloor == state.floorNumber) {
                                                         state.mapData.rooms.find { it.id == item.id }
                                                     } else {
@@ -1004,8 +1106,20 @@ fun MapScreen(
                                                     }
                                                 } else {
                                                     selectedRoomId = null
-                                                    viewModel.setDestinationPoi(item.id)
-                                                    val poi = state.mapData.pois.find { it.id == item.id }
+                                                    val destFloor = item.floor ?: state.floorNumber
+                                                    if (destFloor != state.floorNumber) {
+                                                        viewModel.setDestinationPoiOnFloor(destFloor, item.id)
+                                                    } else {
+                                                        viewModel.setDestinationPoi(item.id)
+                                                    }
+                                                    focusCameraOnDestination()
+                                                    val poi = if (destFloor == state.floorNumber) {
+                                                        state.mapData.pois.find { it.id == item.id }
+                                                    } else {
+                                                        crossFloorPois.find {
+                                                            it.floor == destFloor && it.poi.id == item.id
+                                                        }?.poi
+                                                    }
                                                     val poiName = item.name.trim()
                                                     placeCard = PlaceCardModel(
                                                         name = item.name,
@@ -1016,12 +1130,12 @@ fun MapScreen(
                                                         openingHours = null,
                                                         entityKind = if (poiName.isNotEmpty()) "POI" else null,
                                                         entityId = if (poiName.isNotEmpty()) item.id.toString() else null,
-                                                        floorNumber = state.floorNumber,
+                                                        floorNumber = destFloor,
                                                     )
                                                     if (poiName.isNotEmpty()) {
                                                         viewModel.loadIndoorTarget(
                                                             buildingId = state.buildingId,
-                                                            floorNumber = state.floorNumber,
+                                                            floorNumber = destFloor,
                                                             entityKind = "POI",
                                                             entityId = item.id.toString(),
                                                             entityName = poiName,
@@ -1136,6 +1250,7 @@ fun MapScreen(
                                                             selectedRoomName = title
                                                             selectedRoomId = null
                                                             viewModel.setDestinationPoi(poi.id)
+                                                            focusCameraOnDestination()
                                                             showEmptyState = false
                                                             isSearchActive = false
                                                             poiFilterNotice = null
@@ -1162,22 +1277,13 @@ fun MapScreen(
                                 }
                             }
 
-                            // Debug — chỉ hiện khi TPF chạy
-                            if (navState.particles.isNotEmpty()) {
-                                Text(
-                                    text = "TPF ${(navState.confidence * 100).toInt()}%",
-                                    modifier = Modifier
-                                        .align(Alignment.TopStart)
-                                        .padding(top = 64.dp, start = 8.dp)
-                                        .background(Color.Black.copy(0.55f), MaterialTheme.shapes.extraSmall)
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                                    color = if (navState.isTpfActive) Color.Green else Color.Yellow,
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                            }
+                            // Debug TPF đã tắt — nhãn đen TopStart đè lên chip 「Tất cả」.
+
+                            // Banner nhiễu từ trường đã ẩn theo yêu cầu UX (xử lý nhiễu vẫn chạy nền).
 
                             // Cột phải: Dest focus / Crosshair / QR / La bàn (la bàn dưới QR)
                             var showHeadingDebug by remember { mutableStateOf(false) }
+                            var headingMotionLogActive by remember { mutableStateOf(false) }
                             Column(
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
@@ -1208,8 +1314,10 @@ fun MapScreen(
                                     }
                                 }
                                 CompassButton(
-                                    rotation = navState.userHeading,
+                                    // Kim N = Bắc địa lý (device), không phải map heading tương đối
+                                    rotation = viewModel.compassNeedleRotationDeg(),
                                     mapRotationMode = mapRotationMode,
+                                    magneticInterference = navState.magneticInterference,
                                     onClick = { viewModel.toggleMapRotationMode() },
                                     onLongClick = { showHeadingDebug = !showHeadingDebug },
                                 )
@@ -1227,6 +1335,27 @@ fun MapScreen(
                                     onReset = { viewModel.resetMapNorthOffsetCalibration() },
                                     onSnapHeading = {
                                         viewModel.resyncHeadingFromSensors()
+                                    },
+                                    gridDebugText = viewModel.headingGridDebugSummary(),
+                                    gridDeltaHereDeg = viewModel.currentGridHeadingDeltaDeg(),
+                                    onResetGrid = { viewModel.resetHeadingCorrectionGrid() },
+                                    motionLogActive = headingMotionLogActive,
+                                    onToggleMotionLog = {
+                                        val wasActive = headingMotionLogActive
+                                        val path = viewModel.toggleHeadingMotionLog()
+                                        headingMotionLogActive = viewModel.isHeadingMotionLogging()
+                                        val msg = when {
+                                            !wasActive && path != null ->
+                                                "Đang ghi: …/heading_logs/\nXoay thử rồi bấm Dừng ghi"
+                                            wasActive && path != null ->
+                                                "Đã lưu: $path"
+                                            else -> "Không ghi được file heading"
+                                        }
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            msg,
+                                            android.widget.Toast.LENGTH_LONG,
+                                        ).show()
                                     },
                                     modifier = Modifier
                                         .align(Alignment.TopCenter)
@@ -1337,7 +1466,10 @@ fun MapScreen(
                                 } else null,
                                 onQrScan          = onScanQR,
                                 onPreviewPath     = { viewModel.previewPath() },
-                                onStartNavigation = { viewModel.startNavigationMode() },
+                                onStartNavigation = {
+                                    viewModel.startNavigationMode()
+                                    centerTrigger++
+                                },
                                 onStopNavigation  = {
                                     // X: đóng chế độ xem đường / hủy đích
                                     viewModel.clearDestination()
@@ -1420,6 +1552,7 @@ fun MapScreen(
                                 showPlaceSheet = false
                                 viewModel.previewPath()
                                 viewModel.startNavigationMode()
+                                centerTrigger++
                             },
                             onDismiss = {
                                 showPlaceSheet = false

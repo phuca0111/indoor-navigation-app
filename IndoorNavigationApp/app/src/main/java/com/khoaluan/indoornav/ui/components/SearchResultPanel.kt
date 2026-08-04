@@ -34,12 +34,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.khoaluan.indoornav.data.api.GeocodeHitDto
 import com.khoaluan.indoornav.data.api.IndoorSearchHitDto
+import com.khoaluan.indoornav.data.api.OverpassHitDto
 import com.khoaluan.indoornav.data.model.Building
 
 /**
  * Module #4 Search Result — danh sách kết quả (không nhảy thẳng Place).
- * GĐ4: thêm nhóm "Trong nhà" (POI) phía trên địa điểm outdoor.
+ * GĐ4: Indoor POI · Place · Nominatim · Overpass nearby.
  */
 @Composable
 fun SearchResultPanel(
@@ -50,12 +52,27 @@ fun SearchResultPanel(
     indoorHits: List<IndoorSearchHitDto> = emptyList(),
     indoorLoading: Boolean = false,
     onSelectIndoor: (IndoorSearchHitDto) -> Unit = {},
+    osmHits: List<GeocodeHitDto> = emptyList(),
+    osmLoading: Boolean = false,
+    onSelectOsm: (GeocodeHitDto) -> Unit = {},
+    overpassHits: List<OverpassHitDto> = emptyList(),
+    overpassLoading: Boolean = false,
+    onSelectOverpass: (OverpassHitDto) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    if (query.isBlank()) return
+    val qBlank = query.isBlank()
+    if (qBlank && overpassHits.isEmpty() && !overpassLoading) return
 
-    val anyLoading = (loading && results.isEmpty()) || (indoorLoading && indoorHits.isEmpty())
-    val empty = results.isEmpty() && indoorHits.isEmpty()
+    val anyLoading =
+        (!qBlank && loading && results.isEmpty()) ||
+            (!qBlank && indoorLoading && indoorHits.isEmpty()) ||
+            (!qBlank && osmLoading && osmHits.isEmpty()) ||
+            (overpassLoading && overpassHits.isEmpty() && qBlank)
+    val empty =
+        results.isEmpty() &&
+            indoorHits.isEmpty() &&
+            osmHits.isEmpty() &&
+            overpassHits.isEmpty()
 
     Surface(
         modifier = modifier
@@ -80,10 +97,18 @@ fun SearchResultPanel(
                         strokeWidth = 2.dp,
                     )
                     Spacer(modifier.width(10.dp))
-                    Text(tr("Đang tìm…", "Searching…"), color = Color(0xFF5F6368), fontSize = 14.sp)
+                    Text(
+                        text = if (qBlank) {
+                            tr("Đang tải POI quanh đây…", "Loading nearby POIs…")
+                        } else {
+                            tr("Đang tìm…", "Searching…")
+                        },
+                        color = Color(0xFF5F6368),
+                        fontSize = 14.sp,
+                    )
                 }
             }
-            empty -> {
+            empty && !qBlank -> {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
                         text = tr("Không có kết quả cho \"$query\"", "No results for \"$query\""),
@@ -94,8 +119,8 @@ fun SearchResultPanel(
                     Spacer(modifier.height(4.dp))
                     Text(
                         text = tr(
-                            "Thử từ khóa POI (ATM, WC…) hoặc tên địa điểm.",
-                            "Try a POI keyword (ATM, WC…) or place name.",
+                            "Thử từ khóa POI (ATM, WC…), tên Place, hoặc địa chỉ OSM.",
+                            "Try a POI keyword, place name, or OSM address.",
                         ),
                         color = Color(0xFF5F6368),
                         fontSize = 13.sp,
@@ -140,6 +165,42 @@ fun SearchResultPanel(
                         }
                         items(results, key = { it.id }) { building ->
                             SearchResultRow(building = building, onClick = { onSelect(building) })
+                            HorizontalDivider(color = Color(0xFFE8EAED))
+                        }
+                    }
+                    if (osmHits.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = tr(
+                                    "Bản đồ OSM · ${osmHits.size}",
+                                    "OSM map · ${osmHits.size}",
+                                ),
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                fontSize = 12.sp,
+                                color = Color(0xFF93370D),
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
+                        items(osmHits, key = { it.id }) { hit ->
+                            OsmSearchResultRow(hit = hit, onClick = { onSelectOsm(hit) })
+                            HorizontalDivider(color = Color(0xFFE8EAED))
+                        }
+                    }
+                    if (overpassHits.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = tr(
+                                    "POI quanh đây · ${overpassHits.size}",
+                                    "Nearby POIs · ${overpassHits.size}",
+                                ),
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                fontSize = 12.sp,
+                                color = Color(0xFF0D7377),
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
+                        items(overpassHits, key = { it.id }) { hit ->
+                            OverpassSearchResultRow(hit = hit, onClick = { onSelectOverpass(hit) })
                             HorizontalDivider(color = Color(0xFFE8EAED))
                         }
                     }
@@ -192,6 +253,105 @@ private fun IndoorSearchResultRow(
                 text = tr("Vào bản đồ trong nhà →", "Enter indoor map →"),
                 fontSize = 11.sp,
                 color = Color(0xFF1A73E8),
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun OsmSearchResultRow(
+    hit: GeocodeHitDto,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Place,
+            contentDescription = null,
+            tint = Color(0xFF93370D),
+            modifier = Modifier.size(28.dp),
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = hit.name,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                color = Color(0xFF202124),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val subtitle = hit.displayName?.takeIf { it.isNotBlank() }
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    color = Color(0xFF5F6368),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = tr("Chỉ đường ngoài trời (OSM) →", "Outdoor directions (OSM) →"),
+                fontSize = 11.sp,
+                color = Color(0xFF93370D),
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun OverpassSearchResultRow(
+    hit: OverpassHitDto,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Place,
+            contentDescription = null,
+            tint = Color(0xFF0D7377),
+            modifier = Modifier.size(28.dp),
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = hit.name,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                color = Color(0xFF202124),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val subtitle = listOfNotNull(
+                hit.amenity?.replace('_', ' '),
+                hit.distanceM?.let { "${it} m" },
+            ).joinToString(" · ").ifBlank { hit.displayName }
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    color = Color(0xFF5F6368),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = tr("Chỉ đường ngoài trời →", "Outdoor directions →"),
+                fontSize = 11.sp,
+                color = Color(0xFF0D7377),
                 modifier = Modifier.padding(top = 2.dp),
             )
         }

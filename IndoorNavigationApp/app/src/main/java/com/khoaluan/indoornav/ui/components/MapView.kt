@@ -125,24 +125,24 @@ fun MapView(
     }
 
     val headingDriven = computeHeadingDrivenRotation(mapRotationMode, unwrappedUserHeading)
+    // HEADING_UP: tween ngắn; mũi tên user: không animate — xoay nhanh không bị tụt như ảnh (la bàn 6° / mũi tên chéo)
     val animatedHeadingPart by animateFloatAsState(
         targetValue = headingDriven,
-        animationSpec = tween(durationMillis = 140, easing = LinearEasing),
+        animationSpec = tween(durationMillis = 40, easing = LinearEasing),
         label = "MapHeadingRotation",
     )
     val effectiveRotation = animatedHeadingPart + userMapBearingOffset
 
     val animatedUserPos by animateOffsetAsState(
         targetValue = navState.userPos ?: Offset.Zero,
-        animationSpec = tween(durationMillis = 80, easing = LinearEasing),
+        animationSpec = tween(
+            durationMillis = if (navState.isNavigatingMode) 380 else 220,
+            easing = LinearEasing,
+        ),
         label = "UserPosInterpolation",
     )
 
-    val animatedUserHeading by animateFloatAsState(
-        targetValue = unwrappedUserHeading,
-        animationSpec = tween(durationMillis = 140, easing = LinearEasing),
-        label = "UserHeadingInterpolation",
-    )
+    val animatedUserHeading = unwrappedUserHeading
 
     // GĐ3 — pulse POI focus / destination pin
     val focusPulse = rememberInfiniteTransition(label = "poi_focus_pulse")
@@ -408,33 +408,69 @@ fun MapView(
             }
         }
 
+        // Bắt đầu điều hướng → bật lại follow (sau khi zoom pin đỏ đã tắt follow)
+        LaunchedEffect(navState.isNavigatingMode) {
+            if (navState.isNavigatingMode && navState.userPos != null) {
+                autoFollowUser = true
+            }
+        }
+
+        // Follow liên tục kiểu Google Maps: giữ chấm đứng gần giữa màn hình khi đang đi.
+        // (Trước chỉ lerp 1 lần mỗi lần key đổi → đứng yên thì camera kẹt lệch mãi.)
         LaunchedEffect(
-            navState.userPos,
-            animatedUserPos,
             autoFollowUser,
             centerOnUserTrigger,
-            mapRotationMode,
+            navState.isNavigatingMode,
+            navState.userPos != null,
         ) {
-            if (navState.userPos == null) return@LaunchedEffect
             if (centerOnUserTrigger > 0) {
                 autoFollowUser = true
             }
-            if (autoFollowUser) {
-                val followPos = if (mapRotationMode == MapRotationMode.HEADING_UP) {
-                    animatedUserPos
-                } else {
-                    navState.userPos
+            if (!autoFollowUser || navState.userPos == null) return@LaunchedEffect
+
+            // Snap ngay 1 lần khi Start / bật follow / bấm crosshair
+            val snapPos = animatedUserPos
+            mapOffset = Offset(screenW / 2f, screenH / 2f) - snapPos * mapScale
+
+            while (autoFollowUser && navState.userPos != null) {
+                val freezeUntil = navState.freezeCameraUntilMs
+                val frozen = freezeUntil > 0L && System.currentTimeMillis() < freezeUntil
+                if (!frozen) {
+                    val followPos = animatedUserPos
+                    val target = Offset(screenW / 2f, screenH / 2f) - followPos * mapScale
+                    val dx = target.x - mapOffset.x
+                    val dy = target.y - mapOffset.y
+                    val distSq = dx * dx + dy * dy
+                    val dead = if (navState.isNavigatingMode) 28f else 48f
+                    if (distSq > dead * dead) {
+                        val alpha = if (navState.isNavigatingMode) 0.55f else 0.4f
+                        // Nhảy rất xa: snap, khỏi tụt mãi
+                        if (distSq > 280f * 280f) {
+                            mapOffset = target
+                        } else {
+                            mapOffset = Offset(
+                                mapOffset.x + dx * alpha,
+                                mapOffset.y + dy * alpha,
+                            )
+                        }
+                    }
                 }
-                mapOffset = Offset(screenW / 2f, screenH / 2f) - followPos * mapScale
+                delay(32)
             }
         }
 
         LaunchedEffect(centerOnDestinationTrigger) {
             if (centerOnDestinationTrigger <= 0) return@LaunchedEffect
-            val dest = navState.path?.lastOrNull()
-                ?: navState.destinationMarkerPos
+            // Ưu tiên pin đỏ đích (POI/phòng vừa chọn), không lấy path.last lệch
+            val dest = navState.destinationMarkerPos
+                ?: navState.path?.lastOrNull()
                 ?: return@LaunchedEffect
             autoFollowUser = false
+            // Zoom gần điểm đến để thấy rõ pin / phòng
+            val focusScale = mapScale.coerceIn(1.35f, 3.2f).let { s ->
+                if (s < 1.5f) 1.85f else s
+            }
+            mapScale = focusScale
             mapOffset = Offset(screenW / 2f, screenH / 2f) - dest * mapScale
         }
 
@@ -650,10 +686,17 @@ fun MapView(
                                 )
                             } else {
                                 drawLine(
-                                    color = Color(0xFF1A73E8).copy(0.45f),
+                                    color = Color(0xFF1A73E8).copy(0.85f),
                                     start = from,
                                     end = to,
-                                    strokeWidth = 7f / mapScale,
+                                    strokeWidth = 12f / mapScale,
+                                    cap = StrokeCap.Round,
+                                )
+                                drawLine(
+                                    color = Color.White.copy(0.7f),
+                                    start = from,
+                                    end = to,
+                                    strokeWidth = 3.5f / mapScale,
                                     cap = StrokeCap.Round,
                                 )
                             }

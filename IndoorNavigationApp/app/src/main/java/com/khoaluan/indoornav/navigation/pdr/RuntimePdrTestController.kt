@@ -15,7 +15,8 @@ data class PdrTestState(
     val isTpfActive: Boolean = false,
     val stepCount: Int = 0,
     val stepLength: Float = 0f,
-    val totalDistance: Float = 0f
+    val totalDistance: Float = 0f,
+    val phoneContextLabel: String? = null,
 )
 
 /**
@@ -50,6 +51,10 @@ class RuntimePdrTestController(context: Context) {
                 stepLength = stepLength,
                 totalDistance = totalDistance
             )
+        }
+
+        locationEngine.onPhoneContextChanged = { ctx ->
+            _testState.value = _testState.value.copy(phoneContextLabel = ctx.labelVi)
         }
     }
 

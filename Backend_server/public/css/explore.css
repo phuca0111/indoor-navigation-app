@@ -4,7 +4,7 @@
   --ex-panel: #ffffff;
   --ex-ink: #0f172a;
   --ex-muted: #64748b;
-  --ex-accent: #0d9488;
+  /* --ex-accent khai báo trong outdoor-tokens.css */
   --ex-border: #e2e8f0;
   --ex-danger: #b91c1c;
 }
@@ -171,6 +171,155 @@ html, body {
 
 .leaflet-popup-content { font-size: 13px; line-height: 1.4; }
 .leaflet-popup-content strong { font-size: 14px; }
+
+.vn-sea-label-wrap {
+  background: transparent !important;
+  border: none !important;
+}
+.vn-sea-cover {
+  transform: translate(-50%, -50%);
+  background: #ffffff;
+  border-radius: 4px;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px #ffffff;
+}
+.vn-sea-cover--white {
+  background: #ffffff;
+  box-shadow: 0 0 0 3px #ffffff;
+}
+.vn-sea-label {
+  transform: translate(-50%, -50%);
+  background: #ffffff;
+  border: 1px solid #94a3b8;
+  border-radius: 8px;
+  padding: 7px 12px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.22);
+  white-space: nowrap;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  font-family: "Figtree", system-ui, sans-serif;
+}
+.vn-sea-label--strong {
+  border-color: #1a73e8;
+  background: #ffffff;
+  padding: 8px 14px;
+  min-width: 148px;
+}
+.vn-sea-title {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.vn-sea-label--strong .vn-sea-title {
+  font-size: 15px;
+}
+.vn-sea-sub {
+  color: #1a73e8;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.ex-map-engine {
+  padding: 8px 18px 0;
+  font-size: 12px;
+  color: var(--ex-muted);
+}
+.ex-map-engine a {
+  color: var(--ex-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.ex-map-engine a:hover { text-decoration: underline; }
+
+.ex-ml-marker {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  padding: 0;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: var(--ex-accent);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.35);
+  cursor: pointer;
+}
+.ex-ml-marker::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+}
+.ex-ml-user {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #2563eb;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.2);
+}
+.maplibregl-popup-content {
+  font-family: "Figtree", system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+.maplibregl-popup-content .ex-btn {
+  margin-top: 8px;
+  width: auto;
+  display: inline-flex;
+}
+
+/* MapLibre markers reuse vn-sea-label without leaflet transform quirks */
+#ex-map .vn-sea-label {
+  transform: none;
+}
+
+.ml-basemap-switch-wrap {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+}
+.ml-basemap-switch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--ex-border);
+  box-shadow: 0 1px 6px rgba(15, 23, 42, 0.12);
+}
+.ml-basemap-label {
+  font-size: 11px;
+  color: var(--ex-muted);
+  padding: 0 4px;
+}
+.ml-basemap-switch button {
+  border: 0;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: var(--ex-ink);
+  font-family: inherit;
+}
+.ml-basemap-switch button.is-active {
+  background: var(--ex-accent);
+  color: #fff;
+}
 
 @media (max-width: 860px) {
   .ex-shell {
