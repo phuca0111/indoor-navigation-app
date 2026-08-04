@@ -1,6 +1,7 @@
 /**
  * Outdoor routing — OSM tiles trên client; đường lấy từ OSRM (proxy).
- * Env: OSRM_BASE_URL (mặc định https://router.project-osrm.org)
+ * Fallback OpenRouteService khi có ORS_API_KEY và OSRM lỗi mạng/5xx (không thay OSRM khi có route).
+ * Env: OSRM_BASE_URL, ORS_API_KEY, ORS_BASE_URL
  */
 function httpError(status, message, code) {
   const err = new Error(message);
@@ -12,6 +13,15 @@ function httpError(status, message, code) {
 function osrmBaseUrl() {
   const raw = String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org').trim();
   return raw.replace(/\/+$/, '') || 'https://router.project-osrm.org';
+}
+
+function orsApiKey() {
+  return String(process.env.ORS_API_KEY || '').trim();
+}
+
+function orsBaseUrl() {
+  const raw = String(process.env.ORS_BASE_URL || 'https://api.openrouteservice.org').trim();
+  return raw.replace(/\/+$/, '') || 'https://api.openrouteservice.org';
 }
 
 function parseCoord(value, name) {
@@ -28,6 +38,12 @@ function normalizeProfile(raw) {
   if (p === 'driving' || p === 'car' || p === 'drive') return 'driving';
   if (p === 'cycling' || p === 'bike' || p === 'bicycle') return 'cycling';
   return 'foot';
+}
+
+function orsProfile(pathProfile) {
+  if (pathProfile === 'driving') return 'driving-car';
+  if (pathProfile === 'cycling') return 'cycling-regular';
+  return 'foot-walking';
 }
 
 /**
@@ -143,6 +159,63 @@ function mapOsrmRoute(osrmJson) {
   };
 }
 
+/** Map ORS GeoJSON directions → cùng shape client (polyline/steps). */
+function mapOrsRoute(orsJson) {
+  const features = Array.isArray(orsJson?.features) ? orsJson.features : [];
+  const feature = features[0];
+  if (!feature) return null;
+  const coords = feature.geometry?.coordinates;
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+
+  const polyline = coords
+    .map((c) => {
+      const lng = Number(c?.[0]);
+      const lat = Number(c?.[1]);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      return { lat, lng };
+    })
+    .filter(Boolean);
+  if (polyline.length < 2) return null;
+
+  const summary = feature.properties?.summary || {};
+  const segments = Array.isArray(feature.properties?.segments) ? feature.properties.segments : [];
+  const steps = [];
+  for (const seg of segments) {
+    const segSteps = Array.isArray(seg.steps) ? seg.steps : [];
+    for (const step of segSteps) {
+      const type = Number(step.type);
+      // ORS step types: 0 turn left … 10 arrive — map thô sang left/right/straight
+      let key = 'straight';
+      if (type === 10) key = 'arrive';
+      else if (type === 11) key = 'depart';
+      else if ([0, 2, 4, 6].includes(type)) key = 'left';
+      else if ([1, 3, 5, 7].includes(type)) key = 'right';
+      const distanceM = Number(step.distance) || 0;
+      const name = String(step.name || '').trim();
+      const wayPoints = Array.isArray(step.way_points) ? step.way_points : null;
+      const idx = Number.isFinite(wayPoints?.[0]) ? wayPoints[0] : null;
+      const pt = idx != null && polyline[idx] ? polyline[idx] : null;
+      steps.push({
+        maneuver: key,
+        distance_m: Math.round(distanceM * 10) / 10,
+        duration_s: Math.round(Number(step.duration) || 0),
+        name,
+        instruction: instructionVi(key, distanceM, name),
+        location: pt || null
+      });
+    }
+  }
+
+  return {
+    provider: 'openrouteservice',
+    profile: null,
+    distance_m: Math.round((Number(summary.distance) || 0) * 10) / 10,
+    duration_s: Math.round(Number(summary.duration) || 0),
+    polyline,
+    steps
+  };
+}
+
 async function fetchOsrmRoute({ fromLat, fromLng, toLat, toLng, profile }) {
   const base = osrmBaseUrl();
   const pathProfile = normalizeProfile(profile);
@@ -194,6 +267,74 @@ async function fetchOsrmRoute({ fromLat, fromLng, toLat, toLng, profile }) {
   return mapped;
 }
 
+async function fetchOrsRoute({ fromLat, fromLng, toLat, toLng, profile }) {
+  const key = orsApiKey();
+  if (!key) {
+    throw httpError(503, 'Chưa cấu hình ORS_API_KEY.', 'ORS_DISABLED');
+  }
+  const pathProfile = normalizeProfile(profile);
+  const url = `${orsBaseUrl()}/v2/directions/${orsProfile(pathProfile)}/geojson`;
+  const controller = new AbortController();
+  const timeoutMs = Math.max(3000, Number(process.env.ORS_TIMEOUT_MS) || 12000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: key
+      },
+      body: JSON.stringify({
+        coordinates: [
+          [fromLng, fromLat],
+          [toLng, toLat]
+        ],
+        instructions: true,
+        elevation: false
+      }),
+      signal: controller.signal
+    });
+  } catch (e) {
+    if (e?.name === 'AbortError') {
+      throw httpError(504, 'OpenRouteService hết thời gian chờ.', 'ORS_TIMEOUT');
+    }
+    throw httpError(502, 'Không kết nối được OpenRouteService.', 'ORS_UNAVAILABLE');
+  } finally {
+    clearTimeout(timer);
+  }
+
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    throw httpError(502, 'OpenRouteService trả dữ liệu không hợp lệ.', 'ORS_UNAVAILABLE');
+  }
+
+  if (!res.ok) {
+    throw httpError(502, 'OpenRouteService không khả dụng.', 'ORS_UNAVAILABLE');
+  }
+
+  const mapped = mapOrsRoute(body);
+  if (!mapped) {
+    throw httpError(404, 'Không tìm thấy đường đi.', 'ROUTE_NOT_FOUND');
+  }
+  mapped.profile = pathProfile;
+  return mapped;
+}
+
+function shouldTryOrsFallback(err) {
+  if (!orsApiKey()) return false;
+  const code = err?.code || '';
+  const status = Number(err?.status) || 0;
+  if (code === 'ROUTE_NOT_FOUND' || status === 404) return true;
+  if (code === 'OSRM_TIMEOUT' || code === 'OSRM_UNAVAILABLE') return true;
+  if (status === 502 || status === 504) return true;
+  return false;
+}
+
 /**
  * useCase — GET/POST outdoor-route
  */
@@ -212,7 +353,19 @@ async function getOutdoorRoute({ query, body }) {
     throw httpError(400, 'Kinh độ không hợp lệ.', 'INVALID_COORD');
   }
 
-  const route = await fetchOsrmRoute({ fromLat, fromLng, toLat, toLng, profile });
+  let route;
+  try {
+    route = await fetchOsrmRoute({ fromLat, fromLng, toLat, toLng, profile });
+  } catch (osrmErr) {
+    if (!shouldTryOrsFallback(osrmErr)) throw osrmErr;
+    try {
+      route = await fetchOrsRoute({ fromLat, fromLng, toLat, toLng, profile });
+    } catch (_orsErr) {
+      // Ưu tiên lỗi OSRM gốc nếu ORS cũng fail (tránh che thông báo quen thuộc)
+      throw osrmErr;
+    }
+  }
+
   return {
     status: 200,
     body: {
@@ -228,6 +381,9 @@ module.exports = {
   normalizeManeuver,
   instructionVi,
   mapOsrmRoute,
+  mapOrsRoute,
   normalizeProfile,
-  osrmBaseUrl
+  osrmBaseUrl,
+  orsApiKey,
+  shouldTryOrsFallback
 };

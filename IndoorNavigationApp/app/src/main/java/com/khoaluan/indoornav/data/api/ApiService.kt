@@ -74,6 +74,13 @@ interface ApiService {
         @Query("amenities") amenities: String? = null,
     ): Response<OverpassNearbyResponse>
 
+    /** Thời tiết hiện tại qua Backend (OpenWeatherMap). 503 nếu chưa cấu hình key. */
+    @GET("weather/current")
+    suspend fun weatherCurrent(
+        @Query("lat") lat: Double,
+        @Query("lng") lng: Double,
+    ): Response<WeatherCurrentResponse>
+
     @POST("place-platform/reviews")
     suspend fun upsertPlaceReview(@Body body: PlaceReviewBody): Response<PlaceReviewResponse>
 

@@ -221,7 +221,7 @@
       const el = document.createElement('button');
       el.type = 'button';
       el.className = 'od-ml-marker od-ml-marker--osm';
-      el.title = hit.name || 'OSM';
+      el.title = hit.name || 'Địa điểm';
       el.textContent = '📍';
       const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
         .setLngLat([lng, lat])
@@ -246,13 +246,13 @@
     elDetail.innerHTML =
       '<p class="sub"><strong>' +
       escapeHtml(hit.name || '') +
-      '</strong> <span class="badge">OSM</span></p>' +
+      '</strong></p>' +
       '<p class="sub">' +
       escapeHtml(hit.display_name || '') +
       '</p>' +
-      '<p class="sub">Nguồn: OpenStreetMap (Nominatim) — chỉ đường ngoài trời, không Indoor.</p>' +
+      '<p class="sub">Chỉ đường ngoài trời — không Indoor.</p>' +
       '<div style="display:flex;gap:0.4rem;margin-top:0.6rem;flex-wrap:wrap;">' +
-      '<button type="button" class="secondary" id="btnOsrmOsm" style="width:auto;">Chỉ đường (OSM)</button>' +
+      '<button type="button" class="secondary" id="btnOsrmOsm" style="width:auto;">Chỉ đường ngoài trời</button>' +
       '<a class="btn-link" href="' +
       gmaps +
       '" target="_blank" rel="noopener">Google Maps</a>' +
@@ -313,7 +313,7 @@
       const h2 = document.createElement('div');
       h2.className = 'sub';
       h2.style.margin = '12px 0 4px';
-      h2.textContent = 'Bản đồ OSM · ' + osm.length;
+      h2.textContent = 'Địa điểm · ' + osm.length;
       elResults.appendChild(h2);
       osm.forEach(function (hit) {
         const card = document.createElement('button');
@@ -322,7 +322,7 @@
         card.innerHTML =
           '<div class="name">' +
           escapeHtml(hit.name || '') +
-          ' <span class="badge">OSM</span></div>' +
+          '</div>' +
           '<div class="meta">' +
           escapeHtml(hit.display_name || '') +
           '</div>';
@@ -661,7 +661,7 @@
           ? '<a class="btn-link" id="btnMaps" href="' +
             gmaps +
             '" target="_blank" rel="noopener">Đi tới (Google Maps)</a>' +
-            '<button type="button" class="secondary" id="btnOsrm" style="width:auto;">Chỉ đường (OSM)</button>'
+            '<button type="button" class="secondary" id="btnOsrm" style="width:auto;">Chỉ đường ngoài trời</button>'
           : '') +
         '<button type="button" class="secondary" id="btnCopy" style="width:auto;">Copy link</button>' +
         '<a href="/get-app" style="font-size:0.8rem;align-self:center;">Android App</a>' +
