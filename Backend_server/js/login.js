@@ -16,6 +16,7 @@ function clearAuthStorage() {
     localStorage.removeItem('userEmail');
     localStorage.removeItem('userRole');
     localStorage.removeItem('userId');
+    localStorage.removeItem('wme_editor_secure_lock_v1');
 }
 
 function applyAuthTokens(data) {
@@ -29,6 +30,8 @@ function applyAuthTokens(data) {
         if (data.user.role) localStorage.setItem('userRole', data.user.role);
         if (data.user.id) localStorage.setItem('userId', data.user.id);
     }
+    // Đăng nhập lại = bỏ khóa tạm Editor (quên mã khóa).
+    localStorage.removeItem('wme_editor_secure_lock_v1');
 }
 
 // Google OAuth callback (Landing WL4): /login#token=... — Admin page vẫn giữ form cũ nếu mở trực tiếp

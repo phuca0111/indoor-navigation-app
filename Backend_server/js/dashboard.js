@@ -421,6 +421,7 @@ function clearAuthStorage() {
   localStorage.removeItem('userId');
   localStorage.removeItem('authEvent');
   localStorage.removeItem('activeDashboardTab');
+  localStorage.removeItem('wme_editor_secure_lock_v1');
 }
 
 // ============================================================

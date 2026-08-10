@@ -102,6 +102,8 @@ function clearEditorAuthStorage() {
     localStorage.removeItem('userRole');
     localStorage.removeItem('userId');
     localStorage.removeItem('activeDashboardTab');
+    // Quên mã khóa tạm thời: đăng xuất / hết phiên → bỏ khóa Editor.
+    localStorage.removeItem('wme_editor_secure_lock_v1');
 }
 
 /** Chỉ logout khi token hiện tại vẫn là token đã verify — tránh tab cũ xóa session tab mới (race đa tab). */
@@ -233,8 +235,16 @@ async function initEditor() {
     try {
         if (currentUser.id != null) localStorage.setItem('userId', String(currentUser.id));
         else if (currentUser._id != null) localStorage.setItem('userId', String(currentUser._id));
+        if (currentUser.email) localStorage.setItem('userEmail', currentUser.email);
         if (window.EditorCore && EditorCore.ProjectManager && EditorCore.ProjectManager.setUserId) {
             EditorCore.ProjectManager.setUserId(localStorage.getItem('userId'));
+        }
+    } catch (e) { /* ignore */ }
+
+    // Sau khi có userId/email chuẩn: khôi phục khóa tạm (tránh mất khi đóng/mở tab).
+    try {
+        if (typeof window.ensureEditorSecureLockRestored === 'function') {
+            window.ensureEditorSecureLockRestored();
         }
     } catch (e) { /* ignore */ }
 
