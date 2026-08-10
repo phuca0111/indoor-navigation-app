@@ -6,8 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Soạn bản đồ trong nhà | WebMapEditor</title>
     <link rel="icon" href="images/indoornav-favicon.png" type="image/png" sizes="32x32"/>
-    <link rel="stylesheet" href="styles.css?v=20260716we6">
-    <link rel="stylesheet" href="css/phase-ui-shell.css?v=20260730logo1">
+    <link rel="stylesheet" href="styles.css?v=20260810pin4">
+    <link rel="stylesheet" href="css/phase-ui-shell.css?v=20260810home1">
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -22,10 +22,10 @@
         <!-- HEADER (1 hàng: logo + breadcrumb | trạng thái + hành động) -->
         <header class="header shell-header" id="editorBuildingBar">
             <div class="header-left">
-                <span class="brand">
-                    <img class="brand-logo" src="images/indoornav-logo.png" srcset="images/indoornav-logo.png 1x, images/indoornav-logo@2x.png 2x" width="28" height="28" alt="" decoding="async">
+                <a class="brand" href="/admin/dashboard.html" title="Về Dashboard quản trị">
+                    <img class="brand-logo" src="images/indoornav-logo.png" srcset="images/indoornav-logo.png 1x, images/indoornav-logo@2x.png 2x" width="28" height="28" alt="IndoorNav" decoding="async">
                     <span class="brand-name">Indoor Map Editor</span>
-                </span>
+                </a>
                 <input type="hidden" id="mapName" value="Bản đồ mới">
             </div>
 
@@ -86,7 +86,7 @@
                             </div>
                         </div>
                     </div>
-                    <button id="btnLockEditor" class="btn-lock btn-icon" title="Khóa trình soạn (Ctrl+L)">
+                    <button id="btnLockEditor" class="btn-lock btn-icon" type="button" title="Khóa trình soạn (Ctrl+L)" onclick="if(window.beginEditorSecureLock){window.beginEditorSecureLock();}">
                         <i data-lucide="lock"></i>
                     </button>
                 </div>
@@ -419,26 +419,69 @@
             <span id="editorFloorLockStatus" class="editor-floor-lock-status editor-floor-lock-status--write" title="Quyền sửa tầng">Đang sửa</span>
             <span id="editorCurrentUser" class="status-user">Đang chỉnh sửa bởi: <strong>...</strong></span>
         </div>
+    </div>
 
         <div id="secureLockOverlay" class="secure-lock-overlay" aria-hidden="true">
             <div class="secure-lock-modal" role="dialog" aria-modal="true" aria-labelledby="secureLockTitle">
                 <div class="secure-lock-avatar">
                     <i data-lucide="shield-check"></i>
                 </div>
-                <h2 id="secureLockTitle">Phiên đã khóa</h2>
-                <p id="secureLockSubtitle" class="secure-lock-subtitle">Nhập mật khẩu để tiếp tục chỉnh sửa bản đồ.</p>
+                <h2 id="secureLockTitle">Khóa trình soạn</h2>
+                <p id="secureLockSubtitle" class="secure-lock-subtitle">Tạo mã khóa tạm thời để tránh người khác chỉnh sửa khi bạn rời máy.</p>
 
-                <label class="secure-lock-label" for="unlockPassword">Mật khẩu</label>
-                <input id="unlockPassword" class="secure-lock-input" type="password" autocomplete="current-password" placeholder="••••••••">
+                <div id="secureLockSetFields">
+                    <label class="secure-lock-label" for="lockPinInput">Mã khóa tạm thời (4–12 ký tự)</label>
+                    <input id="lockPinInput" class="secure-lock-input" type="password" autocomplete="new-password" maxlength="12" placeholder="Nhập mã khóa">
+                    <label class="secure-lock-label" for="lockPinConfirmInput">Nhập lại mã khóa</label>
+                    <input id="lockPinConfirmInput" class="secure-lock-input" type="password" autocomplete="new-password" maxlength="12" placeholder="Nhập lại mã khóa">
+                </div>
+
+                <div id="secureLockUnlockFields" style="display:none;">
+                    <label class="secure-lock-label" for="unlockPinInput">Mã khóa tạm thời</label>
+                    <input id="unlockPinInput" class="secure-lock-input" type="password" autocomplete="off" maxlength="12" placeholder="••••••••">
+                </div>
+
                 <div id="unlockError" class="secure-lock-error"></div>
 
                 <div class="secure-lock-actions">
-                    <button id="btnUnlockEditor" class="btn-primary">Mở khóa</button>
-                    <button id="btnForceLogout" class="btn-ghost-danger">Đăng xuất</button>
+                    <button type="button" id="btnConfirmSecureLock" class="btn-primary">Xác nhận và khóa</button>
+                    <button type="button" id="btnCancelSetPin" class="btn-ghost-danger">Hủy</button>
+                    <button type="button" id="btnForceLogout" class="btn-ghost-danger" style="display:none;">Đăng xuất</button>
                 </div>
+                <p id="secureLockHint" class="secure-lock-hint">Bạn phải tạo mã khóa tạm thời trước khi khóa giao diện.</p>
             </div>
         </div>
-    </div>
+        <script>
+          (function () {
+            try {
+              var raw = localStorage.getItem('wme_editor_secure_lock_v1');
+              if (!raw) return;
+              var data = JSON.parse(raw);
+              if (!data || !data.locked || !data.pinHash || !data.pinSalt) return;
+              var id = localStorage.getItem('userId') || '';
+              var email = String(localStorage.getItem('userEmail') || '').toLowerCase();
+              var storedId = String(data.userId || '');
+              var storedEmail = String(data.userEmail || '').toLowerCase();
+              var legacy = String(data.userKey || '');
+              var legacyLower = legacy.toLowerCase();
+              var same = true;
+              if (id || email) {
+                same = false;
+                if (storedId && id && storedId === id) same = true;
+                if (storedEmail && email && storedEmail === email) same = true;
+                if (legacy && ((id && legacy === id) || (email && legacyLower === email))) same = true;
+                if (!storedId && !storedEmail && !legacy) same = true;
+              }
+              if (!same) return;
+              var ov = document.getElementById('secureLockOverlay');
+              if (ov) {
+                ov.classList.add('active');
+                ov.setAttribute('aria-hidden', 'false');
+              }
+              document.body.classList.add('editor-locked');
+            } catch (e) { /* ignore */ }
+          })();
+        </script>
 
     <!-- EditorCore V4 Phase 0 -->
     <script src="core/event-bus.js?v=20260709f"></script>
@@ -527,11 +570,11 @@
     <script src="js/publish-api.js?v=20260716we4"></script>
     <script src="js/storage-api.js?v=20260716we6"></script>
     <script src="js/validation-ui.js?v=20260716we5"></script>
-    <script src="js/api.js?v=20260725poi1"></script>
+    <script src="js/api.js?v=20260810pin2"></script>
     <script src="js/hazard-zones.js?v=20260728hz4"></script>
     <script src="core/export-pipeline.js?v=20260719val"></script>
 
-    <script src="js/secure-lock.js?v=20260710b"></script>
+    <script src="js/secure-session-pin.js?v=20260810pin3"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
     <script src="js/property-inspector-ui.js?v=20260714d"></script>
     <script src="js/properties.js?v=20260725poi1"></script>

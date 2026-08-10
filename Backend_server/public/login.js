@@ -62,6 +62,7 @@
         localStorage.removeItem('userEmail');
         localStorage.removeItem('userRole');
         localStorage.removeItem('userId');
+        localStorage.removeItem('wme_editor_secure_lock_v1');
     }
 
     function applyAuthTokens(data) {
@@ -75,6 +76,7 @@
             if (data.user.role) localStorage.setItem('userRole', data.user.role);
             if (data.user.id) localStorage.setItem('userId', data.user.id);
         }
+        localStorage.removeItem('wme_editor_secure_lock_v1');
     }
 
     function showError(text) {

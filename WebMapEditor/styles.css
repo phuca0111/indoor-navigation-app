@@ -807,9 +807,10 @@ aside {
     display: none;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.35);
-    backdrop-filter: blur(8px);
-    z-index: 3000;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    z-index: 10000;
     opacity: 0;
     pointer-events: none;
     transition: opacity 200ms ease;
@@ -823,7 +824,7 @@ aside {
 
 .secure-lock-modal {
     width: min(440px, 92vw);
-    background: rgba(15, 23, 42, 0.82);
+    background: rgba(15, 23, 42, 0.96);
     border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 18px;
     box-shadow: 0 24px 48px rgba(2, 6, 23, 0.55);
@@ -831,6 +832,11 @@ aside {
     transform: scale(0.95);
     opacity: 0;
     transition: transform 200ms ease, opacity 200ms ease;
+    /* Form luôn nét — không kế thừa blur từ nền */
+    filter: none !important;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    isolation: isolate;
 }
 
 .secure-lock-overlay.active .secure-lock-modal {
@@ -887,10 +893,18 @@ aside {
     font-size: 0.8rem;
 }
 
+.secure-lock-hint {
+    margin: 12px 0 0;
+    color: rgba(226, 232, 240, 0.72);
+    font-size: 0.75rem;
+    line-height: 1.4;
+}
+
 .secure-lock-actions {
     margin-top: 14px;
     display: flex;
     gap: 10px;
+    flex-wrap: wrap;
 }
 
 .btn-ghost-danger {
@@ -903,8 +917,10 @@ aside {
     background: rgba(127, 29, 29, 0.4);
 }
 
-body.editor-locked .app-container {
-    filter: blur(1.5px) saturate(0.94);
+/* Chỉ làm mờ nền qua overlay; KHÔNG blur .app-container (form nằm bên trong sẽ bị mờ theo). */
+body.editor-locked .app-container,
+body.editor-setting-lock .app-container {
+    filter: none;
 }
 
 /* SCROLLBAR */
