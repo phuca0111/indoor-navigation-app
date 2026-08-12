@@ -19,6 +19,7 @@ const {
   ensureDefaultPlans
 } = require('../services/planCatalog');
 const { getPersonalPlanLimits } = require('../utils/planQuota');
+const { countUsage } = require('../services/personalPlanGates');
 const { loginBankUser, chargeWalletDirect } = require('../services/bankWalletService');
 const {
   createPersonalPayment,
@@ -245,10 +246,16 @@ async function getPersonalBilling(req, res) {
     if (!req.user || req.user.role !== 'REGISTERED_USER') {
       return res.status(403).json({ message: 'Chỉ tài khoản cá nhân dùng được.' });
     }
+    // Backfill personal_max_* nếu catalog cũ thiếu (tránh FREE hiện "Không giới hạn")
+    try { await ensureDefaultPlans(); } catch (_) { /* ignore */ }
+
     const user = await billingSelfService.findPersonalBillingUser(req.user.userId);
     const plan = String(user?.plan || 'FREE').toUpperCase();
     const planActive = hasActivePaidPersonalPlan({ plan, plan_expires_at: user?.plan_expires_at });
     const currentPrice = planActive ? (getPlanPrice(plan) || 0) : 0;
+    const effectivePlan = planActive ? plan : 'FREE';
+    const limits = getPersonalPlanLimits(effectivePlan);
+    const usage = await countUsage(req.user.userId);
     // Danh sách gói cá nhân trả phí từ catalog (data-driven — gói mới tự xuất hiện).
     // Khi đang dùng gói trả phí còn hạn: chỉ hiện gói hiện tại (gia hạn) + gói giá cao hơn (nâng cấp).
     const allPlans = await listPlans({ activeOnly: true });
@@ -284,8 +291,9 @@ async function getPersonalBilling(req, res) {
       plan_expired: Boolean(user?.plan_expires_at) && !planActive && plan !== 'FREE',
       current_price_vnd: currentPrice,
       // Hết hạn → áp hạn mức FREE cho đến khi gia hạn / mua gói mới
-      limits: getPersonalPlanLimits(planActive ? plan : 'FREE'),
-      effective_plan: planActive ? plan : 'FREE',
+      limits,
+      usage,
+      effective_plan: effectivePlan,
       pro_price_vnd: getPlanPrice('PRO'),
       pro_period_days: getPlanPeriodDays('PRO'),
       available_plans: availablePlans,
