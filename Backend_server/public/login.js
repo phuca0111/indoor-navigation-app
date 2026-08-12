@@ -86,11 +86,14 @@
         el.style.display = 'block';
     }
 
+    var googleCallbackActive = false;
+
     (function consumeGoogleCallback() {
         var hash = (window.location.hash || '').replace(/^#/, '');
         if (!hash) return;
         var params = new URLSearchParams(hash);
         if (params.get('google') !== '1' && params.get('google') !== '0') return;
+        googleCallbackActive = true;
         var token = params.get('token');
         var refreshToken = params.get('refreshToken');
         var err = params.get('error');
@@ -173,6 +176,7 @@
     })();
 
     (async function checkExistingSessionOnLoad() {
+        if (googleCallbackActive) return;
         if ((window.location.hash || '').indexOf('google=') >= 0) return;
         var token = localStorage.getItem('token');
         if (!token) return;
@@ -185,11 +189,11 @@
                 var data = await res.json().catch(function () { return {}; });
                 var role = data.role || (data.user && data.user.role) || localStorage.getItem('userRole') || '';
                 window.location.replace(resolvePostLoginUrl(role));
-            } else {
+            } else if (res.status === 401 || res.status === 403) {
                 clearAuthStorage();
             }
         } catch (_) {
-            clearAuthStorage();
+            // Lỗi mạng / abort khi đang chuyển trang — không xóa session.
         }
     })();
 

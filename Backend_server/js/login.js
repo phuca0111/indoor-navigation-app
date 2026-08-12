@@ -35,11 +35,14 @@ function applyAuthTokens(data) {
 }
 
 // Google OAuth callback (Landing WL4): /login#token=... — Admin page vẫn giữ form cũ nếu mở trực tiếp
+let googleCallbackActive = false;
+
 (function consumeGoogleCallback() {
     const hash = (window.location.hash || '').replace(/^#/, '');
     if (!hash) return;
     const params = new URLSearchParams(hash);
     if (params.get('google') !== '1' && params.get('google') !== '0') return;
+    googleCallbackActive = true;
     const token = params.get('token');
     const refreshToken = params.get('refreshToken');
     const err = params.get('error');
@@ -114,6 +117,7 @@ function applyAuthTokens(data) {
 // Nếu user đã login và token còn hợp lệ → tự redirect sang dashboard.
 // Nếu token hết hạn/lỗi → xóa token, ở lại login.
 (async function checkExistingSessionOnLoad() {
+    if (googleCallbackActive) return;
     if ((window.location.hash || '').indexOf('google=') >= 0) return;
 
     const token = localStorage.getItem('token');
@@ -126,15 +130,13 @@ function applyAuthTokens(data) {
         });
 
         if (res.ok) {
-            // Token hợp lệ, user đang login → redirect dashboard
             window.location.replace('/admin/dashboard.html');
-        } else {
-            // Token không hợp lệ (401/403) → clear storage
+        } else if (res.status === 401 || res.status === 403) {
             clearAuthStorage();
         }
     } catch (error) {
         console.error('Session check failed:', error);
-        clearAuthStorage();
+        // Lỗi mạng / abort khi đang chuyển trang — không xóa session.
     }
 })();
 
