@@ -10,11 +10,10 @@ const Building = require('../models/Building');
 const Floor = require('../models/Floor');
 const QrCode = require('../models/QrCode');
 const {
-  getPersonalPlanLimits,
   hasActivePaidPersonalPlan,
   isPaidPlan
 } = require('./planCatalog');
-const { getPersonalPlanLimits: fallbackLimits } = require('../utils/planQuota');
+const { getPersonalPlanLimits } = require('../utils/planQuota');
 
 /** UI brand map — không đổi mã DB */
 const DISPLAY_PLAN = {
@@ -37,8 +36,8 @@ function displayPlanFor(code) {
 
 function limitsFor(userLike) {
   const code = resolvePersonalPlanCode(userLike);
-  const fromCatalog = getPersonalPlanLimits(code);
-  const base = fromCatalog || fallbackLimits(code) || {
+  // Đi qua planQuota (catalog + fallback FREE) — tránh null → "không giới hạn" sai
+  const base = getPersonalPlanLimits(code) || {
     maxBuildings: 1,
     maxFloorsPerBuilding: 2,
     maxMaps: 3,

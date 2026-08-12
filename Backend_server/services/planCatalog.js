@@ -109,19 +109,35 @@ async function ensureDefaultPlans() {
 
   // Backfill trường audience + Personal Workspace cho các gói seed đã tồn tại
   // nhưng chưa có cờ (nâng cấp schema). An toàn vì đây là trường mới.
-  const needBackfill = existing.filter((p) => p.is_personal == null || p.is_organization == null);
+  const needBackfill = existing.filter((p) => {
+    if (p.is_personal == null || p.is_organization == null) return true;
+    const seed = DEFAULT_SEED.find((s) => s.code === String(p.code).toUpperCase());
+    // is_personal đã true nhưng thiếu personal_max_* (FREE hiện "Không giới hạn" sai)
+    return !!(
+      seed &&
+      seed.is_personal &&
+      p.is_personal === true &&
+      p.personal_max_buildings == null &&
+      seed.personal_max_buildings != null
+    );
+  });
   for (const p of needBackfill) {
     const seed = DEFAULT_SEED.find((s) => s.code === String(p.code).toUpperCase());
     if (!seed) continue;
     const $set = {};
     if (p.is_personal == null && seed.is_personal != null) {
       $set.is_personal = !!seed.is_personal;
-      if (seed.is_personal) {
-        $set.personal_max_buildings = seed.personal_max_buildings ?? null;
-        $set.personal_max_floors_per_building = seed.personal_max_floors_per_building ?? null;
-        $set.personal_max_maps = seed.personal_max_maps ?? null;
-        $set.personal_max_qr = seed.personal_max_qr ?? null;
-      }
+    }
+    if (
+      seed.is_personal &&
+      (p.is_personal === true || $set.is_personal === true) &&
+      p.personal_max_buildings == null &&
+      seed.personal_max_buildings != null
+    ) {
+      $set.personal_max_buildings = seed.personal_max_buildings ?? null;
+      $set.personal_max_floors_per_building = seed.personal_max_floors_per_building ?? null;
+      $set.personal_max_maps = seed.personal_max_maps ?? null;
+      $set.personal_max_qr = seed.personal_max_qr ?? null;
     }
     if (p.is_organization == null && seed.is_organization != null) {
       $set.is_organization = !!seed.is_organization;
@@ -177,14 +193,15 @@ function getPlanPrice(plan) {
 
 /**
  * Giới hạn Personal Workspace cho một mã gói, đọc từ catalog.
- * Trả về null nếu gói không phải gói cá nhân hoặc chưa có trong cache
- * (để nơi gọi fallback về bảng hardcode cũ).
+ * Mọi gói is_personal (kể cả mã mới tạo) đều trả object hạn mức từ DB.
+ * null từng field = không giới hạn field đó (admin để trống khi tạo/sửa gói).
+ * Trả về null chỉ khi gói không tồn tại hoặc không phải gói cá nhân.
  */
 function getPersonalPlanLimits(plan) {
   const code = String(plan || '').toUpperCase().trim();
   const doc = cacheByCode && cacheByCode[code];
   if (!doc || doc.is_personal !== true) return null;
-  const num = (v) => (v == null ? null : Number(v));
+  const num = (v) => (v == null || v === '' ? null : Number(v));
   return {
     maxBuildings: num(doc.personal_max_buildings),
     maxFloorsPerBuilding: num(doc.personal_max_floors_per_building),

@@ -28,13 +28,26 @@ const PERSONAL_PLAN_LIMITS = {
 
 function getPersonalPlanLimits(plan) {
   const code = String(plan || 'FREE').toUpperCase();
-  // Ưu tiên đọc từ catalog (data-driven) để gói cá nhân mới tự có quota.
+  const fallback = PERSONAL_PLAN_LIMITS[code] || PERSONAL_PLAN_LIMITS.FREE;
+  // Ưu tiên catalog — mọi mã gói cá nhân (FREE/PRO/gói mới) đều đọc từ DB sau refresh cache.
   try {
     const { getPersonalPlanLimits: fromCatalog } = require('../services/planCatalog');
     const limits = fromCatalog(code);
-    if (limits) return limits;
+    if (limits) {
+      // FREE: field null = chưa cấu hình → fallback Demo, không hiểu là "không giới hạn".
+      if (code === 'FREE') {
+        return {
+          maxBuildings: limits.maxBuildings ?? fallback.maxBuildings,
+          maxFloorsPerBuilding: limits.maxFloorsPerBuilding ?? fallback.maxFloorsPerBuilding,
+          maxMaps: limits.maxMaps ?? fallback.maxMaps,
+          maxQr: limits.maxQr ?? fallback.maxQr
+        };
+      }
+      // Gói cá nhân khác (PRO hoặc mã mới): đúng số admin nhập; null = không giới hạn field đó.
+      return limits;
+    }
   } catch (_) { /* ignore, fallback bảng cũ */ }
-  return PERSONAL_PLAN_LIMITS[code] || PERSONAL_PLAN_LIMITS.FREE;
+  return fallback;
 }
 
 const {

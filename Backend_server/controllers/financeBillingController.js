@@ -86,21 +86,34 @@ async function createPlan(req, res) {
         message: 'Mã gói không hợp lệ (chữ hoa, số, gạch dưới; bắt đầu bằng chữ).'
       });
     }
+    const isPersonal = body.is_personal === true;
+    const priceVnd = Number(body.price_vnd) || 0;
+    let pMaxB = parseNullableLimit(body.personal_max_buildings);
+    let pMaxF = parseNullableLimit(body.personal_max_floors_per_building);
+    let pMaxM = parseNullableLimit(body.personal_max_maps);
+    let pMaxQ = parseNullableLimit(body.personal_max_qr);
+    // Gói cá nhân miễn phí để trống hạn mức → mặc định Demo
+    if (isPersonal && !(priceVnd > 0) && pMaxB == null && pMaxF == null && pMaxM == null && pMaxQ == null) {
+      pMaxB = 1;
+      pMaxF = 2;
+      pMaxM = 3;
+      pMaxQ = 20;
+    }
     const doc = await billingApplication.createCatalogPlan({
       code,
       name: String(body.name || code).trim(),
       description: String(body.description || '').trim(),
-      price_vnd: Number(body.price_vnd) || 0,
+      price_vnd: priceVnd,
       period_days: Number(body.period_days) || 30,
       max_buildings: parseNullableLimit(body.max_buildings),
       max_users: parseNullableLimit(body.max_users),
-      is_personal: body.is_personal === true,
+      is_personal: isPersonal,
       is_organization: body.is_organization === true,
       show_on_landing: body.show_on_landing !== false,
-      personal_max_buildings: parseNullableLimit(body.personal_max_buildings),
-      personal_max_floors_per_building: parseNullableLimit(body.personal_max_floors_per_building),
-      personal_max_maps: parseNullableLimit(body.personal_max_maps),
-      personal_max_qr: parseNullableLimit(body.personal_max_qr),
+      personal_max_buildings: pMaxB,
+      personal_max_floors_per_building: pMaxF,
+      personal_max_maps: pMaxM,
+      personal_max_qr: pMaxQ,
       is_active: body.is_active !== false,
       sort_order: Number(body.sort_order) || 0,
       features: Array.isArray(body.features) ? body.features : []

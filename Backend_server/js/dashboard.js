@@ -1279,6 +1279,7 @@ function updatePlanQuotaBadge(user, quotaFromStats) {
   const planBadge = document.getElementById('userPlanBadge');
   const quotaLine = document.getElementById('quotaAlertLine');
   const isTenant = user?.role === 'ORG_ADMIN' || user?.role === 'BUILDING_ADMIN';
+  const isRegistered = user?.role === 'REGISTERED_USER';
   const org = user?.organization;
 
   if (planBadge) {
@@ -1286,12 +1287,20 @@ function updatePlanQuotaBadge(user, quotaFromStats) {
       planBadge.textContent = formatPlanLabel(org);
       planBadge.className = 'badge plan-badge plan-' + String(org.plan || 'FREE').toLowerCase();
       planBadge.style.display = '';
+    } else if (isRegistered) {
+      const code = String(user.plan || 'FREE').toUpperCase();
+      planBadge.textContent = code === 'FREE' ? 'FREE (cá nhân)' : code + ' (cá nhân)';
+      planBadge.className = 'badge plan-badge plan-' + code.toLowerCase();
+      planBadge.style.display = '';
     } else {
       planBadge.style.display = 'none';
     }
   }
 
   if (!quotaLine) return;
+  // REGISTERED_USER: dòng hạn mức do loadPersonalBilling điền — không xóa ở đây
+  if (isRegistered) return;
+
   const quota = quotaFromStats || null;
   if (!isTenant) {
     quotaLine.style.display = 'none';
@@ -6441,6 +6450,20 @@ async function savePlanEditor(ev) {
       return v === '' || v == null ? null : Number(v);
     })()
   };
+  // Gói cá nhân miễn phí mà để trống hạn mức → áp mặc định Demo (tránh hiện "Không giới hạn").
+  if (
+    payload.is_personal &&
+    !(Number(payload.price_vnd) > 0) &&
+    payload.personal_max_buildings == null &&
+    payload.personal_max_floors_per_building == null &&
+    payload.personal_max_maps == null &&
+    payload.personal_max_qr == null
+  ) {
+    payload.personal_max_buildings = 1;
+    payload.personal_max_floors_per_building = 2;
+    payload.personal_max_maps = 3;
+    payload.personal_max_qr = 20;
+  }
   if (!payload.is_personal && !payload.is_organization && !payload.show_on_landing) {
     if (msg) {
       msg.style.display = '';
@@ -8744,14 +8767,22 @@ async function loadPersonalBilling() {
   const planNameEl = document.getElementById('personalCurrentPlanName');
   const priceEl = document.getElementById('personalCurrentPrice');
   const quotaEl = document.getElementById('personalQuotaList');
+  const quotaLine = document.getElementById('quotaAlertLine');
+  const FREE_FALLBACK_LIMITS = { maxBuildings: 1, maxFloorsPerBuilding: 2, maxMaps: 3, maxQr: 20 };
   try {
     const res = await fetch('/api/billing/personal/me', {
       headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      if (quotaEl) {
+        quotaEl.innerHTML = '<span style="color:#b42318;">Không tải được hạn mức gói. Thử làm mới trang.</span>';
+      }
+      return;
+    }
     const d = await res.json();
     _personalBilling = d;
     const planCode = String(d.plan || 'FREE').toUpperCase();
+    const effectivePlan = String(d.effective_plan || (d.plan_active ? planCode : 'FREE')).toUpperCase();
     const planActive = d.plan_active !== false && (
       planCode === 'FREE' || !d.plan_expires_at || new Date(d.plan_expires_at).getTime() > Date.now()
     );
@@ -8795,17 +8826,48 @@ async function loadPersonalBilling() {
       } else if (isPaid) {
         expiry.textContent = 'Gói trả phí đang hiệu lực';
       } else {
-        expiry.textContent = 'Không giới hạn thời gian';
+        expiry.textContent = 'Gói Demo / FREE — có hạn mức tài nguyên (xem bên dưới).';
       }
     }
     if (quotaEl) {
-      const lim = d.limits || {};
-      const fmt = (v) => (v == null ? '<strong style="color:#12b76a;">Không giới hạn</strong>' : '<strong>' + v + '</strong>');
+      let lim = d.limits && typeof d.limits === 'object' ? d.limits : {};
+      const usage = d.usage && typeof d.usage === 'object' ? d.usage : {};
+      // FREE mà API trả limits rỗng / toàn null → fallback cứng (tránh "Không giới hạn")
+      if (effectivePlan === 'FREE') {
+        lim = {
+          maxBuildings: lim.maxBuildings ?? FREE_FALLBACK_LIMITS.maxBuildings,
+          maxFloorsPerBuilding: lim.maxFloorsPerBuilding ?? FREE_FALLBACK_LIMITS.maxFloorsPerBuilding,
+          maxMaps: lim.maxMaps ?? FREE_FALLBACK_LIMITS.maxMaps,
+          maxQr: lim.maxQr ?? FREE_FALLBACK_LIMITS.maxQr
+        };
+      }
+      const fmtCap = (v) => (v == null ? 'Không giới hạn' : String(v));
+      const fmtUsedCap = (used, cap) => {
+        const u = used != null ? Number(used) : 0;
+        if (cap == null) return '<strong>' + u + '</strong> / Không giới hạn';
+        const over = u > Number(cap);
+        return '<strong style="color:' + (over ? '#b42318' : '#1d2939') + ';">' +
+          u + '</strong> / <strong>' + cap + '</strong>' + (over ? ' <span style="color:#b42318;">(vượt)</span>' : '');
+      };
       quotaEl.innerHTML =
-        'Tòa nhà: ' + fmt(lim.maxBuildings) + '<br>' +
-        'Tầng/tòa: ' + fmt(lim.maxFloorsPerBuilding) + '<br>' +
-        'Bản đồ: ' + fmt(lim.maxMaps) + '<br>' +
-        'Mã QR: ' + fmt(lim.maxQr);
+        '<div style="font-size:11px; color:#98a2b3; text-transform:uppercase; letter-spacing:.4px; margin-bottom:4px;">Hạn mức đang áp dụng (' +
+        escapeHtml(effectivePlan) + ')</div>' +
+        'Tòa nhà: ' + fmtUsedCap(usage.buildings, lim.maxBuildings) + '<br>' +
+        'Tầng / tòa: tối đa <strong>' + fmtCap(lim.maxFloorsPerBuilding) + '</strong>' +
+        (usage.floors != null ? ' <span style="color:#98a2b3;">(đang có ' + Number(usage.floors) + ' tầng)</span>' : '') + '<br>' +
+        'Bản đồ: tối đa <strong>' + fmtCap(lim.maxMaps) + '</strong><br>' +
+        'Mã QR: ' + fmtUsedCap(usage.qr, lim.maxQr);
+
+      if (quotaLine) {
+        const bCap = lim.maxBuildings == null ? '∞' : lim.maxBuildings;
+        const qCap = lim.maxQr == null ? '∞' : lim.maxQr;
+        quotaLine.style.display = '';
+        quotaLine.className = 'quota-alert-line quota-alert-warn';
+        quotaLine.textContent =
+          'Hạn mức cá nhân (' + effectivePlan + '): Tòa ' +
+          (usage.buildings != null ? Number(usage.buildings) : 0) + '/' + bCap +
+          ' · QR ' + (usage.qr != null ? Number(usage.qr) : 0) + '/' + qCap;
+      }
     }
 
     // Mỗi gói cá nhân = 1 thẻ riêng (gói mới trong catalog tự xuất hiện)
@@ -8858,6 +8920,9 @@ async function loadPersonalBilling() {
   } catch (_) {
     const list = document.getElementById('personalInvoicesList');
     if (list) list.textContent = 'Không tải được hóa đơn.';
+    if (quotaEl) {
+      quotaEl.innerHTML = '<span style="color:#b42318;">Không tải được hạn mức gói. Kiểm tra kết nối rồi làm mới.</span>';
+    }
   }
 }
 
