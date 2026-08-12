@@ -1672,9 +1672,8 @@ async function syncCurrentSession(reason, depth) {
       if (depth < 2) return syncCurrentSession(reason, depth + 1);
       return null;
     }
-    clearAuthStorage();
-    window.location.replace('/login');
-    return null;
+    // Lỗi mạng / abort: giữ session, không đá về login.
+    return currentUser;
   }
 }
 // LOGOUT HANDLER (Multi-tab safe)
