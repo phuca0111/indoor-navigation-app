@@ -1,6 +1,5 @@
 package com.khoaluan.indoornav.ui.components
 
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -9,7 +8,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,9 +19,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -121,32 +119,12 @@ fun BottomInfoCard(
 
     val sheetEnabled = isNavigating || isPathPreview
     var sheetState by remember { mutableStateOf(NavCardSheetState.Expanded) }
-    var dragAccumPx by remember { mutableFloatStateOf(0f) }
+    val sheetStateRef = rememberUpdatedState(sheetState)
     val density = LocalDensity.current
 
-    // Đổi đích / bắt đầu chỉ đường → mở lại panel đầy đủ
-    LaunchedEffect(destination, isNavigating, isPathPreview) {
-        sheetState = NavCardSheetState.Expanded
-    }
+    // Chỉ mở full khi vào/ra chế độ chỉ đường — không reset mỗi lần đổi chữ đích (gây giật + crash).
     LaunchedEffect(sheetEnabled) {
-        if (!sheetEnabled) sheetState = NavCardSheetState.Expanded
-    }
-
-    fun snapSheetAfterDrag(totalDy: Float) {
-        val threshold = with(density) { 40.dp.toPx() }
-        sheetState = when {
-            totalDy > threshold -> when (sheetState) {
-                NavCardSheetState.Expanded -> NavCardSheetState.Peek
-                NavCardSheetState.Peek -> NavCardSheetState.Hidden
-                NavCardSheetState.Hidden -> NavCardSheetState.Hidden
-            }
-            totalDy < -threshold -> when (sheetState) {
-                NavCardSheetState.Hidden -> NavCardSheetState.Peek
-                NavCardSheetState.Peek -> NavCardSheetState.Expanded
-                NavCardSheetState.Expanded -> NavCardSheetState.Expanded
-            }
-            else -> sheetState
-        }
+        sheetState = NavCardSheetState.Expanded
     }
 
     fun expandOneLevel() {
@@ -162,47 +140,62 @@ fun BottomInfoCard(
         contentAlignment = Alignment.BottomCenter,
     ) {
     Surface(
-        modifier = Modifier
-            .adaptiveReadableWidth()
-            .animateContentSize(animationSpec = tween(220))
-            .then(
-                if (sheetEnabled) {
-                    Modifier.pointerInput(sheetState) {
-                        detectVerticalDragGestures(
-                            onDragStart = { dragAccumPx = 0f },
-                            onVerticalDrag = { change, dragAmount ->
-                                change.consume()
-                                dragAccumPx += dragAmount
-                            },
-                            onDragEnd = {
-                                snapSheetAfterDrag(dragAccumPx)
-                                dragAccumPx = 0f
-                            },
-                            onDragCancel = { dragAccumPx = 0f },
-                        )
-                    }
-                } else {
-                    Modifier
-                },
-            ),
+        modifier = Modifier.adaptiveReadableWidth(),
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
         color = Color.White,
         shadowElevation = 12.dp,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // Thanh kéo (Google-style)
+            // Thanh kéo: chỉ handle nhận gesture (không gắn cả card / không recomposition từng pixel).
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(
-                        indication = null,
-                        interactionSource = remember { MutableInteractionSource() },
-                    ) {
-                        if (sheetEnabled && sheetState != NavCardSheetState.Expanded) {
-                            expandOneLevel()
-                        }
-                    }
-                    .padding(top = 8.dp, bottom = 4.dp),
+                    .height(28.dp)
+                    .then(
+                        if (sheetEnabled) {
+                            Modifier.pointerInput(Unit) {
+                                var accum = 0f
+                                val threshold = with(density) { 48.dp.toPx() }
+                                detectVerticalDragGestures(
+                                    onDragStart = { accum = 0f },
+                                    onVerticalDrag = { change, dragAmount ->
+                                        change.consume()
+                                        accum += dragAmount
+                                    },
+                                    onDragEnd = {
+                                        val totalDy = accum
+                                        accum = 0f
+                                        val current = sheetStateRef.value
+                                        val tapSlop = 16f
+                                        val next = when {
+                                            kotlin.math.abs(totalDy) < tapSlop -> when (current) {
+                                                NavCardSheetState.Expanded -> NavCardSheetState.Expanded
+                                                NavCardSheetState.Peek -> NavCardSheetState.Expanded
+                                                NavCardSheetState.Hidden -> NavCardSheetState.Peek
+                                            }
+                                            totalDy > threshold -> when (current) {
+                                                NavCardSheetState.Expanded -> NavCardSheetState.Peek
+                                                NavCardSheetState.Peek -> NavCardSheetState.Hidden
+                                                NavCardSheetState.Hidden -> NavCardSheetState.Hidden
+                                            }
+                                            totalDy < -threshold -> when (current) {
+                                                NavCardSheetState.Hidden -> NavCardSheetState.Peek
+                                                NavCardSheetState.Peek -> NavCardSheetState.Expanded
+                                                NavCardSheetState.Expanded -> NavCardSheetState.Expanded
+                                            }
+                                            else -> current
+                                        }
+                                        if (next != current) {
+                                            sheetState = next
+                                        }
+                                    },
+                                    onDragCancel = { accum = 0f },
+                                )
+                            }
+                        } else {
+                            Modifier
+                        },
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 Box(
