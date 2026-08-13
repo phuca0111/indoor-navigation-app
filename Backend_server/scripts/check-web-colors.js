@@ -15,7 +15,8 @@ const tokenFiles = new Set([
   'Backend_server/admin/css/admin-tokens.css',
   'Backend_server/public/css/landing-tokens.css',
   'Backend_server/public/css/outdoor-tokens.css',
-  'WebMapEditor/css/editor-tokens.css'
+  'WebMapEditor/css/editor-tokens.css',
+  'WebMapEditor/css/editor-warning-tokens.css'
 ]);
 // Baseline legacy ghi nhận khi bật gate; không mở rộng danh sách này cho component mới.
 const legacyAllowlist = new Set((

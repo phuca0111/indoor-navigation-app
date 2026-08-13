@@ -7,12 +7,40 @@
     <title>Soạn bản đồ trong nhà | WebMapEditor</title>
     <link rel="icon" href="images/indoornav-favicon.png" type="image/png" sizes="32x32"/>
     <link rel="stylesheet" href="styles.css?v=20260810pin4">
-    <link rel="stylesheet" href="css/phase-ui-shell.css?v=20260810home1">
+    <link rel="stylesheet" href="css/editor-warning-tokens.css?v=20260814ci1">
+    <link rel="stylesheet" href="css/phase-ui-shell.css?v=20260814ci1">
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 
 <body class="phase-ui">
+    <script>
+        (function () {
+            try {
+                var w = window.innerWidth || 0;
+                var h = window.innerHeight || 0;
+                var minS = Math.min(w, h);
+                var coarse = window.matchMedia('(pointer: coarse)').matches ||
+                    window.matchMedia('(hover: none)').matches;
+                var touch = coarse || (Number(navigator.maxTouchPoints || 0) > 1);
+                if (touch && (minS < 600 || w < 900)) {
+                    document.documentElement.classList.add('editor-device-blocked');
+                }
+            } catch (e) { /* ignore */ }
+        })();
+    </script>
+    <div id="editorDeviceGate" class="editor-device-gate" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="editorDeviceGateTitle">
+        <div class="editor-device-gate__card">
+            <p class="editor-device-gate__kicker">Web Map Editor</p>
+            <h2 id="editorDeviceGateTitle">Dùng máy tính để biên tập bản đồ</h2>
+            <p id="editorDeviceGateBody" class="editor-device-gate__body">
+                Web Map Editor cần màn hình lớn, chuột và bàn phím. Điện thoại và máy tính bảng để dọc không phù hợp để vẽ bản đồ trong nhà.
+            </p>
+            <div class="editor-device-gate__actions">
+                <a class="btn-primary editor-device-gate__btn" id="btnDeviceGateDashboard" href="/admin/dashboard.html">Về bảng điều khiển</a>
+            </div>
+        </div>
+    </div>
     <div id="loadingOverlay">
         <div class="spinner"></div>
         <p id="loadingText">Đang xử lý...</p>
@@ -92,6 +120,11 @@
                 </div>
             </div>
         </header>
+
+        <div id="editorTabletBanner" class="editor-tablet-banner" hidden role="status">
+            <span>Chế độ máy tính bảng — canvas đã mở rộng. Vẽ chính xác nên dùng máy tính có chuột.</span>
+            <button type="button" id="btnDismissTabletBanner" class="editor-tablet-banner__close" aria-label="Đóng">×</button>
+        </div>
 
         <div id="editorAccessBanner" class="editor-access-banner" style="display:none;" role="alert">
             <div class="editor-access-banner__text">
@@ -589,6 +622,7 @@
 
     <!-- Phase UI shell -->
     <script src="js/ui-shell.js?v=20260719hdr"></script>
+    <script src="js/device-gate.js?v=20260813dev1"></script>
 
     <!-- Xuất/Nhập PDF (Page Setup kiểu AutoCAD) -->
     <script src="core/plot-page-setup.js?v=20260723plot2"></script>

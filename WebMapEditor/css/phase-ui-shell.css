@@ -1,5 +1,109 @@
 /* Phase UI — AutoCAD-like shell (theme sáng, layout 5 vùng) */
 
+/* Điện thoại / iPad dọc: chặn canvas, hiện hướng dẫn */
+html.editor-device-blocked,
+html.editor-device-blocked body {
+    overflow: hidden;
+}
+html.editor-device-blocked .app-container {
+    visibility: hidden;
+    pointer-events: none;
+}
+html.editor-device-blocked #loadingOverlay,
+html.editor-device-blocked #secureLockOverlay {
+    display: none !important;
+}
+.editor-device-gate {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 10050;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+    background: #0f172a;
+    box-sizing: border-box;
+}
+html.editor-device-blocked .editor-device-gate,
+body.editor-device-blocked .editor-device-gate {
+    display: flex;
+}
+.editor-device-gate[hidden] {
+    display: none !important;
+}
+html.editor-device-blocked .editor-device-gate[hidden] {
+    display: flex !important;
+}
+.editor-device-gate__card {
+    width: min(440px, 100%);
+    background: #111827;
+    border: 1px solid #334155;
+    border-radius: 16px;
+    padding: 28px 22px;
+    color: #e5e7eb;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+}
+.editor-device-gate__kicker {
+    margin: 0 0 8px;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #93c5fd;
+}
+.editor-device-gate h2 {
+    margin: 0 0 12px;
+    font-size: 1.25rem;
+    line-height: 1.35;
+    color: #f8fafc;
+}
+.editor-device-gate__body {
+    margin: 0 0 22px;
+    font-size: 0.95rem;
+    line-height: 1.55;
+    color: #cbd5e1;
+}
+.editor-device-gate__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.editor-device-gate__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+body.phase-ui .editor-tablet-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 14px;
+    background: var(--editor-warning-bg, var(--ds-editor-color-warning-bg));
+    border-bottom: 1px solid var(--editor-warning-border, var(--ds-editor-color-warning-border));
+    color: var(--editor-warning-ink, var(--ds-editor-color-warning-ink));
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+body.phase-ui .editor-tablet-banner[hidden] {
+    display: none !important;
+}
+body.phase-ui .editor-tablet-banner__close {
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+}
+
+
+
 body.phase-ui {
     --bg-main: #F4F6F8;
     --bg-sidebar: #FFFFFF;
@@ -20,8 +124,8 @@ body.phase-ui {
     --project-bar-h: 40px;
     --command-h: 36px;
     --status-h: 28px;
-    --sidebar-width: 260px;
-    --left-width: 260px;
+    --sidebar-width: clamp(240px, 22vw, 340px);
+    --left-width: clamp(220px, 20vw, 300px);
     --header-height: var(--shell-header-h);
 }
 
@@ -721,19 +825,32 @@ body.phase-ui .validation-heading {
 body.phase-ui .validation-list {
     list-style: none;
     margin: 0;
-    padding: 0;
-    max-height: 220px;
+    padding: 0 2px 4px 0;
+    max-height: min(38vh, 18rem);
     overflow-y: auto;
+    overflow-x: hidden;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 body.phase-ui .validation-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     padding: 8px 10px;
     margin-bottom: 6px;
     border-radius: 6px;
     border: 1px solid var(--border);
-    font-size: 0.78rem;
-    line-height: 1.35;
+    font-size: clamp(0.72rem, 0.85vw, 0.82rem);
+    line-height: 1.4;
     background: #fff;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 body.phase-ui .validation-item--error {
@@ -754,7 +871,17 @@ body.phase-ui .validation-code {
     border-radius: 4px;
     background: #eaeef2;
     color: #57606a;
-    margin-right: 4px;
+    margin-right: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+body.phase-ui .validation-msg {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 body.phase-ui .editor-publish-hint {
@@ -1108,16 +1235,39 @@ body.phase-ui .right-tab.active {
 body.phase-ui .right-body {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 12px;
     min-height: 0;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 body.phase-ui .right-panel {
     display: none;
+    min-width: 0;
 }
 
 body.phase-ui .right-panel.active {
     display: block;
+}
+
+body.phase-ui .right-panel[data-rtab="validate"].active {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+}
+
+body.phase-ui .right-panel[data-rtab="validate"] .validation-panel {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    flex: 1;
+}
+
+body.phase-ui .right-panel[data-rtab="validate"] .validation-list {
+    flex: 1 1 auto;
 }
 
 body.phase-ui .panel-section h3 {
@@ -1362,10 +1512,29 @@ body.phase-ui .secure-lock-input {
     color: var(--text-main);
 }
 
+/* Tab Kiểm tra cần rộng hơn để thẻ cảnh báo không bị cắt khi zoom */
+body.phase-ui:has(.right-tab[data-rtab="validate"].active) {
+    --sidebar-width: clamp(280px, 26vw, 400px);
+}
+
 @media (max-width: 1100px) {
     body.phase-ui {
-        --sidebar-width: 220px;
         --ribbon-h: 64px;
+    }
+}
+
+@media (max-width: 900px) {
+    body.phase-ui {
+        --sidebar-width: clamp(220px, 32vw, 300px);
+    }
+    body.phase-ui:has(.right-tab[data-rtab="validate"].active) {
+        --sidebar-width: clamp(240px, 38vw, 360px);
+    }
+}
+
+@media (max-height: 700px) {
+    body.phase-ui .validation-list {
+        max-height: min(28vh, 12rem);
     }
 }
 

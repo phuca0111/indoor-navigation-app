@@ -1,0 +1,9 @@
+/* Token cảnh báo Editor — hex chỉ khai báo ở đây. */
+:root {
+  --ds-editor-color-warning-bg: #fff8c5;
+  --ds-editor-color-warning-border: #d4a72c;
+  --ds-editor-color-warning-ink: #7d4e00;
+  --editor-warning-bg: var(--ds-editor-color-warning-bg);
+  --editor-warning-border: var(--ds-editor-color-warning-border);
+  --editor-warning-ink: var(--ds-editor-color-warning-ink);
+}
