@@ -1418,10 +1418,9 @@ fun MapScreen(
                             }
                         }
 
-                        // ── BOTTOM INFO CARD (overlay, không đẩy layout MapView) ────────────────────────
+                        // ── BOTTOM INFO CARD (animate) ────────────────────────
                         AnimatedVisibility(
                             visible = showBottomCard,
-                            modifier = Modifier.align(Alignment.BottomCenter),
                             enter = slideInVertically { it },
                             exit  = slideOutVertically { it },
                         ) {
