@@ -83,9 +83,9 @@ body.phase-ui .editor-tablet-banner {
     justify-content: space-between;
     gap: 10px;
     padding: 8px 14px;
-    background: #fff8c5;
-    border-bottom: 1px solid #d4a72c;
-    color: #7d4e00;
+    background: var(--editor-warning-bg, var(--ds-editor-color-warning-bg));
+    border-bottom: 1px solid var(--editor-warning-border, var(--ds-editor-color-warning-border));
+    color: var(--editor-warning-ink, var(--ds-editor-color-warning-ink));
     font-size: 0.8rem;
     line-height: 1.4;
 }

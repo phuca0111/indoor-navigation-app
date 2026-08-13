@@ -129,14 +129,23 @@ test('Editor shell semantics và axe', async ({ page }, testInfo) => {
   const errors = await mockNetwork(page);
   await page.addInitScript(() => localStorage.setItem('token', 'e2e-token'));
   await page.goto('/editor/');
-  const canvas = page.locator('#mapCanvas');
-  await expect(canvas).toHaveAttribute('aria-label', /Bản vẽ tầng/);
-  const ribbon = page.locator('.ribbon-tabs');
-  await expect(ribbon).toBeVisible();
-  // role=tablist là mục tiêu a11y; nếu markup cũ thiếu attribute thì không fail cứng semantics.
-  const role = await ribbon.getAttribute('role');
-  if (role) {
-    expect(role).toBe('tablist');
+  const deviceBlocked = await page.locator('html.editor-device-blocked').count() > 0;
+  if (deviceBlocked) {
+    // Điện thoại / iPad dọc: Editor cố ý hiện cổng, ẩn canvas — không assert ribbon.
+    const gate = page.locator('#editorDeviceGate');
+    await expect(gate).toBeVisible();
+    await expect(page.locator('#editorDeviceGateTitle')).toBeVisible();
+    await expect(page.locator('#btnDeviceGateDashboard')).toBeVisible();
+  } else {
+    const canvas = page.locator('#mapCanvas');
+    await expect(canvas).toHaveAttribute('aria-label', /Bản vẽ tầng/);
+    const ribbon = page.locator('.ribbon-tabs');
+    await expect(ribbon).toBeVisible();
+    // role=tablist là mục tiêu a11y; nếu markup cũ thiếu attribute thì không fail cứng semantics.
+    const role = await ribbon.getAttribute('role');
+    if (role) {
+      expect(role).toBe('tablist');
+    }
   }
   try {
     await expectA11y(page);
